@@ -549,7 +549,7 @@ def fire_door_leaves(quads, lines, all_segs):
     """
     out = []
 
-    def near(p, tol=7.0):
+    def near(p, tol=6.0):
         return min(point_to_seg_dist(p, s1, s2)[0] for s1, s2 in all_segs) < tol
 
     def add_leaf(a, b):
