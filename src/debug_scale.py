@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """比例尺校准：轴网间距(8400mm标注) + 窗组长度 vs 窗编号(如 M2GW6124=6.1m)"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 import fitz
 import math

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """统计 merge_collinear 桥接的间隙尺寸分布（直方图）"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 import fitz
 import math

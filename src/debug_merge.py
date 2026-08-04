@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """调试合并步骤：打印指定区域内小单元的已标注邻居(4px半径)"""
 import sys
 import cv2
 import numpy as np
 import fitz
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 
 CX, CY = 1644, 850   # 男卫1

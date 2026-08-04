@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """把 window 图层的短笔画聚成"编号文字块"，渲染成拼图以肉眼确认字形结构。"""
 import sys
 import math
@@ -10,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_cad_pdf import (PDF_F1, get_default_on_layers, extract_layer_items,
                            seg_len)
 
@@ -111,7 +112,7 @@ def main():
         ax.set_title(f"#{k} ({x0:.0f},{y0:.0f}) {x1-x0:.0f}x{y1-y0:.0f}",
                      fontsize=6)
     plt.tight_layout()
-    out = r"E:\code\pathai\result\_debug_glyph_blocks.png"
+    out = str(Path(__file__).resolve().parent.parent / "result" / "_debug_glyph_blocks.png")
     plt.savefig(out, dpi=170)
     print("saved", out)
 

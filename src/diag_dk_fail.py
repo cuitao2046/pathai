@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """详细打印被拒绝的"疑似 DK"块（n 在 6~40 之间）的笔画特征，定位漏识原因。"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fitz, math
 from parse_cad_pdf import (PDF_F1, PDF_F2, get_default_on_layers,
                            extract_layer_items, seg_len,

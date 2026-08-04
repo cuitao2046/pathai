@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """枚举 window 图层所有矢量文字块（不丢弃小簇），逐个调用 is_dk_block，
 输出 DK / 拒绝原因 / bbox / 笔画数，用于排查漏识的洞口(DK)标注。"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_cad_pdf import (PDF_F1, PDF_F2, get_default_on_layers,
                            extract_layer_items, seg_len,
                            cluster_window_glyph_codes, is_dk_block,

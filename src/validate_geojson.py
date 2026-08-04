@@ -15,8 +15,10 @@
 import json
 import math
 import sys
+from pathlib import Path
 
-DEFAULT = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
+DEFAULT = str(
+    Path(__file__).resolve().parent.parent / "result" / "school_building_01_map_v9.geojson")
 
 # 非"封闭房间"的类型：不参与零门检查
 # 公共空间（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭）也是非"封闭"空间

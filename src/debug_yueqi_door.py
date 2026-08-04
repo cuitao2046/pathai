@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """查乐器存放室附近的门归属情况"""
 import json
 import math
 
-geo = json.load(open(r"E:\code\pathai\result\school_building_01_map_v8.geojson",
+geo = json.load(open(str(Path(__file__).resolve().parent.parent / "result" / "school_building_01_map_v8.geojson"),
                      encoding="utf-8"))
 f1 = geo["floors"]["1"]["geometry"]
 rooms = {r["id"]: r for r in f1["rooms"]}

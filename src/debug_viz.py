@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """调试可视化：检查墙线/房间多边形/标签/门洞的空间关系"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -35,7 +36,7 @@ for wg in data["window_groups"]:
     ax.plot([a[0], b[0]], [a[1], b[1]], 'g-', lw=1.2)
 ax.set_aspect('equal')
 ax.invert_yaxis()
-out = rf"E:\code\pathai\result\_debug_parse_f{floor}.png"
+out = str(Path(__file__).resolve().parent.parent / "result" / "_debug_parse_f{floor}.png")
 fig.savefig(out, dpi=110, bbox_inches='tight')
 print("saved", out)
 print("rooms:", len(data["rooms"]), "doors:", len(data["doors"]),

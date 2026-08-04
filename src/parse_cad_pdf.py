@@ -22,6 +22,7 @@ import math
 import re
 import sys
 import collections
+from pathlib import Path
 
 from shapely.ops import unary_union, polygonize
 from shapely.geometry import LineString, Point, Polygon, box
@@ -32,9 +33,12 @@ from topology import build_floor_topology, build_cross_floor_edges
 
 # ---------------------------------------------------------------- 配置
 
-PDF_F1 = r"E:\code\pathai\A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf"
-PDF_F2 = r"E:\code\pathai\A20-003-II-初中学部 1# 教学楼二层平面图-A0_BIAD-无签名.pdf"
-OUT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
+# 路径自动适配：以本文件位置推导项目根目录，不依赖固定盘符/路径
+PROJECT_ROOT = Path(__file__).resolve().parent.parent   # .../src -> 项目根
+RESULT_DIR = PROJECT_ROOT / "result"
+PDF_F1 = str(PROJECT_ROOT / "A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf")
+PDF_F2 = str(PROJECT_ROOT / "A20-003-II-初中学部 1# 教学楼二层平面图-A0_BIAD-无签名.pdf")
+OUT_GEOJSON = str(RESULT_DIR / "school_building_01_map_v9.geojson")
 
 # 比例尺校准：轴网 8400mm = 158.8pt（AXIS 层间距众数），
 # 与窗编号 M2GW5924(5900mm)=111.5pt 互证。v7 的 0.0644 偏大 22%，已弃用。
@@ -1518,7 +1522,7 @@ def parse_floor(pdf_path, floor_no):
     # --- 房间多边形（全部墙线密封 + 分水岭归属 + 守卫式泛洪，标签探测）
     room_res = build_rooms(
         all_segs, closures, furn_segs=furn_segs, label_points=labels,
-        dump_path=rf"E:\code\pathai\result\_debug_wallmask_f{floor_no}.png")
+        dump_path=str(RESULT_DIR / f"_debug_wallmask_f{floor_no}.png"))
     labeled_polys = room_res["polys"]
     print(f"[F{floor_no}] 房间多边形(标签探测): {len(labeled_polys)}")
 

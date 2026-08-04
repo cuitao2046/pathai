@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """在 PDF 渲染图上标注门中心/轴线/弧中点"""
 import sys
 import fitz
 import numpy as np
 import cv2
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-pdf = r"E:\code\pathai\A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf"
+pdf = str(Path(__file__).resolve().parent.parent / "A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf")
 cx, cy, half = 1227, 970, 110
-out = r"E:\code\pathai\result\_debug_door_mark.png"
+out = str(Path(__file__).resolve().parent.parent / "result" / "_debug_door_mark.png")
 
 # 门数据（从 debug_door_attr 已知）
 doors = [

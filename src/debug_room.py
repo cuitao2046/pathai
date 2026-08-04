@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """调试：放大查看指定 pt 坐标附近的墙图/连通域/家具线结构"""
 import sys
 import cv2
 import numpy as np
 import fitz
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 
 
@@ -103,6 +104,6 @@ def inspect(pdf_path, cx, cy, half_pt, out_png, tag):
 
 if __name__ == "__main__":
     # F1 男卫生间 @(1644,850) 与 @(1804,2437)；乐器存放室 @(1177,986)
-    inspect(P.PDF_F1, 1644, 850, 130, r"E:\code\pathai\result\_debug_toilet1.png", "男卫1")
-    inspect(P.PDF_F1, 1804, 2437, 130, r"E:\code\pathai\result\_debug_toilet2.png", "男卫2")
-    inspect(P.PDF_F1, 1177, 986, 130, r"E:\code\pathai\result\_debug_yueqi.png", "乐器存放室")
+    inspect(P.PDF_F1, 1644, 850, 130, str(Path(__file__).resolve().parent.parent / "result" / "_debug_toilet1.png"), "男卫1")
+    inspect(P.PDF_F1, 1804, 2437, 130, str(Path(__file__).resolve().parent.parent / "result" / "_debug_toilet2.png"), "男卫2")
+    inspect(P.PDF_F1, 1177, 986, 130, str(Path(__file__).resolve().parent.parent / "result" / "_debug_yueqi.png"), "乐器存放室")

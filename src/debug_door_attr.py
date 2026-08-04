@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """检查指定 pt 坐标附近门的 arc_mid 与各房间多边形的包含关系"""
 import sys
 import math
 import fitz
 from shapely.geometry import Point
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 
 CX, CY, R = 1227, 946, 60.0  # 乐器存放室门附近

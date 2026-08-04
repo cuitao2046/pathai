@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """在 PDF 渲染图上叠加每个 window 图层文字块位置+块号+坐标，定位 DK/MGD/MW 等。"""
 import sys
 import collections
@@ -10,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_cad_pdf import (PDF_F1, get_default_on_layers, extract_layer_items,
                            seg_len)
 
@@ -105,7 +106,7 @@ def main():
                                    ec="lime", lw=0.7))
         ax.text(rx, ry - 2, f"#{i}", color="lime", fontsize=6)
     ax.set_title("window 矢量编号字块位置（F1）", fontsize=12)
-    out = r"E:\code\pathai\result\_debug_glyph_overlay_f1.png"
+    out = str(Path(__file__).resolve().parent.parent / "result" / "_debug_glyph_overlay_f1.png")
     plt.tight_layout()
     plt.savefig(out, dpi=120)
     print("saved", out)

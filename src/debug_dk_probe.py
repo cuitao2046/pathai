@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """探查 PDF：DK 洞口标识 / DOOR_FIRE 线元素 / 公共空间标签的实际存储形式。"""
 import re
 import sys
@@ -7,7 +8,7 @@ import collections
 
 import fitz
 
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parse_cad_pdf import (PDF_F1, PDF_F2, get_default_on_layers,
                            extract_layer_items, extract_room_labels,
                            seg_len, seg_midpoint)

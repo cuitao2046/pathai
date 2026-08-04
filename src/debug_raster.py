@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """调试：导出栅格墙图与封口线，检查房间泄漏点"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fitz
 import cv2
 import numpy as np
@@ -85,7 +86,7 @@ for text, (lx, ly) in labels:
 
 scale = 4000.0 / max(W, H)
 small = cv2.resize(vis, (int(W * scale), int(H * scale)))
-out = rf"E:\code\pathai\result\_debug_raster_f{floor}.png"
+out = str(Path(__file__).resolve().parent.parent / "result" / "_debug_raster_f{floor}.png")
 cv2.imwrite(out, small)
 print("saved", out, "full size", W, H)
 

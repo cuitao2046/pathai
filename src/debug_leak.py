@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+from pathlib import Path
 """可视化泄漏：巨型连通域（室外）染红，定位房间泄漏点"""
 import sys
-sys.path.insert(0, r"E:\code\pathai\src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import parse_cad_pdf as P
 import fitz
 import cv2
@@ -85,6 +86,6 @@ for name, (x0, y0, x1, y1) in clips[floor]:
     scale = 1400.0 / max(crop.shape[:2])
     crop = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)),
                       interpolation=cv2.INTER_NEAREST)
-    out = rf"E:\code\pathai\result\_leak_f{floor}_{name}.png"
+    out = str(Path(__file__).resolve().parent.parent / "result" / "_leak_f{floor}_{name}.png")
     cv2.imwrite(out, crop)
     print("saved", out)

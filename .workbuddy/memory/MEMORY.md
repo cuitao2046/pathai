@@ -20,7 +20,7 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - QA：VALIDATION PASS（无门封闭房间=0；孤儿门 61/17 为走廊/楼梯间/防火分区既有现象，非硬失败）
 
 ## 关键约定（跨会话必须遵守）
-- **运行环境**：`parse_cad_pdf.py` 需带 fitz 的 Python。本机（xinni）实测 `C:/Users/xinni/AppData/Local/Microsoft/WindowsApps/python3.exe` 含 fitz 1.28.0 可用；脚本硬编码 PDF 路径为 `E:\code\pathai\...`，本机实际在 `D:\code\pathai`，运行请用临时 wrapper 传 D: 路径（勿改源码 E: 常量）。`render_interactive.py`/`validate_geojson.py` 用 managed `3.13.12` 即可（纯 JSON，无需 fitz）。
+- **运行环境 / 路径自适应（2026-08-04 改造）**：`parse_cad_pdf.py` / `render_map.py` / `validate_geojson.py` 的 PDF/结果路径已全部改为基于 `__file__` 推导项目根（`PROJECT_ROOT = Path(__file__).resolve().parent.parent`），不再 hardcode `E:\code\pathai`，可直接 `python src/parse_cad_pdf.py` 运行（无需临时 wrapper）。`parse_cad_pdf.py` 仍需带 fitz 的 Python（本机 `C:/Users/xinni/AppData/Local/Microsoft/WindowsApps/python3.exe` 含 1.28.0）；`render_interactive.py` / `validate_geojson.py` 用 managed `3.13.12` 即可（纯 JSON，无需 fitz）。`src/` 下 `debug_*.py` / `diag_*.py` 的 `sys.path` 与输出路径也已改为相对 `__file__`。`*.bak` 为旧备份，未改。
 - **门洞(opening)识别规则（用户 2026-08-04 明确+修正）**：门洞 = window 图层带 **DK 矢量 strokes** 的位置，**仅卫生间/楼梯间有**；其余房间(教室/办公室等)的门是 window 层 **arc based 摆弧门(swing)**，门口的 DK 是门宽/编号标注而非洞口。实现双保险：① `find_wall_openings` 对"距任一摆弧门(swing)中心 < DK_NEAR_ARC_PT(22pt) 的 DK 块"直接跳过（避让普通门标注）；② 归属/临近范围过滤仅保留 staircase/toilet 房间的 opening（stair_box 30pt 兜底，因楼梯间常无 staircase 房间多边形）。
 - **detect_doors 摆弧门去重加了"中心距守卫"(DOOR_CLUSTER_CENTER_PT=14)**：原仅用叶段投影间隙<6pt 判同门，会把同一面墙相邻两房间的门(如 R1021/R1022，中心距≈30pt)误并成一道，导致后一房间缺门。加中心距守卫后相邻门正确分离；同一门多段弧(中心重合)仍正常合并。
 - **DOOR_FIRE 只处理 arc based 门**（用户明确：quads/lines 非门叶片，曾回退删除 fire_door_leaves 补检逻辑，勿再加回）。

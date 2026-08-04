@@ -22,6 +22,7 @@ import json
 import math
 import os
 import sys
+from pathlib import Path
 
 import matplotlib
 
@@ -38,7 +39,8 @@ from shapely.ops import polylabel
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-DEFAULT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
+DEFAULT_GEOJSON = str(
+    Path(__file__).resolve().parent.parent / "result" / "school_building_01_map_v9.geojson")
 
 # 房间类型配色（室内地图常用 pastel 色系）
 ROOM_COLORS = {
