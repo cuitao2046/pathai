@@ -1815,12 +1815,6 @@ def parse_floor(pdf_path, floor_no):
             _kept.append(dr)
         else:
             _dropped.append(dr)
-    for dr in _dropped:
-        cc = dr["center"]
-        nd = min([poly.exterior.distance(Point(cc)) for poly in toilet_polys + stair_polys], default=9999)
-        if 1700 < cc[0] < 1900 and 2400 < cc[1] < 2550:
-            print(f"[DBG WR01] 门洞被范围过滤剔除 center=({cc[0]:.1f},{cc[1]:.1f}) "
-                  f"rooms={dr.get('rooms')} 最近toilet/stair距离={nd:.1f}")
     doors = _kept
     n_open_after = sum(1 for dr in doors if dr.get("kind") == "opening")
     print(f"[F{floor_no}] 门洞范围约束(仅楼梯间/卫生间): "
@@ -1845,6 +1839,57 @@ def parse_floor(pdf_path, floor_no):
             n_reclass += 1
     if n_reclass:
         print(f"[F{floor_no}] 卫生间/楼梯间 DK 摆弧门重分类为门洞: {n_reclass}")
+
+    # --- 卫生间/楼梯间门洞：仅保留通往公共空间的，丢弃内部隔断门洞 ---
+    # 规则（用户 2026-08-05）：卫生间门洞只保留通往公共空间的，内部隔断不要。
+    # 实现：对每扇卫生间/楼梯间门洞分两步判定
+    #   1) 若其所属房间没有任何 swing/fire 入口门 → 该门洞就是房间唯一出入口，必须保留
+    #      （丢弃会封死房间，导航失败）；
+    #   2) 若所属房间已有 swing/fire 入口，则进一步判断该门洞是否真·内部隔断：
+    #      - 门洞中心在房间多边形之外(贴外墙面、朝走廊) → 公共出入口，保留；
+    #      - 门洞中心在房间内(内部隔断)且另一侧 51pt(≈2.7m)内仍是 toilet/staircase
+    #        房间 → 判为内部隔断，丢弃；其余情况保留。
+    _CORE = {"toilet", "staircase"}  # 卫生/楼梯核心：两侧皆核心才算内部隔断
+    room_has_swing = set()
+    for dr in doors:
+        if dr.get("kind") in ("swing", "fire") and dr.get("rooms"):
+            room_has_swing.update(dr["rooms"])
+
+    def _opening_is_internal(dr):
+        rms = dr.get("rooms", [])
+        if not rms:
+            return False  # 无归属房间(楼梯/管井范围兜底门洞) → 不丢弃
+        # 所属房间没有 swing/fire 入口 → 门洞即房间出入口，保留
+        if not any(rid in room_has_swing for rid in rms):
+            return False
+        c = Point(dr["center"])
+        # 门洞中心是否在任一所属房间多边形内（真正的内部隔断才在房间内部）
+        inside = any((r["id"] in rms and r["polygon_pt"].contains(c))
+                     for r in rooms)
+        if not inside:
+            return False  # 贴外墙面(朝走廊) → 公共出入口，保留
+        # 内部隔断候选：找最近的另一侧房间（排除所属房间）
+        cand = []
+        for r in rooms:
+            if r["id"] in rms:
+                continue
+            d = r["polygon_pt"].exterior.distance(c)
+            if d < 51:  # ≈2.7m 内视为相邻
+                cand.append((d, r))
+        cand.sort()
+        if not cand:
+            return False  # 无法确定另一侧 → 保守保留
+        other = cand[0][1]
+        # 两侧皆为卫生/楼梯核心 → 内部隔断
+        return room_type_by_id.get(other["id"]) in _CORE
+
+    n_pub_before = sum(1 for dr in doors if dr.get("kind") == "opening")
+    doors = [dr for dr in doors
+             if dr.get("kind") != "opening" or not _opening_is_internal(dr)]
+    n_pub_after = sum(1 for dr in doors if dr.get("kind") == "opening")
+    if n_pub_before != n_pub_after:
+        print(f"[F{floor_no}] 门洞内部隔断过滤(丢弃卫生/楼梯核心内部门洞): "
+              f"{n_pub_before} -> {n_pub_after}")
 
     # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
     zero_door = [r["label"] for r in rooms
