@@ -538,6 +538,58 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     return doors
 
 
+def fire_door_leaves(quads, lines, all_segs):
+    """
+    补检 DOOR_FIRE 图层中「无摆弧」的防火门叶片：
+    部分防火门仅以细长矩形(quad)或直接线段(line)表示（叶片横跨墙缝、无四分之一圆弧），
+    detect_doors 只处理了 curves，会漏检。这里按几何特征识别横跨墙缝的叶片：
+      - quad：细长矩形（aspect>=4），中心远离墙面（在墙缝中），两端贴墙（门垛）；
+      - line：长度 7~60pt，中心远离墙面、两端贴墙。
+    返回与 detect_doors 同结构的门字典（kind='fire', sourceLayer='DOOR_FIRE'）。
+    """
+    out = []
+
+    def near(p, tol=7.0):
+        return min(point_to_seg_dist(p, s1, s2)[0] for s1, s2 in all_segs) < tol
+
+    def add_leaf(a, b):
+        L = math.hypot(a[0] - b[0], a[1] - b[1])
+        if L < 7 or L > 60:
+            return
+        center = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+        if near(center):               # 叶片应在墙缝中，中心远离墙面
+            return
+        if not (near(a) and near(b)):  # 两端应贴门垛（墙）
+            return
+        out.append({"center": center, "width_pt": L, "axis": (a, b),
+                    "kind": "fire", "arc_mid": center, "merged": 1,
+                    "sourceLayer": "DOOR_FIRE"})
+
+    for q in quads:
+        xs = [p[0] for p in q]; ys = [p[1] for p in q]
+        w = max(xs) - min(xs); h = max(ys) - min(ys)
+        long = max(w, h); short = min(w, h)
+        if short <= 0 or long / short < 4:
+            continue                       # 非细长 -> 视为编号符号块
+        if long < 7 or long > 60:
+            continue
+        center = ((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0)
+        if near(center):
+            continue                       # 符号块贴在墙上，非叶片
+        if w >= h:
+            a = (min(xs), (min(ys) + max(ys)) / 2.0)
+            b = (max(xs), (min(ys) + max(ys)) / 2.0)
+        else:
+            a = ((min(xs) + max(xs)) / 2.0, min(ys))
+            b = ((min(xs) + max(xs)) / 2.0, max(ys))
+        add_leaf(a, b)
+
+    for a, b in lines:
+        add_leaf(a, b)
+
+    return out
+
+
 # ---------------------------------------------------------------- 墙体与房间
 
 def wall_segments(wall_items):
@@ -1184,6 +1236,20 @@ def parse_floor(pdf_path, floor_no):
             "code_pt": wo["code_pt"],
         })
     print(f"[F{floor_no}] 无摆弧门洞: {len(wall_openings)} (含楼梯间/出入口/公共空间)")
+
+    # --- DOOR_FIRE 无摆弧防火门叶片补检（detect_doors 仅取了 curves）---
+    # 部分防火门仅以细长矩形(quad)或线段(line)表示、无摆弧，需补检并并入门列表
+    # 参与后续房间归属与 GeoJSON 输出；与已有门(摆弧/无摆弧/普通) <15pt 视为同一洞去重。
+    fire_leaf = fire_door_leaves(fire["quads"], fire["lines"], all_segs)
+    added_fl = 0
+    for fl in fire_leaf:
+        if any(math.hypot(fl["center"][0] - d["center"][0],
+                          fl["center"][1] - d["center"][1]) < 15.0
+               for d in doors):
+            continue
+        doors.append(fl); added_fl += 1
+    if added_fl:
+        print(f"[F{floor_no}] 补检 DOOR_FIRE 无摆弧防火门叶片: {added_fl} 个")
 
     # --- 封口线（窗 + 摆弧门洞 + 无摆弧开口，带端头盖帽）
     closures = []
