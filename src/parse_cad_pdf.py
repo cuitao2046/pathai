@@ -78,6 +78,10 @@ CONNECTOR_SNAP = 1.5         # 窗端头连接线吸附
 WINDOW_GROUP_GAP = 6.0       # 窗平行线组内垂直间距上限
 DOOR_CLUSTER_PERP = 6.0      # 门洞线段聚类垂直间距
 DOOR_CLUSTER_AXIS_GAP = 6.0  # 门洞线段聚类轴向间隙
+# 摆弧门去重"中心距守卫"：同一门的多段弧中心几乎重合(<此值)才视为同门；
+# 相邻两房间的门中心通常相隔 ≥ 门宽(>20pt)，用此守卫避免被叶段投影间隙误并。
+# 取值与 dedupe_doorways 的 MERGE_PT(13) 同量级，保证 detect_doors 与全局去重一致。
+DOOR_CLUSTER_CENTER_PT = 14.0
 MIN_DOOR_WIDTH_PT = 9.0      # 房间门最小宽度（≈0.48m），更小的为厕位/器具弧
 WALL_SNAP = 0.8              # 墙线端点吸附网格
 GRID_QUANT = 1.0             # 端点量化网格(pt)，消除 CAD 线端点微小间隙
@@ -89,6 +93,9 @@ OPENING_CODE_NEAR_PT = 60.0  # DK 矢量编号块到开口中心的最近距离�
 DEFAULT_OPENING_WIDTH_PT = 30.0  # 无墙缝可量时门洞默认宽度（≈1.0m，落在 [MIN,MAX] 区间内）
 DK_SNAP_WALL_PT = 50.0     # DK 块距最近墙 ≤ 此值则把门洞中心吸附到墙线（准确落在墙体内）
 DK_DEDUP_PT = 18.0         # 与已有窗/门/门洞中心距离小于此值则视为重复，跳过
+# DK 块距任一摆弧门(普通门)中心 < 此值 → 该 DK 是普通门门口的标注(门宽/编号)，
+# 而非洞口；不据此生成门洞。门洞(DK 洞口)只应出现在没有摆弧门的卫生间/楼梯间。
+DK_NEAR_ARC_PT = 22.0
 MIN_ROOM_AREA_M2 = 3.0
 MAX_ROOM_AREA_M2 = 600.0
 ABSORB_CELL_M2 = 2.0       # 小于该面积的自由单元为可填充微单元（厕位格等）
@@ -519,6 +526,12 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
         d, _ = point_to_seg_dist(seg_midpoint(a2, b2), a1, b1)
         if d > DOOR_CLUSTER_PERP:
             return False
+        # 中心距守卫：同一门多段弧中心几乎重合，相邻两房间门中心相隔 ≥ 门宽(>20pt)。
+        # 避免同一面墙上相邻两房间的门(如 R1021/R1022)被叶段投影间隙误并为一道。
+        c1 = seg_midpoint(a1, b1)
+        c2 = seg_midpoint(a2, b2)
+        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) > DOOR_CLUSTER_CENTER_PT:
+            return False
         ang = seg_angle(a1, b1)
         ux, uy = math.cos(ang), math.sin(ang)
         lo1, hi1 = sorted((a1[0] * ux + a1[1] * uy, b1[0] * ux + b1[1] * uy))
@@ -650,7 +663,7 @@ def cluster_window_glyph_codes(window_lines, link=6.0, min_strokes=8,
 
 
 def find_wall_openings(dk_blocks, all_segs, window_groups, doors,
-                       wall_gaps=None):
+                       wall_gaps=None, swing_centers=None):
     """以 window 图层中的 DK 矢量编号块直接生成门洞（洞口）。
 
     规则（用户明确）：门洞就是 window 图层中带 DK 矢量 strokes 文字标注的部分，
@@ -694,6 +707,13 @@ def find_wall_openings(dk_blocks, all_segs, window_groups, doors,
         c = (cx, cy)
         # 与本次已生成门洞去重（多个 DK 块误聚为同位置时）
         if any(math.hypot(c[0] - s[0], c[1] - s[1]) < DK_DEDUP_PT for s in seen):
+            continue
+        # 避让摆弧门：普通房间的门是 window 层摆弧元素，其门口常带 DK 矢量标注
+        # (门宽/编号)，该 DK 是门的标注而非洞口；若 DK 紧邻一扇摆弧门，则属于该
+        # 普通门，不生成门洞。门洞(DK 洞口)只应出现在没有摆弧门的卫生间/楼梯间。
+        if swing_centers is not None and any(
+                math.hypot(c[0] - sc[0], c[1] - sc[1]) < DK_NEAR_ARC_PT
+                for sc in swing_centers):
             continue
 
         # 优先复用邻近墙缝（最准确）
@@ -1415,6 +1435,9 @@ def parse_floor(pdf_path, floor_no):
     doors = detect_doors(win_arcs, fire["lines"], fire_arcs,
                          struct_segs=all_segs)
     print(f"[F{floor_no}] 门洞(去重后): {len(doors)}")
+    # 普通门(摆弧)中心集合：供门洞识别避让。普通房间的门是 window 层摆弧元素，
+    # 其门口的 DK 矢量标注(门宽/编号)紧邻摆弧门；该 DK 是门标注而非洞口，不生成门洞。
+    swing_centers = [dr["center"] for dr in doors if dr.get("kind") == "swing"]
 
     # --- 无摆弧门洞（DK 洞口/出入口推拉门/楼梯间门洞）：规则为 window 图层中带
     #     DK 矢量 strokes 的部分直接生成门洞。门洞常以"类窗元素"画在 window 层，
@@ -1438,7 +1461,9 @@ def parse_floor(pdf_path, floor_no):
             d = math.hypot(cx - wg["center"][0], cy - wg["center"][1])
             if d < best_d:
                 best_d, best_i = d, i
-        if best_i >= 0 and best_d < DK_WIN_CONVERT_PT:
+        if best_i >= 0 and best_d < DK_WIN_CONVERT_PT \
+                and not any(math.hypot(cx - sc[0], cy - sc[1]) < DK_NEAR_ARC_PT
+                            for sc in swing_centers):
             wg = window_groups[best_i]
             win_openings.append({
                 "center": wg["center"],
@@ -1458,7 +1483,8 @@ def parse_floor(pdf_path, floor_no):
     remaining_dk = [c for c in dk_blocks
                     if (round(c[0], 1), round(c[1], 1)) not in dk_consumed]
     wall_openings = find_wall_openings(remaining_dk, all_segs, window_groups,
-                                       doors, wall_gaps=opening_gaps)
+                                       doors, wall_gaps=opening_gaps,
+                                       swing_centers=swing_centers)
     # 转换为 detect_doors 输出格式（center/axis/width_pt/arc_mid=中心、
     # kind=opening），并入统一门列表参与归属链
     for wo in win_openings + wall_openings:
@@ -1668,6 +1694,48 @@ def parse_floor(pdf_path, floor_no):
             if r["id"] not in best["rooms"]:
                 best["rooms"].append(r["id"])
                 door_count[r["id"]] += 1
+
+    # --- 门洞(opening)范围约束：仅保留"楼梯间 / 卫生间"的门洞 ---
+    # 用户规则：门洞 = window 图层中带 DK 矢量 strokes 的部分；且只识别
+    # 楼梯间与卫生间的门洞。其余房间的可通行门应由 swing/fire 摆弧门提供，
+    # 不应由 DK 洞口充当。
+    # 判定（满足任一即保留）：
+    #   1) 归属链已将其挂到 staircase/toilet 房间；或
+    #   2) 门洞几何中心落在某"卫生间房间多边形"或"楼梯间 stair_box"的
+    #      临近范围(OPENING_SCOPE_PT=30pt≈1.6m)内。
+    # 采用临近判定是因为楼梯间在本图仅以 stair_box(facility) 形式存在、缺少
+    # staircase 房间多边形，纯靠归属会把楼梯间门洞误判给走廊而被剔除。
+    room_type_by_id = {r["id"]: r["roomType"] for r in rooms}
+    toilet_polys = [r["polygon_pt"] for r in rooms if r["roomType"] == "toilet"]
+    stair_pts = []
+    for _ln in ("STAIR", "A-FLOR-STRS"):
+        _si = items.get(_ln, {"lines": [], "quads": []})
+        for _seg in _si["lines"]:
+            stair_pts.append(_seg)
+        for _q in _si["quads"]:
+            stair_pts.append((_q[0], _q[2]))
+    stair_boxes = bbox_clusters(stair_pts, gap_pt=4 * PT_PER_M) if stair_pts else []
+    stair_boxes = [b for b in stair_boxes
+                   if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+    stair_polys = [box(b[0], b[1], b[2], b[3]) for b in stair_boxes]
+    OPENING_SCOPE_PT = 30.0
+
+    def _opening_in_scope(dr):
+        if any(room_type_by_id.get(rid) in ("staircase", "toilet")
+               for rid in dr.get("rooms", [])):
+            return True
+        c = Point(dr["center"])
+        for poly in toilet_polys + stair_polys:
+            if poly.exterior.distance(c) < OPENING_SCOPE_PT:
+                return True
+        return False
+
+    n_open_before = sum(1 for dr in doors if dr.get("kind") == "opening")
+    doors = [dr for dr in doors
+             if dr.get("kind") != "opening" or _opening_in_scope(dr)]
+    n_open_after = sum(1 for dr in doors if dr.get("kind") == "opening")
+    print(f"[F{floor_no}] 门洞范围约束(仅楼梯间/卫生间): "
+          f"{n_open_before} -> {n_open_after}")
 
     # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
     zero_door = [r["label"] for r in rooms
