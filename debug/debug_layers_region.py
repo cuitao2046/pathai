@@ -2,7 +2,7 @@
 from pathlib import Path
 """检查男卫生间区域内各图层的线段分布（定位厕位隔断所在图层）"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 

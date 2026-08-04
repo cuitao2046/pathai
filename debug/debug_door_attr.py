@@ -6,7 +6,7 @@ import math
 import fitz
 from shapely.geometry import Point
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 
 CX, CY, R = 1227, 946, 60.0  # 乐器存放室门附近

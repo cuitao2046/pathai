@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from parse_cad_pdf import (PDF_F1, get_default_on_layers, extract_layer_items,
                            seg_len)
 

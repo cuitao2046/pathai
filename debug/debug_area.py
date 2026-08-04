@@ -2,7 +2,7 @@
 from pathlib import Path
 """校验：检测房间面积 vs 图纸标注面积；无门房间的门距离分析"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 from shapely.geometry import Point
 

@@ -2,7 +2,7 @@
 from pathlib import Path
 """调试可视化：检查墙线/房间多边形/标签/门洞的空间关系"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

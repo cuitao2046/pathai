@@ -6,7 +6,7 @@ import fitz
 import numpy as np
 import cv2
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 pdf = str(Path(__file__).resolve().parent.parent / "A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf")
 cx, cy, half = 1227, 970, 110

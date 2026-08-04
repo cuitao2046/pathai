@@ -2,7 +2,7 @@
 from pathlib import Path
 """追踪：两坐标点之间是否为红色（连通）；找底部墙上的缺口位置"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 import cv2

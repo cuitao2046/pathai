@@ -2,7 +2,7 @@
 from pathlib import Path
 """调试：导出栅格墙图与封口线，检查房间泄漏点"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import fitz
 import cv2
 import numpy as np

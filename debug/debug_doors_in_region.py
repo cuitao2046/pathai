@@ -2,7 +2,7 @@
 from pathlib import Path
 """列出区域内已检测门洞 + 未通过 near_wall 的弧线"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 

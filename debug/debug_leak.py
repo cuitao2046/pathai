@@ -2,7 +2,7 @@
 from pathlib import Path
 """可视化泄漏：巨型连通域（室外）染红，定位房间泄漏点"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 import cv2

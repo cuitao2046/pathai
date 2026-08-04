@@ -2,7 +2,7 @@
 from pathlib import Path
 """检查指定区域内各图层的线条分布 + 已检测门的位置"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 import math

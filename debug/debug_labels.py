@@ -2,7 +2,7 @@
 from pathlib import Path
 """诊断：每个房间标签点命中的连通域状态（BORDER=泄漏 / SIZE=面积超限 / ok）"""
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import parse_cad_pdf as P
 import fitz
 import cv2

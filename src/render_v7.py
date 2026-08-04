@@ -6,7 +6,7 @@ import json
 import math
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 GEO_IN = str(BASE_DIR / "school_building_01_map_v7.geojson")
 HTML_OUT = str(BASE_DIR / "floor_layout_v7.html")
 

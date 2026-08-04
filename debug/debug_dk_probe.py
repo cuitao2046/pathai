@@ -8,7 +8,7 @@ import collections
 
 import fitz
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from parse_cad_pdf import (PDF_F1, PDF_F2, get_default_on_layers,
                            extract_layer_items, extract_room_labels,
                            seg_len, seg_midpoint)
