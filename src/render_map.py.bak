@@ -2,14 +2,14 @@
 """GeoJSON 楼层地图渲染脚本。
 
 读取 parse_cad_pdf.py 生成的楼层 GeoJSON（结构参考
-school_building_01_map_v9.geojson：geometry / semantic / topology 三段式），
-为每个楼层渲染平面图 PNG，并支持叠加导航拓扑（节点/边）的调试图。
+school_building_01_map_v7.geojson：geometry / semantic / topology 三段式），
+为每个楼层渲染平面图 PNG。
 
 用法:
     python render_map.py [geojson_path] [--topology]
 
 参数:
-    geojson_path   输入 GeoJSON，默认 result/school_building_01_map_v9.geojson
+    geojson_path   输入 GeoJSON，默认 result/school_building_01_map_v8.geojson
     --topology     额外输出叠加导航拓扑（节点/边）的调试图
 
 输出（与 GeoJSON 同目录，通常为 result/）:
@@ -38,7 +38,7 @@ from shapely.ops import polylabel
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
-DEFAULT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
+DEFAULT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v8.geojson"
 
 # 房间类型配色（室内地图常用 pastel 色系）
 ROOM_COLORS = {
@@ -65,32 +65,11 @@ WALL_COLOR = "#222222"      # 墙体 近黑
 WINDOW_COLOR = "#2E8B8B"    # 窗 青
 DOOR_SWING_COLOR = "#1F6FB2"  # 平开门 蓝
 DOOR_FIRE_COLOR = "#C0392B"   # 防火门 红
-DOOR_OPENING_COLOR = "#1E8449"  # 通道门洞(DK 洞口/出入口/公共空间) 绿
 COLUMN_COLOR = "#555555"    # 柱 深灰
 STAIR_EDGE = "#777777"
 
-# 拓扑节点：类型 -> 颜色 / 标记 / 尺寸
-NODE_COLORS = {
-    "room": "#E67E22",                 # 房间
-    "doorway": "#C0392B",             # 门口
-    "intersection": "#27AE60",        # 走廊交叉口
-    "facility_entrance": "#2980B9",   # 建筑/无障碍出入口
-}
-# facility 由 facilityType 决定颜色（楼梯紫 / 电梯青）
-NODE_MARKERS = {
-    "room": "o",
-    "doorway": "o",
-    "intersection": "s",
-    "facility": "P",
-    "facility_entrance": "^",
-}
-NODE_SIZES = {
-    "room": 4.5,
-    "doorway": 3.2,
-    "intersection": 5.0,
-    "facility": 6.0,
-    "facility_entrance": 6.5,
-}
+NODE_COLORS = {"room": "#E67E22", "door": "#C0392B", "staircase": "#8E44AD",
+               "elevator": "#16A085"}
 
 
 # ---------------------------------------------------------------- 工具
@@ -220,10 +199,7 @@ def draw_doors(ax, doors):
     """门：先画白色圆盘"切开"墙线形成门洞，再画类型标记。
 
     GeoJSON 中门为 Point + width_m（与 v7 一致，无朝向信息），
-    三种门洞区分：
-      - swing   平开门：蓝色圆环
-      - fire    防火门：红色方块
-      - opening 通道门洞（DK 洞口/建筑出入口/公共空间，无摆弧）：绿色空心菱形
+    平开门用蓝色圆环、防火门用红色方块区分。
     """
     for dr in doors:
         x, y = dr["geometry"]["coordinates"]
@@ -232,18 +208,11 @@ def draw_doors(ax, doors):
         # 门洞开口（遮罩墙线）
         ax.add_patch(Circle((x, y), w * 0.55, facecolor="white",
                             edgecolor="none", zorder=6))
-        kind = p.get("doorType", "swing")
-        if kind == "fire":
+        if p.get("doorType") == "fire":
             s = w * 0.42
             ax.add_patch(Rectangle((x - s / 2, y - s / 2), s, s,
                                    facecolor="white", edgecolor=DOOR_FIRE_COLOR,
                                    lw=1.4, zorder=7))
-        elif kind == "opening":
-            s = w * 0.42
-            diamond = [(x, y + s), (x + s, y), (x, y - s), (x - s, y)]
-            ax.add_patch(MplPolygon(diamond, closed=True, facecolor="white",
-                                    edgecolor=DOOR_OPENING_COLOR, lw=1.4,
-                                    zorder=7))
         else:
             ax.add_patch(Circle((x, y), w * 0.30, facecolor="white",
                                 edgecolor=DOOR_SWING_COLOR, lw=1.3, zorder=7))
@@ -299,51 +268,18 @@ def draw_stairs_elevators(ax, stairs, elevators):
                               ec="none", alpha=0.75))
 
 
-def draw_topology(ax, topology, cross_floor_edges=None):
-    """导航拓扑叠加。
-
-    边为绿色细线（按 from/to 节点 ID 查坐标，含同层所有边）。
-    跨层边（root.crossFloorEdges）的端点仅其一在本层，用橙色/蓝色双环标记
-    竖向可达接入点（楼梯橙 / 电梯蓝）。
-    节点按类型着色：房间橙、门口红、走廊交叉口绿、设施紫(楼梯)/青(电梯)、
-    出入口蓝。
-    """
-    nodes = {n["id"]: n for n in topology.get("nodes", [])}
-
-    # ---- 同层边 ----
+def draw_topology(ax, topology):
+    """导航拓扑叠加：边为绿色细线，节点按类型着色"""
     for e in topology.get("edges", []):
-        a = nodes.get(e.get("from"))
-        b = nodes.get(e.get("to"))
-        if not a or not b:
-            continue
-        ax.plot([a["coordinates"][0], b["coordinates"][0]],
-                [a["coordinates"][1], b["coordinates"][1]],
-                color="#27AE60", lw=0.7, alpha=0.6, zorder=9)
-
-    # ---- 跨层边（仅绘制本层端点，标记竖向接入） ----
-    for e in (cross_floor_edges or []):
-        a = nodes.get(e.get("from"))
-        b = nodes.get(e.get("to"))
-        present = a or b
-        if not present:
-            continue
-        x, y = present["coordinates"]
-        color = "#E67E22" if e.get("type") == "staircase" else "#2980B9"
-        ax.add_patch(Circle((x, y), 1.7, facecolor="none", edgecolor=color,
-                            lw=1.7, zorder=11))
-        ax.add_patch(Circle((x, y), 0.9, facecolor="none", edgecolor=color,
-                            lw=1.2, zorder=11))
-
-    # ---- 节点 ----
+        geo = e.get("geometry")
+        if geo and geo.get("type") == "LineString":
+            cs = geo["coordinates"]
+            ax.plot([p[0] for p in cs], [p[1] for p in cs],
+                    color="#27AE60", lw=0.7, alpha=0.6, zorder=9)
     for n in topology.get("nodes", []):
         x, y = n["coordinates"]
-        if n.get("type") == "facility":
-            color = "#8E44AD" if n.get("facilityType") == "staircase" else "#16A085"
-        else:
-            color = NODE_COLORS.get(n.get("type"), "#7F8C8D")
-        marker = NODE_MARKERS.get(n.get("type"), "o")
-        ms = NODE_SIZES.get(n.get("type"), 4.0)
-        ax.plot(x, y, marker, ms=ms, color=color, zorder=10,
+        color = NODE_COLORS.get(n.get("type"), "#7F8C8D")
+        ax.plot(x, y, "o", ms=3.5, color=color, zorder=10,
                 markeredgecolor="white", markeredgewidth=0.4)
 
 
@@ -385,9 +321,6 @@ def draw_decorations(ax, bounds, title, legend_x):
         Line2D([0], [0], marker="s", color="none", markerfacecolor="white",
                markeredgecolor=DOOR_FIRE_COLOR, markeredgewidth=1.4,
                markersize=8, label="防火门"),
-        Line2D([0], [0], marker="D", color="none", markerfacecolor="white",
-               markeredgecolor=DOOR_OPENING_COLOR, markeredgewidth=1.4,
-               markersize=8, label="通道门洞(DK)"),
         Patch(facecolor=ROOM_COLORS["classroom"], edgecolor="#999999",
               label="教室"),
         Patch(facecolor=ROOM_COLORS["office"], edgecolor="#999999",
@@ -404,8 +337,7 @@ def draw_decorations(ax, bounds, title, legend_x):
 
 # ---------------------------------------------------------------- 主流程
 
-def render_floor(floor_id, floor, venue_name, out_dir, with_topology,
-                 cross_floor_edges=None):
+def render_floor(floor_id, floor, venue_name, out_dir, with_topology):
     g = floor["geometry"]
     bounds = _collect_bounds(floor)
     minx, maxx, miny, maxy = bounds
@@ -452,36 +384,9 @@ def render_floor(floor_id, floor, venue_name, out_dir, with_topology,
         draw_rooms(ax2, g.get("rooms", []), dupp=dupp)
         draw_walls(ax2, g.get("walls", []))
         draw_doors(ax2, g.get("doors", []))
-        draw_topology(ax2, floor.get("topology", {}),
-                      cross_floor_edges=cross_floor_edges)
+        draw_topology(ax2, floor.get("topology", {}))
         ax2.set_title(f"{venue_name} · {floor_id}F 导航拓扑", fontsize=15,
                       pad=12)
-        # 拓扑图例（右上角预留带）
-        topo_handles = [
-            Line2D([0], [0], color="#27AE60", lw=1.2, label="导航边"),
-            Line2D([0], [0], marker="o", color="none", markerfacecolor="#E67E22",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=7,
-                   label="房间节点"),
-            Line2D([0], [0], marker="o", color="none", markerfacecolor="#C0392B",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=6,
-                   label="门口节点"),
-            Line2D([0], [0], marker="s", color="none", markerfacecolor="#27AE60",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=7,
-                   label="走廊交叉口"),
-            Line2D([0], [0], marker="P", color="none", markerfacecolor="#8E44AD",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=8,
-                   label="楼梯接入"),
-            Line2D([0], [0], marker="P", color="none", markerfacecolor="#16A085",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=8,
-                   label="电梯接入"),
-            Line2D([0], [0], marker="^", color="none", markerfacecolor="#2980B9",
-                   markeredgecolor="white", markeredgewidth=0.4, markersize=8,
-                   label="出入口"),
-        ]
-        ax2.legend(handles=topo_handles, loc="upper right",
-                   bbox_to_anchor=(1.0, 1.0), bbox_transform=ax2.transAxes,
-                   fontsize=7, framealpha=0.92, edgecolor="#CCCCCC",
-                   borderpad=0.6, labelspacing=0.4)
         out2 = os.path.join(out_dir, f"map_render_f{floor_id}_topology.png")
         fig2.savefig(out2, dpi=150, bbox_inches="tight", facecolor="white")
         print(f"[F{floor_id}] 拓扑图 -> {out2}")
@@ -497,13 +402,11 @@ def main():
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     venue = data.get("venueName", "楼层地图")
-    cross_floor_edges = data.get("crossFloorEdges", [])
 
     floors = data["floors"]
     items = floors.items() if isinstance(floors, dict) else enumerate(floors, 1)
     for fid, floor in sorted(items, key=lambda kv: int(kv[0])):
-        render_floor(str(fid), floor, venue, out_dir, with_topology,
-                     cross_floor_edges=cross_floor_edges)
+        render_floor(str(fid), floor, venue, out_dir, with_topology)
     print("done.")
 
 

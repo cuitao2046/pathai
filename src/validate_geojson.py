@@ -16,11 +16,12 @@ import json
 import math
 import sys
 
-DEFAULT = r"E:\code\pathai\result\school_building_01_map_v8.geojson"
+DEFAULT = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
 
 # 非"封闭房间"的类型：不参与零门检查
+# 公共空间（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭）也是非"封闭"空间
 NON_ENCLOSED = ("staircase", "elevator_hall", "shaft", "atrium",
-                "corridor", "lobby")
+                "corridor", "lobby", "entrance", "accessible_entrance")
 
 GEOM_KEYS = ["walls", "rooms", "doors", "stairs", "elevators",
              "columns", "windowSegments"]
@@ -104,6 +105,44 @@ def main():
                 if e["from"] not in nids or e["to"] not in nids]
         print("  拓扑边悬空引用:", ebad or "无")
         ok &= not ebad
+
+        # 拓扑节点类型分布（指南 5.1：room/intersection/doorway/facility）
+        import collections
+        nt = collections.Counter(n["type"] for n in f["topology"]["nodes"])
+        print("  拓扑节点类型分布:", dict(nt))
+        # 边属性完整性（指南 5.2）
+        bad_attr = []
+        for e in f["topology"]["edges"]:
+            for k in ("distance", "estimatedTime", "accessibilityLevel",
+                      "riskLevel", "walkable", "wheelchairAccessible",
+                      "blindAccessible"):
+                if k not in e:
+                    bad_attr.append(f"{e['id']} missing {k}")
+        print("  边属性缺失:", bad_attr[:5] or "无")
+        ok &= not bad_attr
+        # 走廊交叉口和设施接入应有边（连通性）
+        orphan_nodes = []
+        node_with_edge = {e["from"] for e in f["topology"]["edges"]} | \
+                         {e["to"] for e in f["topology"]["edges"]}
+        for n in f["topology"]["nodes"]:
+            if n["type"] in ("intersection", "facility", "facility_entrance",
+                             "doorway"):
+                if n["id"] not in node_with_edge:
+                    orphan_nodes.append(n["id"])
+        print(f"  拓扑孤岛节点: {len(orphan_nodes)} 个 "
+              f"{orphan_nodes[:5] if orphan_nodes else ''}")
+        ok &= not orphan_nodes
+
+    # 跨层边：id/from/to 引用必须存在
+    cf = d.get("crossFloorEdges", [])
+    nids1 = {n["id"] for n in d["floors"]["1"]["topology"]["nodes"]}
+    nids2 = {n["id"] for n in d["floors"]["2"]["topology"]["nodes"]}
+    cf_bad = []
+    for e in cf:
+        if e["from"] not in nids1 or e["to"] not in nids2:
+            cf_bad.append(e["id"])
+    print("跨层边悬空引用:", cf_bad or "无")
+    ok &= not cf_bad
 
     print("crossFloorEdges:", len(d.get("crossFloorEdges", [])))
     print()

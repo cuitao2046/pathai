@@ -27,14 +27,11 @@ from shapely.ops import unary_union, polygonize
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely import snap as shp_snap
 
-# 拓扑建模（指南 第五章）
-from topology import build_floor_topology, build_cross_floor_edges
-
 # ---------------------------------------------------------------- 配置
 
 PDF_F1 = r"E:\code\pathai\A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf"
 PDF_F2 = r"E:\code\pathai\A20-003-II-初中学部 1# 教学楼二层平面图-A0_BIAD-无签名.pdf"
-OUT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v9.geojson"
+OUT_GEOJSON = r"E:\code\pathai\result\school_building_01_map_v8.geojson"
 
 # 比例尺校准：轴网 8400mm = 158.8pt（AXIS 层间距众数），
 # 与窗编号 M2GW5924(5900mm)=111.5pt 互证。v7 的 0.0644 偏大 22%，已弃用。
@@ -77,42 +74,24 @@ MIN_DOOR_WIDTH_PT = 9.0      # 房间门最小宽度（≈0.48m），更小的�
 WALL_SNAP = 0.8              # 墙线端点吸附网格
 GRID_QUANT = 1.0             # 端点量化网格(pt)，消除 CAD 线端点微小间隙
 WALL_BODY_SHORT_SIDE_PT = 7.0   # 墙体单元格短边阈值(≈0.45m)，小于此且细长视为墙身段
-MIN_OPENING_WIDTH_PT = 12.0  # 墙缝开口最小宽度（≈0.64m），下限过滤虚线墙残缝
-MAX_OPENING_WIDTH_PT = 80.0  # 墙缝开口最大宽度（≈4.2m），上限过滤跨房大洞
-OPENING_FLANK_MIN_PT = 18.0  # 开口两侧墙段最小长度（短于该值视为虚线残段）
-OPENING_CODE_NEAR_PT = 30.0  # window 矢量编号块到开口中心的最近距离（确认信号）
 MIN_ROOM_AREA_M2 = 3.0
 MAX_ROOM_AREA_M2 = 600.0
 ABSORB_CELL_M2 = 2.0       # 小于该面积的自由单元为可填充微单元（厕位格等）
 MERGE_REGION_M2 = 9.0      # 小于该面积的未标注单元可经守卫式泛洪并入邻房
 WALL_EXT_PT = 6.0          # 墙线端点外延（桥接 T 型接头/窗洞收口缝隙）
-LABEL_MIN_SIZE = 9.5         # 房间名称最小字号(pt)（门厅无障碍出入口/人防主出入口约 10~11pt）
+LABEL_MIN_SIZE = 11.5        # 房间名称最小字号(pt)
 TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
 
-# --- 楼梯/电梯井编号（图纸权威标识，如 II-B2-01#ST / II-02#EL）---
-# 同一井道在各层沿用同一编号，是比"几何中心距离"可靠得多的跨层配对依据；
-# 且可补齐某层踏步线缺失导致的漏检（F1 的 B3-01 仅剩 ~4m² 碎片、B1-03 无踏步线）。
-FACILITY_CODE_RE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)*#(ST|EL)$")
-FACILITY_CODE_NEAR_M = 2.0   # 编号文字到设施 bbox 的最大容差(米)
-STAIR_MAX_ASPECT = 3.0       # 无编号且长宽比超此值 → 判为伪楼梯并剔除
-
 # 非封闭空间的室外/开敞标签：不参与房间探测（避免抢占附近区域）
-# 教学楼中"无障碍出入口/门厅无障碍出入口/人防主出入口"等均为公共空间节点，
-# 应被识别为房间（或作为 topology facility_entrance 节点），故不列入黑名单。
 LABEL_SKIP_RE = re.compile(
-    r"(非机动车车库入口|非机动车车库出入口|消防车道|车道|雨棚|屋面|上空|庭园|台阶|坡道|散水|屋顶平台|泄爆井|不上人屋面)")
+    r"(车道|车库入口|出入口|雨棚|屋面|上空|庭园|台阶|坡道|散水|屋顶平台)")
 
 ROOM_TYPE_RULES = [
     ("卫生间", "toilet"), ("洗手间", "toilet"),
     ("楼梯", "staircase"), ("电梯", "elevator_hall"),
-    ("走道", "corridor"), ("走廊", "corridor"),
-    ("门厅", "lobby"), ("大厅", "lobby"),
-    ("门厅无障碍出入口", "accessible_entrance"),
-    ("无障碍出入口", "accessible_entrance"),
-    ("人防主出入口", "entrance"), ("出入口", "entrance"),
+    ("走道", "corridor"), ("走廊", "corridor"), ("门厅", "lobby"), ("大厅", "lobby"),
     ("教室", "classroom"), ("合班", "classroom"), ("书法", "classroom"), ("美术", "classroom"),
-    ("音乐", "classroom"), ("实验室", "lab"),
-    (" resource", "classroom"), (" resource教室", "classroom"),
+    ("音乐", "classroom"), ("实验室", "lab"), (" resource", "classroom"),
     ("办公", "office"), ("会议", "meeting"), ("接待", "meeting"),
     ("设备", "equipment"), ("机房", "equipment"), ("配电", "equipment"),
     ("水井", "shaft"), ("风井", "shaft"), ("排风井", "shaft"), ("管井", "shaft"), ("井", "shaft"),
@@ -124,28 +103,6 @@ ROOM_TYPE_RULES = [
     ("传达", "reception"), ("前台", "reception"),
     ("庭园", "atrium"), ("上空", "atrium"),
 ]
-
-# 公共空间（指南 4.2：卫生间/楼梯间/电梯间/走廊为公共，大厅/出入口/无障碍出入口也属于公共）
-ROOM_PUBLIC_TYPES = {
-    "toilet", "staircase", "elevator_hall", "corridor", "lobby",
-    "entrance", "accessible_entrance", "atrium",
-}
-
-# 无障碍可达性（指南 4.2：楼梯对视障禁用；电梯/出入口/走廊/大厅均无障碍）
-ACCESSIBLE_TYPES = {
-    "classroom", "lab", "office", "meeting", "equipment", "storage",
-    "library", "medical", "counseling", "activity", "reception",
-    "corridor", "lobby", "entrance", "accessible_entrance",
-    "elevator_hall", "atrium", "toilet",
-}
-NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
-
-# 拓扑建模时是否需要从走廊接入（指南 4.2：是否有独立出入口）
-# 走廊/门厅/大厅/出入口/楼梯/电梯厅均视为公共接入点，其他房间通过门接入走廊
-INDEPENDENT_ENTRANCE_TYPES = {
-    "corridor", "lobby", "entrance", "accessible_entrance",
-    "staircase", "elevator_hall", "atrium",
-}
 
 
 # ---------------------------------------------------------------- 工具
@@ -260,31 +217,6 @@ def extract_layer_items(page, layer_names):
     return out
 
 
-def extract_facility_codes(page):
-    """
-    提取楼梯井/电梯井编号（II-B2-01#ST、II-02#EL），返回 [(code, (cx, cy)_pt, kind)]。
-
-    这些编号是图纸的权威标识：同一井道在各楼层沿用同一编号，
-    因此可直接作为跨层配对键，避免"按中心距离猜"带来的漏配/错配；
-    编号字号较小（#EL 约 8.4pt），不能复用 extract_room_labels 的字号门槛。
-    """
-    out = []
-    d = page.get_text("dict")
-    for block in d["blocks"]:
-        if block.get("type") != 0:
-            continue
-        for line in block.get("lines", []):
-            txt = "".join(s["text"] for s in line["spans"]).strip()
-            m = FACILITY_CODE_RE.match(txt)
-            if not m:
-                continue
-            x0, y0, x1, y1 = line["bbox"]
-            if x1 > TITLE_BLOCK_X:
-                continue
-            out.append((txt, ((x0 + x1) / 2, (y0 + y1) / 2), m.group(1)))
-    return out
-
-
 def extract_room_labels(page):
     """
     提取房间名称文本（大字号、排除图签区），合并多行标签（如 学生/社团/活动区）。
@@ -310,17 +242,6 @@ def extract_room_labels(page):
 
     # 过滤明显非房间名的内容
     def is_room_label(t):
-        # 图签区文字（小字号常含管理/版本/日期关键词）—— 不视为房间标签
-        if any(k in t for k in ("归档记录", "出图日期", "图号", "版本号",
-                                 "图名", "会  签", "会 签", "会签",
-                                 "验证签字", "教育建筑", "产业发展研究院",
-                                 "初中学部", "教学楼", "项目名称", "工程名称",
-                                 "出图", "设计", "校对", "审核", "审定",
-                                 "BIAD", "A20-", "平面图", "学校",
-                                 "建设单位", "设计单位", "图纸",
-                                 "2m范围内", "门窗洞口", "范围内", "年   月   日",
-                                 "年 月 日", "年 月")):
-            return False
         if re.search(r"[0-9a-zA-Z]{3,}", t):      # 编号/英文
             return False
         if re.fullmatch(r"[0-9.\s%㎡()（）*≥<=-]+", t):
@@ -570,122 +491,8 @@ def opening_closures(axis, cap_len=10.0):
     return segs
 
 
-def cluster_window_glyph_codes(window_lines, link=6.0, min_strokes=8):
-    """
-    把 window 图层短笔画聚成"矢量文字块"用于确认开口类型。
-    返回 [(cx, cy, w, h, n_strokes), ...]  (PDF pt)
-    """
-    TINY = 8.0
-    shorts = [(a, b) for a, b in window_lines if seg_len(a, b) < TINY]
-    if not shorts:
-        return []
-    n = len(shorts)
-    parent = list(range(n))
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a, b):
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-    bbs = []
-    for a, b in shorts:
-        bbs.append((min(a[0], b[0]), min(a[1], b[1]),
-                    max(a[0], b[0]), max(a[1], b[1])))
-    CELL = max(link * 2, 8.0)
-    grid = collections.defaultdict(list)
-    for i, b in enumerate(bbs):
-        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
-        grid[(int(cx // CELL), int(cy // CELL))].append(i)
-    for (gx, gy), idxs in grid.items():
-        neigh = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                neigh.extend(grid.get((gx + dx, gy + dy), []))
-        for i in idxs:
-            for j in neigh:
-                if j <= i:
-                    continue
-                b1, b2 = bbs[i], bbs[j]
-                d = max(0.0, max(b1[0], b2[0]) - min(b1[2], b2[2]))
-                d2 = max(0.0, max(b1[1], b2[1]) - min(b1[3], b2[3]))
-                if math.hypot(d, d2) < link:
-                    union(i, j)
-    groups = collections.defaultdict(list)
-    for i in range(n):
-        groups[find(i)].append(i)
-    out = []
-    for g in groups.values():
-        if len(g) < min_strokes:
-            continue
-        x0 = min(bbs[i][0] for i in g)
-        y0 = min(bbs[i][1] for i in g)
-        x1 = max(bbs[i][2] for i in g)
-        y1 = max(bbs[i][3] for i in g)
-        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        out.append((cx, cy, x1 - x0, y1 - y0, len(g)))
-    return out
-
-
-def find_wall_openings(wall_gaps, window_groups, doors, glyph_codes):
-    """
-    无摆弧开口检测：merge_collinear 桥接的墙缝中排除"已被门弧或窗覆盖"的候选，
-    剩下的再要求两侧均有长墙段且开口尺寸在 [MIN, MAX]pt 之间、
-    开口中心 OPENING_CODE_NEAR_PT 内有 window 矢量编号块（DK/MGD/MW/MF(B)D/BYC …）
-    即可信信号 → 标记为无摆弧门洞（kind="opening"）。
-
-    返回 wall_openings: [{'center','axis','width_pt','kind','code'}]
-      - code 字段：最近矢量编号块对应的（推测）前缀；缺省为 "?"。
-        因不引入 OCR，前缀仅用于统计分组，不参与几何判定。
-    """
-    used_centers = []  # 已被门弧/窗覆盖的开口中心
-    for wg in window_groups:
-        used_centers.append(seg_midpoint(*wg["axis"]))
-    for dr in doors:
-        used_centers.append(seg_midpoint(*dr["axis"]))
-
-    def near_used(p, tol=6.0):
-        for c in used_centers:
-            if math.hypot(p[0] - c[0], p[1] - c[1]) < tol:
-                return True
-        return False
-
-    out = []
-    for g in wall_gaps:
-        if g["left_len"] < OPENING_FLANK_MIN_PT or g["right_len"] < OPENING_FLANK_MIN_PT:
-            continue  # 虚线残缝：两侧短
-        gap = g["gap"]
-        if gap < MIN_OPENING_WIDTH_PT or gap > MAX_OPENING_WIDTH_PT:
-            continue
-        if near_used(g["center"]):
-            continue
-        # 找最近的矢量编号块（确认信号）
-        best_code, best_d = None, OPENING_CODE_NEAR_PT
-        for cx, cy, w, h, _ in glyph_codes:
-            d = math.hypot(cx - g["center"][0], cy - g["center"][1])
-            if d < best_d:
-                best_d = d
-                best_code = (cx, cy)
-        if best_code is None:
-            continue
-        # 开口轴 = 沿墙向的连线（用于绘图与去重）
-        out.append({
-            "center": g["center"],
-            "axis": (g["left"], g["right"]),
-            "width_pt": gap,
-            "kind": "opening",
-            "code_pt": best_code,
-            "code_dist_pt": best_d,
-        })
-    return out
-
-
 def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
-                    micro_gap=6.0, short_seg=30.0, record_gaps=False):
+                    micro_gap=6.0, short_seg=30.0):
     """
     合并共线虚线/断线线段（支持任意角度）：
     CAD 导出时常把点划线/虚线墙体打成一串带间隙的短划，直接栅格化会断线。
@@ -694,9 +501,6 @@ def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
     门洞位置由门/窗封口线单独封闭，不受影响。
     （曾尝试按"双短线段不桥接"保留厕位门洞，但虚线墙同样是短划+大间隙，
        会大面积断墙，已回滚。）
-
-    record_gaps=True 时同步返回桥接的"墙缝"(band_center, angle_rad, left_pt, right_pt, gap)，
-    用于无摆弧开口（DK 洞口）几何检测；左右端点为原始分段端点（端点外侧），不是合并后端点。
     """
     buckets = collections.defaultdict(list)
     for a, b in segs:
@@ -705,7 +509,6 @@ def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
         buckets[key].append((a, b))
 
     out = []
-    gaps = [] if record_gaps else None
     for key, group in buckets.items():
         ang = math.radians(key)
         ux, uy = math.cos(ang), math.sin(ang)
@@ -722,38 +525,19 @@ def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
             if bk is None:
                 bk = pos
                 band_map[bk] = []
-            band_map[bk].append((lo, hi, a, b))
+            band_map[bk].append((lo, hi))
         for pos, ivs in band_map.items():
-            ivs.sort(key=lambda t: t[0])
-            cur_lo, cur_hi, cur_a, cur_b = ivs[0]
-            for lo, hi, a, b in ivs[1:]:
-                gap = lo - cur_hi
-                if gap <= gap_tol:
-                    if record_gaps and 0 < gap <= gap_tol:
-                        # 记录被桥接的墙缝：左右端点 = 两侧分段的外侧端点
-                        L_pt = (cur_lo * ux + pos * nx, cur_lo * uy + pos * ny)
-                        R_pt = (hi * ux + pos * nx, hi * uy + pos * ny)
-                        center = ((cur_hi + lo) / 2 * ux + pos * nx,
-                                  (cur_hi + lo) / 2 * uy + pos * ny)
-                        gaps.append({
-                            "center": center,
-                            "axis_rad": math.atan2(uy, ux),
-                            "left": L_pt,
-                            "right": R_pt,
-                            "gap": gap,
-                            "left_len": cur_hi - cur_lo,
-                            "right_len": hi - lo,
-                        })
+            ivs.sort()
+            cur_lo, cur_hi = ivs[0]
+            for lo, hi in ivs[1:]:
+                if lo - cur_hi <= gap_tol:
                     cur_hi = max(cur_hi, hi)
-                    cur_b = b
                 else:
                     out.append(((cur_lo * ux + pos * nx, cur_lo * uy + pos * ny),
                                 (cur_hi * ux + pos * nx, cur_hi * uy + pos * ny)))
-                    cur_lo, cur_hi, cur_a, cur_b = lo, hi, a, b
+                    cur_lo, cur_hi = lo, hi
             out.append(((cur_lo * ux + pos * nx, cur_lo * uy + pos * ny),
                         (cur_hi * ux + pos * nx, cur_hi * uy + pos * ny)))
-    if record_gaps:
-        return out, gaps
     return out
 
 
@@ -1101,7 +885,6 @@ def parse_floor(pdf_path, floor_no):
 
     items = extract_layer_items(page, set(active))
     labels = extract_room_labels(page)
-    facility_codes = extract_facility_codes(page)
     doc.close()
 
     # --- 结构线段并集（墙体分散在多个默认开启的结构图层中）
@@ -1111,8 +894,8 @@ def parse_floor(pdf_path, floor_no):
         if not li:
             continue
         struct_segs.extend(wall_segments(li))
-    # 合并虚线/点划线断段，恢复连续墙体；同时记录桥接的墙缝（用于无摆弧开口检测）
-    struct_segs, wall_gaps = merge_collinear(struct_segs, record_gaps=True)
+    # 合并虚线/点划线断段，恢复连续墙体
+    struct_segs = merge_collinear(struct_segs)
     # --- 家具层线段（细线参与封闭，微单元邻域内可擦除）
     furn_segs = []
     for lname in LAYERS_FURNITURE:
@@ -1126,8 +909,7 @@ def parse_floor(pdf_path, floor_no):
     wall_segs = wall_segments(items.get(LAYER_WALL, {"lines": [], "quads": []}))
     print(f"[F{floor_no}] WALL 图层线段: {len(wall_segs)}, "
           f"结构线段并集(合并后): {len(struct_segs)}, "
-          f"家具层线段: {len(furn_segs)}, "
-          f"被桥接墙缝: {len(wall_gaps)}")
+          f"家具层线段: {len(furn_segs)}")
 
     # --- window 图层分类
     win = items.get(LAYER_WINDOW, {"lines": [], "quads": [], "curves": []})
@@ -1165,27 +947,7 @@ def parse_floor(pdf_path, floor_no):
                          struct_segs=all_segs)
     print(f"[F{floor_no}] 门洞(去重后): {len(doors)}")
 
-    # --- 无摆弧门洞（DK 洞口/出入口推拉门/楼梯间门洞）：通过墙缝几何 +
-    #     window 层矢量编号块确认。vector glyph code 不引入 OCR，只作"附近有
-    #     标识"的确认信号；空间分布 + 几何尺寸才是判定的核心依据。
-    glyph_codes = cluster_window_glyph_codes(win["lines"])
-    wall_openings = find_wall_openings(wall_gaps, window_groups, doors,
-                                       glyph_codes)
-    # 转换为 detect_doors 输出格式（center/axis/width_pt/arc_mid=中心、
-    # kind=opening），并入统一门列表参与归属链
-    for wo in wall_openings:
-        doors.append({
-            "center": wo["center"],
-            "axis": wo["axis"],
-            "width_pt": wo["width_pt"],
-            "kind": "opening",
-            "arc_mid": wo["center"],   # 无摆弧，归属几何中心即可
-            "merged": 1,
-            "code_pt": wo["code_pt"],
-        })
-    print(f"[F{floor_no}] 无摆弧门洞: {len(wall_openings)} (含楼梯间/出入口/公共空间)")
-
-    # --- 封口线（窗 + 摆弧门洞 + 无摆弧开口，带端头盖帽）
+    # --- 封口线（窗 + 门洞，带端头盖帽）
     closures = []
     for wg in window_groups:
         if wg["length_pt"] > 2.0:
@@ -1329,7 +1091,7 @@ def parse_floor(pdf_path, floor_no):
         cand = []
         for r in rooms:
             if r["roomType"] in ("staircase", "elevator_hall", "shaft",
-                                 "atrium"):
+                                 "atrium", "corridor", "lobby"):
                 continue
             if door_count.get(r["id"], 0) > 0:
                 continue
@@ -1346,7 +1108,7 @@ def parse_floor(pdf_path, floor_no):
     # 允许其从仍保留 >=1 扇门的多门房间处偷取 30pt 内最近的门。
     for r in rooms:
         if r["roomType"] in ("staircase", "elevator_hall", "shaft",
-                             "atrium"):
+                             "atrium", "corridor", "lobby"):
             continue
         if door_count.get(r["id"], 0) > 0:
             continue
@@ -1373,29 +1135,21 @@ def parse_floor(pdf_path, floor_no):
                 best["rooms"].append(r["id"])
                 door_count[r["id"]] += 1
 
-    # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
+    # --- QA：封闭空间必须识别出所有门洞
     zero_door = [r["label"] for r in rooms
                  if not any(r["id"] in dr["rooms"] for dr in doors)
                  and r["roomType"] not in ("staircase", "elevator_hall", "shaft",
-                                           "atrium", "corridor", "lobby",
-                                           "entrance", "accessible_entrance")]
+                                           "atrium", "corridor", "lobby")]
     orphan_doors = [dr for dr in doors if not dr["rooms"]]
     print(f"[F{floor_no}] QA: 无门房间 {len(zero_door)} 个 {zero_door[:10]}, "
           f"无归属门 {len(orphan_doors)} 个")
 
     # --- 楼梯 / 电梯 / 柱
-    # 楼梯来自 STAIR + A-FLOR-STRS 两层（F2 STAIR 仅 2 个 quad，
-    # 但 A-FLOR-STRS 含完整踏步/护栏线；合并才能稳定聚类）
-    stair_pts = []
-    for lname in ("STAIR", "A-FLOR-STRS"):
-        si = items.get(lname, {"lines": [], "quads": []})
-        for seg in si["lines"]:
-            stair_pts.append(seg)
-        for q in si["quads"]:
-            stair_pts.append((q[0], q[2]))
-    stair_boxes = bbox_clusters(stair_pts, gap_pt=4 * PT_PER_M) if stair_pts else []
+    stair_items = items.get(LAYER_STAIR, {"lines": [], "quads": [], "curves": []})
+    stair_pts = [seg for seg in stair_items["lines"]]
+    stair_boxes = bbox_clusters(stair_pts, gap_pt=3 * PT_PER_M) if stair_pts else []
     stair_boxes = [b for b in stair_boxes
-                   if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+                   if 4 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
 
     evtr_items = items.get(LAYER_ELEVATOR, {"lines": [], "quads": [], "curves": []})
     evtr_pts = [seg for seg in evtr_items["lines"]] + [q[:2] for q in evtr_items["quads"]]
@@ -1420,112 +1174,10 @@ def parse_floor(pdf_path, floor_no):
         "evtr_boxes": evtr_boxes,
         "col_boxes": col_boxes,
         "labels_unmatched": [t for i, (t, _) in enumerate(labels) if i not in used_labels],
-        "labels_all": [t for t, _ in labels],
-        "labels_all_with_pt": labels,
-        "facility_codes": facility_codes,
     }
 
 
-def reconcile_facilities(f1, f2):
-    """用图纸井道编号（II-xx#ST / II-xx#EL）校正楼梯/电梯识别结果。
-
-    做三件事：
-      1) **赋号**：编号文字落在 bbox 内（或 2m 容差内）→ 全局贪心最近匹配，
-         保证一个编号只绑定一个 bbox；
-      2) **剔伪**：无编号且长宽比 > STAIR_MAX_ASPECT 的"楼梯"判为误检
-         （F1 曾出现 6.1m×32m 的条带被 <200m² 面积阈值放行）；
-      3) **补漏**：某编号在本层有文字标注但无 bbox（该层踏步线缺失/过碎），
-         而另一层有同编号 bbox → 按"bbox 相对编号文字的偏移"平移复制过来。
-         F1 的 II-B3-01#ST（仅剩 ~4m² 碎片，被 10m² 阈值滤掉）与
-         II-B1-03#ST（A-FLOR-STRS 层无踏步线）即由此补齐。
-
-    最终按编号排序写回 data[key] 与 data[key + "_codes"]，
-    使 N{floor}-ST{i} 的编号顺序在两层间一致、可读且确定。
-    """
-    near_pt = FACILITY_CODE_NEAR_M / SCALE
-    report = {}
-
-    def assign(data, key, kind):
-        """返回 (boxes, codes, cands)；codes 与 boxes 等长，未命中为 None。"""
-        boxes = list(data.get(key, []))
-        cands = [(t, p) for t, p, k in data.get("facility_codes", []) if k == kind]
-        pairs = []
-        for i, (x0, y0, x1, y1) in enumerate(boxes):
-            for j, (_t, (cx, cy)) in enumerate(cands):
-                dx = max(x0 - cx, 0.0, cx - x1)
-                dy = max(y0 - cy, 0.0, cy - y1)
-                d = math.hypot(dx, dy)
-                if d <= near_pt:
-                    pairs.append((d, i, j))
-        pairs.sort()
-        codes = [None] * len(boxes)
-        used_box, used_code = set(), set()
-        for _d, i, j in pairs:
-            if i in used_box or j in used_code:
-                continue
-            codes[i] = cands[j][0]
-            used_box.add(i)
-            used_code.add(j)
-        return boxes, codes, cands
-
-    for key, kind in (("stair_boxes", "ST"), ("evtr_boxes", "EL")):
-        b1, c1, cand1 = assign(f1, key, kind)
-        b2, c2, cand2 = assign(f2, key, kind)
-
-        # --- 2) 剔除伪楼梯（形状离谱且无编号）---
-        dropped = {"1": [], "2": []}
-        if kind == "ST":
-            def keep(b, c):
-                if c:
-                    return True
-                w, h = abs(b[2] - b[0]), abs(b[3] - b[1])
-                lo, hi = min(w, h), max(w, h)
-                return lo > 0 and hi / lo <= STAIR_MAX_ASPECT
-
-            for tag, bs, cs in (("1", b1, c1), ("2", b2, c2)):
-                kept = [(b, c) for b, c in zip(bs, cs) if keep(b, c)]
-                dropped[tag] = [b for b, c in zip(bs, cs) if not keep(b, c)]
-                bs[:], cs[:] = [b for b, _ in kept], [c for _, c in kept]
-
-        # --- 3) 用另一层补齐漏检 ---
-        pos1 = dict((t, p) for t, p in cand1)
-        pos2 = dict((t, p) for t, p in cand2)
-        added = {"1": [], "2": []}
-        for tag, bs, cs, pos_self, pos_other, bs_other, cs_other in (
-                ("1", b1, c1, pos1, pos2, b2, c2),
-                ("2", b2, c2, pos2, pos1, b1, c1)):
-            box_by_code_other = dict((c, b) for b, c in zip(bs_other, cs_other) if c)
-            have = set(c for c in cs if c)
-            for code in sorted(set(pos_self) - have):
-                src = box_by_code_other.get(code)
-                if src is None or code not in pos_other:
-                    continue
-                dx = pos_self[code][0] - pos_other[code][0]
-                dy = pos_self[code][1] - pos_other[code][1]
-                bs.append((src[0] + dx, src[1] + dy, src[2] + dx, src[3] + dy))
-                cs.append(code)
-                added[tag].append(code)
-
-        # --- 排序（有编号者按编号升序，无编号者置后）并写回 ---
-        for tag, data, bs, cs in (("1", f1, b1, c1), ("2", f2, b2, c2)):
-            order = sorted(range(len(bs)), key=lambda i: (cs[i] is None, cs[i] or ""))
-            data[key] = [bs[i] for i in order]
-            data[key + "_codes"] = [cs[i] for i in order]
-        report[kind] = {"added": added, "dropped":
-                        dict((k, len(v)) for k, v in dropped.items())}
-
-    return report
-
-
 def build_geojson(f1, f2):
-    facility_report = reconcile_facilities(f1, f2)
-    for kind, info in facility_report.items():
-        for fl in ("1", "2"):
-            if info["added"][fl]:
-                print(f"[F{fl}] {kind} 依图纸编号补齐: {info['added'][fl]}")
-            if info["dropped"].get(fl):
-                print(f"[F{fl}] {kind} 剔除无编号伪设施: {info['dropped'][fl]} 个")
-
     def floor_block(floor_no, data):
         walls = []
         for i, (a, b) in enumerate(data["wall_segs"]):
@@ -1544,37 +1196,29 @@ def build_geojson(f1, f2):
                 "geometry": {"type": "Polygon", "coordinates": [r["coords_m"]]},
                 "properties": {"type": "room", "roomType": r["roomType"],
                                "label": r["label"], "roomId": r["id"],
-                               "centroid": r["centroid_m"],
-                               "public": r["roomType"] in ROOM_PUBLIC_TYPES,
-                               "accessible": r["roomType"] not in NON_ACCESSIBLE_TYPES,
-                               "hasIndependentEntrance": r["roomType"] in INDEPENDENT_ENTRANCE_TYPES,
-                               "floor": int(floor_no)},
+                               "centroid": r["centroid_m"]},
             })
             rooms_s.append({
                 "id": r["id"], "type": r["roomType"], "label": r["label"],
                 "centroid": r["centroid_m"], "geometryId": r["id"],
-                "public": r["roomType"] in ROOM_PUBLIC_TYPES,
-                "accessible": r["roomType"] not in NON_ACCESSIBLE_TYPES,
-                "hasIndependentEntrance": r["roomType"] in INDEPENDENT_ENTRANCE_TYPES,
-                "floor": int(floor_no),
+                "public": r["roomType"] in ("toilet", "corridor", "lobby",
+                                            "staircase", "elevator_hall"),
+                "accessible": r["roomType"] not in ("staircase", "shaft"),
             })
         doors = []
         for i, dr in enumerate(data["doors"]):
             cx, cy = pt2m(dr["center"])
-            kind = dr["kind"]
             doors.append({
                 "type": "Feature",
                 "id": f"D{floor_no}-{i + 1:04d}",
                 "geometry": {"type": "Point", "coordinates": [cx, cy]},
                 "properties": {
                     "type": "door",
-                    "doorType": kind,
+                    "doorType": dr["kind"],
                     "width_m": round(dr["width_pt"] * SCALE, 2),
-                    "mergedCount": dr.get("merged", 1),
+                    "mergedCount": dr["merged"],
                     "rooms": dr["rooms"],
-                    "sourceLayer": ("window" if kind == "swing"
-                                    else "DOOR_FIRE" if kind == "fire"
-                                    else "window+geometry"),
+                    "sourceLayer": "window" if dr["kind"] == "swing" else LAYER_DOOR_FIRE,
                 },
             })
         windows = []
@@ -1588,38 +1232,32 @@ def build_geojson(f1, f2):
                 "properties": {"type": "window",
                                "length_m": round(wg["length_pt"] * SCALE, 3)},
             })
-        stair_codes = data.get("stair_boxes_codes", [None] * len(data["stair_boxes"]))
         stairs = []
         for i, bxd in enumerate(data["stair_boxes"]):
             x0, y0, x1, y1 = bxd
             corners = [pt2m((x0, y0)), pt2m((x1, y0)), pt2m((x1, y1)), pt2m((x0, y1))]
             coords = [list(c) for c in corners] + [list(corners[0])]
             cen = pt2m(((x0 + x1) / 2, (y0 + y1) / 2))
-            code = stair_codes[i] if i < len(stair_codes) else None
             stairs.append({
                 "type": "Feature",
                 "id": f"ST{floor_no}-{i + 1:02d}",
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
                 "properties": {"type": "staircase",
-                               "code": code,
-                               "label": code or f"楼梯{floor_no}F-{i + 1}",
+                               "label": f"楼梯{floor_no}F-{i + 1}",
                                "centroid": list(cen)},
             })
-        evtr_codes = data.get("evtr_boxes_codes", [None] * len(data["evtr_boxes"]))
         elevators = []
         for i, bxd in enumerate(data["evtr_boxes"]):
             x0, y0, x1, y1 = bxd
             corners = [pt2m((x0, y0)), pt2m((x1, y0)), pt2m((x1, y1)), pt2m((x0, y1))]
             coords = [list(c) for c in corners] + [list(corners[0])]
             cen = pt2m(((x0 + x1) / 2, (y0 + y1) / 2))
-            code = evtr_codes[i] if i < len(evtr_codes) else None
             elevators.append({
                 "type": "Feature",
                 "id": f"EL{floor_no}-{i + 1:02d}",
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
                 "properties": {"type": "elevator",
-                               "code": code,
-                               "label": code or f"电梯{floor_no}F-{i + 1}",
+                               "label": f"电梯{floor_no}F-{i + 1}",
                                "centroid": list(cen)},
             })
         columns = []
@@ -1644,39 +1282,36 @@ def build_geojson(f1, f2):
             "coordinates": e["properties"]["centroid"], "floor": int(floor_no),
         } for e in elevators]
 
-        # --- 拓扑层（指南 第五章）：节点三类（room/intersection/doorway/facility）+ 边
-        doors_for_topo = []
-        for dr in data["doors"]:
+        # --- 拓扑层（简版导航图）：房间质心节点 + 门节点 + 门-房间边
+        nodes, edges = [], []
+        for r in data["rooms"]:
+            nodes.append({
+                "id": f"N{floor_no}-{r['id']}", "type": "room",
+                "label": r["label"], "coordinates": r["centroid_m"],
+            })
+        for i, dr in enumerate(data["doors"]):
+            nid = f"N{floor_no}-D{i + 1:04d}"
             cx, cy = pt2m(dr["center"])
-            doors_for_topo.append({
-                "center_m": [cx, cy],
-                "kind": dr["kind"],
-                "width_pt": dr["width_pt"],
-                "rooms": dr["rooms"],
-            })
-        # 额外 facility_entrance 节点：未匹配到房间多边形但语义属于公共空间的标签
-        # （无障碍出入口/门厅/人防主出入口/合班教室/图书资料室等），按坐标就近接入拓扑
-        extra_nodes = []
-        used_labels = {r["label"] for r in data["rooms"]}
-        for label, pt_pt in data.get("labels_all_with_pt", []):
-            if label in used_labels:
-                continue
-            if not any(k in label for k in ("门厅", "出入口", "合班", "图书",
-                                             "传达", "前台", "活动", "心理",
-                                             "辅导", "社团", "管理", "管控")):
-                continue
-            cx, cy = pt2m(pt_pt)
-            extra_nodes.append({
-                "label": label,
-                "coordinates": [cx, cy],
-                "facilityType": "accessible_entrance" if "无障碍" in label
-                                else "entrance",
-            })
-        topo = build_floor_topology(floor_no, data["rooms"], doors_for_topo,
-                                    stairs, elevators,
-                                    extra_nodes=extra_nodes)
-        nodes = topo["nodes"]
-        edges = topo["edges"]
+            nodes.append({"id": nid, "type": "door",
+                          "label": "防火门" if dr["kind"] == "fire" else "门",
+                          "coordinates": [cx, cy]})
+            for rid in dr["rooms"]:
+                room = next((r for r in data["rooms"] if r["id"] == rid), None)
+                if not room:
+                    continue
+                dist = round(math.hypot(room["centroid_m"][0] - cx,
+                                        room["centroid_m"][1] - cy), 2)
+                edges.append({
+                    "id": f"E{floor_no}-{nid}-{rid}",
+                    "from": nid, "to": f"N{floor_no}-{rid}",
+                    "distance": dist,
+                    "estimatedTime": round(dist / 1.2, 1),
+                    "accessibilityLevel": 0, "riskLevel": 0.0,
+                    "walkable": True, "wheelchairAccessible": True,
+                    "blindAccessible": True,
+                    "geometry": {"type": "LineString",
+                                 "coordinates": [[cx, cy], room["centroid_m"]]},
+                })
 
         return {
             "geometry": {
@@ -1694,71 +1329,45 @@ def build_geojson(f1, f2):
         }
 
     def cross_floor_edges(f1, f2):
-        """楼梯/电梯跨楼层边：**按图纸井道编号配对**（II-B2-01#ST 等）。
-
-        编号是图纸的权威标识，同一井道各层同号，因此配对不再依赖中心距离
-        （旧法 3.5m 阈值会漏配踏步线缺失/井道偏移较大的楼梯）。
-        无编号的设施退化为几何配对（<3.5m），保证兼容性。
-        """
+        """楼梯/电梯跨楼层边：按米制中心距离匹配（<2.5m 视为同一井道）"""
         edges = []
-
         def center_m(bxd):
             x0, y0, x1, y1 = bxd
             return pt2m(((x0 + x1) / 2, (y0 + y1) / 2))
-
         for kind, key, prefix, blind_ok in (
-                ("staircase", "stair_boxes", "CF-ST", False),
+                ("stair", "stair_boxes", "CF-ST", False),
                 ("elevator", "evtr_boxes", "CF-EL", True)):
-            kind_short = "ST" if kind == "staircase" else "EL"
-            codes1 = f1.get(key + "_codes", [None] * len(f1[key]))
-            codes2 = f2.get(key + "_codes", [None] * len(f2[key]))
-            idx2_by_code = dict((c, j) for j, c in enumerate(codes2) if c)
-            n = 0
             for i, b1 in enumerate(f1[key]):
-                code = codes1[i] if i < len(codes1) else None
-                best = idx2_by_code.get(code) if code else None
-                if best is None:                      # 无编号 → 退化为几何配对
-                    c1 = center_m(b1)
-                    best_d = 3.5
-                    for j, b2 in enumerate(f2[key]):
-                        if codes2[j] if j < len(codes2) else None:
-                            continue                  # 已被编号占用，不参与几何配对
-                        c2 = center_m(b2)
-                        d = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
-                        if d < best_d:
-                            best, best_d = j, d
-                if best is None:
-                    continue
-                n += 1
-                edges.append({
-                    "id": f"{prefix}-{n:03d}",
-                    "code": code,
-                    "from": f"N1-{kind_short}{i + 1:03d}",
-                    "to": f"N2-{kind_short}{best + 1:03d}",
-                    "fromFloor": 1, "toFloor": 2, "type": kind,
-                    "matchedBy": "code" if code else "geometry",
-                    "distance": 4.2,
-                    "estimatedTime": 60.0 if kind == "staircase" else 15.0,
-                    "accessibilityLevel": (999 if kind == "staircase" else 0),
-                    "riskLevel": (10 if kind == "staircase" else 1),
-                    "walkable": True,
-                    "wheelchairAccessible": blind_ok,
-                    "blindAccessible": blind_ok,
-                })
+                c1 = center_m(b1)
+                best, best_d = None, 2.5
+                for j, b2 in enumerate(f2[key]):
+                    c2 = center_m(b2)
+                    d = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+                    if d < best_d:
+                        best, best_d = j, d
+                if best is not None:
+                    edges.append({
+                        "id": f"{prefix}-{i + 1:02d}",
+                        "from": f"N1-{('ST' if kind == 'stair' else 'EL')}{i + 1:02d}",
+                        "to": f"N2-{('ST' if kind == 'stair' else 'EL')}{best + 1:02d}",
+                        "fromFloor": 1, "toFloor": 2, "type": kind,
+                        "distance": 4.2,
+                        "estimatedTime": 60.0 if kind == "stair" else 15.0,
+                        "blindAccessible": blind_ok,
+                        "wheelchairAccessible": blind_ok,
+                    })
         return edges
 
     return {
         "venueId": "school-building-01",
         "venueName": "初中学部1#教学楼",
-        "version": "9.0.0",
+        "version": "8.0.0",
         "coordinateSystem": "local_meters",
         "scale": SCALE,
         "origin": {"x": ORIGIN_X, "y": ORIGIN_Y, "unit": "pt"},
         "generator": "src/parse_cad_pdf.py",
-        "notes": "仅解析 PDF 默认开启图层；window 已剔除标识矢量笔画；"
-                 "门洞分三类——摆弧门(swing, window 层)、防火门(fire, DOOR_FIRE)、"
-                 "无摆弧开口(opening, 墙缝几何+window 矢量编号块确认)；"
-                 "拓扑图按指南第五章规范构建（room/doorway/intersection/facility）。",
+        "notes": "仅解析 PDF 默认开启图层；window 图层已剔除窗口标识矢量曲线；"
+                 "门洞按 window+DOOR_FIRE 图层弧线识别，每洞一门（去重）。",
         "floors": {
             "1": floor_block("1", f1),
             "2": floor_block("2", f2),
