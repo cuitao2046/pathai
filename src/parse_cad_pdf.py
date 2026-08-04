@@ -559,7 +559,7 @@ def fire_door_leaves(quads, lines, all_segs):
         center = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
         if near(center):               # 叶片应在墙缝中，中心远离墙面
             return
-        if not (near(a) and near(b)):  # 两端应贴门垛（墙）
+        if not (near(a) or near(b)):   # 至少一端应贴门垛（墙，如铰链侧）
             return
         out.append({"center": center, "width_pt": L, "axis": (a, b),
                     "kind": "fire", "arc_mid": center, "merged": 1,
