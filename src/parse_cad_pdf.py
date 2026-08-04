@@ -80,7 +80,10 @@ WALL_BODY_SHORT_SIDE_PT = 7.0   # 墙体单元格短边阈值(≈0.45m)，小于
 MIN_OPENING_WIDTH_PT = 12.0  # 墙缝开口最小宽度（≈0.64m），下限过滤虚线墙残缝
 MAX_OPENING_WIDTH_PT = 80.0  # 墙缝开口最大宽度（≈4.2m），上限过滤跨房大洞
 OPENING_FLANK_MIN_PT = 18.0  # 开口两侧墙段最小长度（短于该值视为虚线残段）
-OPENING_CODE_NEAR_PT = 30.0  # window 矢量编号块到开口中心的最近距离（确认信号）
+OPENING_CODE_NEAR_PT = 60.0  # DK 矢量编号块到开口中心的最近距离（CAD 标签常贴墙体外侧，宽容）
+DEFAULT_OPENING_WIDTH_PT = 30.0  # 无墙缝可量时门洞默认宽度（≈1.0m，落在 [MIN,MAX] 区间内）
+DK_SNAP_WALL_PT = 50.0     # DK 块距最近墙 ≤ 此值则把门洞中心吸附到墙线（准确落在墙体内）
+DK_DEDUP_PT = 18.0         # 与已有窗/门/门洞中心距离小于此值则视为重复，跳过
 MIN_ROOM_AREA_M2 = 3.0
 MAX_ROOM_AREA_M2 = 600.0
 ABSORB_CELL_M2 = 2.0       # 小于该面积的自由单元为可填充微单元（厕位格等）
@@ -573,10 +576,13 @@ def opening_closures(axis, cap_len=10.0):
     return segs
 
 
-def cluster_window_glyph_codes(window_lines, link=6.0, min_strokes=8):
+def cluster_window_glyph_codes(window_lines, link=6.0, min_strokes=8,
+                               with_strokes=False):
     """
     把 window 图层短笔画聚成"矢量文字块"用于确认开口类型。
     返回 [(cx, cy, w, h, n_strokes), ...]  (PDF pt)
+    with_strokes=True 时每个元素追加第 6 项 = 该块的原始短笔画列表
+    [((x0,y0),(x1,y1)), ...]，供 DK 等特定前缀的几何识别/渲染使用。
     """
     TINY = 8.0
     shorts = [(a, b) for a, b in window_lines if seg_len(a, b) < TINY]
@@ -630,61 +636,239 @@ def cluster_window_glyph_codes(window_lines, link=6.0, min_strokes=8):
         x1 = max(bbs[i][2] for i in g)
         y1 = max(bbs[i][3] for i in g)
         cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-        out.append((cx, cy, x1 - x0, y1 - y0, len(g)))
+        if with_strokes:
+            out.append((cx, cy, x1 - x0, y1 - y0, len(g),
+                        [shorts[i] for i in g]))
+        else:
+            out.append((cx, cy, x1 - x0, y1 - y0, len(g)))
     return out
 
 
-def find_wall_openings(wall_gaps, window_groups, doors, glyph_codes):
-    """
-    无摆弧开口检测：merge_collinear 桥接的墙缝中排除"已被门弧或窗覆盖"的候选，
-    剩下的再要求两侧均有长墙段且开口尺寸在 [MIN, MAX]pt 之间、
-    开口中心 OPENING_CODE_NEAR_PT 内有 window 矢量编号块（DK/MGD/MW/MF(B)D/BYC …）
-    即可信信号 → 标记为无摆弧门洞（kind="opening"）。
+def find_wall_openings(dk_blocks, all_segs, window_groups, doors,
+                       wall_gaps=None):
+    """以 window 图层中的 DK 矢量编号块直接生成门洞（洞口）。
 
-    返回 wall_openings: [{'center','axis','width_pt','kind','code'}]
-      - code 字段：最近矢量编号块对应的（推测）前缀；缺省为 "?"。
-        因不引入 OCR，前缀仅用于统计分组，不参与几何判定。
-    """
-    used_centers = []  # 已被门弧/窗覆盖的开口中心
-    for wg in window_groups:
-        used_centers.append(seg_midpoint(*wg["axis"]))
-    for dr in doors:
-        used_centers.append(seg_midpoint(*dr["axis"]))
+    规则（用户明确）：门洞就是 window 图层中带 DK 矢量 strokes 文字标注的部分，
+    不再依赖"墙缝几何 + DK 邻近"的双重约束——楼梯间、卫生间通往过道/公共空间的
+    门洞常绘于家具隔墙或墙缝未被捕获，按旧逻辑会被漏掉，故改为以 DK 块为唯一依据。
 
-    def near_used(p, tol=6.0):
-        for c in used_centers:
-            if math.hypot(p[0] - c[0], p[1] - c[1]) < tol:
-                return True
-        return False
+    每个 DK 块 → 一个门洞：
+      1) 仅与"真实窗"(window_groups)中心过近时跳过——DK 标注紧贴洞口，不会与窗重合；
+         （注意：不再因"距任一摆弧门中心 <18pt"就丢弃，否则会误删相邻的不同门洞，
+          例如楼梯间门洞旁恰好有扇摆弧门时旧逻辑会把它吞掉。）
+      2) 找最近墙线段（结构层+家具层并集），把门洞中心吸附到墙线（DK 标注常贴墙体外侧）；
+      3) 门洞轴垂直于最近墙，宽度优先取邻近墙缝实测值，否则用默认宽度；
+      4) 若 DK 块 50pt 内存在墙缝，则直接复用墙缝的轴与宽度（最准确）。
+    与已有摆弧门(arc)真正重合的情况，由后续的全局 dedupe_doorways 合并（而非在此丢弃）。
+
+    返回 [{'center','axis','width_pt','kind':'opening'}]，与 detect_doors 输出同构。
+    """
+    existing = [seg_midpoint(*wg["axis"]) for wg in window_groups]  # 仅真实窗
+
+    gap_list = wall_gaps or []
+
+    def nearest_seg(p):
+        best = None
+        for a, b in all_segs:
+            d, t = point_to_seg_dist(p, a, b)
+            if best is None or d < best[0]:
+                best = (d, t, a, b)
+        return best
+
+    def nearest_gap(p, tol=DK_SNAP_WALL_PT):
+        best = None
+        for g in gap_list:
+            gd = math.hypot(p[0] - g["center"][0], p[1] - g["center"][1])
+            if gd <= tol and (best is None or gd < best[0]):
+                best = (gd, g)
+        return best
 
     out = []
-    for g in wall_gaps:
-        if g["left_len"] < OPENING_FLANK_MIN_PT or g["right_len"] < OPENING_FLANK_MIN_PT:
-            continue  # 虚线残缝：两侧短
-        gap = g["gap"]
-        if gap < MIN_OPENING_WIDTH_PT or gap > MAX_OPENING_WIDTH_PT:
+    seen = []
+    for cx, cy in dk_blocks:
+        c = (cx, cy)
+        # 与本次已生成门洞去重（多个 DK 块误聚为同位置时）
+        if any(math.hypot(c[0] - s[0], c[1] - s[1]) < DK_DEDUP_PT for s in seen):
             continue
-        if near_used(g["center"]):
+
+        # 优先复用邻近墙缝（最准确）
+        ng = nearest_gap(c)
+        if ng is not None:
+            g = ng[1]
+            out.append({
+                "center": g["center"],
+                "axis": (g["left"], g["right"]),
+                "width_pt": g["gap"],
+                "kind": "opening",
+            })
+            seen.append(c)
             continue
-        # 找最近的矢量编号块（确认信号）
-        best_code, best_d = None, OPENING_CODE_NEAR_PT
-        for cx, cy, w, h, _ in glyph_codes:
-            d = math.hypot(cx - g["center"][0], cy - g["center"][1])
-            if d < best_d:
-                best_d = d
-                best_code = (cx, cy)
-        if best_code is None:
+
+        # 否则吸附到最近墙线段
+        best = nearest_seg(c)
+        if best is None:
             continue
-        # 开口轴 = 沿墙向的连线（用于绘图与去重）
+        d, t, a, b = best
+        px = a[0] + t * (b[0] - a[0])
+        py = a[1] + t * (b[1] - a[1])
+        center = (px, py) if d <= DK_SNAP_WALL_PT else c
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dy) or 1.0
+        perpx, perpy = -dy / L, dx / L
+        w2 = DEFAULT_OPENING_WIDTH_PT / 2.0
+        axis = ((center[0] - perpx * w2, center[1] - perpy * w2),
+                (center[0] + perpx * w2, center[1] + perpy * w2))
         out.append({
-            "center": g["center"],
-            "axis": (g["left"], g["right"]),
-            "width_pt": gap,
+            "center": center,
+            "axis": axis,
+            "width_pt": DEFAULT_OPENING_WIDTH_PT,
             "kind": "opening",
-            "code_pt": best_code,
-            "code_dist_pt": best_d,
         })
+        seen.append(c)
     return out
+
+
+def dedupe_doorways(doors):
+    """合并真正重合的门：两门中心极近(<阈值)即视为同一洞口，仅保留一扇。
+    注意：无摆弧门洞(opening)的轴垂直于墙，而摆弧门(arc)的轴平行于墙，二者轴方向
+    相差约 90°，故不能用"轴平行+轴向重叠"判定重合（会在墙角误并相邻的不同门）。
+    正确判据是"中心是否落在同一洞口"——同一洞口的门中心都在墙线上、彼此很近，
+    故仅用中心距离即可；相邻不同门洞(>容差)各自保留。
+    优先级：摆弧门(swing/fire) > 无摆弧门洞(opening)，避免丢失门类信息、不重复计入。
+    """
+    MERGE_PT = 13.0   # 同一洞口中心距离阈值(pt)
+
+    def link(d1, d2):
+        return math.hypot(d1["center"][0] - d2["center"][0],
+                          d1["center"][1] - d2["center"][1]) < MERGE_PT
+
+    groups = cluster_items(doors, link)
+    out = []
+    for g in groups:
+        rep = next((d for d in g if d.get("kind") != "opening"), g[0])
+        out.append(rep)
+    return out
+
+
+def _stroke_features(a, b):
+    dx = b[0]-a[0]; dy = b[1]-a[1]
+    L = math.hypot(dx, dy)
+    if L < 0.001:
+        return None
+    ang = math.degrees(math.atan2(dy, dx))
+    ang_mod = ang % 180.0
+    return {"cx":(a[0]+b[0])/2, "cy":(a[1]+b[1])/2, "L":L, "ang":ang,
+            "ang_mod":ang_mod,
+            "is_vert": abs(ang_mod-90) < 28,
+            "is_horiz": min(ang_mod, 180-ang_mod) < 22}
+
+
+def _cluster_x_columns(strokes, gap_x=4.0):
+    """按 x 中心聚成"字符列"（DK-block 内每个字符占 ~1 个列）。
+
+    排序后逐条扫描：若下一笔画 x 与当前列 min-x 差 > gap_x 则开新列。
+    同一字符内部通常 <2pt 抖动；字符之间通常 ≥gap_x。DK/MGD 字间距约
+    ~3.5pt，因此 gap_x=4pt 即可区分。
+    """
+    feats = []
+    for s in strokes:
+        f = _stroke_features(s[0], s[1])
+        if f:
+            feats.append(f)
+    if not feats:
+        return []
+    feats.sort(key=lambda f: f["cx"])
+    cols = [[feats[0]]]
+    for f in feats[1:]:
+        col_min_x = cols[-1][0]["cx"]
+        if f["cx"] - col_min_x > gap_x:
+            cols.append([f])
+        else:
+            cols[-1].append(f)
+    return cols
+
+
+def _has_opp_diagonals_in(strokes, min_len=0.5):
+    """判定给定 strokes 同时存在向上斜线与向下斜线（K 的核心特征）。
+
+    在小尺度 CAD 矢量文字下，两条对向斜线长度差异较大（一粗一细），
+    不要求严苛 45°；只要不是接近垂直、接近水平，且 dy 有正有负即满足。
+    """
+    n_up = n_dn = 0
+    for f in strokes:
+        if f["L"] < min_len:
+            continue
+        am = f["ang_mod"]  # 0..180
+        if am < 15 or am > 165:
+            continue  # 接近水平
+        if abs(am - 90) < 18:
+            continue  # 接近垂直
+        if f["ang"] < 0:
+            n_up += 1
+        elif f["ang"] > 0:
+            n_dn += 1
+    return (n_up > 0 and n_dn > 0), n_up, n_dn
+
+
+def is_dk_block(strokes, bbox):
+    """识别矢量编号块是否以 'DK' 开头（洞口）。
+
+    关键洞察：D 与 M（同为左半起首字符）在小尺度矢量文字下几何相似（都含 ≥1 长竖），
+    不必硬区分——真正的"DK"区别在于 **K 是否紧随其后**：K 的标志性两条对向斜线
+    （一上一下）会在块的 30%~65% x 范围内同时出现。
+
+    因此仅做两项判定：
+      1) 块宽 ≥8pt 且笔画 ≥6
+      2) 左 40% 内有 ≥1 个长近垂直笔画（D 或 M 均可，作为首字符笼统通过）
+      3) 中段 30%~65% 内同时存在一条向上斜线和一条向下斜线（K 特征；排除
+         Y/N/A 的单斜，G/B 没有交叉对向斜，M 内部没有"上下对向斜"配对）。
+    长阈值采用绝对值 L ≥ 4pt，与块高度无关，适应不同字号。
+    """
+    x0, y0, x1, y1 = bbox
+    w = x1 - x0
+    if w < 8.0:
+        return False, "block_too_narrow"
+    feats = []
+    for s in strokes:
+        f = _stroke_features(s[0], s[1])
+        if f:
+            feats.append(f)
+    if len(feats) < 6:
+        return False, "too_few_strokes"
+
+    d_end = x0 + 0.40 * w
+    k_start = x0 + 0.30 * w
+    k_end = x0 + 0.65 * w
+
+    d_feats = [f for f in feats if f["cx"] <= d_end]
+    d_verts = [f for f in d_feats if f["is_vert"] and f["L"] >= 4.0]
+    if not d_verts:
+        return False, "no_d_vert"
+
+    k_feats = [f for f in feats if k_start <= f["cx"] <= k_end]
+    k_verts = [f for f in k_feats if f["is_vert"] and f["L"] >= 4.0]
+    if not k_verts:
+        return False, "no_k_vert"
+    has_opp, n_up, n_dn = _has_opp_diagonals_in(k_feats, min_len=0.5)
+    if not has_opp:
+        return False, f"no_k_opp_diag(up={n_up},dn={n_dn})"
+
+    return True, "DK"
+
+
+def recognize_dk_glyph_blocks(window_lines, with_strokes=True):
+    """对 window 图层矢量文字块做 DK 识别，返回 [(cx, cy), ...] DK 块中心。"""
+    blocks = cluster_window_glyph_codes(window_lines, with_strokes=True)
+    dk = []
+    for blk in blocks:
+        cx, cy, _w, _h, _n, segs = blk
+        xs = [p[0] for s in segs for p in s]
+        ys = [p[1] for s in segs for p in s]
+        bbox = (min(xs), min(ys), max(xs), max(ys))
+        ok, reason = is_dk_block(segs, bbox)
+        if ok:
+            dk.append((cx, cy))
+    return dk
 
 
 def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
@@ -1114,6 +1298,10 @@ def parse_floor(pdf_path, floor_no):
         if not li:
             continue
         struct_segs.extend(wall_segments(li))
+    # 门洞(无门开口)检测：用较大桥接容差重算墙缝，使所有 ≤MAX_OPENING_WIDTH_PT 的墙缝
+    # 都被记录为候选（不被默认 30pt 桥接吞掉）。仅取 gaps 列表，合并后的线段丢弃（不影响栅格化）。
+    _, opening_gaps = merge_collinear(struct_segs, gap_tol=MAX_OPENING_WIDTH_PT,
+                                     record_gaps=True)
     # 合并虚线/点划线断段，恢复连续墙体；同时记录桥接的墙缝（用于无摆弧开口检测）
     struct_segs, wall_gaps = merge_collinear(struct_segs, record_gaps=True)
     # --- 家具层线段（细线参与封闭，微单元邻域内可擦除）
@@ -1190,8 +1378,28 @@ def parse_floor(pdf_path, floor_no):
                 return True
         return False
 
+    def ordinary_door_arc(bz, tol_anchor=12.0):
+        """普通门（window 层摆弧）识别：铰链(弧圆心)或端点贴墙即锚定。
+        放宽容差以容忍绘制偏移/家具隔墙，捕获此前被 near_wall(tol=6) 漏掉的普通门；
+        完全脱离墙体的悬空残段仍被排除。摆弧本就位于门口（WALL 层该处无连续墙体），
+        故"对应位置无墙"由摆弧的门口语义保证，不再额外做墙缝匹配。"""
+        p1, p4 = bz[0], bz[3]
+        xs = [p[0] for p in bz]
+        ys = [p[1] for p in bz]
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        m = _bez_mid(bz)
+        corners = [(x0, y0), (x0, y1), (x1, y0), (x1, y1)]
+        center = max(corners,
+                     key=lambda c: (c[0] - m[0]) ** 2 + (c[1] - m[1]) ** 2)  # 铰链
+        for a, b in all_segs:
+            if (point_to_seg_dist(center, a, b)[0] < tol_anchor
+                    or point_to_seg_dist(p1, a, b)[0] < tol_anchor
+                    or point_to_seg_dist(p4, a, b)[0] < tol_anchor):
+                return True
+        return False
+
     fire = items.get(LAYER_DOOR_FIRE, {"lines": [], "quads": [], "curves": []})
-    win_arcs = [bz for bz in win_door_curves if near_wall(bz)]
+    win_arcs = [bz for bz in win_door_curves if ordinary_door_arc(bz)]
     fire_arcs = [bz for bz in fire["curves"] if fire_arc_near_wall(bz, tol=15.0)]
     print(f"[F{floor_no}] 门弧线贴墙过滤: window {len(win_door_curves)}->{len(win_arcs)}, "
           f"DOOR_FIRE {len(fire['curves'])}->{len(fire_arcs)}")
@@ -1199,15 +1407,52 @@ def parse_floor(pdf_path, floor_no):
                          struct_segs=all_segs)
     print(f"[F{floor_no}] 门洞(去重后): {len(doors)}")
 
-    # --- 无摆弧门洞（DK 洞口/出入口推拉门/楼梯间门洞）：通过墙缝几何 +
-    #     window 层矢量编号块确认。vector glyph code 不引入 OCR，只作"附近有
-    #     标识"的确认信号；空间分布 + 几何尺寸才是判定的核心依据。
+    # --- 无摆弧门洞（DK 洞口/出入口推拉门/楼梯间门洞）：规则为 window 图层中带
+    #     DK 矢量 strokes 的部分直接生成门洞。门洞常以"类窗元素"画在 window 层，
+    #     DK 标注就在该元素上（标注相对元素中心偏移 0~10pt）。故处理分两步：
+    #       1) DK 块落在某个 window 组上（距离 < 阈值）→ 该 window 组实为门洞，
+    #          转为 opening 并从窗口列表移除（不再当作窗封口/渲染）；
+    #       2) 其余 DK 块 → 吸附到最近墙线段生成门洞（纯洞口，无窗框）。
     glyph_codes = cluster_window_glyph_codes(win["lines"])
-    wall_openings = find_wall_openings(wall_gaps, window_groups, doors,
-                                       glyph_codes)
+    dk_blocks = recognize_dk_glyph_blocks(win["lines"])
+    print(f"[F{floor_no}] window 矢量编号块: {len(glyph_codes)}  DK前缀: {len(dk_blocks)}")
+
+    DK_WIN_CONVERT_PT = 13.0   # DK 块距 window 组中心 < 此值 → 该组判为门洞
+    converted_idx = set()
+    dk_consumed = set()
+    win_openings = []  # 由 window 组转化而来的门洞
+    for cx, cy in dk_blocks:
+        best_i, best_d = -1, 1e9
+        for i, wg in enumerate(window_groups):
+            if i in converted_idx:
+                continue
+            d = math.hypot(cx - wg["center"][0], cy - wg["center"][1])
+            if d < best_d:
+                best_d, best_i = d, i
+        if best_i >= 0 and best_d < DK_WIN_CONVERT_PT:
+            wg = window_groups[best_i]
+            win_openings.append({
+                "center": wg["center"],
+                "axis": wg["axis"],
+                "width_pt": wg["length_pt"],
+                "kind": "opening",
+                "arc_mid": wg["center"],
+                "merged": 1,
+            })
+            converted_idx.add(best_i)
+            dk_consumed.add((round(cx, 1), round(cy, 1)))
+    # 移除已被判为门洞的 window 组（避免既当窗又当门）
+    for i in sorted(converted_idx, reverse=True):
+        window_groups.pop(i)
+    print(f"[F{floor_no}] DK→门洞(由 window 组转化): {len(win_openings)}")
+
+    remaining_dk = [c for c in dk_blocks
+                    if (round(c[0], 1), round(c[1], 1)) not in dk_consumed]
+    wall_openings = find_wall_openings(remaining_dk, all_segs, window_groups,
+                                       doors, wall_gaps=opening_gaps)
     # 转换为 detect_doors 输出格式（center/axis/width_pt/arc_mid=中心、
     # kind=opening），并入统一门列表参与归属链
-    for wo in wall_openings:
+    for wo in win_openings + wall_openings:
         doors.append({
             "center": wo["center"],
             "axis": wo["axis"],
@@ -1215,9 +1460,14 @@ def parse_floor(pdf_path, floor_no):
             "kind": "opening",
             "arc_mid": wo["center"],   # 无摆弧，归属几何中心即可
             "merged": 1,
-            "code_pt": wo["code_pt"],
         })
-    print(f"[F{floor_no}] 无摆弧门洞: {len(wall_openings)} (含楼梯间/出入口/公共空间)")
+    print(f"[F{floor_no}] 无摆弧门洞(DK约束): {len(wall_openings)}")
+
+    # --- 全局门去重：仅合并"真正同一洞口"的门（DK 门洞可能与摆弧门重合），
+    #     避免相邻不同门洞被误删；合并后每个洞口只保留一扇（优先摆弧门）。
+    before = len(doors)
+    doors = dedupe_doorways(doors)
+    print(f"[F{floor_no}] 门去重: {before} -> {len(doors)}")
 
     # --- DOOR_FIRE 防火门仅由摆弧(curve)经 detect_doors 生成（需求：只处理 arc based door）---
     # fire["lines"]/fire["quads"] 不用于门识别，由 detect_doors 的 fire_curves 分支处理。

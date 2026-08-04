@@ -103,7 +103,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         nodes.append({
             "id": nid,
             "type": "doorway",
-            "label": {"swing": "门", "fire": "防火门", "opening": "通道"}[kind],
+            "label": {"swing": "普通门", "fire": "防火门", "opening": "门洞"}[kind],
             "doorType": kind,
             "width_m": round(float(dr.get("width_pt", 0)) * (1.0 / 18.896), 3),
             "coordinates": list(_to_xy(dr.get("center_m"))),

@@ -15,6 +15,7 @@
     python render_interactive.py [geojson_path]
 默认输入 result/school_building_01_map_v9.geojson，输出 result/floor_layout_v9_interactive.html
 """
+import collections
 import json
 import math
 from pathlib import Path
@@ -39,6 +40,8 @@ ROOM_COLORS = {
     "accessible_entrance": "#BBDEFB", "room": "#FAFAFA", "other": "#FAFAFA",
 }
 DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449"}
+# 门类型中文名（与 topology.py 的 doorway 节点 label 保持一致）
+DOOR_TYPE_CN = {"swing": "普通门", "fire": "防火门", "opening": "门洞"}
 NODE_COLORS = {
     "room": "#E67E22", "doorway": "#C0392B", "intersection": "#27AE60",
     "facility_entrance": "#2980B9",
@@ -113,6 +116,7 @@ svg {{ display: block; background: #fff; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
+.layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
 .layer_topo_edge path {{ stroke: #27AE60; stroke-width: 0.5; fill: none; opacity: 0.45; stroke-dasharray: 3,2; }}
 .layer_risk * {{ cursor: pointer; }}
@@ -174,7 +178,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
   <label><input type="checkbox" checked onchange="toggleLayer('elevator', this.checked)"> 电梯</label>
   <label><input type="checkbox" checked onchange="toggleLayer('column', this.checked)"> 柱子</label>
-  <label><input type="checkbox" checked onchange="toggleLayer('door', this.checked)"> 门(平开/防火/通道)</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_swing', this.checked)"> 普通门</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_opening', this.checked)"> 门洞</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_fire', this.checked)"> 防火门</label>
   <label><input type="checkbox" onchange="toggleLayer('topo_node', this.checked)"> 拓扑节点</label>
   <label><input type="checkbox" onchange="toggleLayer('topo_edge', this.checked)"> 拓扑边</label>
   <label><input type="checkbox" checked onchange="toggleLayer('crossfloor', this.checked)"> 跨层连接</label>
@@ -215,6 +221,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         n_wall = len(geom.get("walls", []))
         n_room = len(geom.get("rooms", []))
         n_door = len(geom.get("doors", []))
+        _dt = collections.Counter(
+            d["properties"].get("doorType", "swing") for d in geom.get("doors", []))
         n_stair = len(geom.get("stairs", []))
         n_elev = len(geom.get("elevators", []))
         n_col = len(geom.get("columns", []))
@@ -231,7 +239,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             f'<text x="20" y="{fbase_y + 26}" font-size="15" font-weight="bold" fill="#333">'
             f'{title_cn} {floor}F（v9 米制）</text>\n'
         )
-        stats = (f'墙:{n_wall} 窗:{n_win} 房间:{n_room} 门:{n_door} '
+        stats = (f'墙:{n_wall} 窗:{n_win} 房间:{n_room} '
+                 f'门:{n_door}(普通门:{_dt.get("swing", 0)} 门洞:{_dt.get("opening", 0)} '
+                 f'防火门:{_dt.get("fire", 0)}) '
                  f'楼梯:{n_stair} 电梯:{n_elev} 柱:{n_col} '
                  f'拓扑节点:{n_node} 边:{n_edge}')
         parts.append(
@@ -341,27 +351,31 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             pts = " ".join(f"{tosvg(p[0], p[1])[0]},{tosvg(p[0], p[1])[1]}" for p in ring)
             parts.append(f'<g class="layer_column"><polygon points="{pts}"/></g>\n')
 
-        # 7. 门（swing/fire/opening）
+        # 7. 门（swing=普通门 / opening=门洞 / fire=防火门）
+        # 每类门单独一个图层类名（layer_door_swing / _opening / _fire），
+        # 使图层面板可分别开关；同时保留基类 layer_door 供样式复用。
         for dr in geom.get("doors", []):
             c = dr["geometry"]["coordinates"]
             sx, sy = tosvg(c[0], c[1])
             p = dr["properties"]
             dtype = p.get("doorType", "swing")
             w = float(p.get("width_m", 0.9))
-            tip = f"门洞：{ {'swing':'平开门','fire':'防火门','opening':'通道门洞(DK)'}.get(dtype, dtype) }\\n宽度：{w:.2f}m"
-            det = {"title": {'swing':'平开门','fire':'防火门','opening':'通道门洞(DK) '}.get(dtype, dtype),
+            dname = DOOR_TYPE_CN.get(dtype, dtype)
+            tip = f"{dname}\\n宽度：{w:.2f}m"
+            det = {"title": dname,
                    "rows": [
                        ("门编号", p.get("id", "—")),
-                       ("类型", dtype),
+                       ("类型", f"{dname}（{dtype}）"),
                        ("宽度", f"{w:.2f} m"),
                        ("归属房间", "、".join(p.get("rooms", [])) or "—"),
                        ("来源图层", p.get("sourceLayer", "—")),
                    ]}
             attr = info_attr({"tip": tip, "detail": det, "id": p.get("id", ""), "kind": "door"})
+            dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
             if dtype == "fire":
                 s = max(3.0, w * SCALE * 0.22)
                 parts.append(
-                    f'<g class="layer_door" {attr}>'
+                    f'<g class="{dcls}" {attr}>'
                     f'<rect x="{float(sx)-s/2:.1f}" y="{float(sy)-s/2:.1f}" width="{s:.1f}" height="{s:.1f}" '
                     f'fill="#FF5722" opacity="0.9"/></g>\n'
                 )
@@ -370,13 +384,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 diamond = (f"{float(sx)},{float(sy)-s:.1f} {float(sx)+s:.1f},{float(sy)} "
                            f"{float(sx)},{float(sy)+s:.1f} {float(sx)-s:.1f},{float(sy)}")
                 parts.append(
-                    f'<g class="layer_door" {attr}>'
+                    f'<g class="{dcls}" {attr}>'
                     f'<polygon points="{diamond}" fill="#1E8449" opacity="0.9"/></g>\n'
                 )
             else:
                 r = max(2.2, w * SCALE * 0.16)
                 parts.append(
-                    f'<g class="layer_door" {attr}>'
+                    f'<g class="{dcls}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r:.1f}" fill="#2196F3" opacity="0.85"/></g>\n'
                 )
 
@@ -617,9 +631,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     <div class="lg-item"><div class="lg-sw" style="background:#B0BEC5;border:1px solid #78909C"></div>柱子</div>
   </div>
   <div class="lg-sec"><div class="lg-title">门</div>
-    <div class="lg-item"><div class="lg-sw" style="background:#2196F3;border-radius:50%;width:11px;height:11px;margin-left:1px"></div>平开门</div>
-    <div class="lg-item"><div class="lg-sw" style="background:#FF5722;width:11px;height:11px;margin-left:1px"></div>防火门</div>
-    <div class="lg-item"><div class="lg-sw" style="background:#1E8449;width:12px;height:12px;transform:rotate(45deg);margin-left:1px"></div>通道门洞(DK)</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#2196F3;border-radius:50%;width:11px;height:11px;margin-left:1px"></div>普通门（window 摆弧）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#1E8449;width:12px;height:12px;transform:rotate(45deg);margin-left:1px"></div>门洞（DK 标注墙缝）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FF5722;width:11px;height:11px;margin-left:1px"></div>防火门（DOOR_FIRE）</div>
   </div>
   <div class="lg-sec"><div class="lg-title">拓扑节点 (v9)</div>
     <div class="lg-item"><div class="lg-sw" style="background:#E67E22;border-radius:50%;width:11px;height:11px"></div>房间节点</div>
@@ -730,7 +744,8 @@ wrapper.addEventListener('click', function(e) {{
 
 // ---- 图层开关 ----
 var allLayers = ['room','wall','window','stairs','elevator','column',
-  'door','topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
+  'door_swing','door_opening','door_fire',
+  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
