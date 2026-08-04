@@ -7,7 +7,8 @@ PathAI - CAD 平面图 (PDF) -> GeoJSON 解析器
 
 规则（与用户需求对齐）：
 1. 只解析 PDF 默认打开(ON)的图层，其余图层忽略。
-2. window 图层中剔除非窗口线条（窗口编号标识以矢量曲线存储，而非 text 文本）。
+2. window 图层中剔除非窗口线条；窗口编号标识以矢量曲线或 text 文本形式存储，
+   二者均会提取（DK 编号优先正则匹配 text 实体，不足时由矢量笔画识别补充）。
 3. 门洞元素部署在 window 图层（普通门）与 DOOR_FIRE 图层（防火门）；
    每个门洞只保留一扇门（同一门洞识别出多扇门时去重）。
 4. 封闭空间（教室、卫生间等）通过墙体线多边形化识别，并关联其所有门洞。
@@ -301,6 +302,38 @@ def extract_facility_codes(page):
             if x1 > TITLE_BLOCK_X:
                 continue
             out.append((txt, ((x0 + x1) / 2, (y0 + y1) / 2), m.group(1)))
+    return out
+
+
+def extract_dk_text_labels(page):
+    """
+    从文本对象中提取 DK 门窗编号（如 DK1224、DK2424）。
+
+    CAD 导出的 DK 标注有两种形态：
+      1) 矢量曲线（被 cluster_window_glyph_codes 聚类后由 is_dk_block 识别）；
+      2) 文本实体（text span，尤其竖排/旋转标注更常以此存储）。
+    后者用正则直接匹配最稳定，且天然支持旋转；本函数作为矢量 DK 识别的重要补充。
+
+    返回 [(cx, cy), ...]（PDF pt，已按 8pt 去重）。
+    """
+    out = []
+    seen = []
+    d = page.get_text("dict")
+    for block in d.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            txt = "".join(s["text"] for s in line["spans"]).strip()
+            # 去掉可能夹杂的空格/全角空格
+            txt_clean = txt.replace(" ", "").replace("\u3000", "")
+            if not re.match(r"^DK\d+$", txt_clean):
+                continue
+            x0, y0, x1, y1 = line["bbox"]
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            if any(math.hypot(cx - sx, cy - sy) < 8.0 for sx, sy in seen):
+                continue
+            seen.append((cx, cy))
+            out.append((cx, cy))
     return out
 
 
@@ -839,6 +872,22 @@ def _has_opp_diagonals_in(strokes, min_len=0.5):
     return (n_up > 0 and n_dn > 0), n_up, n_dn
 
 
+def _glyph_vertical_angle(feats):
+    """从长笔画中估计字形的"竖直"主方向（0~180）。
+
+    DK/MGD 等编号首字符都有明显长竖，K 也有长竖，因此竖直方向是长笔画最密集的角度。
+    按 10° 分桶取众数；没有长笔画时默认 90°（页面竖直）。
+    """
+    longs = [f for f in feats if f["L"] >= 4.0]
+    if not longs:
+        return 90.0
+    buckets = collections.Counter()
+    for f in longs:
+        key = round(f["ang_mod"] / 10.0) * 10.0
+        buckets[key] += 1
+    return buckets.most_common(1)[0][0]
+
+
 def is_dk_block(strokes, bbox):
     """识别矢量编号块是否以 'DK' 开头（洞口）。
 
@@ -846,12 +895,15 @@ def is_dk_block(strokes, bbox):
     不必硬区分——真正的"DK"区别在于 **K 是否紧随其后**：K 的标志性两条对向斜线
     （一上一下）会在块的 30%~65% x 范围内同时出现。
 
-    因此仅做两项判定：
+    因此仅做三项判定：
       1) 块宽 ≥8pt 且笔画 ≥6
-      2) 左 40% 内有 ≥1 个长近垂直笔画（D 或 M 均可，作为首字符笼统通过）
+      2) 左 40% 内有 ≥1 个长近竖直笔画（D 或 M 均可，作为首字符笼统通过）
       3) 中段 30%~65% 内同时存在一条向上斜线和一条向下斜线（K 特征；排除
          Y/N/A 的单斜，G/B 没有交叉对向斜，M 内部没有"上下对向斜"配对）。
     长阈值采用绝对值 L ≥ 4pt，与块高度无关，适应不同字号。
+
+    2026-08-05 修正：原"竖直"按页面坐标判定，对旋转/竖排的 DK 标注（如贴墙竖排
+    的 DK2424）会漏检。现改为以块内长笔画主方向作为"字形竖直"方向，旋转无关。
     """
     x0, y0, x1, y1 = bbox
     w = x1 - x0
@@ -865,17 +917,24 @@ def is_dk_block(strokes, bbox):
     if len(feats) < 6:
         return False, "too_few_strokes"
 
+    glyph_ang = _glyph_vertical_angle(feats)
+
+    def is_glyph_vert(f):
+        # 角度差按 180° 周期计算，容差 ±25°
+        diff = abs((f["ang_mod"] - glyph_ang + 90) % 180 - 90)
+        return diff < 25
+
     d_end = x0 + 0.40 * w
     k_start = x0 + 0.30 * w
     k_end = x0 + 0.65 * w
 
     d_feats = [f for f in feats if f["cx"] <= d_end]
-    d_verts = [f for f in d_feats if f["is_vert"] and f["L"] >= 4.0]
+    d_verts = [f for f in d_feats if is_glyph_vert(f) and f["L"] >= 4.0]
     if not d_verts:
         return False, "no_d_vert"
 
     k_feats = [f for f in feats if k_start <= f["cx"] <= k_end]
-    k_verts = [f for f in k_feats if f["is_vert"] and f["L"] >= 4.0]
+    k_verts = [f for f in k_feats if is_glyph_vert(f) and f["L"] >= 4.0]
     if not k_verts:
         return False, "no_k_vert"
     has_opp, n_up, n_dn = _has_opp_diagonals_in(k_feats, min_len=0.5)
@@ -1320,6 +1379,9 @@ def parse_floor(pdf_path, floor_no):
     items = extract_layer_items(page, set(active))
     labels = extract_room_labels(page)
     facility_codes = extract_facility_codes(page)
+    # DK 文本标注（旋转/竖排标注常以 text span 存储）须在 doc 关闭前提取，
+    # 稍后在门洞识别阶段与矢量 DK 合并去重。
+    dk_text_labels = extract_dk_text_labels(page)
     doc.close()
 
     # --- 结构线段并集（墙体分散在多个默认开启的结构图层中）
@@ -1451,7 +1513,16 @@ def parse_floor(pdf_path, floor_no):
     #       2) 其余 DK 块 → 吸附到最近墙线段生成门洞（纯洞口，无窗框）。
     glyph_codes = cluster_window_glyph_codes(win["lines"])
     dk_blocks = recognize_dk_glyph_blocks(win["lines"])
-    print(f"[F{floor_no}] window 矢量编号块: {len(glyph_codes)}  DK前缀: {len(dk_blocks)}")
+    # 补充文本实体形式的 DK 标注（旋转/竖排标注常以 text span 存储），与矢量 DK 合并去重
+    dk_text = dk_text_labels
+    n_text_added = 0
+    for c in dk_text:
+        if not any(math.hypot(c[0] - bc[0], c[1] - bc[1]) < 8.0 for bc in dk_blocks):
+            dk_blocks.append(c)
+            n_text_added += 1
+    print(f"[F{floor_no}] window 矢量编号块: {len(glyph_codes)}  "
+          f"DK前缀(矢量): {len(dk_blocks) - n_text_added}  DK文本补充: {n_text_added}  "
+          f"合计: {len(dk_blocks)}")
 
     DK_WIN_CONVERT_PT = 13.0   # DK 块距 window 组中心 < 此值 → 该组判为门洞
     converted_idx = set()
