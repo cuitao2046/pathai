@@ -757,14 +757,14 @@ def find_wall_openings(dk_blocks, all_segs, window_groups, doors,
         ng = nearest_gap(c)
         if ng is not None:
             g = ng[1]
-            out.append({
-                "center": g["center"],
-                "axis": (g["left"], g["right"]),
-                "width_pt": g["gap"],
-                "kind": "opening",
-            })
-            seen.append(c)
-            continue
+        out.append({
+            "center": g["center"],
+            "axis": (g["left"], g["right"]),
+            "width_pt": g["gap"],
+            "kind": "opening",
+        })
+        seen.append(c)
+        continue
 
         # 否则吸附到最近墙线段
         best = nearest_seg(c)
@@ -1806,11 +1806,45 @@ def parse_floor(pdf_path, floor_no):
         return False
 
     n_open_before = sum(1 for dr in doors if dr.get("kind") == "opening")
-    doors = [dr for dr in doors
-             if dr.get("kind") != "opening" or _opening_in_scope(dr)]
+    _kept, _dropped = [], []
+    for dr in doors:
+        if dr.get("kind") != "opening":
+            _kept.append(dr)
+            continue
+        if _opening_in_scope(dr):
+            _kept.append(dr)
+        else:
+            _dropped.append(dr)
+    for dr in _dropped:
+        cc = dr["center"]
+        nd = min([poly.exterior.distance(Point(cc)) for poly in toilet_polys + stair_polys], default=9999)
+        if 1700 < cc[0] < 1900 and 2400 < cc[1] < 2550:
+            print(f"[DBG WR01] 门洞被范围过滤剔除 center=({cc[0]:.1f},{cc[1]:.1f}) "
+                  f"rooms={dr.get('rooms')} 最近toilet/stair距离={nd:.1f}")
+    doors = _kept
     n_open_after = sum(1 for dr in doors if dr.get("kind") == "opening")
     print(f"[F{floor_no}] 门洞范围约束(仅楼梯间/卫生间): "
           f"{n_open_before} -> {n_open_after}")
+    # --- 卫生间/楼梯间中带 DK 标注的摆弧门/防火门 → 重分类为门洞(opening) ---
+    # 规则：卫生间与楼梯间的门以 window 图层 DK 洞口标注为准；若某摆弧门/防火门
+    # 落在 toilet/staircase 房间，且其门体附近存在 DK 编号块，则说明它实为洞口，
+    # 不应作为普通摆弧门（否则红框处含 DK 的 window 组件虽被 detect_doors 识别成
+    # swing，却失去"门洞"语义，导航拓扑里丢失洞口可达性信息）。
+    n_reclass = 0
+    for dr in doors:
+        if dr.get("kind") not in ("swing", "fire"):
+            continue
+        if not any(room_type_by_id.get(rid) in ("toilet", "staircase")
+                   for rid in dr.get("rooms", [])):
+            continue
+        cc = dr["center"]
+        if any(math.hypot(cc[0] - dk[0], cc[1] - dk[1]) < 14.0
+               for dk in dk_blocks):
+            dr["kind"] = "opening"
+            dr["arc_mid"] = cc
+            n_reclass += 1
+    if n_reclass:
+        print(f"[F{floor_no}] 卫生间/楼梯间 DK 摆弧门重分类为门洞: {n_reclass}")
 
     # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
     zero_door = [r["label"] for r in rooms

@@ -62663,13 +62663,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R1032"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -62684,13 +62684,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R1033"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -64056,13 +64056,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R1027"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -64077,13 +64077,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R1028"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -77459,8 +77459,8 @@
           {
             "id": "N1-D003",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -14.632443503417965,
@@ -77473,8 +77473,8 @@
           {
             "id": "N1-D004",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -14.68050682128906,
@@ -78369,8 +78369,8 @@
           {
             "id": "N1-D072",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -23.030848020019526,
@@ -78383,8 +78383,8 @@
           {
             "id": "N1-D073",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -23.07891133789062,
@@ -135569,13 +135569,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R2021"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -135590,13 +135590,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R2020"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -136019,13 +136019,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R2016"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -136040,13 +136040,13 @@
             },
             "properties": {
               "type": "door",
-              "doorType": "swing",
+              "doorType": "opening",
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
                 "R2017"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window+geometry"
             }
           },
           {
@@ -144988,8 +144988,8 @@
           {
             "id": "N2-D017",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -14.632443503417965,
@@ -145002,8 +145002,8 @@
           {
             "id": "N2-D018",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -14.68050682128906,
@@ -145284,8 +145284,8 @@
           {
             "id": "N2-D039",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -23.030848020019526,
@@ -145298,8 +145298,8 @@
           {
             "id": "N2-D040",
             "type": "doorway",
-            "label": "普通门",
-            "doorType": "swing",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 0.974,
             "coordinates": [
               -23.07891133789062,

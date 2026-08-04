@@ -15,8 +15,8 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - F1：33 房间 / 138 门 / 10 楼梯 / 3 电梯 / 201 拓扑节点 / 253 边
 - F2：22 房间 / 78 门 / 7 楼梯 / 3 电梯 / 113 拓扑节点 / 167 边
 - 跨层边 10（楼梯 7 + 电梯 3，全部 matchedBy:code）
-- 门类型（F1/F2，2026-08-05 实测）：普通门(swing 摆弧) 74/40、防火门(fire) 64/38、门洞(opening) **9/4**
-- 门洞构成：F1 = 卫生间5 + 楼梯间4；F2 = 卫生间4。全部来自 window 层 DK 矢量笔画；普通房门口紧邻摆弧门的 DK 标注已避让，不再生成门洞。
+- 门类型（F1/F2，2026-08-05 实测·含 II-WR-01 重分类修复后）：普通门(swing 摆弧) 70/36、防火门(fire) 55/34、门洞(opening) **13/8**
+- 门洞构成：F1 = DK 直接生成 9 + 卫生间/楼梯间带 DK 摆弧门重分类 4；F2 = DK 直接生成 4 + 重分类 4。全部来自 window 层 DK 矢量笔画；普通房门口紧邻摆弧门的 DK 标注已避让，不再生成门洞。
 - ⚠️ 注意：本图纸 F1/F2 的 text 实体 DK 补检均为 0——所有 DK 均以 **window 层矢量笔画** 存储，`extract_dk_text_labels` 路径仅作备用；关键修复是 `is_dk_block` 改为「旋转无关」（以块内长笔画主方向定义字形竖直），覆盖竖排/旋转 DK。
 - QA：VALIDATION PASS（无门封闭房间=0；孤儿门 61/17 为走廊/楼梯间/防火分区既有现象，非硬失败）
 
@@ -28,6 +28,7 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
   - **矢量曲线**：`recognize_dk_glyph_blocks` + `is_dk_block` 识别笔画（2026-08-05 已改为旋转无关，避免竖排 DK 漏检）。
   二者在 `parse_floor` 中合并去重（8pt）。
 - **门洞避让规则**：`find_wall_openings` 对"距任一摆弧门(swing)中心 < DK_NEAR_ARC_PT(22pt) 的 DK 块"直接跳过（避让普通门标注）；归属/临近范围过滤仅保留 staircase/toilet 房间的 opening（stair_box 30pt 兜底，因楼梯间常无 staircase 房间多边形）。
+- **卫生间/楼梯间摆弧门重分类为门洞（2026-08-05 新增，II-WR-01 修复）**：`parse_floor` 在范围过滤之后新增一步——对 `kind in (swing,fire)` 且**归属到 toilet/staircase 房间**、且门体中心 <14pt 内有 DK 编号块 的摆弧门/防火门，重分类为 `opening`（`arc_mid` 设为门中心）。原因：此类门在图纸上以「摆弧门 + DK 洞口标注」共同表达，`detect_doors` 正确识别成 swing，但按规则卫生间/楼梯间的门应以 DK 洞口为准（opening）；红框处含 DK 的 window 组件此前只剩 swing、丢失门洞语义。该步在范围过滤之后、依赖 `room_type_by_id` 与 `dk_blocks`（均已在作用域）。重分类计数 F1=4/F2=4。
 - **detect_doors 摆弧门去重加了"中心距守卫"(DOOR_CLUSTER_CENTER_PT=14)**：原仅用叶段投影间隙<6pt 判同门，会把同一面墙相邻两房间的门(如 R1021/R1022，中心距≈30pt)误并成一道，导致后一房间缺门。加中心距守卫后相邻门正确分离；同一门多段弧(中心重合)仍正常合并。
 - **DOOR_FIRE 只处理 arc based 门**（用户明确：quads/lines 非门叶片，曾回退删除 fire_door_leaves 补检逻辑，勿再加回）。
 - **图层**：家具层仅 `A-METAL-S`；`A-TECH-SANT` 在 `LAYERS_IGNORE` 整层显式剔除（PyMuPDF get_drawings 不感知图层可见性）。
