@@ -70467,7 +70467,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "R1015"
+                "R1015",
+                "R1018"
               ],
               "sourceLayer": "window"
             }
@@ -70969,7 +70970,8 @@
               "width_m": 0.73,
               "mergedCount": 1,
               "rooms": [
-                "R1014"
+                "R1014",
+                "R1015"
               ],
               "sourceLayer": "window"
             }
@@ -71192,7 +71194,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "R1021"
+                "R1021",
+                "R1020"
               ],
               "sourceLayer": "window"
             }
@@ -71887,7 +71890,9 @@
               "doorType": "fire",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1024"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -71925,7 +71930,9 @@
               "doorType": "fire",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1001"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -84775,6 +84782,31 @@
             }
           },
           {
+            "id": "E1-N1-D0001-R1018",
+            "from": "N1-D0001",
+            "to": "N1-R1018",
+            "distance": 2.44,
+            "estimatedTime": 2.0,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.0,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -30.607810849609372,
+                  -84.52185580566407
+                ],
+                [
+                  -29.085998830508668,
+                  -86.43070079363311
+                ]
+              ]
+            }
+          },
+          {
             "id": "E1-N1-D0002-R1018",
             "from": "N1-D0002",
             "to": "N1-R1018",
@@ -85350,6 +85382,31 @@
             }
           },
           {
+            "id": "E1-N1-D0025-R1015",
+            "from": "N1-D0025",
+            "to": "N1-R1015",
+            "distance": 2.76,
+            "estimatedTime": 2.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.0,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -32.93725124267578,
+                  -83.87957799804688
+                ],
+                [
+                  -31.846639847187976,
+                  -86.41411234944152
+                ]
+              ]
+            }
+          },
+          {
             "id": "E1-N1-D0026-R1014",
             "from": "N1-D0026",
             "to": "N1-R1014",
@@ -85520,6 +85577,31 @@
                 [
                   -23.582518044564395,
                   -86.402425366222
+                ]
+              ]
+            }
+          },
+          {
+            "id": "E1-N1-D0036-R1020",
+            "from": "N1-D0036",
+            "to": "N1-R1020",
+            "distance": 2.4,
+            "estimatedTime": 2.0,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.0,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -24.80177109130859,
+                  -84.52185580566407
+                ],
+                [
+                  -26.306476797093193,
+                  -86.39534989522612
                 ]
               ]
             }
@@ -86120,6 +86202,56 @@
                 [
                   -79.50358156846931,
                   -4.314966910866381
+                ]
+              ]
+            }
+          },
+          {
+            "id": "E1-N1-D0070-R1024",
+            "from": "N1-D0070",
+            "to": "N1-R1024",
+            "distance": 5.53,
+            "estimatedTime": 4.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.0,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -20.02231550048828,
+                  3.4674141894531227
+                ],
+                [
+                  -20.894791345219048,
+                  -1.993621699709483
+                ]
+              ]
+            }
+          },
+          {
+            "id": "E1-N1-D0072-R1001",
+            "from": "N1-D0072",
+            "to": "N1-R1001",
+            "distance": 5.54,
+            "estimatedTime": 4.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.0,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -80.27397063049317,
+                  -21.727792902832036
+                ],
+                [
+                  -79.40146903626791,
+                  -27.194537791832943
                 ]
               ]
             }

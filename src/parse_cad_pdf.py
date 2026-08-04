@@ -674,6 +674,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     area_max_px = MAX_ROOM_AREA_M2 / m2_per_px
 
     rooms = []
+    room_cids = []
     seen = set()
     probes = []
     if label_points:
@@ -954,10 +955,11 @@ def parse_floor(pdf_path, floor_no):
     for dr in doors:
         closures.extend(opening_closures(dr["axis"]))
 
-    # --- 房间多边形（全部墙线密封 + 分水岭归属 + 家具边界合并，标签探测）
-    labeled_polys = build_rooms(
+    # --- 房间多边形（全部墙线密封 + 分水岭归属 + 守卫式泛洪，标签探测）
+    room_res = build_rooms(
         all_segs, closures, furn_segs=furn_segs, label_points=labels,
         dump_path=rf"E:\code\pathai\result\_debug_wallmask_f{floor_no}.png")
+    labeled_polys = room_res["polys"]
     print(f"[F{floor_no}] 房间多边形(标签探测): {len(labeled_polys)}")
 
     rooms = []
@@ -1007,8 +1009,54 @@ def parse_floor(pdf_path, floor_no):
             dr["rooms"].append(containers[0][1]["id"])
         elif nearest is not None:
             dr["rooms"].append(nearest["id"])
-    # --- 门洞归属 pass 1：门中心距房间边界 4pt 以内（门洞开在房间墙体上）
+    # --- 门洞归属 pass 1：两侧投票。门轴两侧 ±6pt 各取一点，
+    #     在 owner 归属图中找 45px(15pt) 内最近的已标注房间像素 ——
+    #     门天然归属于两侧的空间（一侧房间一侧走廊，或两侧房间），
+    #     与邻房角点距离无关（修正 MGD1124 误归音乐教室的问题）
+    import numpy as np
+    owner = room_res["owner"]
+    ominx, ominy, oZ = room_res["minx"], room_res["miny"], room_res["Z"]
+    oH, oW = owner.shape
+    cid_to_room = {}
+    for r, cid in zip(rooms, room_res["cids"] or []):
+        cid_to_room[cid] = r["id"]
+    labeled_vals = list(cid_to_room.keys())
+    lab_map = np.where(np.isin(owner, labeled_vals), owner,
+                       0).astype(np.int32) if labeled_vals else None
+
+    def side_vote(dr, off_pt=6.0, search=45):
+        a, b = dr["axis"]
+        ang = seg_angle(a, b)
+        nx, ny = -math.sin(ang), math.cos(ang)
+        votes = []
+        for s in (+1.0, -1.0):
+            px = dr["center"][0] + nx * off_pt * s
+            py = dr["center"][1] + ny * off_pt * s
+            X = int(round((px - ominx) * oZ))
+            Y = int(round((py - ominy) * oZ))
+            x0, x1 = max(0, X - search), min(oW, X + search + 1)
+            y0, y1 = max(0, Y - search), min(oH, Y + search + 1)
+            sub = lab_map[y0:y1, x0:x1]
+            ys_idx, xs_idx = np.where(sub > 0)
+            if not len(ys_idx):
+                continue
+            d2 = (ys_idx + y0 - Y) ** 2 + (xs_idx + x0 - X) ** 2
+            i = int(np.argmin(d2))
+            cid = int(sub[ys_idx[i], xs_idx[i]])
+            if cid in cid_to_room:
+                votes.append(cid_to_room[cid])
+        return votes
+
+    if lab_map is not None:
+        for dr in doors:
+            for rid in side_vote(dr):
+                if rid not in dr["rooms"]:
+                    dr["rooms"].append(rid)
+    # --- 门洞归属兜底 1：门中心距房间边界 4pt 以内（仅补空，
+    #     不与侧投票冲突 —— 该规则会把邻房角点误挂为门所属）
     for dr in doors:
+        if dr["rooms"]:
+            continue
         c = Point(dr["center"])
         for r in rooms:
             if r["id"] in dr["rooms"]:
@@ -1016,7 +1064,7 @@ def parse_floor(pdf_path, floor_no):
             if r["polygon_pt"].exterior.distance(c) < 4.0 or \
                r["polygon_pt"].buffer(2.0).contains(c):
                 dr["rooms"].append(r["id"])
-    # 归属兜底：门中心 12pt 内找最近房间边界
+    # 归属兜底 2：门中心 12pt 内找最近房间边界
     for dr in doors:
         if dr["rooms"]:
             continue
@@ -1027,7 +1075,7 @@ def parse_floor(pdf_path, floor_no):
                 best, best_d = r, d
         if best:
             dr["rooms"].append(best["id"])
-    # 归属兜底2（无门房间认领孤儿门）：卫生间/储藏等被隔断切碎的房间，
+    # 归属兜底 3（无门房间认领孤儿门）：卫生间/储藏等被隔断切碎的房间，
     # 多边形未能延伸到门所在的外壳墙体；其门就在 30pt 内。
     # 限定：接收方当前无门（避免误抢邻房的门）、30pt 内最近且
     # 次近候选 >1.5 倍距离（唯一性）；每个房间最多认领一扇。
