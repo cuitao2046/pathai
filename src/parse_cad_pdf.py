@@ -1819,11 +1819,26 @@ def parse_floor(pdf_path, floor_no):
     n_open_after = sum(1 for dr in doors if dr.get("kind") == "opening")
     print(f"[F{floor_no}] 门洞范围约束(仅楼梯间/卫生间): "
           f"{n_open_before} -> {n_open_after}")
+
+    # --- 卫生间的防火门直接丢弃（用户 2026-08-05 明确：不用考虑） ---
+    # 卫生间内的 fire 门是防火门，不视为真实出入口，也不参与后续重分类/内部门洞过滤。
+    n_toilet_fire = sum(1 for dr in doors
+                        if dr.get("kind") == "fire"
+                        and any(room_type_by_id.get(rid) == "toilet"
+                                for rid in dr.get("rooms", [])))
+    if n_toilet_fire:
+        doors = [dr for dr in doors
+                 if not (dr.get("kind") == "fire"
+                         and any(room_type_by_id.get(rid) == "toilet"
+                                 for rid in dr.get("rooms", [])))]
+        print(f"[F{floor_no}] 卫生间防火门直接丢弃: {n_toilet_fire}")
+
     # --- 卫生间/楼梯间中带 DK 标注的摆弧门/防火门 → 重分类为门洞(opening) ---
     # 规则：卫生间与楼梯间的门以 window 图层 DK 洞口标注为准；若某摆弧门/防火门
     # 落在 toilet/staircase 房间，且其门体附近存在 DK 编号块，则说明它实为洞口，
     # 不应作为普通摆弧门（否则红框处含 DK 的 window 组件虽被 detect_doors 识别成
     # swing，却失去"门洞"语义，导航拓扑里丢失洞口可达性信息）。
+    # 注意：卫生间 fire 门已在上一步丢弃，此处重分类的 fire 门仅针对 staircase。
     n_reclass = 0
     for dr in doors:
         if dr.get("kind") not in ("swing", "fire"):
