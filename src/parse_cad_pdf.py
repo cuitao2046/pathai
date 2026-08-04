@@ -414,7 +414,9 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
             tip = p1
         else:
             tip = p4
-        door_segs.append({"hinge": center, "tip": tip, "radius": r, "kind": kind})
+        # 弧中点：门向房间内开，弧必然鼓入所服务房间的内部
+        door_segs.append({"hinge": center, "tip": tip, "radius": r,
+                          "kind": kind, "arc_mid": m})
 
     for bz in win_curves:
         arc_to_door(bz, "swing")
@@ -451,6 +453,7 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
             "width_pt": rep["radius"],
             "axis": (hinge, tip),
             "kind": rep["kind"],
+            "arc_mid": rep["arc_mid"],
             "merged": len(g),
         })
     return doors
@@ -540,9 +543,9 @@ def merge_collinear(segs, angle_tol_deg=2.0, axis_tol=2.0, gap_tol=30.0,
 
 def rasterize_walls(all_segs, closures, furn_segs=()):
     """
-    全部墙体线段(结构+家具,粗2px) + 门/窗封口线(3px) -> 二值墙图。
-    另返回家具层单独掩膜(同参数绘制、不做闭运算)，用于判定
-    区域间边界是否为家具线（厕位隔断可合并、真实墙不可）。
+    全部墙体线段(结构+家具,2px) + 门/窗封口线(3px) -> 二值墙图。
+    流程：原始绘制(端点外延) -> 画门窗封口线 -> 闭运算密封墙线断口。
+    （注：该图真实墙也是 2px 单线，开运算去薄墙会连真墙一起溶掉，不可用）
     返回 (walls_uint8, walls_furn_uint8, minx, miny, W, H, Z)；
     px->pt: (px/Z+minx, py/Z+miny)
     """
@@ -807,9 +810,12 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
             if poly.is_empty:
                 continue
         rooms.append((text, poly))
+        room_cids.append(cid)
     if dup_labels:
         print(f"    [QA] 多标签共域(疑似误合并): {dup_labels}")
-    return rooms
+    # owner 归属图随房间一并返回，供门洞两侧投票使用
+    return {"polys": rooms, "owner": owner, "minx": minx, "miny": miny,
+            "Z": Z, "cids": room_cids}
 
 
 def snap(geom, target, tol):
@@ -976,11 +982,37 @@ def parse_floor(pdf_path, floor_no):
         })
     print(f"[F{floor_no}] 语义房间(带标签): {len(rooms)}")
 
-    # --- 门洞归属：门中心距房间边界 4pt 以内（门洞开在房间墙体上）
+    # --- 门洞归属 pass 0：门弧中点（摆动侧）落在房间内部 -> 该房间所有。
+    #     门向内开，弧必然鼓入所服务房间；这是最可靠的归属信号
+    #     （如 MGD1124 弧鼓入乐器存放室而非相邻的音乐教室）
+    for dr in doors:
+        dr["rooms"] = []
+        am = dr.get("arc_mid")
+        if not am:
+            continue
+        p = Point(am)
+        containers = []
+        nearest, nearest_d = None, 8.0
+        for r in rooms:
+            poly = r["polygon_pt"]
+            if poly.contains(p):
+                containers.append((poly.exterior.distance(p), r))
+            else:
+                d = poly.exterior.distance(p)
+                if d < nearest_d:
+                    nearest, nearest_d = r, d
+        if containers:
+            # 取弧中点最深入其内部的房间
+            containers.sort(key=lambda x: -x[0])
+            dr["rooms"].append(containers[0][1]["id"])
+        elif nearest is not None:
+            dr["rooms"].append(nearest["id"])
+    # --- 门洞归属 pass 1：门中心距房间边界 4pt 以内（门洞开在房间墙体上）
     for dr in doors:
         c = Point(dr["center"])
-        dr["rooms"] = []
         for r in rooms:
+            if r["id"] in dr["rooms"]:
+                continue
             if r["polygon_pt"].exterior.distance(c) < 4.0 or \
                r["polygon_pt"].buffer(2.0).contains(c):
                 dr["rooms"].append(r["id"])
@@ -995,6 +1027,33 @@ def parse_floor(pdf_path, floor_no):
                 best, best_d = r, d
         if best:
             dr["rooms"].append(best["id"])
+    # 归属兜底2（无门房间认领孤儿门）：卫生间/储藏等被隔断切碎的房间，
+    # 多边形未能延伸到门所在的外壳墙体；其门就在 30pt 内。
+    # 限定：接收方当前无门（避免误抢邻房的门）、30pt 内最近且
+    # 次近候选 >1.5 倍距离（唯一性）；每个房间最多认领一扇。
+    door_count = {r["id"]: 0 for r in rooms}
+    for dr in doors:
+        for rid in dr["rooms"]:
+            if rid in door_count:
+                door_count[rid] += 1
+    for dr in doors:
+        if dr["rooms"]:
+            continue
+        c = Point(dr["center"])
+        cand = []
+        for r in rooms:
+            if r["roomType"] in ("staircase", "elevator_hall", "shaft",
+                                 "atrium", "corridor", "lobby"):
+                continue
+            if door_count.get(r["id"], 0) > 0:
+                continue
+            d = r["polygon_pt"].exterior.distance(c)
+            cand.append((d, r))
+        cand.sort(key=lambda x: x[0])
+        if cand and cand[0][0] < 30.0 and \
+                (len(cand) == 1 or cand[1][0] > 1.5 * cand[0][0]):
+            dr["rooms"].append(cand[0][1]["id"])
+            door_count[cand[0][1]["id"]] += 1
 
     # --- QA：封闭空间必须识别出所有门洞
     zero_door = [r["label"] for r in rooms
