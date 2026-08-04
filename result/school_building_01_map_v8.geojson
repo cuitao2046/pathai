@@ -70865,7 +70865,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "R1011"
+                "R1012"
               ],
               "sourceLayer": "window"
             }
@@ -85232,11 +85232,11 @@
             }
           },
           {
-            "id": "E1-N1-D0020-R1011",
+            "id": "E1-N1-D0020-R1012",
             "from": "N1-D0020",
-            "to": "N1-R1011",
-            "distance": 5.27,
-            "estimatedTime": 4.4,
+            "to": "N1-R1012",
+            "distance": 3.37,
+            "estimatedTime": 2.8,
             "accessibilityLevel": 0,
             "riskLevel": 0.0,
             "walkable": true,
@@ -85250,8 +85250,8 @@
                   11.025876225585936
                 ],
                 [
-                  -45.853649076127176,
-                  14.501770819897045
+                  -44.55581127973032,
+                  8.957145004596292
                 ]
               ]
             }

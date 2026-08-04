@@ -1102,6 +1102,38 @@ def parse_floor(pdf_path, floor_no):
                 (len(cand) == 1 or cand[1][0] > 1.5 * cand[0][0]):
             dr["rooms"].append(cand[0][1]["id"])
             door_count[cand[0][1]["id"]] += 1
+    # 归属兜底 4（零门房间偷取多门房间的门）：门与所属房间多边形之间
+    # 隔着高窗洞口带/门斗等小空间时（如 MGD1124 与乐器存放室），
+    # 门会先被 4pt 规则挂到邻房角点上。零门房间作为封闭空间必须有门，
+    # 允许其从仍保留 >=1 扇门的多门房间处偷取 30pt 内最近的门。
+    for r in rooms:
+        if r["roomType"] in ("staircase", "elevator_hall", "shaft",
+                             "atrium", "corridor", "lobby"):
+            continue
+        if door_count.get(r["id"], 0) > 0:
+            continue
+        c_poly = r["polygon_pt"]
+        best, best_d = None, 30.0
+        for dr in doors:
+            if r["id"] in dr["rooms"]:
+                best = None
+                break
+            d = c_poly.exterior.distance(Point(dr["center"]))
+            if d < best_d:
+                # 只能偷当前归属房间门数 >=2 的门（给其留至少 1 扇）
+                owners = [o for o in dr["rooms"]
+                          if door_count.get(o, 0) >= 2]
+                if dr["rooms"] and not owners:
+                    continue
+                best, best_d = dr, d
+        if best is not None:
+            for o in list(best["rooms"]):
+                if door_count.get(o, 0) >= 2:
+                    best["rooms"].remove(o)
+                    door_count[o] -= 1
+            if r["id"] not in best["rooms"]:
+                best["rooms"].append(r["id"])
+                door_count[r["id"]] += 1
 
     # --- QA：封闭空间必须识别出所有门洞
     zero_door = [r["label"] for r in rooms
