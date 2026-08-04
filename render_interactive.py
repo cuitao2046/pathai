@@ -731,8 +731,9 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','wall','window','stairs','elevator','column',
   'door','topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
-function toggleLayer(name) {{
-  document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = el.style.display === 'none' ? '' : 'none'; }});
+// 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
+function toggleLayer(name, checked) {{
+  document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
 }}
 function setAll(v) {{
   allLayers.forEach(function(n){{
@@ -740,6 +741,12 @@ function setAll(v) {{
   }});
   document.querySelectorAll('#layerControls input[type=checkbox]').forEach(function(cb){{ cb.checked = v; }});
 }}
+// 初始化：按勾选框实际状态同步各图层可见性（未勾选图层初始应隐藏）
+allLayers.forEach(function(n){{
+  var cb = document.querySelector('#layerControls input[onchange*="' + n + '"]');
+  var show = cb ? cb.checked : true;
+  document.querySelectorAll('.layer_' + n).forEach(function(el){{ el.style.display = show ? '' : 'none'; }});
+}});
 
 // ---- 楼层跳转 ----
 function buildFloorJump(total, perFloor) {{
