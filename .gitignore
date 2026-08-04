@@ -29,6 +29,7 @@ desktop.ini
 # 调试输出
 result/*
 !result/*.geojson
+!result/floor_layout_v9_interactive.html
 
 # Jupyter
 .ipynb_checkpoints/

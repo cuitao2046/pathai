@@ -55,12 +55,17 @@ LAYER_COLUMNS = ("COLUMN", "柱子-刚结构")
 # 纯标注图层（轴线/文字/标高等）不参与，避免切分房间。
 LAYERS_STRUCT = ("WALL", "A-FLOR-STRS", "STAIR", "A-FLOR-EVTR",
                  "COLUMN", "柱子-刚结构")
-# 家具级图层（卫生器具/金属构件）：既含真实墙体段（卫生间隔墙等，缺了
+# 家具级图层（金属构件）：既含真实墙体段（卫生间隔墙等，缺了
 # 会导致房间不闭合），又含厕位隔断/洗手台等会把房间内部切碎的构件线。
 # 处理：以细线(1px)单独栅格化参与封闭；凡围出 <ABSORB_CELL_M2 微单元的
 # 家具线在微单元邻域内擦除（打通厕位与走道），真实隔墙两侧都是大房间、
 # 邻域无微单元，不受影响。
-LAYERS_FURNITURE = ("A-METAL-S", "A-TECH-SANT")
+LAYERS_FURNITURE = ("A-METAL-S",)
+# 强制剔除的图层：整层元素不参与任何解析（不计入墙体封闭、门/窗/房间识别）。
+# A-TECH-SANT（卫生/给排水器具等）已设为默认关闭，且 PyMuPDF 的
+# page.get_drawings() 不感知图层可见性、会照常返回其全部矢量元素，
+# 故在此显式剔除，确保即使该图层在 PDF 中标记为开启也被忽略。
+LAYERS_IGNORE = ("A-TECH-SANT",)
 LAYERS_ANNO_EXCLUDE = ("AXIS", "A-ANNO-150-TXT", "A-ANNO-LEVL", "A-ANNO-TTLB",
                        "A-ANNO-SYMB")
 
@@ -1280,11 +1285,13 @@ def parse_floor(pdf_path, floor_no):
 
     wanted = list({LAYER_WALL, LAYER_WINDOW, LAYER_DOOR_FIRE, LAYER_STAIR,
                    LAYER_ELEVATOR, *LAYER_COLUMNS, *LAYERS_STRUCT,
-                   *LAYERS_FURNITURE})
+                   *LAYERS_FURNITURE} - set(LAYERS_IGNORE))
     active = [l for l in wanted if l in on_layers]
     skipped = [l for l in wanted if l not in on_layers]
     if skipped:
         print(f"[F{floor_no}] 跳过(非默认开启): {skipped}")
+    if LAYERS_IGNORE:
+        print(f"[F{floor_no}] 强制剔除图层(整层忽略): {LAYERS_IGNORE}")
 
     items = extract_layer_items(page, set(active))
     labels = extract_room_labels(page)
@@ -1304,9 +1311,11 @@ def parse_floor(pdf_path, floor_no):
                                      record_gaps=True)
     # 合并虚线/点划线断段，恢复连续墙体；同时记录桥接的墙缝（用于无摆弧开口检测）
     struct_segs, wall_gaps = merge_collinear(struct_segs, record_gaps=True)
-    # --- 家具层线段（细线参与封闭，微单元邻域内可擦除）
+    # --- 家具层线段（细线参与封闭，微单元邻域内可擦除；剔除 LAYERS_IGNORE）
     furn_segs = []
     for lname in LAYERS_FURNITURE:
+        if lname in LAYERS_IGNORE:
+            continue
         li = items.get(lname)
         if not li:
             continue
