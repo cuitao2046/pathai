@@ -130,11 +130,23 @@ def _collect_bounds(floor):
 
 # ---------------------------------------------------------------- 图层绘制
 
+def _label_anchor(ext, fallback):
+    """标签锚点：polylabel（内切圆心，保证在多边形内且远离边界）"""
+    try:
+        poly = ShpPolygon(ext)
+        if poly.is_valid and not poly.is_empty:
+            pt = polylabel(poly, tolerance=0.1)
+            return (pt.x, pt.y)
+    except Exception:
+        pass
+    return fallback
+
+
 def draw_rooms(ax, rooms, dupp=0.12):
     """房间填充 + 类型着色 + 标签。
 
-    标签字号同时受房间面积、短边长度与文本估算宽度约束，
-    避免狭长房间（准备室/观察室等）标签互相重叠。
+    标签字号受面积、房间横向跨度（文本宽）与纵向跨度（字高）约束；
+    锚点用 polylabel，避免狭长/异形房间标签贴边或与邻房重叠。
     dupp: data units per point（由 figsize 与坐标范围换算）。
     """
     for r in rooms:
@@ -151,20 +163,21 @@ def draw_rooms(ax, rooms, dupp=0.12):
         ext = _rings(r["geometry"])[0][0]
         xs = [pt[0] for pt in ext]
         ys = [pt[1] for pt in ext]
-        long_side = max(max(xs) - min(xs), max(ys) - min(ys))
-        short_side = min(max(xs) - min(xs), max(ys) - min(ys))
+        x_span = max(xs) - min(xs)
+        y_span = max(ys) - min(ys)
         fs = min(12.0, math.sqrt(max(_poly_area(ext), 0.1)) * 1.9)
-        # 文本估算宽度（CJK 1em / ASCII 0.55em）不超过长边的 92%
+        # 水平文本：估算宽度不超过横向跨度的 88%
         em = sum(1.0 if ord(ch) > 0x2E7F else 0.55 for ch in label)
-        if em > 0 and long_side > 0:
-            fs = min(fs, 0.92 * long_side / (em * dupp))
-        # 字高不超过短边的 60%
-        if short_side > 0:
-            fs = min(fs, 0.60 * short_side / dupp)
+        if em > 0 and x_span > 0:
+            fs = min(fs, 0.88 * x_span / (em * dupp))
+        # 字高不超过纵向跨度的 55%
+        if y_span > 0:
+            fs = min(fs, 0.55 * y_span / dupp)
         fs = max(4.0, fs)
         rt = p.get("roomType", "room")
         tc = "#666666" if rt in ("corridor", "atrium") else "#1A1A2E"
-        ax.text(c[0], c[1], label, ha="center", va="center",
+        lx, ly = _label_anchor(ext, (c[0], c[1]))
+        ax.text(lx, ly, label, ha="center", va="center",
                 fontsize=fs, color=tc, zorder=8)
 
 
