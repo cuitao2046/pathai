@@ -66492,19 +66492,19 @@
                   ],
                   [
                     -71.79870212437949,
-                    -15.629539051720327
+                    -15.594272385053669
                   ],
                   [
                     -71.48130212437948,
-                    -15.752972385053669
+                    -15.735339051720327
                   ],
                   [
-                    -71.51656879104614,
-                    -15.96457238505367
+                    -71.49893545771282,
+                    -16.17617238505367
                   ],
                   [
                     -71.79870212437949,
-                    -16.035105718386987
+                    -16.211439051720326
                   ],
                   [
                     -71.78106879104614,
@@ -66579,8 +66579,8 @@
               "label": "走道",
               "roomId": "R1005",
               "centroid": [
-                -70.64425173925649,
-                -17.105864777405042
+                -70.63671317492239,
+                -17.114160823406873
               ],
               "public": true,
               "accessible": true,
@@ -72279,6 +72279,236 @@
                 "R1014"
               ],
               "sourceLayer": "window+geometry"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0084",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -42.34010354980469,
+                -27.413842261962895
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.88,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0085",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -42.34010354980469,
+                -25.66179129150391
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.88,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0086",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -34.08770354980469,
+                -34.815606129150396
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 1.17,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0087",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -34.08770354980469,
+                -37.15484580810547
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 1.17,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0088",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -39.575549033203124,
+                -32.37480258300781
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.88,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0089",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -41.32759677490234,
+                -32.37480258300781
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.88,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0090",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -24.22291258300781,
+                -15.27011516235352
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 1.17,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0091",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -24.22291258300781,
+                -17.612528712158205
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 1.17,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0092",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -71.52186032470703,
+                -16.16201161621094
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [
+                "R1005"
+              ],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0093",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -21.537708066406246,
+                -74.93813483398438
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0094",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -20.376026132812495,
+                -74.93813483398438
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0095",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -28.774430649414057,
+                9.033201933593748
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
             }
           }
         ],
@@ -84046,8 +84276,8 @@
             "type": "corridor",
             "label": "走道",
             "centroid": [
-              -70.64425173925649,
-              -17.105864777405042
+              -70.63671317492239,
+              -17.114160823406873
             ],
             "geometryId": "R1005",
             "public": true,
@@ -84468,8 +84698,8 @@
             "roomId": "R1005",
             "label": "走道",
             "coordinates": [
-              -70.64425173925649,
-              -17.105864777405042
+              -70.63671317492239,
+              -17.114160823406873
             ],
             "public": true,
             "accessible": true
@@ -85933,13 +86163,159 @@
             ]
           },
           {
+            "id": "N1-D084",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.876,
+            "coordinates": [
+              -42.34010354980469,
+              -27.413842261962895
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D085",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.876,
+            "coordinates": [
+              -42.34010354980469,
+              -25.66179129150391
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D086",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 1.169,
+            "coordinates": [
+              -34.08770354980469,
+              -34.815606129150396
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D087",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 1.169,
+            "coordinates": [
+              -34.08770354980469,
+              -37.15484580810547
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D088",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.876,
+            "coordinates": [
+              -39.575549033203124,
+              -32.37480258300781
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D089",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.876,
+            "coordinates": [
+              -41.32759677490234,
+              -32.37480258300781
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D090",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 1.169,
+            "coordinates": [
+              -24.22291258300781,
+              -15.27011516235352
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D091",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 1.169,
+            "coordinates": [
+              -24.22291258300781,
+              -17.612528712158205
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D092",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -71.52186032470703,
+              -16.16201161621094
+            ],
+            "rooms": [
+              "R1005"
+            ]
+          },
+          {
+            "id": "N1-D093",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -21.537708066406246,
+              -74.93813483398438
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D094",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -20.376026132812495,
+              -74.93813483398438
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N1-D095",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -28.774430649414057,
+              9.033201933593748
+            ],
+            "rooms": []
+          },
+          {
             "id": "N1-I001",
             "type": "intersection",
             "roomId": "R1005",
             "label": "走道",
             "coordinates": [
-              -70.64425173925649,
-              -17.105864777405042
+              -70.63671317492239,
+              -17.114160823406873
             ]
           },
           {
@@ -87131,6 +87507,18 @@
             "blindAccessible": true
           },
           {
+            "id": "E1-N1-R005-N1-D092",
+            "from": "N1-R005",
+            "to": "N1-D092",
+            "distance": 1.3,
+            "estimatedTime": 1.6,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E1-N1-I002-N1-D001",
             "from": "N1-I002",
             "to": "N1-D001",
@@ -87206,7 +87594,7 @@
             "id": "E1-N1-I001-N1-D007",
             "from": "N1-I001",
             "to": "N1-D007",
-            "distance": 21.84,
+            "distance": 21.85,
             "estimatedTime": 27.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87314,7 +87702,7 @@
             "id": "E1-N1-I001-N1-D016",
             "from": "N1-I001",
             "to": "N1-D016",
-            "distance": 6.77,
+            "distance": 6.76,
             "estimatedTime": 8.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87326,7 +87714,7 @@
             "id": "E1-N1-I001-N1-D017",
             "from": "N1-I001",
             "to": "N1-D017",
-            "distance": 46.48,
+            "distance": 46.49,
             "estimatedTime": 58.1,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87374,7 +87762,7 @@
             "id": "E1-N1-I001-N1-D021",
             "from": "N1-I001",
             "to": "N1-D021",
-            "distance": 58.62,
+            "distance": 58.61,
             "estimatedTime": 73.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87398,7 +87786,7 @@
             "id": "E1-N1-I001-N1-D023",
             "from": "N1-I001",
             "to": "N1-D023",
-            "distance": 18.72,
+            "distance": 18.73,
             "estimatedTime": 23.4,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87410,7 +87798,7 @@
             "id": "E1-N1-I001-N1-D024",
             "from": "N1-I001",
             "to": "N1-D024",
-            "distance": 8.79,
+            "distance": 8.81,
             "estimatedTime": 11.0,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87470,7 +87858,7 @@
             "id": "E1-N1-I001-N1-D029",
             "from": "N1-I001",
             "to": "N1-D029",
-            "distance": 15.39,
+            "distance": 15.38,
             "estimatedTime": 19.2,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87482,7 +87870,7 @@
             "id": "E1-N1-I001-N1-D030",
             "from": "N1-I001",
             "to": "N1-D030",
-            "distance": 16.9,
+            "distance": 16.88,
             "estimatedTime": 21.1,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87494,8 +87882,8 @@
             "id": "E1-N1-I001-N1-D031",
             "from": "N1-I001",
             "to": "N1-D031",
-            "distance": 13.15,
-            "estimatedTime": 16.4,
+            "distance": 13.16,
+            "estimatedTime": 16.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -87518,7 +87906,7 @@
             "id": "E1-N1-I001-N1-D033",
             "from": "N1-I001",
             "to": "N1-D033",
-            "distance": 43.91,
+            "distance": 43.9,
             "estimatedTime": 54.9,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87530,7 +87918,7 @@
             "id": "E1-N1-I001-N1-D034",
             "from": "N1-I001",
             "to": "N1-D034",
-            "distance": 42.81,
+            "distance": 42.8,
             "estimatedTime": 53.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87590,7 +87978,7 @@
             "id": "E1-N1-I001-N1-D039",
             "from": "N1-I001",
             "to": "N1-D039",
-            "distance": 37.59,
+            "distance": 37.58,
             "estimatedTime": 47.0,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87602,7 +87990,7 @@
             "id": "E1-N1-I001-N1-D040",
             "from": "N1-I001",
             "to": "N1-D040",
-            "distance": 58.63,
+            "distance": 58.62,
             "estimatedTime": 73.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87638,7 +88026,7 @@
             "id": "E1-N1-I001-N1-D043",
             "from": "N1-I001",
             "to": "N1-D043",
-            "distance": 5.45,
+            "distance": 5.44,
             "estimatedTime": 6.8,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87662,7 +88050,7 @@
             "id": "E1-N1-I001-N1-D045",
             "from": "N1-I001",
             "to": "N1-D045",
-            "distance": 8.98,
+            "distance": 8.97,
             "estimatedTime": 11.2,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87674,7 +88062,7 @@
             "id": "E1-N1-I001-N1-D046",
             "from": "N1-I001",
             "to": "N1-D046",
-            "distance": 11.63,
+            "distance": 11.62,
             "estimatedTime": 14.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87686,8 +88074,8 @@
             "id": "E1-N1-I001-N1-D047",
             "from": "N1-I001",
             "to": "N1-D047",
-            "distance": 9.4,
-            "estimatedTime": 11.8,
+            "distance": 9.39,
+            "estimatedTime": 11.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -87698,7 +88086,7 @@
             "id": "E1-N1-I001-N1-D048",
             "from": "N1-I001",
             "to": "N1-D048",
-            "distance": 8.51,
+            "distance": 8.5,
             "estimatedTime": 10.6,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87710,7 +88098,7 @@
             "id": "E1-N1-I001-N1-D049",
             "from": "N1-I001",
             "to": "N1-D049",
-            "distance": 20.59,
+            "distance": 20.58,
             "estimatedTime": 25.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87722,8 +88110,8 @@
             "id": "E1-N1-I001-N1-D050",
             "from": "N1-I001",
             "to": "N1-D050",
-            "distance": 20.2,
-            "estimatedTime": 25.3,
+            "distance": 20.19,
+            "estimatedTime": 25.2,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -87782,7 +88170,7 @@
             "id": "E1-N1-I001-N1-D055",
             "from": "N1-I001",
             "to": "N1-D055",
-            "distance": 56.48,
+            "distance": 56.47,
             "estimatedTime": 70.6,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87806,7 +88194,7 @@
             "id": "E1-N1-I001-N1-D057",
             "from": "N1-I001",
             "to": "N1-D057",
-            "distance": 13.62,
+            "distance": 13.63,
             "estimatedTime": 17.0,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87830,7 +88218,7 @@
             "id": "E1-N1-I001-N1-D059",
             "from": "N1-I001",
             "to": "N1-D059",
-            "distance": 5.33,
+            "distance": 5.32,
             "estimatedTime": 6.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87842,7 +88230,7 @@
             "id": "E1-N1-I001-N1-D060",
             "from": "N1-I001",
             "to": "N1-D060",
-            "distance": 7.62,
+            "distance": 7.61,
             "estimatedTime": 9.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87854,7 +88242,7 @@
             "id": "E1-N1-I001-N1-D061",
             "from": "N1-I001",
             "to": "N1-D061",
-            "distance": 21.37,
+            "distance": 21.36,
             "estimatedTime": 26.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87866,8 +88254,8 @@
             "id": "E1-N1-I001-N1-D062",
             "from": "N1-I001",
             "to": "N1-D062",
-            "distance": 8.68,
-            "estimatedTime": 10.9,
+            "distance": 8.67,
+            "estimatedTime": 10.8,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -87878,7 +88266,7 @@
             "id": "E1-N1-I001-N1-D063",
             "from": "N1-I001",
             "to": "N1-D063",
-            "distance": 50.0,
+            "distance": 50.01,
             "estimatedTime": 62.5,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87914,7 +88302,7 @@
             "id": "E1-N1-I001-N1-D066",
             "from": "N1-I001",
             "to": "N1-D066",
-            "distance": 16.48,
+            "distance": 16.49,
             "estimatedTime": 20.6,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87938,7 +88326,7 @@
             "id": "E1-N1-I001-N1-D068",
             "from": "N1-I001",
             "to": "N1-D068",
-            "distance": 44.15,
+            "distance": 44.14,
             "estimatedTime": 55.2,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -87974,7 +88362,7 @@
             "id": "E1-N1-I001-N1-D071",
             "from": "N1-I001",
             "to": "N1-D071",
-            "distance": 9.91,
+            "distance": 9.92,
             "estimatedTime": 12.4,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -88070,7 +88458,7 @@
             "id": "E1-N1-I001-N1-D079",
             "from": "N1-I001",
             "to": "N1-D079",
-            "distance": 8.46,
+            "distance": 8.47,
             "estimatedTime": 10.6,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -88120,6 +88508,150 @@
             "to": "N1-D083",
             "distance": 9.16,
             "estimatedTime": 11.4,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D084",
+            "from": "N1-I001",
+            "to": "N1-D084",
+            "distance": 30.11,
+            "estimatedTime": 37.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D085",
+            "from": "N1-I001",
+            "to": "N1-D085",
+            "distance": 29.56,
+            "estimatedTime": 36.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D086",
+            "from": "N1-I001",
+            "to": "N1-D086",
+            "distance": 40.61,
+            "estimatedTime": 50.8,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I002-N1-D087",
+            "from": "N1-I002",
+            "to": "N1-D087",
+            "distance": 39.74,
+            "estimatedTime": 49.7,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D088",
+            "from": "N1-I001",
+            "to": "N1-D088",
+            "distance": 34.61,
+            "estimatedTime": 43.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D089",
+            "from": "N1-I001",
+            "to": "N1-D089",
+            "distance": 33.04,
+            "estimatedTime": 41.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D090",
+            "from": "N1-I001",
+            "to": "N1-D090",
+            "distance": 46.45,
+            "estimatedTime": 58.1,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D091",
+            "from": "N1-I001",
+            "to": "N1-D091",
+            "distance": 46.42,
+            "estimatedTime": 58.0,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D092",
+            "from": "N1-I001",
+            "to": "N1-D092",
+            "distance": 1.3,
+            "estimatedTime": 1.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I002-N1-D093",
+            "from": "N1-I002",
+            "to": "N1-D093",
+            "distance": 5.7,
+            "estimatedTime": 7.1,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I002-N1-D094",
+            "from": "N1-I002",
+            "to": "N1-D094",
+            "distance": 6.83,
+            "estimatedTime": 8.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D095",
+            "from": "N1-I001",
+            "to": "N1-D095",
+            "distance": 49.36,
+            "estimatedTime": 61.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -88367,11 +88899,11 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-EN008-N1-D068",
+            "id": "E1-N1-EN008-N1-D087",
             "from": "N1-EN008",
-            "to": "N1-D068",
-            "distance": 21.94,
-            "estimatedTime": 27.4,
+            "to": "N1-D087",
+            "distance": 11.52,
+            "estimatedTime": 14.4,
             "accessibilityLevel": 0,
             "riskLevel": 5,
             "walkable": true,
@@ -88427,11 +88959,11 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-EN013-N1-D033",
+            "id": "E1-N1-EN013-N1-D090",
             "from": "N1-EN013",
-            "to": "N1-D033",
-            "distance": 16.03,
-            "estimatedTime": 20.0,
+            "to": "N1-D090",
+            "distance": 13.44,
+            "estimatedTime": 16.8,
             "accessibilityLevel": 0,
             "riskLevel": 5,
             "walkable": true,
@@ -151863,6 +152395,63 @@
               ],
               "sourceLayer": "window+geometry"
             }
+          },
+          {
+            "type": "Feature",
+            "id": "D2-0063",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -21.537708066406246,
+                -74.93813483398438
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D2-0064",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -20.376026132812495,
+                -74.93813483398438
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D2-0065",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -28.774430649414057,
+                9.033201933593748
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "fire",
+              "width_m": 0.9,
+              "mergedCount": 1,
+              "rooms": [],
+              "sourceLayer": "DOOR_FIRE"
+            }
           }
         ],
         "stairs": [
@@ -161191,6 +161780,42 @@
             ]
           },
           {
+            "id": "N2-D063",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -21.537708066406246,
+              -74.93813483398438
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N2-D064",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -20.376026132812495,
+              -74.93813483398438
+            ],
+            "rooms": []
+          },
+          {
+            "id": "N2-D065",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.898,
+            "coordinates": [
+              -28.774430649414057,
+              9.033201933593748
+            ],
+            "rooms": []
+          },
+          {
             "id": "N2-I001",
             "type": "intersection",
             "roomId": "R2003",
@@ -162766,6 +163391,42 @@
             "to": "N2-D062",
             "distance": 4.42,
             "estimatedTime": 5.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E2-N2-I002-N2-D063",
+            "from": "N2-I002",
+            "to": "N2-D063",
+            "distance": 11.6,
+            "estimatedTime": 14.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E2-N2-I002-N2-D064",
+            "from": "N2-I002",
+            "to": "N2-D064",
+            "distance": 12.0,
+            "estimatedTime": 15.0,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E2-N2-I001-N2-D065",
+            "from": "N2-I001",
+            "to": "N2-D065",
+            "distance": 54.07,
+            "estimatedTime": 67.6,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,

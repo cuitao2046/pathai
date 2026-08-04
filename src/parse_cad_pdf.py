@@ -538,19 +538,28 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     return doors
 
 
-def fire_door_leaves(quads, lines, all_segs):
+def fire_door_leaves(quads, lines, all_segs, wall_gaps):
     """
     补检 DOOR_FIRE 图层中「无摆弧」的防火门叶片：
     部分防火门仅以细长矩形(quad)或直接线段(line)表示（叶片横跨墙缝、无四分之一圆弧），
     detect_doors 只处理了 curves，会漏检。这里按几何特征识别横跨墙缝的叶片：
-      - quad：细长矩形（aspect>=4），中心远离墙面（在墙缝中），两端贴墙（门垛）；
-      - line：长度 7~60pt，中心远离墙面、两端贴墙。
+      - quad：细长矩形（aspect>=4），中心远离墙面（在墙缝中），至少一端贴墙（门垛）；
+      - line：长度 7~60pt，中心远离墙面、至少一端贴墙。
+    额外要求叶片质心落在真实「墙缝」(wall_gaps) 附近（<=GAP_TOL），避免把房间内的
+    标注/引线/尺寸线误判为门（这些也可能一端贴墙、中心远离墙面）。
     返回与 detect_doors 同结构的门字典（kind='fire', sourceLayer='DOOR_FIRE'）。
     """
     out = []
+    GAP_TOL = 12.0
 
     def near(p, tol=6.0):
         return min(point_to_seg_dist(p, s1, s2)[0] for s1, s2 in all_segs) < tol
+
+    def near_gap(p, tol=GAP_TOL):
+        if not wall_gaps:
+            return True
+        return min(point_to_seg_dist(p, g["left"], g["right"])[0]
+                   for g in wall_gaps) < tol
 
     def add_leaf(a, b):
         L = math.hypot(a[0] - b[0], a[1] - b[1])
@@ -585,6 +594,10 @@ def fire_door_leaves(quads, lines, all_segs):
         add_leaf(a, b)
 
     for a, b in lines:
+        # 线段来源较含糊（可能是标注/引线），要求质心落在真实墙缝附近才认作门叶片
+        c = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+        if not near_gap(c):
+            continue
         add_leaf(a, b)
 
     return out
@@ -1240,7 +1253,8 @@ def parse_floor(pdf_path, floor_no):
     # --- DOOR_FIRE 无摆弧防火门叶片补检（detect_doors 仅取了 curves）---
     # 部分防火门仅以细长矩形(quad)或线段(line)表示、无摆弧，需补检并并入门列表
     # 参与后续房间归属与 GeoJSON 输出；与已有门(摆弧/无摆弧/普通) <15pt 视为同一洞去重。
-    fire_leaf = fire_door_leaves(fire["quads"], fire["lines"], all_segs)
+    # 墙缝用结构层 wall_gaps（家具层线段可能把门口"补平"，不可用作开口判定）。
+    fire_leaf = fire_door_leaves(fire["quads"], fire["lines"], all_segs, wall_gaps)
     added_fl = 0
     for fl in fire_leaf:
         if any(math.hypot(fl["center"][0] - d["center"][0],
