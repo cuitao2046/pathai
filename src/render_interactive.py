@@ -33,7 +33,7 @@ FLOOR_TITLE_H = 46
 ROOM_COLORS = {
     "classroom": "#FFF9C4", "office": "#D7CCC8", "meeting": "#F8BBD0",
     "toilet": "#B2DFDB", "corridor": "#F5F5F5", "lobby": "#FFF3E0",
-    "staircase": "#FFCDD2", "elevator_hall": "#F8BBD0", "storage": "#CFD8DC",
+    "staircase": "none", "elevator_hall": "#F8BBD0", "storage": "#CFD8DC",
     "equipment": "#B0BEC5", "medical": "#FFEBEE", "lab": "#B3E5FC",
     "reception": "#FCE4EC", "shaft": "#ECEFF1", "atrium": "#FAFAFA",
     "library": "#DCEDC8", "activity": "#E1F5FE", "entrance": "#C8E6C9",
@@ -267,7 +267,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             ]}
             parts.append(
                 f'<g class="layer_room" {info_attr({"tip": tip, "detail": det})}>'
-                f'<polygon points="{pts}" fill="{color}" stroke="#999" stroke-width="0.5"/></g>\n'
+                f'<polygon points="{pts}" fill="{color}" stroke="{"#E57373" if rtype=="staircase" else "#999"}" stroke-width="{1.2 if rtype=="staircase" else 0.5}" stroke-dasharray="{"6,3" if rtype=="staircase" else "none"}"/></g>\n'
             )
             if label:
                 cx_s = sum(p_[0] for p_ in ring[:-1]) / max(len(ring) - 1, 1)
