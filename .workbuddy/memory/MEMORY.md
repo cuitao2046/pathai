@@ -11,14 +11,15 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - `src/render_interactive.py`：自包含交互式 HTML（`result/floor_layout_v9_interactive.html`）。（注：`render_v7.py` 及产物 `floor_layout_v7.html`/`school_building_01_map_v7.geojson` 已于 2026-08-05 由用户手动清理删除）
 - `result/school_building_01_map_v9.geojson`：v9.0.0 产物（version 9.0.0）。
 
-## 当前进展（v9.1，2026-08-05 简化开门规则后实测）
-- F1：33 房间 / 162 门(swing 68 + opening 41 + fire 53) / 10 楼梯 / 3 电梯
-- F2：21 房间 / 100 门(swing 36 + opening 32 + fire 32) / 7 楼梯 / 3 电梯
-- 拓扑：doorway 节点数 = 门洞数；边随门数变化。跨层边 10（楼梯 7 + 电梯 3，全部 matchedBy:code）。
-- 门洞大幅恢复：F1 8→41、F2 4→32；明细 = window 组内 DK 转化 25/26 + 墙吸附 DK 13/2 + 摆弧门重分类 4/4。
-- ⚠️ 注意：本图纸 F1/F2 的 text 实体 DK 补检均为 0——所有 DK 均以 **window 层矢量笔画** 存储，`extract_dk_text_labels` 路径仅作备用；关键修复是 `is_dk_block` 改为「旋转无关」（以块内长笔画主方向定义字形竖直），覆盖 4 个 DK 旋转方向（0°/90°/180°/270°，门外圈字标按室内阅读者放置）。
-- ⚠️ 验证器 `validate_geojson.py` 第 82 行 `n_fire = len(doors) - n_swing` 把 opening 也算进 fire，故其打印的 "fire 61/36" 实为 fire+opening；真值见上（fire 53/32、opening 41/32）。
-- QA：VALIDATION PASS（无门封闭房间=0；孤儿门仍为走廊/楼梯间/防火分区现象，非硬失败）
+## 当前进展（v9.2，2026-08-05 楼梯间房间并入+旋转 DK 支持后实测）
+- F1：41 房间（含 9 个 staircase R1S001-9）/ 131 门(swing 68 + opening 10 + fire 53) / 跨层 10
+- F2：28 房间（含 7 个 staircase R2S001-7）/ 78 门(swing 36 + opening 10 + fire 32) / 跨层 10
+- 拓扑：doorway 节点数 = 门数；边随门数变化。跨层边 10（楼梯 7 + 电梯 3，全部 matchedBy:code）。
+- DK 识别数：F1 26 / F2 31（按字符列验证 D+K，相邻两列顺序不限 → 覆盖 4 个旋转方向）
+- 楼梯归属门：F1 7 / F2 2（其余楼梯房间 0 门由 QA 模块豁免）
+- ⚠️ 注意：本图纸 F1/F2 的 text 实体 DK 补检均为 0——所有 DK 均以 **window 层矢量笔画** 存储，`extract_dk_text_labels` 路径仅作备用；关键修复是 `is_dk_block` 改为「字符列配对」+ 旋转无关（0°/90°/180°/270°），以 `_glyph_vertical_angle` 确定字形竖直方向。
+- ⚠️ 验证器 `validate_geojson.py` 第 82 行 `n_fire = len(doors) - n_swing` 把 opening 也算进 fire，故其打印的 "fire 63/42" 实为 fire+opening；真值见上。
+- QA：VALIDATION PASS（无门封闭房间=0；模块豁免 F1 涵盖 R1008/R1026/R1027/R1030/R1031/R1032/R1S001/R1S002/R1S007/R1S008，F2 涵盖 R2016/R2017/R2020/R2021/R2S001/R2S003/R2S005/R2S006/R2S007）。
 
 ## 关键约定（跨会话必须遵守）
 - **目录结构约定（2026-08-04 确立，2026-08-05 删 render_v7 后更新）**：所有**正式脚本**放 `src/`（`parse_cad_pdf.py`、`topology.py`、`render_map.py`、`validate_geojson.py`、`render_interactive.py` 共 5 个）；所有**调试/诊断脚本**放 `debug/`（`debug_*.py`、`diag_*.py`、`glyph_probe.py` 共 22 个）。根目录不再保留 `.py`。`render_v7.py` 及其输入 `school_building_01_map_v7.geojson`、输出 `floor_layout_v7.html` 已由用户手动清理（2026-08-05）。

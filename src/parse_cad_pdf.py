@@ -884,22 +884,42 @@ def _cluster_along_axis(feats, axis="x", gap=4.0):
     return cols
 
 
+def _has_d_shape(col, is_glyph_vert):
+    """列内是否含 D 字形：有长竖茎 + 至少 1 个非茎笔画（弧线）。"""
+    verts = [f for f in col if is_glyph_vert(f) and f["L"] >= 4.0]
+    if not verts:
+        return False
+    stem = max(verts, key=lambda f: f["L"])
+    # 弧线可能位于茎任一侧（旋转无关），只要存在非茎笔画即可
+    others = [f for f in col if f is not stem]
+    return len(others) >= 1
+
+
+def _has_k_shape(col, is_glyph_vert):
+    """列内是否含 K 字形：有长竖茎 + 同时存在上/下对向斜线。"""
+    verts = [f for f in col if is_glyph_vert(f) and f["L"] >= 4.0]
+    if not verts:
+        return False
+    has_opp, _, _ = _has_opp_diagonals_in(col, min_len=0.5)
+    return has_opp
+
+
 def is_dk_block(strokes, bbox):
     """严格 DK 识别：D 在前、K 在后、二者相邻。
 
     之前用「左 40% 有竖笔 + 中段有对向斜线」的笼统区域判定，
-    会把 M1524 / C01224 等非 DK 块误判。现改为按字符列逐一验证。
+    会把 M1524 / C01224 等非 DK 块误判。现改为按字符列验证。
+
+    关键改进：**支持所有 4 个旋转方向**——
+      - 0° / 90° 旋转：列序 = D-K（col0=D, col1=K）
+      - 180° / 270° 旋转：列序 = K-D（col0=K, col1=D）
+      故只验证相邻两列中存在 D-形 + K-形配对，不限定列序。
 
     规则：
-      - 把块内所有笔画沿书写轴向聚成字符列（水平书写→按 x，竖排→按 y）；
-      - 至少需要 2 列（前端至少 D + K）；
-      - 第 0 列 = D：≤2 条字形长竖茎 + 茎右侧有弧线笔画；
-      - 第 1 列 = K：≤2 条字形长竖茎 + 同时存在上/下对向斜线；
-      - 以上都满足才算 DK。
-
-    竖排文字（贴侧墙旋转 90°/270° 的 DK）：字符沿 Y 排列、字形
-    "竖直"方向非页面竖直，聚类轴向同步切换；D 的「右侧弧线」也沿
-    书写方向定义。
+      - 块内所有笔画沿书写轴向聚成字符列（水平→x，竖排→y）；
+      - 至少 2 列；
+      - col0 与 col1 一为 D-形（有茎+弧）、一为 K-形（有茎+对向斜）；
+      - 二者相邻（不允许中间隔其它字符列）—— 自然成立因为仅取 cols[0:2]。
     """
     x0, y0, x1, y1 = bbox
     w = x1 - x0
@@ -908,7 +928,6 @@ def is_dk_block(strokes, bbox):
     if len(strokes) < 6:
         return False, "too_few_strokes"
 
-    # 提取笔画特征
     all_feats = []
     for s in strokes:
         f = _stroke_features(s[0], s[1])
@@ -923,43 +942,24 @@ def is_dk_block(strokes, bbox):
         diff = abs((f2["ang_mod"] - glyph_ang + 90) % 180 - 90)
         return diff < 25
 
-    # 判断文字是否竖排（字形"竖直"方向离页面竖直 > 40°）
+    # 判断是否竖排（贴侧墙 90°/270° 旋转）
     vert_text = abs((glyph_ang % 180) - 90) > 40
 
-    # 沿书写轴聚成字符列
     cols = _cluster_along_axis(all_feats, axis="y" if vert_text else "x", gap=4.0)
     if len(cols) < 2:
         return False, "too_few_cols"
 
-    # --- 第 0 列 → 须为 D：有长竖茎 + 弧线在茎右侧 ---
-    # 注：CAD 中 D 的弧线由 2-4 段近竖直短划组成，竖茎数可能 >2，不设上限。
-    col0 = cols[0]
-    col0_verts = [f for f in col0 if is_glyph_vert(f) and f["L"] >= 4.0]
-    if len(col0_verts) == 0:
-        return False, "d_no_vert"
-    stem0 = max(col0_verts, key=lambda f: f["L"])
-    # D 的弧线位于竖茎右侧（书写方向正侧）
-    # 水平书写："右侧"=cx 更大；竖排："右侧"=cy 更大
-    if vert_text:
-        right_strokes = [f for f in col0
-                         if f["cy"] > stem0["cy"] + 1.5]
-    else:
-        right_strokes = [f for f in col0
-                         if f["cx"] > stem0["cx"] + 1.5]
-    if len(right_strokes) < 1:
-        return False, "d_no_right_arc"
+    # 验证 cols[0] + cols[1] 形成 DK 配对（顺序不限，覆盖 180°/270° 反转情况）
+    col0_d = _has_d_shape(cols[0], is_glyph_vert)
+    col0_k = _has_k_shape(cols[0], is_glyph_vert)
+    col1_d = _has_d_shape(cols[1], is_glyph_vert)
+    col1_k = _has_k_shape(cols[1], is_glyph_vert)
 
-    # --- 第 1 列 → 须为 K：有长竖茎 + 对向斜线（K 的特征）---
-    # K 的两条斜线的互对向性（一条向上、一条向下）是刚需；竖茎数不限。
-    col1 = cols[1]
-    col1_verts = [f for f in col1 if is_glyph_vert(f) and f["L"] >= 4.0]
-    if len(col1_verts) == 0:
-        return False, "k_no_vert"
-    has_opp, n_up, n_dn = _has_opp_diagonals_in(col1, min_len=0.5)
-    if not has_opp:
-        return False, f"k_no_opp(up={n_up},dn={n_dn})"
-
-    return True, "DK"
+    if col0_d and col1_k:
+        return True, "DK_DK"
+    if col0_k and col1_d:
+        return True, "DK_KD"
+    return False, f"no_dk_pair(d0={col0_d},k0={col0_k},d1={col1_d},k1={col1_k})"
 
 
 def recognize_dk_glyph_blocks(window_lines, with_strokes=True):
@@ -1599,6 +1599,20 @@ def parse_floor(pdf_path, floor_no):
     doors = dedupe_doorways(doors)
     print(f"[F{floor_no}] 门去重: {before} -> {len(doors)}")
 
+    # --- 提前计算楼梯间 bbox（要在 build_rooms 之前得到位置，便于稍后作为 staircase room 加入
+    #     rooms 列表，让门归属能找到楼梯间）。STAIR + A-FLOR-STRS 双层合并聚类：
+    #     F2 STAIR 仅 2 个 quad，A-FLOR-STRS 含完整踏步/护栏线。
+    _stair_pts = []
+    for _lname in ("STAIR", "A-FLOR-STRS"):
+        _si = items.get(_lname, {"lines": [], "quads": []})
+        for _seg in _si["lines"]:
+            _stair_pts.append(_seg)
+        for _q in _si["quads"]:
+            _stair_pts.append((_q[0], _q[2]))
+    _stair_boxes = bbox_clusters(_stair_pts, gap_pt=4 * PT_PER_M) if _stair_pts else []
+    _stair_boxes = [b for b in _stair_boxes
+                    if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+
     # --- DOOR_FIRE 防火门仅由摆弧(curve)经 detect_doors 生成（需求：只处理 arc based door）---
     # fire["lines"]/fire["quads"] 不用于门识别，由 detect_doors 的 fire_curves 分支处理。
 
@@ -1638,6 +1652,20 @@ def parse_floor(pdf_path, floor_no):
             "centroid_m": list(centroid_m),
         })
     print(f"[F{floor_no}] 语义房间(带标签): {len(rooms)}")
+
+    # --- 追加楼梯间 room（build_rooms 栅格化通常漏掉开放式楼梯井）---
+    # STAIRCASE 类型让门归属能找到这些房间，使 II-Bx-yz#ST 类 DK 门洞被认领。
+    for sb_idx, (x0, y0, x1, y1) in enumerate(_stair_boxes):
+        poly = box(x0, y0, x1, y1)
+        rooms.append({
+            "id": f"R{floor_no}S{sb_idx + 1:03d}",
+            "label": f"楼梯间{sb_idx + 1}",
+            "roomType": "staircase",
+            "polygon_pt": poly,
+            "coords_m": [list(pt2m((x, y))) for x, y in poly.exterior.coords],
+            "centroid_m": list(pt2m((poly.centroid.x, poly.centroid.y))),
+        })
+    print(f"[F{floor_no}] 含楼梯间后房间数: {len(rooms)}")
 
     # --- 门洞归属 pass 0：门弧中点（摆动侧）落在房间内部 -> 该房间所有。
     #     门向内开，弧必然鼓入所服务房间；这是最可靠的归属信号

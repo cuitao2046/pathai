@@ -61832,6 +61832,411 @@
               "hasIndependentEntrance": false,
               "floor": 1
             }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S001",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -75.08943322509765,
+                    -11.29309354980469
+                  ],
+                  [
+                    -75.08943322509765,
+                    -19.190007099609378
+                  ],
+                  [
+                    -80.93594225830078,
+                    -19.190007099609378
+                  ],
+                  [
+                    -80.93594225830078,
+                    -11.29309354980469
+                  ],
+                  [
+                    -75.08943322509765,
+                    -11.29309354980469
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间1",
+              "roomId": "R1S001",
+              "centroid": [
+                -78.01268774169922,
+                -15.241550324707035
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S002",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -50.097360324707026,
+                    -32.03835935791016
+                  ],
+                  [
+                    -50.097360324707026,
+                    -35.93602774169922
+                  ],
+                  [
+                    -55.45507064575195,
+                    -35.93602774169922
+                  ],
+                  [
+                    -55.45507064575195,
+                    -32.03835935791016
+                  ],
+                  [
+                    -50.097360324707026,
+                    -32.03835935791016
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间2",
+              "roomId": "R1S002",
+              "centroid": [
+                -52.77621548522949,
+                -33.987193549804694
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S003",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -12.809208066406246,
+                    -48.581252265625004
+                  ],
+                  [
+                    -12.809208066406246,
+                    -53.62790709960938
+                  ],
+                  [
+                    -25.409985483398433,
+                    -53.62790709960938
+                  ],
+                  [
+                    -25.409985483398433,
+                    -48.581252265625004
+                  ],
+                  [
+                    -12.809208066406246,
+                    -48.581252265625004
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间3",
+              "roomId": "R1S003",
+              "centroid": [
+                -19.10959677490234,
+                -51.10457968261719
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S004",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    17.794500966796882,
+                    -20.256472907714848
+                  ],
+                  [
+                    17.794500966796882,
+                    -52.345611616210945
+                  ],
+                  [
+                    11.662337099609381,
+                    -52.345611616210945
+                  ],
+                  [
+                    11.662337099609381,
+                    -20.256472907714848
+                  ],
+                  [
+                    17.794500966796882,
+                    -20.256472907714848
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间4",
+              "roomId": "R1S004",
+              "centroid": [
+                14.72841903320313,
+                -36.3010422619629
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S005",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -33.141851291503905,
+                    -74.02403419921876
+                  ],
+                  [
+                    -33.141851291503905,
+                    -77.97248451660157
+                  ],
+                  [
+                    -39.37558548339843,
+                    -77.97248451660157
+                  ],
+                  [
+                    -39.37558548339843,
+                    -74.02403419921876
+                  ],
+                  [
+                    -33.141851291503905,
+                    -74.02403419921876
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间5",
+              "roomId": "R1S005",
+              "centroid": [
+                -36.25871838745117,
+                -75.99825935791019
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S006",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -52.76351838745117,
+                    -15.241550324707035
+                  ],
+                  [
+                    -52.76351838745117,
+                    -19.190007099609378
+                  ],
+                  [
+                    -58.79411838745117,
+                    -19.190007099609378
+                  ],
+                  [
+                    -58.79411838745117,
+                    -15.241550324707035
+                  ],
+                  [
+                    -52.76351838745117,
+                    -15.241550324707035
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间6",
+              "roomId": "R1S006",
+              "centroid": [
+                -55.77881838745117,
+                -17.215778712158205
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S007",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -10.77784677490234,
+                    -74.02403419921876
+                  ],
+                  [
+                    -10.77784677490234,
+                    -77.97248451660157
+                  ],
+                  [
+                    -16.80844677490234,
+                    -77.97248451660157
+                  ],
+                  [
+                    -16.80844677490234,
+                    -74.02403419921876
+                  ],
+                  [
+                    -10.77784677490234,
+                    -74.02403419921876
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间7",
+              "roomId": "R1S007",
+              "centroid": [
+                -13.79314677490234,
+                -75.99825935791016
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S008",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -19.34129903320312,
+                    9.947315483398436
+                  ],
+                  [
+                    -19.34129903320312,
+                    5.998852250976561
+                  ],
+                  [
+                    -24.229260324707028,
+                    5.998852250976561
+                  ],
+                  [
+                    -24.229260324707028,
+                    9.947315483398436
+                  ],
+                  [
+                    -19.34129903320312,
+                    9.947315483398436
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间8",
+              "roomId": "R1S008",
+              "centroid": [
+                -21.785279678955085,
+                7.973083867187498
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R1S009",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -58.844903549804684,
+                    18.498065800781248
+                  ],
+                  [
+                    -58.844903549804684,
+                    12.797561284179686
+                  ],
+                  [
+                    -61.94272742065429,
+                    12.797561284179686
+                  ],
+                  [
+                    -61.94272742065429,
+                    18.498065800781248
+                  ],
+                  [
+                    -58.844903549804684,
+                    18.498065800781248
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间9",
+              "roomId": "R1S009",
+              "centroid": [
+                -60.39381548522949,
+                15.647813542480467
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 1
+            }
           }
         ],
         "doors": [
@@ -63457,7 +63862,9 @@
               "doorType": "fire",
               "width_m": 1.36,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1S006"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -63721,6 +64128,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
+                "R1S001",
                 "R1002"
               ],
               "sourceLayer": "DOOR_FIRE"
@@ -63742,6 +64150,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
+                "R1S001",
                 "R1002"
               ],
               "sourceLayer": "DOOR_FIRE"
@@ -64181,7 +64590,9 @@
               "doorType": "fire",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1S008"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -64221,7 +64632,9 @@
               "doorType": "fire",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1S001"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -64261,7 +64674,9 @@
               "doorType": "fire",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1S005"
+              ],
               "sourceLayer": "DOOR_FIRE"
             }
           },
@@ -64374,6 +64789,27 @@
             "geometry": {
               "type": "Point",
               "coordinates": [
+                -64.54540645202637,
+                -31.835221937255863
+              ]
+            },
+            "properties": {
+              "type": "door",
+              "doorType": "opening",
+              "width_m": 2.45,
+              "mergedCount": 1,
+              "rooms": [
+                "R1006"
+              ],
+              "sourceLayer": "window+geometry"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "D1-0128",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
                 -24.65774903320312,
                 17.095156767578125
               ]
@@ -64391,7 +64827,7 @@
           },
           {
             "type": "Feature",
-            "id": "D1-0128",
+            "id": "D1-0129",
             "geometry": {
               "type": "Point",
               "coordinates": [
@@ -64412,7 +64848,7 @@
           },
           {
             "type": "Feature",
-            "id": "D1-0129",
+            "id": "D1-0130",
             "geometry": {
               "type": "Point",
               "coordinates": [
@@ -64433,7 +64869,7 @@
           },
           {
             "type": "Feature",
-            "id": "D1-0130",
+            "id": "D1-0131",
             "geometry": {
               "type": "Point",
               "coordinates": [
@@ -64446,7 +64882,9 @@
               "doorType": "opening",
               "width_m": 1.9,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "R1S006"
+              ],
               "sourceLayer": "window+geometry"
             }
           }
@@ -74372,27 +74810,6 @@
               "type": "LineString",
               "coordinates": [
                 [
-                  -63.32024225830078,
-                  -31.835221937255863
-                ],
-                [
-                  -65.77057064575195,
-                  -31.835221937255863
-                ]
-              ]
-            },
-            "properties": {
-              "type": "window",
-              "length_m": 2.45
-            }
-          },
-          {
-            "type": "Feature",
-            "id": "WN1-0039",
-            "geometry": {
-              "type": "LineString",
-              "coordinates": [
-                [
                   -76.51773322509766,
                   -31.835221937255863
                 ],
@@ -74409,7 +74826,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0040",
+            "id": "WN1-0039",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74430,7 +74847,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0041",
+            "id": "WN1-0040",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74451,7 +74868,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0042",
+            "id": "WN1-0041",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74472,7 +74889,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0043",
+            "id": "WN1-0042",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74493,7 +74910,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0044",
+            "id": "WN1-0043",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74514,7 +74931,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0045",
+            "id": "WN1-0044",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74535,7 +74952,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0046",
+            "id": "WN1-0045",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74545,6 +74962,27 @@
                 ],
                 [
                   -50.19892742065429,
+                  25.817315483398435
+                ]
+              ]
+            },
+            "properties": {
+              "type": "window",
+              "length_m": 6.043
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "WN1-0046",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -16.51009322875976,
+                  19.77402
+                ],
+                [
+                  -16.51009322875976,
                   25.817315483398435
                 ]
               ]
@@ -74557,27 +74995,6 @@
           {
             "type": "Feature",
             "id": "WN1-0047",
-            "geometry": {
-              "type": "LineString",
-              "coordinates": [
-                [
-                  -16.51009322875976,
-                  19.77402
-                ],
-                [
-                  -16.51009322875976,
-                  25.817315483398435
-                ]
-              ]
-            },
-            "properties": {
-              "type": "window",
-              "length_m": 6.043
-            }
-          },
-          {
-            "type": "Feature",
-            "id": "WN1-0048",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74598,7 +75015,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0049",
+            "id": "WN1-0048",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74619,7 +75036,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0050",
+            "id": "WN1-0049",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74640,7 +75057,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0051",
+            "id": "WN1-0050",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74661,7 +75078,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0052",
+            "id": "WN1-0051",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74682,7 +75099,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0053",
+            "id": "WN1-0052",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74703,7 +75120,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0054",
+            "id": "WN1-0053",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74724,7 +75141,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0055",
+            "id": "WN1-0054",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74745,7 +75162,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0056",
+            "id": "WN1-0055",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74766,7 +75183,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0057",
+            "id": "WN1-0056",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74787,7 +75204,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0058",
+            "id": "WN1-0057",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74808,7 +75225,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0059",
+            "id": "WN1-0058",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74829,7 +75246,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0060",
+            "id": "WN1-0059",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74850,7 +75267,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0061",
+            "id": "WN1-0060",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74871,7 +75288,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0062",
+            "id": "WN1-0061",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74892,7 +75309,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0063",
+            "id": "WN1-0062",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74913,7 +75330,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0064",
+            "id": "WN1-0063",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74934,7 +75351,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0065",
+            "id": "WN1-0064",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74955,7 +75372,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0066",
+            "id": "WN1-0065",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74976,7 +75393,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0067",
+            "id": "WN1-0066",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -74997,7 +75414,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0068",
+            "id": "WN1-0067",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75018,7 +75435,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0069",
+            "id": "WN1-0068",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75039,7 +75456,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0070",
+            "id": "WN1-0069",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75060,7 +75477,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0071",
+            "id": "WN1-0070",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75081,7 +75498,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0072",
+            "id": "WN1-0071",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75102,7 +75519,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0073",
+            "id": "WN1-0072",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75123,7 +75540,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0074",
+            "id": "WN1-0073",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75144,7 +75561,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0075",
+            "id": "WN1-0074",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75165,7 +75582,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0076",
+            "id": "WN1-0075",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75186,7 +75603,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0077",
+            "id": "WN1-0076",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75207,7 +75624,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0078",
+            "id": "WN1-0077",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75228,7 +75645,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0079",
+            "id": "WN1-0078",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75249,7 +75666,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0080",
+            "id": "WN1-0079",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75270,7 +75687,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0081",
+            "id": "WN1-0080",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75291,7 +75708,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0082",
+            "id": "WN1-0081",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75312,7 +75729,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0083",
+            "id": "WN1-0082",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75333,7 +75750,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0084",
+            "id": "WN1-0083",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75354,7 +75771,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0085",
+            "id": "WN1-0084",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75375,7 +75792,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0086",
+            "id": "WN1-0085",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75396,7 +75813,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0087",
+            "id": "WN1-0086",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75417,7 +75834,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0088",
+            "id": "WN1-0087",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75438,7 +75855,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0089",
+            "id": "WN1-0088",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75459,7 +75876,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0090",
+            "id": "WN1-0089",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75480,7 +75897,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0091",
+            "id": "WN1-0090",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75501,7 +75918,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0092",
+            "id": "WN1-0091",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75522,7 +75939,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0093",
+            "id": "WN1-0092",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75543,7 +75960,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0094",
+            "id": "WN1-0093",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75564,7 +75981,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0095",
+            "id": "WN1-0094",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75585,7 +76002,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0096",
+            "id": "WN1-0095",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75606,7 +76023,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0097",
+            "id": "WN1-0096",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75627,7 +76044,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0098",
+            "id": "WN1-0097",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75648,7 +76065,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0099",
+            "id": "WN1-0098",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75669,7 +76086,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0100",
+            "id": "WN1-0099",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75679,6 +76096,27 @@
                 ],
                 [
                   -24.956105808105466,
+                  -85.06320258300782
+                ]
+              ]
+            },
+            "properties": {
+              "type": "window",
+              "length_m": 1.073
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "WN1-0100",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -22.080462583007808,
+                  -83.99038903320313
+                ],
+                [
+                  -22.080462583007808,
                   -85.06320258300782
                 ]
               ]
@@ -75695,11 +76133,11 @@
               "type": "LineString",
               "coordinates": [
                 [
-                  -22.080462583007808,
+                  -19.331777420654294,
                   -83.99038903320313
                 ],
                 [
-                  -22.080462583007808,
+                  -19.331777420654294,
                   -85.06320258300782
                 ]
               ]
@@ -75712,27 +76150,6 @@
           {
             "type": "Feature",
             "id": "WN1-0102",
-            "geometry": {
-              "type": "LineString",
-              "coordinates": [
-                [
-                  -19.331777420654294,
-                  -83.99038903320313
-                ],
-                [
-                  -19.331777420654294,
-                  -85.06320258300782
-                ]
-              ]
-            },
-            "properties": {
-              "type": "window",
-              "length_m": 1.073
-            }
-          },
-          {
-            "type": "Feature",
-            "id": "WN1-0103",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75753,7 +76170,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0104",
+            "id": "WN1-0103",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75774,7 +76191,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0105",
+            "id": "WN1-0104",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75795,7 +76212,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0106",
+            "id": "WN1-0105",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75816,7 +76233,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0107",
+            "id": "WN1-0106",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75837,7 +76254,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0108",
+            "id": "WN1-0107",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75858,7 +76275,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0109",
+            "id": "WN1-0108",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75879,7 +76296,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0110",
+            "id": "WN1-0109",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75890,6 +76307,27 @@
                 [
                   -58.54654677490234,
                   18.647247416992187
+                ]
+              ]
+            },
+            "properties": {
+              "type": "window",
+              "length_m": 1.447
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "WN1-0110",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -57.099203549804685,
+                  11.648574833984373
+                ],
+                [
+                  -58.54654677490234,
+                  11.648574833984373
                 ]
               ]
             },
@@ -75905,18 +76343,18 @@
               "type": "LineString",
               "coordinates": [
                 [
-                  -57.099203549804685,
-                  11.648574833984373
+                  -8.264037741699214,
+                  -0.7458912915039086
                 ],
                 [
-                  -58.54654677490234,
-                  11.648574833984373
+                  -9.463812583007808,
+                  -0.7458912915039086
                 ]
               ]
             },
             "properties": {
               "type": "window",
-              "length_m": 1.447
+              "length_m": 1.2
             }
           },
           {
@@ -75927,11 +76365,11 @@
               "coordinates": [
                 [
                   -8.264037741699214,
-                  -0.7458912915039086
+                  -2.647120649414065
                 ],
                 [
                   -9.463812583007808,
-                  -0.7458912915039086
+                  -2.647120649414065
                 ]
               ]
             },
@@ -75943,27 +76381,6 @@
           {
             "type": "Feature",
             "id": "WN1-0113",
-            "geometry": {
-              "type": "LineString",
-              "coordinates": [
-                [
-                  -8.264037741699214,
-                  -2.647120649414065
-                ],
-                [
-                  -9.463812583007808,
-                  -2.647120649414065
-                ]
-              ]
-            },
-            "properties": {
-              "type": "window",
-              "length_m": 1.2
-            }
-          },
-          {
-            "type": "Feature",
-            "id": "WN1-0114",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -75984,7 +76401,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0115",
+            "id": "WN1-0114",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -76005,7 +76422,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0116",
+            "id": "WN1-0115",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -76026,7 +76443,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0117",
+            "id": "WN1-0116",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -76047,7 +76464,7 @@
           },
           {
             "type": "Feature",
-            "id": "WN1-0118",
+            "id": "WN1-0117",
             "geometry": {
               "type": "LineString",
               "coordinates": [
@@ -76517,6 +76934,132 @@
             "accessible": true,
             "hasIndependentEntrance": false,
             "floor": 1
+          },
+          {
+            "id": "R1S001",
+            "type": "staircase",
+            "label": "楼梯间1",
+            "centroid": [
+              -78.01268774169922,
+              -15.241550324707035
+            ],
+            "geometryId": "R1S001",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S002",
+            "type": "staircase",
+            "label": "楼梯间2",
+            "centroid": [
+              -52.77621548522949,
+              -33.987193549804694
+            ],
+            "geometryId": "R1S002",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S003",
+            "type": "staircase",
+            "label": "楼梯间3",
+            "centroid": [
+              -19.10959677490234,
+              -51.10457968261719
+            ],
+            "geometryId": "R1S003",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S004",
+            "type": "staircase",
+            "label": "楼梯间4",
+            "centroid": [
+              14.72841903320313,
+              -36.3010422619629
+            ],
+            "geometryId": "R1S004",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S005",
+            "type": "staircase",
+            "label": "楼梯间5",
+            "centroid": [
+              -36.25871838745117,
+              -75.99825935791019
+            ],
+            "geometryId": "R1S005",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S006",
+            "type": "staircase",
+            "label": "楼梯间6",
+            "centroid": [
+              -55.77881838745117,
+              -17.215778712158205
+            ],
+            "geometryId": "R1S006",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S007",
+            "type": "staircase",
+            "label": "楼梯间7",
+            "centroid": [
+              -13.79314677490234,
+              -75.99825935791016
+            ],
+            "geometryId": "R1S007",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S008",
+            "type": "staircase",
+            "label": "楼梯间8",
+            "centroid": [
+              -21.785279678955085,
+              7.973083867187498
+            ],
+            "geometryId": "R1S008",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
+          },
+          {
+            "id": "R1S009",
+            "type": "staircase",
+            "label": "楼梯间9",
+            "centroid": [
+              -60.39381548522949,
+              15.647813542480467
+            ],
+            "geometryId": "R1S009",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 1
           }
         ]
       },
@@ -76937,6 +77480,123 @@
             ],
             "public": true,
             "accessible": true
+          },
+          {
+            "id": "N1-R033",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S001",
+            "label": "楼梯间1",
+            "coordinates": [
+              -78.01268774169922,
+              -15.241550324707035
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R034",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S002",
+            "label": "楼梯间2",
+            "coordinates": [
+              -52.77621548522949,
+              -33.987193549804694
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R035",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S003",
+            "label": "楼梯间3",
+            "coordinates": [
+              -19.10959677490234,
+              -51.10457968261719
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R036",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S004",
+            "label": "楼梯间4",
+            "coordinates": [
+              14.72841903320313,
+              -36.3010422619629
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R037",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S005",
+            "label": "楼梯间5",
+            "coordinates": [
+              -36.25871838745117,
+              -75.99825935791019
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R038",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S006",
+            "label": "楼梯间6",
+            "coordinates": [
+              -55.77881838745117,
+              -17.215778712158205
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R039",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S007",
+            "label": "楼梯间7",
+            "coordinates": [
+              -13.79314677490234,
+              -75.99825935791016
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R040",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S008",
+            "label": "楼梯间8",
+            "coordinates": [
+              -21.785279678955085,
+              7.973083867187498
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N1-R041",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R1S009",
+            "label": "楼梯间9",
+            "coordinates": [
+              -60.39381548522949,
+              15.647813542480467
+            ],
+            "public": true,
+            "accessible": false
           },
           {
             "id": "N1-D001",
@@ -77995,7 +78655,9 @@
               -59.060671878662106,
               -18.096338990478518
             ],
-            "rooms": []
+            "rooms": [
+              "R1S006"
+            ]
           },
           {
             "id": "N1-D082",
@@ -78168,6 +78830,7 @@
               -11.239134516601565
             ],
             "rooms": [
+              "R1S001",
               "R1002"
             ]
           },
@@ -78182,6 +78845,7 @@
               -11.239134516601565
             ],
             "rooms": [
+              "R1S001",
               "R1002"
             ]
           },
@@ -78467,7 +79131,9 @@
               -20.02231550048828,
               5.743521928710935
             ],
-            "rooms": []
+            "rooms": [
+              "R1S008"
+            ]
           },
           {
             "id": "N1-D118",
@@ -78493,7 +79159,9 @@
               -80.27397063049317,
               -19.445337421875003
             ],
-            "rooms": []
+            "rooms": [
+              "R1S001"
+            ]
           },
           {
             "id": "N1-D120",
@@ -78519,7 +79187,9 @@
               -33.58443353637695,
               -78.22781483886719
             ],
-            "rooms": []
+            "rooms": [
+              "R1S005"
+            ]
           },
           {
             "id": "N1-D122",
@@ -78594,6 +79264,20 @@
             "type": "doorway",
             "label": "门洞",
             "doorType": "opening",
+            "width_m": 2.451,
+            "coordinates": [
+              -64.54540645202637,
+              -31.835221937255863
+            ],
+            "rooms": [
+              "R1006"
+            ]
+          },
+          {
+            "id": "N1-D128",
+            "type": "doorway",
+            "label": "门洞",
+            "doorType": "opening",
             "width_m": 1.2,
             "coordinates": [
               -24.65774903320312,
@@ -78604,7 +79288,7 @@
             ]
           },
           {
-            "id": "N1-D128",
+            "id": "N1-D129",
             "type": "doorway",
             "label": "门洞",
             "doorType": "opening",
@@ -78618,7 +79302,7 @@
             ]
           },
           {
-            "id": "N1-D129",
+            "id": "N1-D130",
             "type": "doorway",
             "label": "门洞",
             "doorType": "opening",
@@ -78632,7 +79316,7 @@
             ]
           },
           {
-            "id": "N1-D130",
+            "id": "N1-D131",
             "type": "doorway",
             "label": "门洞",
             "doorType": "opening",
@@ -78641,7 +79325,9 @@
               -52.14776322692871,
               -19.190007099609378
             ],
-            "rooms": []
+            "rooms": [
+              "R1S006"
+            ]
           },
           {
             "id": "N1-I001",
@@ -79530,6 +80216,18 @@
             "blindAccessible": true
           },
           {
+            "id": "E1-N1-R038-N1-D081",
+            "from": "N1-R038",
+            "to": "N1-D081",
+            "distance": 3.4,
+            "estimatedTime": 4.2,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E1-N1-R006-N1-D082",
             "from": "N1-R006",
             "to": "N1-D082",
@@ -79626,11 +80324,35 @@
             "blindAccessible": true
           },
           {
+            "id": "E1-N1-R033-N1-D094",
+            "from": "N1-R033",
+            "to": "N1-D094",
+            "distance": 4.0,
+            "estimatedTime": 5.0,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E1-N1-R002-N1-D094",
             "from": "N1-R002",
             "to": "N1-D094",
             "distance": 7.11,
             "estimatedTime": 8.9,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-R033-N1-D095",
+            "from": "N1-R033",
+            "to": "N1-D095",
+            "distance": 4.38,
+            "estimatedTime": 5.5,
             "accessibilityLevel": 2,
             "riskLevel": 5,
             "walkable": true,
@@ -79770,6 +80492,18 @@
             "blindAccessible": true
           },
           {
+            "id": "E1-N1-R040-N1-D117",
+            "from": "N1-R040",
+            "to": "N1-D117",
+            "distance": 2.84,
+            "estimatedTime": 3.6,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E1-N1-R024-N1-D118",
             "from": "N1-R024",
             "to": "N1-D118",
@@ -79782,11 +80516,35 @@
             "blindAccessible": true
           },
           {
+            "id": "E1-N1-R033-N1-D119",
+            "from": "N1-R033",
+            "to": "N1-D119",
+            "distance": 4.77,
+            "estimatedTime": 6.0,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E1-N1-R001-N1-D120",
             "from": "N1-R001",
             "to": "N1-D120",
             "distance": 5.5,
             "estimatedTime": 6.9,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-R037-N1-D121",
+            "from": "N1-R037",
+            "to": "N1-D121",
+            "distance": 3.48,
+            "estimatedTime": 4.4,
             "accessibilityLevel": 2,
             "riskLevel": 5,
             "walkable": true,
@@ -79842,9 +80600,21 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-R026-N1-D127",
-            "from": "N1-R026",
+            "id": "E1-N1-R006-N1-D127",
+            "from": "N1-R006",
             "to": "N1-D127",
+            "distance": 4.7,
+            "estimatedTime": 5.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-R026-N1-D128",
+            "from": "N1-R026",
+            "to": "N1-D128",
             "distance": 4.03,
             "estimatedTime": 5.0,
             "accessibilityLevel": 0,
@@ -79854,9 +80624,9 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-R032-N1-D128",
+            "id": "E1-N1-R032-N1-D129",
             "from": "N1-R032",
-            "to": "N1-D128",
+            "to": "N1-D129",
             "distance": 3.53,
             "estimatedTime": 4.4,
             "accessibilityLevel": 0,
@@ -79866,11 +80636,23 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-R027-N1-D129",
+            "id": "E1-N1-R027-N1-D130",
             "from": "N1-R027",
-            "to": "N1-D129",
+            "to": "N1-D130",
             "distance": 3.66,
             "estimatedTime": 4.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-R038-N1-D131",
+            "from": "N1-R038",
+            "to": "N1-D131",
+            "distance": 4.13,
+            "estimatedTime": 5.2,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -81393,6 +82175,18 @@
             "id": "E1-N1-I001-N1-D127",
             "from": "N1-I001",
             "to": "N1-D127",
+            "distance": 15.94,
+            "estimatedTime": 19.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D128",
+            "from": "N1-I001",
+            "to": "N1-D128",
             "distance": 57.31,
             "estimatedTime": 71.6,
             "accessibilityLevel": 0,
@@ -81402,23 +82196,11 @@
             "blindAccessible": true
           },
           {
-            "id": "E1-N1-I002-N1-D128",
+            "id": "E1-N1-I002-N1-D129",
             "from": "N1-I002",
-            "to": "N1-D128",
+            "to": "N1-D129",
             "distance": 11.91,
             "estimatedTime": 14.9,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "E1-N1-I001-N1-D129",
-            "from": "N1-I001",
-            "to": "N1-D129",
-            "distance": 54.74,
-            "estimatedTime": 68.4,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -81429,6 +82211,18 @@
             "id": "E1-N1-I001-N1-D130",
             "from": "N1-I001",
             "to": "N1-D130",
+            "distance": 54.74,
+            "estimatedTime": 68.4,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E1-N1-I001-N1-D131",
+            "from": "N1-I001",
+            "to": "N1-D131",
             "distance": 18.61,
             "estimatedTime": 23.3,
             "accessibilityLevel": 0,
@@ -134337,6 +135131,321 @@
               "hasIndependentEntrance": false,
               "floor": 2
             }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S001",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -75.08943322509765,
+                    -11.29309354980469
+                  ],
+                  [
+                    -75.08943322509765,
+                    -19.190007099609378
+                  ],
+                  [
+                    -82.46581096862793,
+                    -19.190007099609378
+                  ],
+                  [
+                    -82.46581096862793,
+                    -11.29309354980469
+                  ],
+                  [
+                    -75.08943322509765,
+                    -11.29309354980469
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间1",
+              "roomId": "R2S001",
+              "centroid": [
+                -78.77762209686279,
+                -15.241550324707035
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S002",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -37.5854512915039,
+                    -60.17269354980469
+                  ],
+                  [
+                    -37.5854512915039,
+                    -68.12674323242189
+                  ],
+                  [
+                    -41.432337741699214,
+                    -68.12674323242189
+                  ],
+                  [
+                    -41.432337741699214,
+                    -60.17269354980469
+                  ],
+                  [
+                    -37.5854512915039,
+                    -60.17269354980469
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间2",
+              "roomId": "R2S002",
+              "centroid": [
+                -39.50889451660157,
+                -64.14971839111327
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S003",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -41.67356484130859,
+                    9.947315483398436
+                  ],
+                  [
+                    -41.67356484130859,
+                    5.998852250976561
+                  ],
+                  [
+                    -48.87219451660156,
+                    5.998852250976561
+                  ],
+                  [
+                    -48.87219451660156,
+                    9.947315483398436
+                  ],
+                  [
+                    -41.67356484130859,
+                    9.947315483398436
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间3",
+              "roomId": "R2S003",
+              "centroid": [
+                -45.27287967895508,
+                7.973083867187492
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S004",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -33.281508066406246,
+                    -74.02403419921876
+                  ],
+                  [
+                    -33.281508066406246,
+                    -77.97248451660157
+                  ],
+                  [
+                    -40.48013774169922,
+                    -77.97248451660157
+                  ],
+                  [
+                    -40.48013774169922,
+                    -74.02403419921876
+                  ],
+                  [
+                    -33.281508066406246,
+                    -74.02403419921876
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间4",
+              "roomId": "R2S004",
+              "centroid": [
+                -36.88082290405273,
+                -75.99825935791016
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S005",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -51.72879451660156,
+                    -15.241550324707035
+                  ],
+                  [
+                    -51.72879451660156,
+                    -19.190007099609378
+                  ],
+                  [
+                    -58.54654677490234,
+                    -19.190007099609378
+                  ],
+                  [
+                    -58.54654677490234,
+                    -15.241550324707035
+                  ],
+                  [
+                    -51.72879451660156,
+                    -15.241550324707035
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间5",
+              "roomId": "R2S005",
+              "centroid": [
+                -55.13767064575195,
+                -17.215778712158194
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S006",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -18.13518290771484,
+                    9.947315483398436
+                  ],
+                  [
+                    -18.13518290771484,
+                    5.998852250976561
+                  ],
+                  [
+                    -24.95928290771484,
+                    5.998852250976561
+                  ],
+                  [
+                    -24.95928290771484,
+                    9.947315483398436
+                  ],
+                  [
+                    -18.13518290771484,
+                    9.947315483398436
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间6",
+              "roomId": "R2S006",
+              "centroid": [
+                -21.54723290771484,
+                7.973083867187498
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "R2S007",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -9.743126132812495,
+                    -74.02403419921876
+                  ],
+                  [
+                    -9.743126132812495,
+                    -77.97248451660157
+                  ],
+                  [
+                    -16.560878391113278,
+                    -77.97248451660157
+                  ],
+                  [
+                    -16.560878391113278,
+                    -74.02403419921876
+                  ],
+                  [
+                    -9.743126132812495,
+                    -74.02403419921876
+                  ]
+                ]
+              ]
+            },
+            "properties": {
+              "type": "room",
+              "roomType": "staircase",
+              "label": "楼梯间7",
+              "roomId": "R2S007",
+              "centroid": [
+                -13.152002261962899,
+                -75.99825935791016
+              ],
+              "public": true,
+              "accessible": false,
+              "hasIndependentEntrance": true,
+              "floor": 2
+            }
           }
         ],
         "doors": [
@@ -135556,6 +136665,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
+                "R2S001",
                 "R2003"
               ],
               "sourceLayer": "DOOR_FIRE"
@@ -135577,6 +136687,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
+                "R2S001",
                 "R2003"
               ],
               "sourceLayer": "DOOR_FIRE"
@@ -144106,6 +145217,104 @@
             "accessible": true,
             "hasIndependentEntrance": false,
             "floor": 2
+          },
+          {
+            "id": "R2S001",
+            "type": "staircase",
+            "label": "楼梯间1",
+            "centroid": [
+              -78.77762209686279,
+              -15.241550324707035
+            ],
+            "geometryId": "R2S001",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S002",
+            "type": "staircase",
+            "label": "楼梯间2",
+            "centroid": [
+              -39.50889451660157,
+              -64.14971839111327
+            ],
+            "geometryId": "R2S002",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S003",
+            "type": "staircase",
+            "label": "楼梯间3",
+            "centroid": [
+              -45.27287967895508,
+              7.973083867187492
+            ],
+            "geometryId": "R2S003",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S004",
+            "type": "staircase",
+            "label": "楼梯间4",
+            "centroid": [
+              -36.88082290405273,
+              -75.99825935791016
+            ],
+            "geometryId": "R2S004",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S005",
+            "type": "staircase",
+            "label": "楼梯间5",
+            "centroid": [
+              -55.13767064575195,
+              -17.215778712158194
+            ],
+            "geometryId": "R2S005",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S006",
+            "type": "staircase",
+            "label": "楼梯间6",
+            "centroid": [
+              -21.54723290771484,
+              7.973083867187498
+            ],
+            "geometryId": "R2S006",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
+          },
+          {
+            "id": "R2S007",
+            "type": "staircase",
+            "label": "楼梯间7",
+            "centroid": [
+              -13.152002261962899,
+              -75.99825935791016
+            ],
+            "geometryId": "R2S007",
+            "public": true,
+            "accessible": false,
+            "hasIndependentEntrance": true,
+            "floor": 2
           }
         ]
       },
@@ -144383,6 +145592,97 @@
             ],
             "public": true,
             "accessible": true
+          },
+          {
+            "id": "N2-R022",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S001",
+            "label": "楼梯间1",
+            "coordinates": [
+              -78.77762209686279,
+              -15.241550324707035
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R023",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S002",
+            "label": "楼梯间2",
+            "coordinates": [
+              -39.50889451660157,
+              -64.14971839111327
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R024",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S003",
+            "label": "楼梯间3",
+            "coordinates": [
+              -45.27287967895508,
+              7.973083867187492
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R025",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S004",
+            "label": "楼梯间4",
+            "coordinates": [
+              -36.88082290405273,
+              -75.99825935791016
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R026",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S005",
+            "label": "楼梯间5",
+            "coordinates": [
+              -55.13767064575195,
+              -17.215778712158194
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R027",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S006",
+            "label": "楼梯间6",
+            "coordinates": [
+              -21.54723290771484,
+              7.973083867187498
+            ],
+            "public": true,
+            "accessible": false
+          },
+          {
+            "id": "N2-R028",
+            "type": "room",
+            "roomType": "staircase",
+            "roomId": "R2S007",
+            "label": "楼梯间7",
+            "coordinates": [
+              -13.152002261962899,
+              -75.99825935791016
+            ],
+            "public": true,
+            "accessible": false
           },
           {
             "id": "N2-D001",
@@ -145189,6 +146489,7 @@
               -11.239134516601565
             ],
             "rooms": [
+              "R2S001",
               "R2003"
             ]
           },
@@ -145203,6 +146504,7 @@
               -11.239134516601565
             ],
             "rooms": [
+              "R2S001",
               "R2003"
             ]
           },
@@ -146187,11 +147489,35 @@
             "blindAccessible": true
           },
           {
+            "id": "E2-N2-R022-N2-D059",
+            "from": "N2-R022",
+            "to": "N2-D059",
+            "distance": 4.08,
+            "estimatedTime": 5.1,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
             "id": "E2-N2-R003-N2-D059",
             "from": "N2-R003",
             "to": "N2-D059",
             "distance": 1.68,
             "estimatedTime": 2.1,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "E2-N2-R022-N2-D060",
+            "from": "N2-R022",
+            "to": "N2-D060",
+            "distance": 4.13,
+            "estimatedTime": 5.2,
             "accessibilityLevel": 2,
             "riskLevel": 5,
             "walkable": true,
