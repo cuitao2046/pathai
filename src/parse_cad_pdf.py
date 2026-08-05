@@ -792,24 +792,28 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
 
 
 def dedupe_doorways(doors):
-    """合并真正重合的门：两门中心极近(<阈值)即视为同一洞口，仅保留一扇。
-    注意：无摆弧门洞(opening)的轴垂直于墙，而摆弧门(arc)的轴平行于墙，二者轴方向
-    相差约 90°，故不能用"轴平行+轴向重叠"判定重合（会在墙角误并相邻的不同门）。
-    正确判据是"中心是否落在同一洞口"——同一洞口的门中心都在墙线上、彼此很近，
-    故仅用中心距离即可；相邻不同门洞(>容差)各自保留。
-    优先级：摆弧门(swing/fire) > 无摆弧门洞(opening)，避免丢失门类信息、不重复计入。
+    """仅合并**同类型**重合的门（swing↔swing、fire↔fire、opening↔opening）。
+
+    不同类型（如 swing 与 opening 标在相邻不同洞口）不合并——用户明确：
+    门洞和普通门不做去重合并，只针对同类型门去重。
+
+    同一类型内：两门中心极近(<13pt)即视为同一洞口，仅保留一扇。
     """
-    MERGE_PT = 13.0   # 同一洞口中心距离阈值(pt)
+    MERGE_PT = 13.0
 
     def link(d1, d2):
         return math.hypot(d1["center"][0] - d2["center"][0],
                           d1["center"][1] - d2["center"][1]) < MERGE_PT
 
-    groups = cluster_items(doors, link)
+    by_kind = collections.defaultdict(list)
+    for d in doors:
+        by_kind[d.get("kind", "unknown")].append(d)
+
     out = []
-    for g in groups:
-        rep = next((d for d in g if d.get("kind") != "opening"), g[0])
-        out.append(rep)
+    for _kind, items in by_kind.items():
+        groups = cluster_items(items, link)
+        for g in groups:
+            out.append(g[0])  # 同类型任意取一扇即可
     return out
 
 
