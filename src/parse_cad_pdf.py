@@ -106,7 +106,7 @@ MAX_ROOM_AREA_M2 = 600.0
 ABSORB_CELL_M2 = 2.0       # 小于该面积的自由单元为可填充微单元（厕位格等）
 MERGE_REGION_M2 = 9.0      # 小于该面积的未标注单元可经守卫式泛洪并入邻房
 WALL_EXT_PT = 6.0          # 墙线端点外延（桥接 T 型接头/窗洞收口缝隙）
-LABEL_MIN_SIZE = 9.5         # 房间名称最小字号(pt)（门厅无障碍出入口/人防主出入口约 10~11pt）
+LABEL_MIN_SIZE = 9.0       # 房间名称最小字号(pt)（II-WR-04 男/女卫生间约 9.46pt，略低于原 9.5）
 TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
 
 # --- 楼梯/电梯井编号（图纸权威标识，如 II-B2-01#ST / II-02#EL）---
@@ -399,7 +399,13 @@ def extract_room_labels(page):
         elif bool(re.search(r"[一-鿿]", t)) and r["size"] >= LABEL_MIN_SIZE:
             names.append(r)
 
-    # 合并垂直堆叠的多行中文标签（行间距 < 2.2 倍行高，水平重叠）
+    # 合并垂直堆叠的多行中文标签（行间距 < 2.2 倍行高，水平重叠）；
+    # 不跨语义类合并——管井（风井/水井/排风井）与房间标签各自成串，
+    # 避免「水井排风井」与「女卫生间」拼接成「水井排风井女卫生间」。
+    _UTIL_TAGS = {"风井", "水井", "排风井", "强电井", "弱电井", "管井"}
+    def _cat(t):
+        if t in _UTIL_TAGS: return "util"
+        return "room"
     names.sort(key=lambda r: (r["cx"], r["cy"]))
     used = [False] * len(names)
     merged = []
@@ -408,9 +414,13 @@ def extract_room_labels(page):
             continue
         group = [r]
         used[i] = True
+        r_cat = _cat(r["text"])
         for j in range(i + 1, len(names)):
             r2 = names[j]
             if used[j]:
+                continue
+            # 不同语义类不合并
+            if r_cat != _cat(r2["text"]):
                 continue
             if abs(r2["cx"] - r["cx"]) < max(r["w"], r2["w"], 20) * 0.6 + 10 and \
                abs(r2["cy"] - r["cy"]) < (r["h"] + r2["h"]) * 2.2:
@@ -1627,10 +1637,11 @@ def parse_floor(pdf_path, floor_no):
             _stair_pts.append(_seg)
         for _q in _si["quads"]:
             _stair_pts.append((_q[0], _q[2]))
-    _stair_boxes = bbox_clusters(_stair_pts, gap_pt=4 * PT_PER_M) if _stair_pts else []
+    # 聚类间距 1.5×PT_PER_M（≈30pt）——比 4×PT_PER_M 更紧，避免不同楼梯/卫生间踏步线被合并。
+    _stair_boxes = bbox_clusters(_stair_pts, gap_pt=1.5 * PT_PER_M) if _stair_pts else []
     # 楼梯间尺寸约束：
     #   - 面积 4–50m²（楼梯间可能仅 4m² 梯段，三面有墙即可认定）；
-    #   - 长宽比 ≤ 2.0（防止阶梯+走廊/楼梯井拉伸成长条）；
+    #   - 长宽比 ≤ 2.0（防止阶梯+走廊/楼梯井拉伸成长条）。
     _stair_boxes = [b for b in _stair_boxes
                     if 4 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 50
                     and (max(b[2]-b[0], b[3]-b[1]) /
