@@ -59,13 +59,17 @@ LAYER_COLUMNS = ("COLUMN", "柱子-刚结构")
 # 该 CAD 导出的墙体分散在多个结构图层中，需取并集才能闭合房间轮廓；
 # 纯标注图层（轴线/文字/标高等）不参与，避免切分房间。
 LAYERS_STRUCT = ("WALL", "A-WALL-CONC", "A-WALL-FINI", "A-FLOR-STRS",
-                 "STAIR", "A-FLOR-EVTR", "COLUMN", "柱子-刚结构", "填充线")
+                 "STAIR", "A-FLOR-EVTR", "COLUMN", "柱子-刚结构", "填充线",
+                 "A-METAL-S")
+# A-METAL-S 加入 LAYERS_STRUCT 使家具薄墙参与 rastorization 做连通域切割
+# （风井/水井 vs 男/女卫生间之间的薄墙在 A-METAL-S 中，不加则 gap 导致连成一片）。
+# 厕位隔断等会被后续 build_rooms 的 absorb/merge 逻辑处理为可填充单元。
 # 家具级图层（金属构件）：既含真实墙体段（卫生间隔墙等，缺了
 # 会导致房间不闭合），又含厕位隔断/洗手台等会把房间内部切碎的构件线。
 # 处理：以细线(1px)单独栅格化参与封闭；凡围出 <ABSORB_CELL_M2 微单元的
 # 家具线在微单元邻域内擦除（打通厕位与走道），真实隔墙两侧都是大房间、
 # 邻域无微单元，不受影响。
-LAYERS_FURNITURE = ("A-METAL-S",)
+LAYERS_FURNITURE = ()  # A-METAL-S 已迁至 LAYERS_STRUCT，不再单独作为家具层
 # 强制剔除的图层：整层元素不参与任何解析（不计入墙体封闭、门/窗/房间识别）。
 # A-TECH-SANT（卫生/给排水器具等）已设为默认关闭，且 PyMuPDF 的
 # page.get_drawings() 不感知图层可见性、会照常返回其全部矢量元素，
