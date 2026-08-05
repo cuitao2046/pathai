@@ -102,6 +102,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
   <label><input type="checkbox" onchange="toggleLayer('material', this.checked)"> 地面材质</label>
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
+  <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
 </div>
 <div id="svg-container">
 <div id="floor-jump"></div>
@@ -6752,6 +6753,61 @@ function setAll(v) {
   });
   document.querySelectorAll('#layerControls input[type=checkbox]').forEach(function(cb){ cb.checked = v; });
 }
+
+// ---- 导出所选图层为独立 SVG 图片 ----
+// 导出的是「当前在图层面板勾选的图层」：先取消不需要的图层再点导出即可。
+// 关键：页面 SVG 的描边/填充全部来自 <head> 的外部 <style>，脱离 HTML 后会丢失样式，
+// 因此必须把该 <style> 嵌入到克隆出的 SVG 内部，导出的文件才能正常上色。
+function exportSelectedSVG() {
+  // 1. 收集当前勾选（=所选）图层
+  var selected = allLayers.filter(function(n){
+    var cb = document.querySelector('#layerControls input[onchange*="' + n + '"]');
+    return cb ? cb.checked : true;
+  });
+  if (selected.length === 0) { alert('请先在上方勾选至少一个图层再导出。'); return; }
+
+  // 2. 克隆主 SVG，去掉缩放/平移的 style 变换，得到全幅原始坐标
+  var clone = svg.cloneNode(true);
+  clone.removeAttribute('style');
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+
+  // 3. 仅保留所选图层，删除未选图层对应的 <g>
+  var groups = clone.querySelectorAll('[class*="layer_"]');
+  groups.forEach(function(g){
+    var cls = g.getAttribute('class') || '';
+    var keep = selected.some(function(n){ return cls.indexOf('layer_' + n) !== -1; });
+    if (!keep) g.parentNode.removeChild(g);
+  });
+
+  // 4. 嵌入页面 <style>（保留颜色/描边），加白底背景，并剔除交互用 data-info 减体积
+  var pageStyle = document.querySelector('style');
+  if (pageStyle) {
+    var styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    styleEl.textContent = pageStyle.textContent;
+    clone.insertBefore(styleEl, clone.firstChild);
+  }
+  var rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', 0); rect.setAttribute('y', 0);
+  rect.setAttribute('width', clone.getAttribute('width'));
+  rect.setAttribute('height', clone.getAttribute('height'));
+  rect.setAttribute('fill', '#ffffff');
+  clone.insertBefore(rect, clone.firstChild.nextSibling);
+  clone.querySelectorAll('[data-info]').forEach(function(el){ el.removeAttribute('data-info'); });
+
+  // 5. 序列化并触发下载
+  var data = new XMLSerializer().serializeToString(clone);
+  var xmlDecl = '<?xml version="1.0" encoding="UTF-8"?>';
+  if (data.indexOf(xmlDecl) !== 0) data = xmlDecl + data;
+  var blob = new Blob([data], {type: 'image/svg+xml;charset=utf-8'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'PathAI_所选图层_楼层图.svg';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+  console.log('已导出所选图层 SVG，包含图层：', selected.join(', '));
+}
+
 // 初始化：按勾选框实际状态同步各图层可见性（未勾选图层初始应隐藏）
 allLayers.forEach(function(n){
   var cb = document.querySelector('#layerControls input[onchange*="' + n + '"]');

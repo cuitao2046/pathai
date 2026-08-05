@@ -8,7 +8,7 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - `src/topology.py`：按 `docs/03-地图构建指南.md` 第五章生成导航拓扑（节点 5 类 room/doorway/intersection/facility/facility_entrance；边含 distance/estimatedTime(0.8m/s)/accessibilityLevel(0/2/999)/riskLevel(0.5/5/10)）。
 - `src/render_map.py`：GeoJSON → 每层 PNG（含 `--topology` 叠加图）。需用 venv python（含 matplotlib/shapely）。
 - `src/validate_geojson.py`：QA，核心指标"无门封闭房间数=0"。
-- `src/render_interactive.py`：自包含交互式 HTML（`result/floor_layout_v9_interactive.html`）。（注：`render_v7.py` 及产物 `floor_layout_v7.html`/`school_building_01_map_v7.geojson` 已于 2026-08-05 由用户手动清理删除）
+- `src/render_interactive.py`：自包含交互式 HTML（`result/floor_layout_v9_interactive.html`）。含图层开关、缩放/平移、悬停/点击详情、楼层跳转、拓扑联动高亮。2026-08-05 新增「导出所选图层 SVG」按钮：`exportSelectedSVG()` 克隆主 SVG、仅保留勾选图层、嵌入页面 `<style>`（否则脱离 HTML 后丢失描边/填充）、加白底、剔除 data-info 减体积后序列化为下载文件。（注：`render_v7.py` 及产物 `floor_layout_v7.html`/`school_building_01_map_v7.geojson` 已于 2026-08-05 由用户手动清理删除）
 - `result/school_building_01_map_v9.geojson`：v9.0.0 产物（version 9.0.0）。
 
 ## 当前进展（v9.2，2026-08-05 楼梯间房间并入+旋转 DK 支持后实测）
