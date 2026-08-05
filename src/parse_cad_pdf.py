@@ -58,8 +58,8 @@ LAYER_COLUMNS = ("COLUMN", "柱子-刚结构")
 # 参与房间多边形化的结构图层（默认开启时）。
 # 该 CAD 导出的墙体分散在多个结构图层中，需取并集才能闭合房间轮廓；
 # 纯标注图层（轴线/文字/标高等）不参与，避免切分房间。
-LAYERS_STRUCT = ("WALL", "A-FLOR-STRS", "STAIR", "A-FLOR-EVTR",
-                 "COLUMN", "柱子-刚结构")
+LAYERS_STRUCT = ("WALL", "A-WALL-CONC", "A-WALL-FINI", "A-FLOR-STRS",
+                 "STAIR", "A-FLOR-EVTR", "COLUMN", "柱子-刚结构", "填充线")
 # 家具级图层（金属构件）：既含真实墙体段（卫生间隔墙等，缺了
 # 会导致房间不闭合），又含厕位隔断/洗手台等会把房间内部切碎的构件线。
 # 处理：以细线(1px)单独栅格化参与封闭；凡围出 <ABSORB_CELL_M2 微单元的
