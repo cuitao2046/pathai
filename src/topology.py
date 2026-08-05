@@ -38,13 +38,29 @@ INDEPENDENT_ENTRANCE_TYPES = {
     "staircase", "elevator_hall", "atrium",
 }
 
-# 节点 ID 命名规范（与 v7 对齐：N{floor}-{kind}{idx}）
-def _nid(floor, kind, idx):
-    return f"N{floor}-{kind}{idx:03d}"
+# ---- 统一对象编号规范：{FLOOR}-{TYPE_ABBR}-{SEQ:04d} ----
+# 楼层标识: F1 / F2 / FX(跨层)；类型缩写由对象语义定义（见 docs/ 约定）。
+OBJ_TYPE = {
+    "wall": "W", "room": "RM", "door": "D", "stair": "ST",
+    "elevator": "EL", "column": "C", "window": "WN",
+    "topo_room": "TR", "topo_doorway": "TD", "topo_intersection": "TI",
+    "topo_facility": "TF", "topo_entrance": "TEN", "topo_edge": "TE",
+    "stair_risk": "SR", "elev_a11y": "EA", "cross_edge": "XE",
+}
 
 
-def _eid(floor, from_id, to_id):
-    return f"E{floor}-{from_id}-{to_id}"
+def obj_id(floor, abbr, seq):
+    """统一编号：楼层 + 类型缩写 + 4 位序号，dash 分割。"""
+    return f"{floor}-{abbr}-{seq:04d}"
+
+
+def _floor_tag(floor_no):
+    return f"F{floor_no}"
+
+
+# 拓扑节点 ID：节点类型缩写 → TR/TD/TI/TF/TEN
+def _nid(floor, kind_abbr, seq):
+    return obj_id(_floor_tag(floor), kind_abbr, seq)
 
 
 def _to_xy(coord):
@@ -84,7 +100,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     # ---------- 房间节点（place，指南 5.1 没单列；但所有路径都需经过房间质心） ----------
     for idx, r in enumerate(rooms):
         nodes.append({
-            "id": _nid(floor_no, "R", idx + 1),
+            "id": _nid(floor_no, OBJ_TYPE["topo_room"], idx + 1),
             "type": "room",
             "roomType": r["roomType"],
             "roomId": r["id"],
@@ -97,7 +113,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     # ---------- 门口节点（doorway） ----------
     door_node_ids = []
     for i, dr in enumerate(doors):
-        nid = _nid(floor_no, "D", i + 1)
+        nid = _nid(floor_no, OBJ_TYPE["topo_doorway"], i + 1)
         door_node_ids.append(nid)
         kind = dr.get("kind", "swing")
         nodes.append({
@@ -115,7 +131,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     corridors = [r for r in rooms if r["roomType"] == "corridor"]
     cor_node_ids = {}
     for idx, c in enumerate(corridors):
-        nid = _nid(floor_no, "I", idx + 1)
+        nid = _nid(floor_no, OBJ_TYPE["topo_intersection"], idx + 1)
         cor_node_ids[c["id"]] = nid
         nodes.append({
             "id": nid,
@@ -126,9 +142,12 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         })
 
     # ---------- 设施接入节点（facility） ----------
+    # 统一 TF 缩写，按“先楼梯后电梯”顺序连续编号（与 parse_cad_pdf 跨层边引用一致）
+    fac_seq = 0
     for i, s in enumerate(stairs):
+        fac_seq += 1
         nodes.append({
-            "id": _nid(floor_no, "ST", i + 1),
+            "id": _nid(floor_no, OBJ_TYPE["topo_facility"], fac_seq),
             "type": "facility",
             "facilityType": "staircase",
             "label": s["properties"].get("label", f"楼梯{floor_no}F-{i + 1}"),
@@ -137,8 +156,9 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "wheelchairAccessible": False,
         })
     for i, e in enumerate(elevators):
+        fac_seq += 1
         nodes.append({
-            "id": _nid(floor_no, "EL", i + 1),
+            "id": _nid(floor_no, OBJ_TYPE["topo_facility"], fac_seq),
             "type": "facility",
             "facilityType": "elevator",
             "label": e["properties"].get("label", f"电梯{floor_no}F-{i + 1}"),
@@ -151,8 +171,8 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     if extra_nodes:
         for i, en in enumerate(extra_nodes):
             nodes.append({
-                "id": _nid(floor_no, "EN", i + 1),
-                "type": "facility_entrance",
+            "id": _nid(floor_no, OBJ_TYPE["topo_entrance"], i + 1),
+            "type": "facility_entrance",
                 "facilityType": en.get("facilityType", "entrance"),
                 "label": en["label"],
                 "coordinates": list(_to_xy(en["coordinates"])),
@@ -163,10 +183,12 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     # ---------- 边构建 ----------
     room_index = {r["id"]: idx for idx, r in enumerate(rooms)}
 
+    edge_seq = [0]
     def add_edge(frm, to, distance, a_level=0, r_level=0.5,
                  wheel=True, blind=True):
+        edge_seq[0] += 1
         edges.append({
-            "id": _eid(floor_no, frm, to),
+            "id": obj_id(_floor_tag(floor_no), OBJ_TYPE["topo_edge"], edge_seq[0]),
             "from": frm,
             "to": to,
             "distance": round(float(distance), 2),
@@ -188,7 +210,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                 continue
             r = rooms[idx]
             d = _dist(center, r["centroid_m"])
-            rnid = _nid(floor_no, "R", idx + 1)
+            rnid = _nid(floor_no, OBJ_TYPE["topo_room"], idx + 1)
             add_edge(rnid, dnid, d, a_level=2 if dr.get("kind") == "fire" else 0,
                      r_level=(5 if dr.get("kind") == "fire" else 0.5))
 
@@ -260,9 +282,11 @@ def build_cross_floor_edges(f1, f2, floor_height_m=4.2):
     def center_m(feat):
         return feat["properties"]["centroid"]
 
-    for kind, key, prefix, blind_ok, t_cross in (
-            ("staircase", "stairs", "CF-ST", False, 60.0),
-            ("elevator", "elevators", "CF-EL", True, 15.0)):
+    ns1 = len(f1.get("stairs", []))
+    ns2 = len(f2.get("stairs", []))
+    for kind, key, blind_ok, t_cross in (
+            ("staircase", "stairs", False, 60.0),
+            ("elevator", "elevators", True, 15.0)):
         for i, s1 in enumerate(f1.get(key, [])):
             c1 = center_m(s1)
             best, best_d = None, 2.5
@@ -272,10 +296,15 @@ def build_cross_floor_edges(f1, f2, floor_height_m=4.2):
                 if d < best_d:
                     best, best_d = j, d
             if best is not None:
-                nid_src = f"N1-{('ST' if kind == 'staircase' else 'EL')}{i + 1:03d}"
-                nid_dst = f"N2-{('ST' if kind == 'staircase' else 'EL')}{best + 1:03d}"
+                # 拓扑设施节点顺序：先楼梯(1..ns)后电梯(ns+1..)，引用对应 TF 编号
+                if kind == "staircase":
+                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], i + 1)
+                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], best + 1)
+                else:
+                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], ns1 + i + 1)
+                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], ns2 + best + 1)
                 edges.append({
-                    "id": f"{prefix}-{i + 1:03d}",
+                    "id": obj_id("FX", OBJ_TYPE["cross_edge"], len(edges) + 1),
                     "from": nid_src,
                     "to": nid_dst,
                     "fromFloor": 1,

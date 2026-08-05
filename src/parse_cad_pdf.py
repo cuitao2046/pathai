@@ -31,7 +31,7 @@ from shapely.geometry import LineString, Point, Polygon, box
 from shapely import snap as shp_snap
 
 # 拓扑建模（指南 第五章）
-from topology import build_floor_topology, build_cross_floor_edges
+from topology import build_floor_topology, build_cross_floor_edges, obj_id, OBJ_TYPE
 
 # ---------------------------------------------------------------- 配置
 
@@ -1759,6 +1759,7 @@ def parse_floor(pdf_path, floor_no):
     print(f"[F{floor_no}] 房间多边形(标签探测): {len(labeled_polys)}")
 
     rooms = []
+    room_seq = 0
     used_labels = set()
     label_by_text = {}
     for li, (text, _) in enumerate(room_names):
@@ -1768,10 +1769,11 @@ def parse_floor(pdf_path, floor_no):
             continue
         if label in label_by_text:
             used_labels.add(label_by_text[label])
+        room_seq += 1
         centroid_m = pt2m((poly.centroid.x, poly.centroid.y))
         coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
         rooms.append({
-            "id": f"R{floor_no}{idx + 1:03d}",
+            "id": obj_id(f"F{floor_no}", OBJ_TYPE["room"], room_seq),
             "label": label,
             "roomType": classify_room_type(label),
             "code": "",
@@ -1815,7 +1817,7 @@ def parse_floor(pdf_path, floor_no):
             if d < best_d:
                 best_d, best_code = d, code
         rooms.append({
-            "id": f"R{floor_no}S{sb_idx + 1:03d}",
+            "id": obj_id(f"F{floor_no}", OBJ_TYPE["room"], room_seq + sb_idx + 1),
             "label": f"楼梯间{sb_idx + 1}",
             "roomType": "staircase",
             "code": best_code or "",
@@ -2242,7 +2244,7 @@ def build_geojson(f1, f2):
         for i, (a, b) in enumerate(data["wall_segs"]):
             walls.append({
                 "type": "Feature",
-                "id": f"W{floor_no}-{i + 1:04d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["wall"], i + 1),
                 "geometry": {"type": "LineString",
                              "coordinates": [list(pt2m(a)), list(pt2m(b))]},
                 "properties": {"type": "wall", "sourceLayer": LAYER_WALL},
@@ -2276,7 +2278,7 @@ def build_geojson(f1, f2):
             kind = dr["kind"]
             doors.append({
                 "type": "Feature",
-                "id": f"D{floor_no}-{i + 1:04d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["door"], i + 1),
                 "geometry": {"type": "Point", "coordinates": [cx, cy]},
                 "properties": {
                     "type": "door",
@@ -2294,7 +2296,7 @@ def build_geojson(f1, f2):
             a, b = wg["axis"]
             windows.append({
                 "type": "Feature",
-                "id": f"WN{floor_no}-{i + 1:04d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["window"], i + 1),
                 "geometry": {"type": "LineString",
                              "coordinates": [list(pt2m(a)), list(pt2m(b))]},
                 "properties": {"type": "window",
@@ -2310,7 +2312,7 @@ def build_geojson(f1, f2):
             code = stair_codes[i] if i < len(stair_codes) else None
             stairs.append({
                 "type": "Feature",
-                "id": f"ST{floor_no}-{i + 1:02d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["stair"], i + 1),
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
                 "properties": {"type": "staircase",
                                "code": code,
@@ -2327,7 +2329,7 @@ def build_geojson(f1, f2):
             code = evtr_codes[i] if i < len(evtr_codes) else None
             elevators.append({
                 "type": "Feature",
-                "id": f"EL{floor_no}-{i + 1:02d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["elevator"], i + 1),
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
                 "properties": {"type": "elevator",
                                "code": code,
@@ -2341,20 +2343,22 @@ def build_geojson(f1, f2):
             coords = [list(c) for c in corners] + [list(corners[0])]
             columns.append({
                 "type": "Feature",
-                "id": f"C{floor_no}-{i + 1:04d}",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["column"], i + 1),
                 "geometry": {"type": "Polygon", "coordinates": [coords]},
                 "properties": {"type": "column", "sourceLayer": "COLUMN"},
             })
 
         risk_nodes = [{
-            "id": f"RISK-ST-{s['id']}", "type": "stair_entrance",
+            "id": obj_id(f"F{floor_no}", OBJ_TYPE["stair_risk"], i + 1),
+            "type": "stair_entrance",
             "riskLevel": 10, "label": s["properties"]["label"],
             "coordinates": s["properties"]["centroid"],
-        } for s in stairs]
+        } for i, s in enumerate(stairs)]
         a11y_elevators = [{
-            "id": f"EL-A11Y-{e['id']}", "label": e["properties"]["label"],
+            "id": obj_id(f"F{floor_no}", OBJ_TYPE["elev_a11y"], i + 1),
+            "label": e["properties"]["label"],
             "coordinates": e["properties"]["centroid"], "floor": int(floor_no),
-        } for e in elevators]
+        } for i, e in enumerate(elevators)]
 
         # --- 拓扑层（指南 第五章）：节点三类（room/intersection/doorway/facility）+ 边
         doors_for_topo = []
@@ -2418,10 +2422,11 @@ def build_geojson(f1, f2):
             x0, y0, x1, y1 = bxd
             return pt2m(((x0 + x1) / 2, (y0 + y1) / 2))
 
-        for kind, key, prefix, blind_ok in (
-                ("staircase", "stair_boxes", "CF-ST", False),
-                ("elevator", "evtr_boxes", "CF-EL", True)):
-            kind_short = "ST" if kind == "staircase" else "EL"
+        ns1 = len(f1.get("stair_boxes", []))
+        ns2 = len(f2.get("stair_boxes", []))
+        for kind, key, blind_ok in (
+                ("staircase", "stair_boxes", False),
+                ("elevator", "evtr_boxes", True)):
             codes1 = f1.get(key + "_codes", [None] * len(f1[key]))
             codes2 = f2.get(key + "_codes", [None] * len(f2[key]))
             idx2_by_code = dict((c, j) for j, c in enumerate(codes2) if c)
@@ -2442,11 +2447,18 @@ def build_geojson(f1, f2):
                 if best is None:
                     continue
                 n += 1
+                # 拓扑设施节点顺序：先楼梯(1..ns)后电梯(ns+1..)，引用对应 TF 编号
+                if kind == "staircase":
+                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], i + 1)
+                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], best + 1)
+                else:
+                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], ns1 + i + 1)
+                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], ns2 + best + 1)
                 edges.append({
-                    "id": f"{prefix}-{n:03d}",
+                    "id": obj_id("FX", OBJ_TYPE["cross_edge"], len(edges) + 1),
                     "code": code,
-                    "from": f"N1-{kind_short}{i + 1:03d}",
-                    "to": f"N2-{kind_short}{best + 1:03d}",
+                    "from": nid_src,
+                    "to": nid_dst,
                     "fromFloor": 1, "toFloor": 2, "type": kind,
                     "matchedBy": "code" if code else "geometry",
                     "distance": 4.2,
@@ -2471,6 +2483,12 @@ def build_geojson(f1, f2):
                  "门洞分三类——摆弧门(swing, window 层)、防火门(fire, DOOR_FIRE)、"
                  "无摆弧开口(opening, 墙缝几何+window 矢量编号块确认)；"
                  "拓扑图按指南第五章规范构建（room/doorway/intersection/facility）。",
+        "idConvention": "统一对象编号：F{floor}-{TYPE_ABBR}-{seq:04d}；"
+                        "楼层 F1/F2，跨层 FX；缩写见 topology.OBJ_TYPE"
+                        "(W墙/RM房间/D门/ST楼梯/EL电梯/C柱/WN窗段/"
+                        "TR拓扑房间节点/TD拓扑门口节点/TI拓扑交叉口节点/"
+                        "TF拓扑设施节点/TEN拓扑出入口节点/TE拓扑边/"
+                        "SR楼梯风险节点/EA无障碍电梯节点/XE跨层边)。",
         "floors": {
             "1": floor_block("1", f1),
             "2": floor_block("2", f2),
