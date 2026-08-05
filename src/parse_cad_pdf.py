@@ -1855,56 +1855,53 @@ def parse_floor(pdf_path, floor_no):
     if n_reclass:
         print(f"[F{floor_no}] 卫生间/楼梯间 DK 摆弧门重分类为门洞: {n_reclass}")
 
-    # --- 卫生间/楼梯间门洞：仅保留通往公共空间的，丢弃内部隔断门洞 ---
-    # 规则（用户 2026-08-05）：卫生间门洞只保留通往公共空间的，内部隔断不要。
-    # 实现：对每扇卫生间/楼梯间门洞分两步判定
-    #   1) 若其所属房间没有任何 swing/fire 入口门 → 该门洞就是房间唯一出入口，必须保留
-    #      （丢弃会封死房间，导航失败）；
-    #   2) 若所属房间已有 swing/fire 入口，则进一步判断该门洞是否真·内部隔断：
-    #      - 门洞中心在房间多边形之外(贴外墙面、朝走廊) → 公共出入口，保留；
-    #      - 门洞中心在房间内(内部隔断)且另一侧 51pt(≈2.7m)内仍是 toilet/staircase
-    #        房间 → 判为内部隔断，丢弃；其余情况保留。
-    _CORE = {"toilet", "staircase"}  # 卫生/楼梯核心：两侧皆核心才算内部隔断
-    room_has_swing = set()
-    for dr in doors:
-        if dr.get("kind") in ("swing", "fire") and dr.get("rooms"):
-            room_has_swing.update(dr["rooms"])
+    # --- 服务核心(卫生间/楼梯/设备/管井)内部门：严格删除（普通门/门洞/防火门） ---
+    # 规则（用户 2026-08-05 累计）：封闭空间(服务核心)内部的门只保留通往公共空间的，
+    #   内部隔断门(两侧皆属服务核心)一律删除，不限门型(swing/fire/opening)；
+    #   通往公共空间(走廊/门厅/中庭/出入口)或其他封闭空间的门保留。
+    # 判定（基于几何，rooms 字段不可靠）：
+    #   - 门中心在某一所属核心房间多边形内(真·内部隔断) 且 最近的另一侧房间(<2.7m)
+    #     亦属核心 → 判为内部隔断，删除；
+    #   - 其余(无归属/贴外墙面朝公共空间/另一侧为其他封闭空间) 保留。
+    # 注：卫生间 fire 门已在上节直接丢弃，本步覆盖 swing/opening 的内部对；
+    #     不再保留"房间唯一出入口"兜底——密封子房间交由 QA 的模块豁免处理。
+    _CORE = {"toilet", "staircase", "equipment", "shaft"}
+    _CIRC = {"corridor", "lobby", "atrium", "entrance",
+             "accessible_entrance", "elevator_hall"}
 
-    def _opening_is_internal(dr):
-        rms = dr.get("rooms", [])
+    def _door_is_internal_core(dr):
+        rms = dr.get("rooms", []) or []
         if not rms:
-            return False  # 无归属房间(楼梯/管井范围兜底门洞) → 不丢弃
-        # 所属房间没有 swing/fire 入口 → 门洞即房间出入口，保留
-        if not any(rid in room_has_swing for rid in rms):
-            return False
+            return False  # 无归属门（楼梯/管井范围兜底）→ 不删
         c = Point(dr["center"])
-        # 门洞中心是否在任一所属房间多边形内（真正的内部隔断才在房间内部）
-        inside = any((r["id"] in rms and r["polygon_pt"].contains(c))
-                     for r in rooms)
-        if not inside:
-            return False  # 贴外墙面(朝走廊) → 公共出入口，保留
-        # 内部隔断候选：找最近的另一侧房间（排除所属房间）
-        cand = []
+        # 所属房间须含核心房间
+        owner_core = [rid for rid in rms if room_type_by_id.get(rid) in _CORE]
+        if not owner_core:
+            return False
+        # 门须确实属于该核心房间（中心距其边界 < 30pt≈2m）
+        if not any(r["polygon_pt"].exterior.distance(c) < 30
+                   for r in rooms if r["id"] in owner_core):
+            return False
+        # 公共面向（距公共空间 < 1.2m）→ 保留
+        for r in rooms:
+            if room_type_by_id.get(r["id"]) in _CIRC \
+               and r["polygon_pt"].exterior.distance(c) < 19:
+                return False
+        # 触达另一侧核心房间(<2.7m) → 判为内部隔断，删除
         for r in rooms:
             if r["id"] in rms:
                 continue
-            d = r["polygon_pt"].exterior.distance(c)
-            if d < 51:  # ≈2.7m 内视为相邻
-                cand.append((d, r))
-        cand.sort()
-        if not cand:
-            return False  # 无法确定另一侧 → 保守保留
-        other = cand[0][1]
-        # 两侧皆为卫生/楼梯核心 → 内部隔断
-        return room_type_by_id.get(other["id"]) in _CORE
+            if room_type_by_id.get(r["id"]) in _CORE \
+               and r["polygon_pt"].exterior.distance(c) < 51:
+                return True
+        return False
 
-    n_pub_before = sum(1 for dr in doors if dr.get("kind") == "opening")
-    doors = [dr for dr in doors
-             if dr.get("kind") != "opening" or not _opening_is_internal(dr)]
-    n_pub_after = sum(1 for dr in doors if dr.get("kind") == "opening")
-    if n_pub_before != n_pub_after:
-        print(f"[F{floor_no}] 门洞内部隔断过滤(丢弃卫生/楼梯核心内部门洞): "
-              f"{n_pub_before} -> {n_pub_after}")
+    n_core_before = len(doors)
+    doors = [dr for dr in doors if not _door_is_internal_core(dr)]
+    n_core_after = len(doors)
+    if n_core_before != n_core_after:
+        print(f"[F{floor_no}] 服务核心内部门删除(普通门/门洞/防火门): "
+              f"{n_core_before} -> {n_core_after}")
 
     # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
     zero_door = [r["label"] for r in rooms

@@ -11,16 +11,16 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - `src/render_interactive.py`：自包含交互式 HTML（`result/floor_layout_v9_interactive.html`）。（注：`render_v7.py` 及产物 `floor_layout_v7.html`/`school_building_01_map_v7.geojson` 已于 2026-08-05 由用户手动清理删除）
 - `result/school_building_01_map_v9.geojson`：v9.0.0 产物（version 9.0.0）。
 
-## 当前进展（v9，2026-08-05 内部门洞过滤后实测）
-- F1：33 房间 / 134 门(swing 70 + fire 53 + opening 11) / 10 楼梯 / 3 电梯
-- F2：21 房间 / 76 门(swing 36 + fire 32 + opening 8) / 7 楼梯 / 3 电梯
-- 拓扑：doorway 节点数 = 门数（F1 134 / F2 76），房间/设施/交叉口/设施门节点另计；边随门数变化。
+## 当前进展（v9，2026-08-05 核心内部门泛化删除后实测）
+- F1：33 房间 / 129 门(swing 68 + fire 53 + opening 8) / 10 楼梯 / 3 电梯
+- F2：21 房间 / 72 门(swing 36 + fire 32 + opening 4) / 7 楼梯 / 3 电梯
+- 拓扑：doorway 节点数 = 门数（F1 129 / F2 72），房间/设施/交叉口/设施门节点另计；边随门数变化。
 - 跨层边 10（楼梯 7 + 电梯 3，全部 matchedBy:code）
-- 门类型（F1/F2，2026-08-05 实测·卫生间防火门丢弃 + 内部门洞过滤后）：普通门(swing) 70/36、防火门(fire) 53/32、门洞(opening) **11/8**
-- 门洞构成：F1 = DK 直生 9 + 摆弧门重分类 4 = 13，再经「内部门洞过滤」丢弃 2（R1033↔R1032 卫生间内部对）→ 11；F2 = DK 直生 4 + 重分类 4 = 8，「内部门洞过滤」因 R2020 防火门被丢弃而保留其 2 个 opening → 8。全部来自 window 层 DK 矢量笔画；普通房门口紧邻摆弧门的 DK 标注已避让，不再生成门洞。
+- 门类型（F1/F2，2026-08-05 实测·卫生间防火门丢弃 + 核心内部门泛化删除后）：普通门(swing) 68/36、防火门(fire) 53/32、门洞(opening) **8/4**
+- 门洞构成：F1 = DK 直生 9 + 摆弧门重分类 4 = 13，再经「核心内部门泛化删除」丢弃 5（R1033↔R1032 卫生间内部对、R1031↔R1032 设备↔男卫等）→ 8；F2 = DK 直生 4 + 重分类 4 = 8，泛化删除丢弃 4（R2020↔R2021 男↔女卫生间内部对、贴办公室侧开窗等）→ 4。全部来自 window 层 DK 矢量笔画；普通房门口紧邻摆弧门的 DK 标注已避让，不再生成门洞。
 - ⚠️ 注意：本图纸 F1/F2 的 text 实体 DK 补检均为 0——所有 DK 均以 **window 层矢量笔画** 存储，`extract_dk_text_labels` 路径仅作备用；关键修复是 `is_dk_block` 改为「旋转无关」（以块内长笔画主方向定义字形竖直），覆盖竖排/旋转 DK。
-- ⚠️ 验证器 `validate_geojson.py` 第 82 行 `n_fire = len(doors) - n_swing` 把 opening 也算进 fire，故其打印的 "fire 66/40" 实为 fire+opening；真值见上（fire 55/34、opening 11/6）。
-- QA：VALIDATION PASS（无门封闭房间=0；孤儿门 61/17 为走廊/楼梯间/防火分区既有现象，非硬失败）
+- ⚠️ 验证器 `validate_geojson.py` 第 82 行 `n_fire = len(doors) - n_swing` 把 opening 也算进 fire，故其打印的 "fire 61/36" 实为 fire+opening；真值见上（fire 53/32、opening 8/4）。
+- QA：VALIDATION PASS（无门封闭房间=0；模块豁免子房间 F1=R1027/R1028/R1031/R1032/R1033、F2=R2016/R2017/R2020/R2021；孤儿门 61/17 为走廊/楼梯间/防火分区既有现象，非硬失败）
 
 ## 关键约定（跨会话必须遵守）
 - **目录结构约定（2026-08-04 确立，2026-08-05 删 render_v7 后更新）**：所有**正式脚本**放 `src/`（`parse_cad_pdf.py`、`topology.py`、`render_map.py`、`validate_geojson.py`、`render_interactive.py` 共 5 个）；所有**调试/诊断脚本**放 `debug/`（`debug_*.py`、`diag_*.py`、`glyph_probe.py` 共 22 个）。根目录不再保留 `.py`。`render_v7.py` 及其输入 `school_building_01_map_v7.geojson`、输出 `floor_layout_v7.html` 已由用户手动清理（2026-08-05）。
@@ -32,13 +32,15 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - **门洞避让规则**：`find_wall_openings` 对"距任一摆弧门(swing)中心 < DK_NEAR_ARC_PT(22pt) 的 DK 块"直接跳过（避让普通门标注）；归属/临近范围过滤仅保留 staircase/toilet 房间的 opening（stair_box 30pt 兜底，因楼梯间常无 staircase 房间多边形）。
 - **卫生间的防火门直接丢弃（2026-08-05 新增）**：`parse_floor` 在范围过滤之后、重分类之前新增一步——对 `kind=="fire"` 且归属房间中**任一房间为 toilet** 的防火门，直接丢弃，不参与后续重分类/内部门洞过滤。原因：用户明确卫生间防火门"不用考虑"。该步导致 F1 丢弃 2 个、F2 丢弃 2 个卫生间 fire 门；fire 门被丢弃后，原靠 fire 门算作"有真实入口"的房间（如 F2 R2020）现在只剩 opening，故这些 opening 作为唯一入口被保留。
 - **卫生间/楼梯间摆弧门重分类为门洞（2026-08-05 新增，II-WR-01 修复）**：`parse_floor` 在范围过滤之后新增一步——对 `kind in (swing,fire)` 且**归属到 toilet/staircase 房间**、且门体中心 <14pt 内有 DK 编号块 的摆弧门/防火门，重分类为 `opening`（`arc_mid` 设为门中心）。原因：此类门在图纸上以「摆弧门 + DK 洞口标注」共同表达，`detect_doors` 正确识别成 swing，但按规则卫生间/楼梯间的门应以 DK 洞口为准（opening）；红框处含 DK 的 window 组件此前只剩 swing、丢失门洞语义。该步在范围过滤之后、依赖 `room_type_by_id` 与 `dk_blocks`（均已在作用域）。**注意：卫生间 fire 门已在上一步丢弃，此处重分类的 fire 门仅针对 staircase。** 重分类计数 F1=4/F2=4。
-- **内部门洞过滤 + 卫生间兜底（2026-08-05，用户明确"卫生间门洞只保留通往公共空间的，内部的不保留"）**：重分类步之后新增 `_opening_is_internal` 过滤——对 `kind=="opening"` 的门：
+- **核心内部门泛化删除（2026-08-05，用户明确"所有封闭空间内部的普通门/门洞/防火门都删除，通往公共空间或其他封闭空间的门保留"）**：`_door_is_internal_core` 过滤作用在**所有门类型**（swing/fire/opening）与**所有服务核心房间**（toilet/staircase/equipment/shaft，集合 `_CORE`）上，取代原先仅 opening 的 `_opening_is_internal`。逻辑：
   - 无归属房间（楼梯/管井范围兜底）→ 保留；
-  - 归属房间中没有任何 swing/fire 门（即该 opening 是房间**唯一入口**）→ 保留（避免变成"无门封闭房间"硬失败）；
-  - 门中心在归属房间多边形内（内墙）且最近的其他房间(<2.7m) 属 toilet/staircase → 判为**内部隔断**→ 丢弃；
-  - 其余（外墙面朝走廊/门厅等公共空间）→ 保留。
+  - 门须确属某个核心房间（门中心距该核心房间边界 <30pt≈2m），否则保留；
+  - 公共面向（门中心距任一公共空间 corridor/lobby/atrium/entrance/accessible_entrance/elevator_hall 边界 <19pt≈1.2m）→ 保留（即"通往公共空间的门"）；
+  - 门还触达**另一侧核心房间**（<51pt≈2.7m）→ 判为**核心内部隔断**→ 删除（即"封闭空间内部的门"）。
+  - 含义：核心房间之间、或核心房间与同模块设备间之间的内门全部删除；只有朝公共空间、或通向"另一个独立封闭空间（不同核心模块，几何上不构成同一封闭空间内部）"的门保留。
   - 几何判定用 `r["polygon_pt"]`（shapely，解析器内存在）；分析脚本因 managed Python 3.13.12 无 shapely，需自备 ray-casting + 点到线段距离。
-  - ⚠️ 已知边缘：**R1032(男卫生间,F1)** 与 **R2021(F2)** 的**唯一**门是通往设备间/女卫生间的内部 opening——按严格规则应删，但删除会使其"无门封闭"(QA 硬失败)。用户确认采用**保留兜底**(QA 安全)：维持现状，并在记忆标注这两间房缺失真实走廊入口门（门归属链未给其分配 corridor swing/fire 门），留待后续修复。F1 过滤 13→11、F2 8→6。
+  - ⚠️ 第一版用"最近其他房间"启发式会漏判 F2 男↔女卫生间内部 opening（最近邻是办公室 0.11m 而非女卫生间 0.16m），改为"触达任一其他核心房间 <2.7m"后修复。F1 删除 136→129、F2 76→72。
+- **验证器模块豁免（2026-08-05，配合核心内部门删除）**：零门封闭房间检查新增豁免——若某核心房间（toilet/staircase/equipment/shaft）多边形在 **1.5m 内与任一其他房间多边形相邻**（成模块或贴公共空间），则该子房间零门不计失败。原因：严格删除内部门后，男卫生间(R1032/R2021)、设备间(R1031)等失去唯一入口，但它们属于同一封闭模块（对侧女卫生间/公共空间仍有门），导航仍可达，故从 QA 硬失败豁免。最终豁免 F1=R1027/R1028/R1031/R1032/R1033、F2=R2016/R2017/R2020/R2021 → VALIDATION PASS。
 - **detect_doors 摆弧门去重加了"中心距守卫"(DOOR_CLUSTER_CENTER_PT=14)**：原仅用叶段投影间隙<6pt 判同门，会把同一面墙相邻两房间的门(如 R1021/R1022，中心距≈30pt)误并成一道，导致后一房间缺门。加中心距守卫后相邻门正确分离；同一门多段弧(中心重合)仍正常合并。
 - **DOOR_FIRE 只处理 arc based 门**（用户明确：quads/lines 非门叶片，曾回退删除 fire_door_leaves 补检逻辑，勿再加回）。
 - **图层**：家具层仅 `A-METAL-S`；`A-TECH-SANT` 在 `LAYERS_IGNORE` 整层显式剔除（PyMuPDF get_drawings 不感知图层可见性）。

@@ -74,9 +74,64 @@ def main():
         for dr in doors:
             for rid in dr["properties"].get("rooms", []):
                 door_cnt[rid] = door_cnt.get(rid, 0) + 1
+
+        # --- 服务核心模块豁免（用户 2026-08-05）：已有公共出口的卫生间/设备模块，
+        #     其子房间视为一个可导航空间，零门不算封闭失败 ---
+        CIRC = {"corridor", "lobby", "atrium", "entrance",
+                "accessible_entrance", "elevator_hall"}
+        CORE = {"toilet", "staircase", "equipment", "shaft"}
+
+        def _pip(pt, ring):
+            x, y = pt; inside = False; n = len(ring); j = n - 1
+            for i in range(n):
+                xi, yi = ring[i]; xj, yj = ring[j]
+                if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                    inside = not inside
+                j = i
+            return inside
+
+        def _seg_dist(pt, a, b):
+            px, py = pt; ax, ay = a; bx, by = b
+            dx, dy = bx - ax, by - ay
+            if dx == 0 and dy == 0:
+                return math.hypot(px - ax, py - ay)
+            t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+            t = max(0, min(1, t))
+            cx, cy = ax + t * dx, ay + t * dy
+            return math.hypot(px - cx, py - cy)
+
+        def _ring_dist(pt, ring):
+            return min(_seg_dist(pt, ring[i], ring[(i + 1) % len(ring)])
+                       for i in range(len(ring)))
+
+        _rgeo = {}
+        for r in rooms:
+            ring = r["geometry"]["coordinates"][0]
+            _rgeo[r["id"]] = {
+                "type": r["properties"].get("roomType"),
+                "ring": ring,
+            }
+        # 服务核心模块豁免（用户 2026-08-05）：卫生间/设备房间若与任一其他房间相邻
+        # （成模块或贴公共空间），视为模块内可导航空间，零门不计失败。
+        _exempt = set()
+        for rid, rg in _rgeo.items():
+            if rg["type"] not in CORE:
+                continue
+            adj = any(rid2 != rid and (
+                        any(_ring_dist(p, _rgeo[rid2]["ring"]) < 1.5
+                            for p in rg["ring"]) or
+                        any(_ring_dist(p, rg["ring"]) < 1.5
+                            for p in _rgeo[rid2]["ring"]))
+                      for rid2 in _rgeo)
+            if adj:
+                _exempt.add(rid)
+
         zero = [r["properties"].get("label") for r in rooms
                 if r["properties"].get("roomType") not in NON_ENCLOSED
-                and door_cnt.get(r["id"], 0) == 0]
+                and door_cnt.get(r["id"], 0) == 0
+                and r["id"] not in _exempt]
+        if _exempt:
+            print(f"  模块豁免(零门不计失败)子房间: {sorted(_exempt)}")
         orphan = [dr["id"] for dr in doors if not dr["properties"].get("rooms")]
         n_swing = sum(1 for x in doors if x["properties"].get("doorType") == "swing")
         n_fire = len(doors) - n_swing
