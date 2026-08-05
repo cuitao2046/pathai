@@ -130,7 +130,7 @@ LABEL_SKIP_RE = re.compile(
 ROOM_TYPE_RULES = [
     ("卫生间", "toilet"), ("洗手间", "toilet"),
     ("楼梯", "staircase"), ("电梯", "elevator_hall"),
-    ("走道", "corridor"), ("走廊", "corridor"),
+    ("走道", "corridor"), ("走廊", "corridor"), ("过道", "corridor"),
     ("门厅", "lobby"), ("大厅", "lobby"),
     ("门厅无障碍出入口", "accessible_entrance"),
     ("无障碍出入口", "accessible_entrance"),
@@ -418,7 +418,7 @@ def extract_room_labels(page):
     # 开放空间(走廊/门厅/大厅/活动/出入口)与封闭空间(房间/管井/电梯/楼梯间等)
     # 也分属不同语义类，绝不拼接——避免「走道」+「历史地理资料室」合成「走道历史地理资料室」。
     _UTIL_TAGS = {"风井", "水井", "排风井", "强电井", "弱电井", "管井"}
-    _OPEN_TAGS = {"走道", "走廊", "门厅", "大厅", "活动", "社团",
+    _OPEN_TAGS = {"走道", "走廊", "过道", "门厅", "大厅", "活动", "社团",
                   "庭园", "上空", "门厅无障碍出入口", "无障碍出入口",
                   "出入口", "人防主出入口"}
     def _cat(t):
@@ -1211,6 +1211,41 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     border_arr = np.fromiter((i in border_ids for i in range(n)),
                              dtype=bool, count=n)
     owner[np.isin(cc, np.where(border_arr)[0])] = -1.0
+
+    # --- 开放空间(走廊/门厅/大厅/活动/中庭)扫描预排除 -------------------
+    # 「先忽略走道/过道」：在房间分水岭生长之前，先把开放空间组件固定为其
+    # 各自组件 cid，并从房间生长种子中移除，使其不参与房间像素竞争。这样
+    # 走道/过道等巨大开放面积绝对无法抢占相邻封闭房间像素，保证走廊/过道
+    # 的空间识别不会影响房间等封闭空间的识别。
+    #   仅固定「纯开放组件」（组件内不含任何封闭空间标签）；开放+封闭共域的
+    #   共享组件仍交给下方几何分割处理（保持既有分治行为，避免误切房间）。
+    _OPEN_RT = {"corridor", "lobby", "activity", "atrium"}
+    _open_cids = set()
+    _enclosed_cids = set()
+    for _entry in (label_points or []):
+        if len(_entry) == 3:
+            _t, (_lx, _ly), _sz = _entry
+        else:
+            _t, (_lx, _ly) = _entry
+        if LABEL_SKIP_RE.search(_t):
+            continue
+        _px, _py = to_px((_lx, _ly))
+        if 0 <= _px < W and 0 <= _py < H:
+            _c = int(cc[_py, _px])
+            if _c == 0 or _c in border_ids:
+                continue
+            if classify_room_type(_t) in _OPEN_RT:
+                _open_cids.add(_c)
+            else:
+                _enclosed_cids.add(_c)
+    _pure_open = [c for c in _open_cids if c not in _enclosed_cids]
+    if _pure_open:
+        _po = np.isin(cc, np.array(sorted(_pure_open), dtype=np.int64))
+        owner[_po] = cc[_po].astype(np.float32)   # 固定为组件 cid（已占领）
+        region_ids = region_ids[~np.isin(
+            region_ids, np.array(sorted(_pure_open), dtype=np.int64))]
+        region_mask = np.isin(cc, region_ids)
+        owner[region_mask] = cc[region_mask].astype(np.float32)
 
     # 多源生长：每轮已占领 px 向 4 邻域可填充 px 扩展一格，
     # 取邻域最大 id（房间正 id 优先于室外 -1），墙(-1e9)永不扩散
