@@ -312,6 +312,32 @@ def fmt(v):
     return f"{v:.1f}"
 
 
+# 文字标签包围盒启发式过滤阈值（CAD PDF 中部分文字标签的矢量矩形被
+# 误识别为房间多边形，会与真实房间重叠。典型特征：面积小 + 形状窄长。）
+LABEL_BBOX_MAX_AREA = 6.0     # m²，小于此值才有嫌疑
+LABEL_BBOX_MIN_ASPECT = 1.5   # 长边/短边，超过此值判定为文字框
+
+
+def _is_label_bbox(ring):
+    """判定闭合多边形是否疑似文字标签的包围盒（小面积 + 窄长形状）。"""
+    xs = [p[0] for p in ring[:-1]]
+    ys = [p[1] for p in ring[:-1]]
+    if len(xs) < 3:
+        return True
+    w = max(xs) - min(xs)
+    h = max(ys) - min(ys)
+    if w <= 0 or h <= 0:
+        return True
+    a = 0.0
+    for j in range(len(ring) - 1):
+        a += ring[j][0] * ring[j + 1][1] - ring[j + 1][0] * ring[j][1]
+    a = abs(a) / 2.0
+    if a >= LABEL_BBOX_MAX_AREA:
+        return False
+    aspect = max(w, h) / min(w, h)
+    return aspect >= LABEL_BBOX_MIN_ASPECT
+
+
 def info_attr(d):
     """把任意可序列化 dict 编码为 data-info 属性（JS 端 JSON.parse）。"""
     s = json.dumps(d, ensure_ascii=False).replace("'", "\\'")
@@ -515,8 +541,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         )
 
         # 1. 房间
+        n_skip_bbox = 0
         for r in geom.get("rooms", []):
             ring = r["geometry"]["coordinates"][0]
+            if _is_label_bbox(ring):
+                # 文字标签的包围盒：跳过绘制，避免与真实房间重叠
+                n_skip_bbox += 1
+                continue
             pts = " ".join(f"{tosvg(p[0], p[1])[0]},{tosvg(p[0], p[1])[1]}" for p in ring)
             p = r["properties"]
             rtype = p.get("roomType", "room")
@@ -544,6 +575,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     f'<text x="{sx_s}" y="{sy_s}" font-size="6" text-anchor="middle" '
                     f'fill="#333">{label}</text></g>\n'
                 )
+        if n_skip_bbox:
+            print(f"  [F{fk}] 跳过 {n_skip_bbox} 个文字标签包围盒（面积<{LABEL_BBOX_MAX_AREA}m² 且长宽比≥{LABEL_BBOX_MIN_ASPECT}）")
 
         # 2. 墙体
         for w in geom.get("walls", []):
