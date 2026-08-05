@@ -48,6 +48,265 @@ NODE_COLORS = {
 }
 FACILITY_COLORS = {"staircase": "#8E44AD", "elevator": "#16A085"}
 
+# 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
+OUTLINE_MIN_AREA = 100.0
+
+
+# ----------------------------------------------------------------------------
+# 纯 Python 建筑外轮廓计算（无 shapely/numpy 依赖）：
+#   房间/楼梯/电梯/柱 闭合多边形 栅格化填充 + 墙体段细带 → 膨胀弥合门洞缺口
+#   → 外部泛洪取补集得建筑实体 → 逐连通块 Moore 追踪最外轮廓 → Douglas-Peucker 简化
+# ----------------------------------------------------------------------------
+def _rasterize_rings(rings, minx, miny, cell, nx, ny):
+    """扫描线填充若干多边形环，返回 inside 网格。"""
+    inside = [[False] * nx for _ in range(ny)]
+    gx_ = lambda x: int((x - minx) / cell)
+    gy_ = lambda y: int((y - miny) / cell)
+    for ring in rings:
+        if len(ring) < 3:
+            continue
+        ys = [p[1] for p in ring]
+        y0, y1 = min(ys), max(ys)
+        gy0 = max(0, gy_(y0))
+        gy1 = min(ny - 1, gy_(y1))
+        for gy in range(gy0, gy1 + 1):
+            wy = miny + (gy + 0.5) * cell
+            xi = []
+            n = len(ring)
+            for i in range(n):
+                x1, y1_ = ring[i]
+                x2, y2_ = ring[(i + 1) % n]
+                if (y1_ <= wy < y2_) or (y2_ <= wy < y1_):
+                    t = (wy - y1_) / (y2_ - y1_)
+                    xi.append(x1 + t * (x2 - x1))
+            xi.sort()
+            for k in range(0, len(xi) - 1, 2):
+                a = gx_(xi[k])
+                b = gx_(xi[k + 1])
+                for gxx in range(max(0, a), min(nx - 1, b) + 1):
+                    inside[gy][gxx] = True
+    return inside
+
+
+def _dist_transform(inside, nx, ny):
+    """到最近 True 单元的 Chamfer 距离（正交=1, 对角=√2），用于 O(n) 膨胀/腐蚀。"""
+    INF = 1e9
+    d = [[0.0 if inside[y][x] else INF for x in range(nx)] for y in range(ny)]
+    s2 = 1.41421356
+    for y in range(ny):
+        for x in range(nx):
+            if x > 0:
+                d[y][x] = min(d[y][x], d[y][x - 1] + 1.0)
+            if y > 0:
+                d[y][x] = min(d[y][x], d[y - 1][x] + 1.0)
+            if x > 0 and y > 0:
+                d[y][x] = min(d[y][x], d[y - 1][x - 1] + s2)
+        for x in range(nx - 1, -1, -1):
+            if y > 0 and x < nx - 1:
+                d[y][x] = min(d[y][x], d[y - 1][x + 1] + s2)
+    for y in range(ny - 1, -1, -1):
+        for x in range(nx - 1, -1, -1):
+            if x < nx - 1:
+                d[y][x] = min(d[y][x], d[y][x + 1] + 1.0)
+            if y < ny - 1:
+                d[y][x] = min(d[y][x], d[y + 1][x] + 1.0)
+            if x < nx - 1 and y < ny - 1:
+                d[y][x] = min(d[y][x], d[y + 1][x + 1] + s2)
+        for x in range(nx):
+            if y < ny - 1 and x > 0:
+                d[y][x] = min(d[y][x], d[y + 1][x - 1] + s2)
+    return d
+
+
+def _dilate(inside, nx, ny, r_cells):
+    d = _dist_transform(inside, nx, ny)
+    return [[d[y][x] <= r_cells for x in range(nx)] for y in range(ny)]
+
+
+def _trace_contour(inside, nx, ny, minx, miny, cell, tol, start=None):
+    """Moore 邻域追踪 inside 区域外轮廓，返回米制闭合多边形。沿内部单元前进。"""
+    def isin(x, y):
+        return 0 <= x < nx and 0 <= y < ny and inside[y][x]
+
+    if start is None:
+        for y in range(ny):
+            for x in range(nx):
+                if inside[y][x]:
+                    if (x == 0 or y == 0 or x == nx - 1 or y == ny - 1
+                            or not isin(x - 1, y) or not isin(x + 1, y)
+                            or not isin(x, y - 1) or not isin(x, y + 1)):
+                        start = (x, y)
+                        break
+            if start:
+                break
+    if not start:
+        return []
+
+    neigh = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+    cx, cy = start
+    bx, by = cx - 1, cy
+    contour = [(cx, cy)]
+    steps = 0
+    maxsteps = nx * ny * 4
+    while steps < maxsteps:
+        steps += 1
+        try:
+            bidx = neigh.index((bx - cx, by - cy))
+        except ValueError:
+            bidx = -1
+        found = False
+        for off in range(1, 9):
+            idx = (bidx + off) % 8
+            dx, dy = neigh[idx]
+            nx2, ny2 = cx + dx, cy + dy
+            if isin(nx2, ny2):
+                bx, by = cx, cy
+                cx, cy = nx2, ny2
+                if (cx, cy) == start:
+                    return _simplify([(minx + (x + 0.5) * cell, miny + (y + 0.5) * cell)
+                                      for x, y in contour], tol)
+                contour.append((cx, cy))
+                found = True
+                break
+        if not found:
+            break
+    return _simplify([(minx + (x + 0.5) * cell, miny + (y + 0.5) * cell)
+                     for x, y in contour], tol)
+
+
+def _trace_contour_from(inside, start, nx, ny, minx, miny, cell, tol):
+    return _trace_contour(inside, nx, ny, minx, miny, cell, tol, start=start)
+
+
+def _simplify(pts, tol):
+    if len(pts) < 3:
+        return pts
+
+    def dp(start, end):
+        dmax, idx = 0.0, 0
+        x1, y1 = pts[start]
+        x2, y2 = pts[end]
+        dx, dy = x2 - x1, y2 - y1
+        denom = math.hypot(dx, dy) or 1e-9
+        for i in range(start + 1, end):
+            x0, y0 = pts[i]
+            d = abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1) / denom
+            if d > dmax:
+                dmax, idx = d, i
+        if dmax > tol:
+            return dp(start, idx)[:-1] + dp(idx, end)
+        return [pts[start], pts[end]]
+
+    res = dp(0, len(pts) - 1)
+    if res[0] != res[-1]:
+        res.append(res[0])
+    return res
+
+
+def _area(pts):
+    return abs(sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+                  for i in range(len(pts)))) / 2
+
+
+def building_outline(floor_geom, cell=0.1, wall_hw=1, close_r=14,
+                     fill_keys=("rooms", "stairs", "elevators", "columns")):
+    """计算建筑外轮廓（实线外部边缘）。
+
+    综合 墙段 + 各闭合空间多边形栅格化 → 膨胀弥合门洞缺口 → 边界泛洪得 outside
+    → building=非 outside → 逐连通块追踪最外轮廓（一栋楼可有多个独立楼体）。
+    返回若干米制闭合多边形（已含闭合末点）。
+    """
+    rings = []
+    for k in fill_keys:
+        for o in floor_geom.get(k, []):
+            c = o["geometry"]["coordinates"]
+            if c and len(c[0]) >= 3:
+                rings.append(c[0])
+    segs = [w["geometry"]["coordinates"] for w in floor_geom.get("walls", [])]
+    if not rings and not segs:
+        return []
+
+    allpts = [p for r in rings for p in r] + [p for s in segs for p in s]
+    minx = min(p[0] for p in allpts); maxx = max(p[0] for p in allpts)
+    miny = min(p[1] for p in allpts); maxy = max(p[1] for p in allpts)
+    pad = max(cell * 4, 1.0)
+    minx -= pad; maxx += pad; miny -= pad; maxy += pad
+    nx = int((maxx - minx) / cell) + 1
+    ny = int((maxy - miny) / cell) + 1
+
+    inside = _rasterize_rings(rings, minx, miny, cell, nx, ny)
+    gx_ = lambda x: int((x - minx) / cell)
+    gy_ = lambda y: int((y - miny) / cell)
+    for (x1, y1), (x2, y2) in segs:
+        d = math.hypot(x2 - x1, y2 - y1)
+        n = max(1, int(d / cell * 2))
+        for t in range(n + 1):
+            tt = t / n
+            px = x1 + (x2 - x1) * tt
+            py = y1 + (y2 - y1) * tt
+            gx = gx_(px); gy = gy_(py)
+            for dx in range(-wall_hw, wall_hw + 1):
+                for dy in range(-wall_hw, wall_hw + 1):
+                    xx, yy = gx + dx, gy + dy
+                    if 0 <= xx < nx and 0 <= yy < ny:
+                        inside[yy][xx] = True
+
+    if close_r > 0:
+        # 纯膨胀：弥合门洞缺口（闭运算的腐蚀会把膨胀填出的窄桥重新蚀断，故仅膨胀）。
+        inside = _dilate(inside, nx, ny, close_r)
+
+    # 外部泛洪：从网格边界出发，穿过所有非建筑单元标记 outside
+    outside = [[False] * nx for _ in range(ny)]
+    stack = []
+    for x in range(nx):
+        for y in (0, ny - 1):
+            if not inside[y][x]:
+                outside[y][x] = True; stack.append((x, y))
+    for y in range(ny):
+        for x in (0, nx - 1):
+            if not inside[y][x] and not outside[y][x]:
+                outside[y][x] = True; stack.append((x, y))
+    while stack:
+        x, y = stack.pop()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            xx, yy = x + dx, y + dy
+            if 0 <= xx < nx and 0 <= yy < ny and not outside[yy][xx] and not inside[yy][xx]:
+                outside[yy][xx] = True; stack.append((xx, yy))
+
+    building = [[not outside[y][x] for x in range(nx)] for y in range(ny)]
+
+    # 逐连通块追踪各自最外轮廓
+    visited = [[False] * nx for _ in range(ny)]
+    polys = []
+    for sy in range(ny):
+        for sx in range(nx):
+            if not building[sy][sx] or visited[sy][sx]:
+                continue
+            comp = []
+            stk = [(sx, sy)]
+            visited[sy][sx] = True
+            while stk:
+                x, y = stk.pop()
+                comp.append((x, y))
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    xx, yy = x + dx, y + dy
+                    if 0 <= xx < nx and 0 <= yy < ny and building[yy][xx] and not visited[yy][xx]:
+                        visited[yy][xx] = True
+                        stk.append((xx, yy))
+            start = None
+            for (x, y) in comp:
+                if any(not building[y + dy][x + dx]
+                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                       if 0 <= x + dx < nx and 0 <= y + dy < ny):
+                    start = (x, y)
+                    break
+            if start is None:
+                start = comp[0]
+            contour = _trace_contour_from(building, start, nx, ny, minx, miny, cell, cell * 1.5)
+            if len(contour) >= 3:
+                polys.append(contour)
+    return polys
+
 
 def fmt(v):
     return f"{v:.1f}"
@@ -111,6 +370,7 @@ body {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #
 svg {{ display: block; background: #fff; }}
 .layer_room polygon {{ opacity: 0.55; cursor: pointer; }}
 .layer_wall path {{ stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }}
+.layer_building_outline polygon {{ fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }}
 .layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; }}
 .layer_stairs polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
@@ -183,6 +443,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
   <label><input type="checkbox" checked onchange="toggleLayer('elevator', this.checked)"> 电梯</label>
   <label><input type="checkbox" checked onchange="toggleLayer('column', this.checked)"> 柱子</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('building_outline', this.checked)"> 建筑外轮廓</label>
   <label><input type="checkbox" checked onchange="toggleLayer('door_swing', this.checked)"> 普通门</label>
   <label><input type="checkbox" checked onchange="toggleLayer('door_opening', this.checked)"> 门洞</label>
   <label><input type="checkbox" checked onchange="toggleLayer('door_fire', this.checked)"> 防火门</label>
@@ -546,6 +807,26 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 f'<text x="{float(sx)+9:.1f}" y="{float(sy)+3:.1f}" font-size="4" fill="#6A1B9A">{desc}</text></g>\n'
             )
 
+        # 10.5 建筑外轮廓（实线）—— 基于闭合空间多边形 + 墙体段栅格化，膨胀弥合门洞缺口，
+        # 取「外部泛洪的补集」作为建筑实体后追踪最外轮廓；按相对面积阈值过滤小噪声块，用实线绘制。
+        outline_polys = building_outline(geom, cell=0.1, wall_hw=1, close_r=14)
+        if outline_polys:
+            _areas = [_area(p) for p in outline_polys]
+            _max_a = max(_areas)
+            # 仅保留最大块的 ≥5%（或绝对 ≥150m²），剔除家具/孤立柱簇等小噪声连通块
+            _thr = max(150.0, 0.05 * _max_a)
+            outline_polys = [p for p, a in zip(outline_polys, _areas) if a >= _thr]
+        if outline_polys:
+            total_oa = sum(_area(p) for p in outline_polys)
+            print(f"  [F{fk}] 建筑外轮廓: {len(outline_polys)} 块, 总面积 ~{total_oa:.0f} m²")
+        for poly in outline_polys:
+            pts = " ".join(f"{tosvg(px, py)[0]},{tosvg(px, py)[1]}" for px, py in poly)
+            parts.append(
+                f'<g class="layer_building_outline" pointer-events="none">'
+                f'<polygon points="{pts}" fill="none" stroke="#222" '
+                f'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></g>\n'
+            )
+
         # 楼层分隔线
         if i < len(sorted_floors) - 1:
             sep_y = (i + 1) * svh_per_floor
@@ -634,6 +915,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     <div class="lg-item"><div class="lg-sw line" style="--c:#81D4FA"></div>窗户段</div>
     <div class="lg-item"><div class="lg-sw" style="background:#FFF9C4"></div>房间/教室</div>
     <div class="lg-item"><div class="lg-sw" style="background:#B0BEC5;border:1px solid #78909C"></div>柱子</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:2px solid #222"></div>建筑外轮廓（实线）</div>
   </div>
   <div class="lg-sec"><div class="lg-title">门</div>
     <div class="lg-item"><div class="lg-sw" style="background:#2196F3;border-radius:50%;width:11px;height:11px;margin-left:1px"></div>普通门（window 摆弧）</div>
@@ -789,7 +1071,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','wall','window','stairs','elevator','column',
+var allLayers = ['room','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
