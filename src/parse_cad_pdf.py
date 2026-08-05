@@ -339,8 +339,12 @@ def extract_dk_text_labels(page):
 
 def extract_room_labels(page):
     """
-    提取房间名称文本（大字号、排除图签区），合并多行标签（如 学生/社团/活动区）。
-    返回 [(text, (cx, cy)_pt)]
+    提取房间标签文本（大字号、排除图签区），合并多行中文（如 学生/社团/活动区）；
+    同时收集 A-ANNO-150-TXT 英文编号（如 II-WR-03）作为 roomCode。
+
+    返回 (names, codes):
+      names = [(chinese_text, (cx, cy)_pt], ...]   → 空间名（用于房间探测）
+      codes = [(code_text, (cx, cy)_pt], ...]       → 编号（后与房间匹配）
     """
     d = page.get_text("dict")
     raw = []
@@ -353,16 +357,14 @@ def extract_room_labels(page):
                 continue
             size = max(s["size"] for s in line["spans"])
             x0, y0, x1, y1 = line["bbox"]
-            if size < LABEL_MIN_SIZE or x1 > TITLE_BLOCK_X:
+            if x1 > TITLE_BLOCK_X:
                 continue
             raw.append({"text": txt, "size": size,
                         "bbox": (x0, y0, x1, y1),
                         "cx": (x0 + x1) / 2, "cy": (y0 + y1) / 2,
                         "w": x1 - x0, "h": y1 - y0})
 
-    # 过滤明显非房间名的内容
-    def is_room_label(t):
-        # 图签区文字（小字号常含管理/版本/日期关键词）—— 不视为房间标签
+    def _blocked(t):
         if any(k in t for k in ("归档记录", "出图日期", "图号", "版本号",
                                  "图名", "会  签", "会 签", "会签",
                                  "验证签字", "教育建筑", "产业发展研究院",
@@ -372,36 +374,46 @@ def extract_room_labels(page):
                                  "建设单位", "设计单位", "图纸",
                                  "2m范围内", "门窗洞口", "范围内", "年   月   日",
                                  "年 月 日", "年 月")):
-            return False
-        if re.search(r"[0-9a-zA-Z]{3,}", t):      # 编号/英文
-            return False
+            return True
         if re.fullmatch(r"[0-9.\s%㎡()（）*≥<=-]+", t):
-            return False
+            return True
         if any(k in t for k in ("面积", "分区", "排烟", "平面", "教学", "项目", "设计")):
-            return False
+            return True
+        if re.search(r"[0-9a-zA-Z]{3,}", t):
+            return True
         if len(t) > 12:
-            return False
-        return bool(re.search(r"[一-鿿]", t))
+            return True
+        return False
 
-    cands = [r for r in raw if is_room_label(r["text"])]
+    # A-ANNO-150-TXT 英文编号（II-WR-03 / II-LAB-01 / R1001 等）
+    _ANNO_CODE_RE = re.compile(r"^(II-[\w\d]+-[\d]+|R\d{3,})$")
 
-    # 合并垂直堆叠的多行标签（行间距 < 2.2 倍行高，水平重叠）
-    cands.sort(key=lambda r: (r["cx"], r["cy"]))
-    used = [False] * len(cands)
+    names = []  # 中文空间名
+    codes = []  # 英文编号
+    for r in raw:
+        t = r["text"]
+        if _blocked(t):
+            continue
+        if _ANNO_CODE_RE.match(t):
+            codes.append((t, (r["cx"], r["cy"])))
+        elif bool(re.search(r"[一-鿿]", t)) and r["size"] >= LABEL_MIN_SIZE:
+            names.append(r)
+
+    # 合并垂直堆叠的多行中文标签（行间距 < 2.2 倍行高，水平重叠）
+    names.sort(key=lambda r: (r["cx"], r["cy"]))
+    used = [False] * len(names)
     merged = []
-    for i, r in enumerate(cands):
+    for i, r in enumerate(names):
         if used[i]:
             continue
         group = [r]
         used[i] = True
-        for j in range(i + 1, len(cands)):
-            r2 = cands[j]
+        for j in range(i + 1, len(names)):
+            r2 = names[j]
             if used[j]:
                 continue
-            # 水平中心接近 且 垂直间距小（堆叠行）
             if abs(r2["cx"] - r["cx"]) < max(r["w"], r2["w"], 20) * 0.6 + 10 and \
                abs(r2["cy"] - r["cy"]) < (r["h"] + r2["h"]) * 2.2:
-                # 文本拼接后仍是合理房间名
                 group.append(r2)
                 used[j] = True
         group.sort(key=lambda g: g["cy"])
@@ -409,7 +421,7 @@ def extract_room_labels(page):
         cx = sum(g["cx"] for g in group) / len(group)
         cy = sum(g["cy"] for g in group) / len(group)
         merged.append((text, (cx, cy)))
-    return merged
+    return merged, codes
 
 
 # ---------------------------------------------------------------- window 图层分类
@@ -1400,6 +1412,8 @@ def parse_floor(pdf_path, floor_no):
 
     items = extract_layer_items(page, set(active))
     labels = extract_room_labels(page)
+    # labels 现在返回 (names, codes)，拆开供 build_rooms 用
+    room_names, room_codes = labels
     facility_codes = extract_facility_codes(page)
     # DK 文本标注（旋转/竖排标注常以 text span 存储）须在 doc 关闭前提取，
     # 稍后在门洞识别阶段与矢量 DK 合并去重。
@@ -1637,7 +1651,7 @@ def parse_floor(pdf_path, floor_no):
 
     # --- 房间多边形（全部墙线密封 + 分水岭归属 + 守卫式泛洪，标签探测）
     room_res = build_rooms(
-        all_segs, closures, furn_segs=furn_segs, label_points=labels,
+        all_segs, closures, furn_segs=furn_segs, label_points=room_names,
         dump_path=str(RESULT_DIR / f"_debug_wallmask_f{floor_no}.png"))
     labeled_polys = room_res["polys"]
     print(f"[F{floor_no}] 房间多边形(标签探测): {len(labeled_polys)}")
@@ -1645,7 +1659,7 @@ def parse_floor(pdf_path, floor_no):
     rooms = []
     used_labels = set()
     label_by_text = {}
-    for li, (text, _) in enumerate(labels):
+    for li, (text, _) in enumerate(room_names):
         label_by_text.setdefault(text, li)
     for idx, (label, poly) in enumerate(labeled_polys):
         if label is None:
@@ -1654,10 +1668,18 @@ def parse_floor(pdf_path, floor_no):
             used_labels.add(label_by_text[label])
         centroid_m = pt2m((poly.centroid.x, poly.centroid.y))
         coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
+        # 匹配 A-ANNO-150-TXT 编号：代码点须在房间内（或距边界 < 1m）
+        best_code, best_d = None, 1.0 * PT_PER_M
+        for code, (cx, cy) in room_codes:
+            p = Point(cx, cy)
+            d = poly.exterior.distance(p)
+            if d < best_d:
+                best_d, best_code = d, code
         rooms.append({
             "id": f"R{floor_no}{idx + 1:03d}",
             "label": label,
             "roomType": classify_room_type(label),
+            "code": best_code or "",
             "polygon_pt": poly,
             "coords_m": coords_m,
             "centroid_m": list(centroid_m),
@@ -1668,10 +1690,18 @@ def parse_floor(pdf_path, floor_no):
     # STAIRCASE 类型让门归属能找到这些房间，使 II-Bx-yz#ST 类 DK 门洞被认领。
     for sb_idx, (x0, y0, x1, y1) in enumerate(_stair_boxes):
         poly = box(x0, y0, x1, y1)
+        # 匹配 A-ANNO-150-TXT 编号（代码点在多边形内或距边界 < 1m）
+        best_code, best_d = None, 1.0 * PT_PER_M
+        for code, (cx, cy) in room_codes:
+            p = Point(cx, cy)
+            d = poly.exterior.distance(p)
+            if d < best_d:
+                best_d, best_code = d, code
         rooms.append({
             "id": f"R{floor_no}S{sb_idx + 1:03d}",
             "label": f"楼梯间{sb_idx + 1}",
             "roomType": "staircase",
+            "code": best_code or "",
             "polygon_pt": poly,
             "coords_m": [list(pt2m((x, y))) for x, y in poly.exterior.coords],
             "centroid_m": list(pt2m((poly.centroid.x, poly.centroid.y))),
@@ -1982,9 +2012,10 @@ def parse_floor(pdf_path, floor_no):
         "stair_boxes": stair_boxes,
         "evtr_boxes": evtr_boxes,
         "col_boxes": col_boxes,
-        "labels_unmatched": [t for i, (t, _) in enumerate(labels) if i not in used_labels],
-        "labels_all": [t for t, _ in labels],
-        "labels_all_with_pt": labels,
+        "labels_unmatched": [t for i, (t, _) in enumerate(room_names) if i not in used_labels],
+        "labels_all": [t for t, _ in room_names],
+        "labels_all_with_pt": room_names,
+        "room_codes": room_codes,
         "facility_codes": facility_codes,
     }
 
@@ -2107,6 +2138,7 @@ def build_geojson(f1, f2):
                 "geometry": {"type": "Polygon", "coordinates": [r["coords_m"]]},
                 "properties": {"type": "room", "roomType": r["roomType"],
                                "label": r["label"], "roomId": r["id"],
+                               "code": r.get("code", ""),
                                "centroid": r["centroid_m"],
                                "public": r["roomType"] in ROOM_PUBLIC_TYPES,
                                "accessible": r["roomType"] not in NON_ACCESSIBLE_TYPES,
