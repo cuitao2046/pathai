@@ -625,7 +625,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     parts.append('''</svg>
 </div><!-- /svg-wrapper -->
 </div><!-- /svg-container -->
-<div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
+<div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；再次点击同一要素可取消选中。点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
 </div><!-- /left -->
 <div id="legend-panel">
   <h4>图例说明 (v9)</h4>
@@ -720,11 +720,14 @@ wrapper.addEventListener('mousemove', function(e) {{
 }});
 wrapper.addEventListener('mouseleave', function() {{ tip.style.display = 'none'; }});
 
-// ---- 点击查看详情 / 高亮 ----
+// ---- 点击任意要素：按当前状态切换选中，并动态调整关联状态 ----
+// 关联状态包括：拓扑图层展示（选中拓扑节点时自动显示）、选中详情面板等
+var DETAIL_PLACEHOLDER = '<h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；再次点击同一要素可取消选中。点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div>';
 function clearHighlight() {{
   document.querySelectorAll('.selected').forEach(function(el){{ el.classList.remove('selected'); }});
   document.querySelectorAll('.neighbor').forEach(function(el){{ el.classList.remove('neighbor'); }});
 }}
+function resetDetail() {{ document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
 function markNode(id, cls) {{
   document.querySelectorAll('.layer_topo_node').forEach(function(g) {{
@@ -732,6 +735,12 @@ function markNode(id, cls) {{
     if (!f) return;
     try {{ var nd = JSON.parse(f); if (nd.id === id) g.classList.add(cls); }} catch(e){{}}
   }});
+}}
+// 联动：确保某图层可见（并同步勾选框状态）
+function ensureLayer(name, checked) {{
+  document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
+  var cb = document.querySelector('#layerControls input[onchange*="' + name + '"]');
+  if (cb) cb.checked = checked;
 }}
 function showDetail(d) {{
   var box = document.getElementById('detail');
@@ -746,10 +755,18 @@ wrapper.addEventListener('click', function(e) {{
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
+  // 已选中 → 再次点击取消选中，并还原关联状态
+  if (t.classList.contains('selected')) {{
+    clearHighlight(); resetDetail();
+    return;
+  }}
+  // 未选中 → 切换为选中：先还原其它，再建立本要素的关联状态
   clearHighlight(); t.classList.add('selected');
   showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
-  // 拓扑节点 → 高亮直接可达的拓扑节点 + 相连边
+  // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
   if (d.kind === 'node' && d.id) {{
+    ensureLayer('topo_node', true);
+    ensureLayer('topo_edge', true);
     var nbCount = 0;
     document.querySelectorAll('.layer_topo_edge').forEach(function(g) {{
       var f = g.getAttribute('data-info');
@@ -764,11 +781,10 @@ wrapper.addEventListener('click', function(e) {{
       }} catch(e){{}}
     }});
     // 在详情面板补充「直接可达」统计
-    var box = document.getElementById('detail');
     var stat = document.createElement('div');
     stat.className = 'row';
     stat.innerHTML = '<span>直接可达节点</span><span>' + nbCount + ' 个</span>';
-    box.appendChild(stat);
+    document.getElementById('detail').appendChild(stat);
   }}
 }});
 
