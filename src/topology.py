@@ -43,6 +43,7 @@ INDEPENDENT_ENTRANCE_TYPES = {
 OBJ_TYPE = {
     "wall": "W", "room": "RM", "door": "D", "stair": "ST",
     "elevator": "EL", "column": "C", "window": "WN",
+    "corridor": "CR", "lobby": "LB", "activity": "AC", "atrium": "AT",
     "topo_room": "TR", "topo_doorway": "TD", "topo_intersection": "TI",
     "topo_facility": "TF", "topo_entrance": "TEN", "topo_edge": "TE",
     "stair_risk": "SR", "elev_a11y": "EA", "cross_edge": "XE",

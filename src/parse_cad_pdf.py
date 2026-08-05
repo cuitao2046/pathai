@@ -150,6 +150,14 @@ ROOM_TYPE_RULES = [
     ("庭园", "atrium"), ("上空", "atrium"),
 ]
 
+# 开放空间类型 → 独立编号前缀（区别于封闭房间的 RM- 系列）；
+# 走廊/门厅/大厅/活动/中庭与房间/管井/电梯/楼梯间等封闭空间是不同类型，
+# 不能合并编号，故在生成 room id 时分流到各自 OBJ_TYPE 键。
+_OPEN_ID_KEY = {
+    "corridor": "corridor", "lobby": "lobby",
+    "activity": "activity", "atrium": "atrium",
+}
+
 # 公共空间（指南 4.2：卫生间/楼梯间/电梯间/走廊为公共，大厅/出入口/无障碍出入口也属于公共）
 ROOM_PUBLIC_TYPES = {
     "toilet", "staircase", "elevator_hall", "corridor", "lobby",
@@ -407,9 +415,15 @@ def extract_room_labels(page):
     # 合并垂直堆叠的多行中文标签（行间距 < 2.2 倍行高，水平重叠）；
     # 不跨语义类合并——管井（风井/水井/排风井）与房间标签各自成串，
     # 避免「水井排风井」与「女卫生间」拼接成「水井排风井女卫生间」。
+    # 开放空间(走廊/门厅/大厅/活动/出入口)与封闭空间(房间/管井/电梯/楼梯间等)
+    # 也分属不同语义类，绝不拼接——避免「走道」+「历史地理资料室」合成「走道历史地理资料室」。
     _UTIL_TAGS = {"风井", "水井", "排风井", "强电井", "弱电井", "管井"}
+    _OPEN_TAGS = {"走道", "走廊", "门厅", "大厅", "活动", "社团",
+                  "庭园", "上空", "门厅无障碍出入口", "无障碍出入口",
+                  "出入口", "人防主出入口"}
     def _cat(t):
         if t in _UTIL_TAGS: return "util"
+        if t in _OPEN_TAGS: return "open"
         return "room"
     names.sort(key=lambda r: (r["cx"], r["cy"]))
     used = [False] * len(names)
@@ -435,7 +449,9 @@ def extract_room_labels(page):
         text = "".join(g["text"] for g in group)
         cx = sum(g["cx"] for g in group) / len(group)
         cy = sum(g["cy"] for g in group) / len(group)
-        merged.append((text, (cx, cy)))
+        # 携带该标签组的最大字号，供后续「同一空间内字号最大者作为语义层」规则使用
+        gsize = max(g["size"] for g in group)
+        merged.append((text, (cx, cy), gsize))
     return merged, codes
 
 
@@ -1218,10 +1234,16 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     seen = set()
     probes = []
     if label_points:
-        for text, (lx, ly) in label_points:
+        for entry in label_points:
+            # 兼容 (text,(cx,cy)) 与 (text,(cx,cy),size) 两种形态
+            if len(entry) == 3:
+                text, (lx, ly), size = entry
+            else:
+                text, (lx, ly) = entry
+                size = 0.0
             if LABEL_SKIP_RE.search(text):
                 continue
-            probes.append((text, to_px((lx, ly))))
+            probes.append((text, to_px((lx, ly)), size))
 
     def comp_at(px, py):
         """标签点 -> 所属房间区域 id。
@@ -1246,11 +1268,11 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     #   - 代价在狭窄处升高，分界倾向落在井道/卫生间之间的窄颈；
     #   - marker 不按 roomType 或 cid 设置优先级。
     labels_by_cid = collections.defaultdict(list)
-    for text, (px, py) in probes:
+    for text, (px, py), size in probes:
         cid = comp_at(px, py)
         if cid == 0 or cid in border_ids:
             continue
-        labels_by_cid[cid].append((text, px, py))
+        labels_by_cid[cid].append((text, px, py, size))
 
     matched = []
     dup_labels = []
@@ -1267,15 +1289,28 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
             matched.append((distinct[0][0], cid))
             continue
 
-        # 仅对本次目标问题——竖井与卫生间混合——执行二次分割。
-        # 其它多标签共域仍沿用原流程，避免把走道/教室等正常语义区域
-        # 任意切碎；类型之间没有优先级。
+        # 多标签共域分割策略：
+        #  1) 竖井+卫生间混合 → 按几何分割（既有规则）；
+        #  2) 开放空间(走廊/门厅/大厅/活动/中庭)与封闭空间(房间/管井/电梯/楼梯间等)
+        #     共域 → 必须分割，二者是不同类型、不能合并处理；
+        #  3) 其余同类型多标签 → 不切碎，取所在封闭空间内字号最大的中文标签
+        #     作为该空间语义层（ANNO-TEXT 层最大字体规则）。
         distinct_types = {classify_room_type(x[0]) for x in distinct}
+        OPEN_TYPES = {"corridor", "lobby", "activity", "atrium"}
+        ENCLOSED_TYPES = {"room", "classroom", "lab", "office", "meeting",
+                          "equipment", "storage", "library", "medical",
+                          "counseling", "reception", "shaft", "toilet",
+                          "elevator_hall", "staircase"}
         is_shaft_toilet_mix = ("shaft" in distinct_types and
                                "toilet" in distinct_types)
-        if not is_shaft_toilet_mix:
-            matched.append((distinct[0][0], cid))
-            dup_labels.extend(x[0] for x in distinct[1:])
+        has_open = bool(distinct_types & OPEN_TYPES)
+        has_enc = bool(distinct_types & ENCLOSED_TYPES)
+        needs_split = is_shaft_toilet_mix or (has_open and has_enc)
+        if not needs_split:
+            # 同一封闭空间内多标签：字号最大的中文标签为该空间语义层（用户规则）
+            winner = max(distinct, key=lambda x: x[3])
+            matched.append((winner[0], cid))
+            dup_labels.extend(x[0] for x in distinct if x[0] != winner[0])
             continue
 
         component = (cc == cid)
@@ -1286,7 +1321,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
         # 每个标签吸附到本连通域内最近的自由像素，避免从墙/文字墨线穿越。
         seeds = []
         used_seed = set()
-        for text, px, py in distinct:
+        for text, px, py, size in distinct:
             d2 = (xs0 - px) ** 2 + (ys0 - py) ** 2
             order = np.argsort(d2)
             seed = None
@@ -1340,7 +1375,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     #     后续守卫式泛洪会把同属该空间的其它单元并入
     seed_min_px = 0.3 / m2_per_px
     seed_max_px = MERGE_REGION_M2 / m2_per_px
-    for text, (px, py) in probes:
+    for text, (px, py), size in probes:
         if any(t == text for t, _ in matched) or text in dup_labels:
             continue
         best, best_d = 0, 1e18
@@ -1762,7 +1797,8 @@ def parse_floor(pdf_path, floor_no):
     room_seq = 0
     used_labels = set()
     label_by_text = {}
-    for li, (text, _) in enumerate(room_names):
+    for li, entry in enumerate(room_names):
+        text = entry[0]
         label_by_text.setdefault(text, li)
     for idx, (label, poly) in enumerate(labeled_polys):
         if label is None:
@@ -1770,12 +1806,16 @@ def parse_floor(pdf_path, floor_no):
         if label in label_by_text:
             used_labels.add(label_by_text[label])
         room_seq += 1
+        _rt = classify_room_type(label)
+        # 开放空间(走廊/门厅/大厅/活动/中庭)与封闭房间区分编号前缀，
+        # 二者是不同类型空间，ID 不应混为 RM- 系列
+        _type_key = _OPEN_ID_KEY.get(_rt, "room")
         centroid_m = pt2m((poly.centroid.x, poly.centroid.y))
         coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
         rooms.append({
-            "id": obj_id(f"F{floor_no}", OBJ_TYPE["room"], room_seq),
+            "id": obj_id(f"F{floor_no}", OBJ_TYPE[_type_key], room_seq),
             "label": label,
-            "roomType": classify_room_type(label),
+            "roomType": _rt,
             "code": "",
             "polygon_pt": poly,
             "coords_m": coords_m,
@@ -2131,8 +2171,8 @@ def parse_floor(pdf_path, floor_no):
         "stair_boxes": stair_boxes,
         "evtr_boxes": evtr_boxes,
         "col_boxes": col_boxes,
-        "labels_unmatched": [t for i, (t, _) in enumerate(room_names) if i not in used_labels],
-        "labels_all": [t for t, _ in room_names],
+        "labels_unmatched": [t for i, e in enumerate(room_names) if i not in used_labels for t in [e[0]]],
+        "labels_all": [e[0] for e in room_names],
         "labels_all_with_pt": room_names,
         "room_codes": room_codes,
         "facility_codes": facility_codes,
@@ -2374,7 +2414,8 @@ def build_geojson(f1, f2):
         # （无障碍出入口/门厅/人防主出入口/合班教室/图书资料室等），按坐标就近接入拓扑
         extra_nodes = []
         used_labels = {r["label"] for r in data["rooms"]}
-        for label, pt_pt in data.get("labels_all_with_pt", []):
+        for entry in data.get("labels_all_with_pt", []):
+            label, pt_pt = entry[0], entry[1]
             if label in used_labels:
                 continue
             if not any(k in label for k in ("门厅", "出入口", "合班", "图书",
