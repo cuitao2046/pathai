@@ -826,31 +826,6 @@ def _stroke_features(a, b):
             "is_horiz": min(ang_mod, 180-ang_mod) < 22}
 
 
-def _cluster_x_columns(strokes, gap_x=4.0):
-    """按 x 中心聚成"字符列"（DK-block 内每个字符占 ~1 个列）。
-
-    排序后逐条扫描：若下一笔画 x 与当前列 min-x 差 > gap_x 则开新列。
-    同一字符内部通常 <2pt 抖动；字符之间通常 ≥gap_x。DK/MGD 字间距约
-    ~3.5pt，因此 gap_x=4pt 即可区分。
-    """
-    feats = []
-    for s in strokes:
-        f = _stroke_features(s[0], s[1])
-        if f:
-            feats.append(f)
-    if not feats:
-        return []
-    feats.sort(key=lambda f: f["cx"])
-    cols = [[feats[0]]]
-    for f in feats[1:]:
-        col_min_x = cols[-1][0]["cx"]
-        if f["cx"] - col_min_x > gap_x:
-            cols.append([f])
-        else:
-            cols[-1].append(f)
-    return cols
-
-
 def _has_opp_diagonals_in(strokes, min_len=0.5):
     """判定给定 strokes 同时存在向上斜线与向下斜线（K 的核心特征）。
 
@@ -889,58 +864,100 @@ def _glyph_vertical_angle(feats):
     return buckets.most_common(1)[0][0]
 
 
+def _cluster_along_axis(feats, axis="x", gap=4.0):
+    """沿指定轴把笔画 feat 聚成字符列（约 1 个列 = 1 个字符）。
+
+    axis='x' 用于水平书写（左→右），'y' 用于竖排（上→下/下→上）。
+    返回 [[feat, ...], ...] 按书写轴递增排序的列列表。
+    """
+    if not feats:
+        return []
+    coord = "cy" if axis == "y" else "cx"
+    srt = sorted(feats, key=lambda f: f[coord])
+    cols = [[srt[0]]]
+    for f in srt[1:]:
+        col_min = cols[-1][0][coord]
+        if f[coord] - col_min > gap:
+            cols.append([f])
+        else:
+            cols[-1].append(f)
+    return cols
+
+
 def is_dk_block(strokes, bbox):
-    """识别矢量编号块是否以 'DK' 开头（洞口）。
+    """严格 DK 识别：D 在前、K 在后、二者相邻。
 
-    关键洞察：D 与 M（同为左半起首字符）在小尺度矢量文字下几何相似（都含 ≥1 长竖），
-    不必硬区分——真正的"DK"区别在于 **K 是否紧随其后**：K 的标志性两条对向斜线
-    （一上一下）会在块的 30%~65% x 范围内同时出现。
+    之前用「左 40% 有竖笔 + 中段有对向斜线」的笼统区域判定，
+    会把 M1524 / C01224 等非 DK 块误判。现改为按字符列逐一验证。
 
-    因此仅做三项判定：
-      1) 块宽 ≥8pt 且笔画 ≥6
-      2) 左 40% 内有 ≥1 个长近竖直笔画（D 或 M 均可，作为首字符笼统通过）
-      3) 中段 30%~65% 内同时存在一条向上斜线和一条向下斜线（K 特征；排除
-         Y/N/A 的单斜，G/B 没有交叉对向斜，M 内部没有"上下对向斜"配对）。
-    长阈值采用绝对值 L ≥ 4pt，与块高度无关，适应不同字号。
+    规则：
+      - 把块内所有笔画沿书写轴向聚成字符列（水平书写→按 x，竖排→按 y）；
+      - 至少需要 2 列（前端至少 D + K）；
+      - 第 0 列 = D：≤2 条字形长竖茎 + 茎右侧有弧线笔画；
+      - 第 1 列 = K：≤2 条字形长竖茎 + 同时存在上/下对向斜线；
+      - 以上都满足才算 DK。
 
-    2026-08-05 修正：原"竖直"按页面坐标判定，对旋转/竖排的 DK 标注（如贴墙竖排
-    的 DK2424）会漏检。现改为以块内长笔画主方向作为"字形竖直"方向，旋转无关。
+    竖排文字（贴侧墙旋转 90°/270° 的 DK）：字符沿 Y 排列、字形
+    "竖直"方向非页面竖直，聚类轴向同步切换；D 的「右侧弧线」也沿
+    书写方向定义。
     """
     x0, y0, x1, y1 = bbox
     w = x1 - x0
     if w < 8.0:
         return False, "block_too_narrow"
-    feats = []
+    if len(strokes) < 6:
+        return False, "too_few_strokes"
+
+    # 提取笔画特征
+    all_feats = []
     for s in strokes:
         f = _stroke_features(s[0], s[1])
         if f:
-            feats.append(f)
-    if len(feats) < 6:
-        return False, "too_few_strokes"
+            all_feats.append(f)
+    if len(all_feats) < 6:
+        return False, "too_few_eff_strokes"
 
-    glyph_ang = _glyph_vertical_angle(feats)
+    glyph_ang = _glyph_vertical_angle(all_feats)
 
-    def is_glyph_vert(f):
-        # 角度差按 180° 周期计算，容差 ±25°
-        diff = abs((f["ang_mod"] - glyph_ang + 90) % 180 - 90)
+    def is_glyph_vert(f2):
+        diff = abs((f2["ang_mod"] - glyph_ang + 90) % 180 - 90)
         return diff < 25
 
-    d_end = x0 + 0.40 * w
-    k_start = x0 + 0.30 * w
-    k_end = x0 + 0.65 * w
+    # 判断文字是否竖排（字形"竖直"方向离页面竖直 > 40°）
+    vert_text = abs((glyph_ang % 180) - 90) > 40
 
-    d_feats = [f for f in feats if f["cx"] <= d_end]
-    d_verts = [f for f in d_feats if is_glyph_vert(f) and f["L"] >= 4.0]
-    if not d_verts:
-        return False, "no_d_vert"
+    # 沿书写轴聚成字符列
+    cols = _cluster_along_axis(all_feats, axis="y" if vert_text else "x", gap=4.0)
+    if len(cols) < 2:
+        return False, "too_few_cols"
 
-    k_feats = [f for f in feats if k_start <= f["cx"] <= k_end]
-    k_verts = [f for f in k_feats if is_glyph_vert(f) and f["L"] >= 4.0]
-    if not k_verts:
-        return False, "no_k_vert"
-    has_opp, n_up, n_dn = _has_opp_diagonals_in(k_feats, min_len=0.5)
+    # --- 第 0 列 → 须为 D：有长竖茎 + 弧线在茎右侧 ---
+    # 注：CAD 中 D 的弧线由 2-4 段近竖直短划组成，竖茎数可能 >2，不设上限。
+    col0 = cols[0]
+    col0_verts = [f for f in col0 if is_glyph_vert(f) and f["L"] >= 4.0]
+    if len(col0_verts) == 0:
+        return False, "d_no_vert"
+    stem0 = max(col0_verts, key=lambda f: f["L"])
+    # D 的弧线位于竖茎右侧（书写方向正侧）
+    # 水平书写："右侧"=cx 更大；竖排："右侧"=cy 更大
+    if vert_text:
+        right_strokes = [f for f in col0
+                         if f["cy"] > stem0["cy"] + 1.5]
+    else:
+        right_strokes = [f for f in col0
+                         if f["cx"] > stem0["cx"] + 1.5]
+    if len(right_strokes) < 1:
+        return False, "d_no_right_arc"
+
+    # --- 第 1 列 → 须为 K：有长竖茎 + 对向斜线（K 的特征）---
+    # K 的两条斜线的互对向性（一条向上、一条向下）是刚需；竖茎数不限。
+    col1 = cols[1]
+    col1_verts = [f for f in col1 if is_glyph_vert(f) and f["L"] >= 4.0]
+    if len(col1_verts) == 0:
+        return False, "k_no_vert"
+    has_opp, n_up, n_dn = _has_opp_diagonals_in(col1, min_len=0.5)
     if not has_opp:
-        return False, f"no_k_opp_diag(up={n_up},dn={n_dn})"
+        return False, f"k_no_opp(up={n_up},dn={n_dn})"
 
     return True, "DK"
 
@@ -954,7 +971,7 @@ def recognize_dk_glyph_blocks(window_lines, with_strokes=True):
         xs = [p[0] for s in segs for p in s]
         ys = [p[1] for s in segs for p in s]
         bbox = (min(xs), min(ys), max(xs), max(ys))
-        ok, reason = is_dk_block(segs, bbox)
+        ok, _reason = is_dk_block(segs, bbox)
         if ok:
             dk.append((cx, cy))
     return dk
