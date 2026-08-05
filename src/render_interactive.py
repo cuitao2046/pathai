@@ -562,9 +562,26 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ("无障碍可达", "是" if p.get("accessible") else "否"),
                 ("独立出入口", "是" if p.get("hasIndependentEntrance") else "否"),
             ]}
+            # corridor 类型常因文字标签/多区域合并产生，渲染时只画虚线轮廓（不填色），
+            # 避免覆盖下方真房间图层。保留轮廓便于核实位置。
+            if rtype == "corridor":
+                _fill = "none"
+                _stroke = "#B0BEC5"
+                _sw = 0.6
+                _dash = "4,3"
+            elif rtype == "staircase":
+                _fill = color
+                _stroke = "#E57373"
+                _sw = 1.2
+                _dash = "6,3"
+            else:
+                _fill = color
+                _stroke = "#999"
+                _sw = 0.5
+                _dash = "none"
             parts.append(
                 f'<g class="layer_room" {info_attr({"tip": tip, "detail": det})}>'
-                f'<polygon points="{pts}" fill="{color}" stroke="{"#E57373" if rtype=="staircase" else "#999"}" stroke-width="{1.2 if rtype=="staircase" else 0.5}" stroke-dasharray="{"6,3" if rtype=="staircase" else "none"}"/></g>\n'
+                f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
                 cx_s = sum(p_[0] for p_ in ring[:-1]) / max(len(ring) - 1, 1)
@@ -947,6 +964,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     <div class="lg-item"><div class="lg-sw" style="background:#333"></div>墙体</div>
     <div class="lg-item"><div class="lg-sw line" style="--c:#81D4FA"></div>窗户段</div>
     <div class="lg-item"><div class="lg-sw" style="background:#FFF9C4"></div>房间/教室</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:1px dashed #B0BEC5"></div>走道/通道（虚线轮廓）</div>
     <div class="lg-item"><div class="lg-sw" style="background:#B0BEC5;border:1px solid #78909C"></div>柱子</div>
     <div class="lg-item"><div class="lg-sw" style="background:transparent;border:2px solid #222"></div>建筑外轮廓（实线）</div>
   </div>
