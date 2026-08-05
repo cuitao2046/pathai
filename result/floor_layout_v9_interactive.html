@@ -29,6 +29,11 @@ svg { display: block; background: #fff; }
 .layer_crossfloor path { stroke-width: 1.6; fill: none; stroke-dasharray: 6,4; opacity: 0.65; cursor: pointer; }
 text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events: none; }
 .selected { stroke: #FFC107 !important; stroke-width: 2.4 !important; }
+/* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
+.layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon { stroke: #FFC107 !important; stroke-width: 2.6 !important; }
+.layer_topo_edge.selected path { stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }
+/* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
+.layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon { stroke: #00BCD4 !important; stroke-width: 2.6 !important; }
 .zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
 .zoom-btn { width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .zoom-btn:hover { background: #f0f0f0; }
@@ -6371,7 +6376,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 </svg>
 </div><!-- /svg-wrapper -->
 </div><!-- /svg-container -->
-<div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；点击拓扑节点会高亮其相连边。</div></div>
+<div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
 </div><!-- /left -->
 <div id="legend-panel">
   <h4>图例说明 (v9)</h4>
@@ -6467,7 +6472,18 @@ wrapper.addEventListener('mousemove', function(e) {
 wrapper.addEventListener('mouseleave', function() { tip.style.display = 'none'; });
 
 // ---- 点击查看详情 / 高亮 ----
-function clearHighlight() { document.querySelectorAll('.selected').forEach(function(el){ el.classList.remove('selected'); }); }
+function clearHighlight() {
+  document.querySelectorAll('.selected').forEach(function(el){ el.classList.remove('selected'); });
+  document.querySelectorAll('.neighbor').forEach(function(el){ el.classList.remove('neighbor'); });
+}
+// 按节点 id 找到对应的拓扑节点组并加高亮 class
+function markNode(id, cls) {
+  document.querySelectorAll('.layer_topo_node').forEach(function(g) {
+    var f = g.getAttribute('data-info');
+    if (!f) return;
+    try { var nd = JSON.parse(f); if (nd.id === id) g.classList.add(cls); } catch(e){}
+  });
+}
 function showDetail(d) {
   var box = document.getElementById('detail');
   var h = '<h4>' + (d.title || '详情') + '</h4>';
@@ -6483,13 +6499,27 @@ wrapper.addEventListener('click', function(e) {
   var d; try { d = JSON.parse(info); } catch (err) { return; }
   clearHighlight(); t.classList.add('selected');
   showDetail(d.detail || { title: d.tip || '详情', rows: [] });
-  // 拓扑节点 → 高亮相连边
+  // 拓扑节点 → 高亮直接可达的拓扑节点 + 相连边
   if (d.kind === 'node' && d.id) {
+    var nbCount = 0;
     document.querySelectorAll('.layer_topo_edge').forEach(function(g) {
       var f = g.getAttribute('data-info');
       if (!f) return;
-      try { var ed = JSON.parse(f); if (ed.from === d.id || ed.to === d.id) g.classList.add('selected'); } catch(e){}
+      try {
+        var ed = JSON.parse(f);
+        if (ed.from === d.id || ed.to === d.id) {
+          g.classList.add('selected');                 // 高亮相连边
+          var nb = (ed.from === d.id) ? ed.to : ed.from; // 直接可达节点 id
+          if (nb) { markNode(nb, 'neighbor'); nbCount++; } // 高亮直接可达节点
+        }
+      } catch(e){}
     });
+    // 在详情面板补充「直接可达」统计
+    var box = document.getElementById('detail');
+    var stat = document.createElement('div');
+    stat.className = 'row';
+    stat.innerHTML = '<span>直接可达节点</span><span>' + nbCount + ' 个</span>';
+    box.appendChild(stat);
   }
 });
 
