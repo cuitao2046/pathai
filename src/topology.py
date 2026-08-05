@@ -33,6 +33,9 @@ ACCESSIBLE_TYPES = {
     "elevator_hall", "atrium", "toilet",
 }
 NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
+# 开放流通空间：走道/门厅/大厅/活动空间/中庭 —— 与封闭空间（房间/管井/电梯/楼梯间）
+# 属不同类型，建模为 circulation 节点（intersection），不建为 enclosed-room 节点。
+OPEN_SPACE_TYPES = {"corridor", "lobby", "activity", "atrium"}
 INDEPENDENT_ENTRANCE_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance",
     "staircase", "elevator_hall", "atrium",
@@ -98,10 +101,20 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     door_idx = []  # 顺序生成 doorway 节点 ID
     used_room_ids = {r["id"] for r in rooms}
 
-    # ---------- 房间节点（place，指南 5.1 没单列；但所有路径都需经过房间质心） ----------
-    for idx, r in enumerate(rooms):
+    # ---------- 房间节点（enclosed place） ----------
+    # 仅封闭空间（房间/管井/电梯/楼梯间等）建为 enclosed-room 节点；
+    # 开放空间（走道/门厅/大厅/活动/中庭）不在此建模，改由下方 circulation 节点处理，
+    # 避免「开放空间被当作需穿门进入的封闭房间」而与其余空间合并处理。
+    room_index = {}  # room id -> 其 topo_room 节点 id（仅封闭空间）
+    room_seq = 0
+    for r in rooms:
+        if r["roomType"] in OPEN_SPACE_TYPES:
+            continue
+        room_seq += 1
+        rnid = _nid(floor_no, OBJ_TYPE["topo_room"], room_seq)
+        room_index[r["id"]] = rnid
         nodes.append({
-            "id": _nid(floor_no, OBJ_TYPE["topo_room"], idx + 1),
+            "id": rnid,
             "type": "room",
             "roomType": r["roomType"],
             "roomId": r["id"],
@@ -127,16 +140,18 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "rooms": dr.get("rooms", []),
         })
 
-    # ---------- 走廊交叉口节点（intersection） ----------
-    # 每条走廊生成 1 个交叉口节点（质心位置），用于路径图骨架
-    corridors = [r for r in rooms if r["roomType"] == "corridor"]
+    # ---------- 开放空间节点（circulation / intersection） ----------
+    # 走道/门厅/大厅/活动空间/中庭均为开放流通空间，统一建为 intersection 型节点
+    # （路径图骨架），携带 roomType 以区分走廊/门厅/大厅/活动空间，供渲染与详情展示。
+    open_spaces = [r for r in rooms if r["roomType"] in OPEN_SPACE_TYPES]
     cor_node_ids = {}
-    for idx, c in enumerate(corridors):
+    for idx, c in enumerate(open_spaces):
         nid = _nid(floor_no, OBJ_TYPE["topo_intersection"], idx + 1)
         cor_node_ids[c["id"]] = nid
         nodes.append({
             "id": nid,
             "type": "intersection",
+            "roomType": c["roomType"],
             "roomId": c["id"],
             "label": c["label"],
             "coordinates": list(_to_xy(c["centroid_m"])),
@@ -182,8 +197,6 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             })
 
     # ---------- 边构建 ----------
-    room_index = {r["id"]: idx for idx, r in enumerate(rooms)}
-
     edge_seq = [0]
     def add_edge(frm, to, distance, a_level=0, r_level=0.5,
                  wheel=True, blind=True):
@@ -201,17 +214,17 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "blindAccessible": blind,
         })
 
-    # 1) doorway <-> 所属房间质心（房间内移动）
+    # 1) doorway <-> 所属封闭房间质心（房间内移动）
     for i, dr in enumerate(doors):
         dnid = door_node_ids[i]
         center = _to_xy(dr.get("center_m"))
         for rid in dr.get("rooms", []):
-            idx = room_index.get(rid)
-            if idx is None:
+            rnid = room_index.get(rid)
+            if rnid is None:
+                # 开放空间（走廊/门厅等）不在此连，由下方 doorway<->circulation 处理
                 continue
-            r = rooms[idx]
+            r = room_by_id[rid]
             d = _dist(center, r["centroid_m"])
-            rnid = _nid(floor_no, OBJ_TYPE["topo_room"], idx + 1)
             add_edge(rnid, dnid, d, a_level=2 if dr.get("kind") == "fire" else 0,
                      r_level=(5 if dr.get("kind") == "fire" else 0.5))
 
@@ -269,6 +282,29 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                        key=lambda kv: _dist(kv[1], en["coordinates"]))
             best_dnid, best_d = best[0], _dist(best[1], en["coordinates"])
             add_edge(en["id"], best_dnid, best_d, a_level=0, r_level=5)
+
+    # 6) 兜底：确保每个开放空间 circulation 节点至少有一条边（避免校验判为孤岛）。
+    #    优先连到最近门口；无门口时退一步连到最近封闭房间节点。
+    connected = {e["from"] for e in edges} | {e["to"] for e in edges}
+    for cid, cnid in cor_node_ids.items():
+        if cnid in connected:
+            continue
+        c = room_by_id[cid]
+        best_dnid, best_d = None, float("inf")
+        for dnid, dc in all_doorways:
+            d = _dist(c["centroid_m"], dc)
+            if d < best_d:
+                best_d, best_dnid = d, dnid
+        if best_dnid:
+            add_edge(cnid, best_dnid, best_d)
+            continue
+        best_rnid, best_rd = None, float("inf")
+        for rid, rnid in room_index.items():
+            d = _dist(c["centroid_m"], room_by_id[rid]["centroid_m"])
+            if d < best_rd:
+                best_rd, best_rnid = d, rnid
+        if best_rnid:
+            add_edge(cnid, best_rnid, best_rd)
 
     return {"nodes": nodes, "edges": edges}
 

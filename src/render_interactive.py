@@ -728,10 +728,20 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 rows.append(("设施类型", n.get("facilityType", "—")))
             if ntype == "room":
                 rows.append(("房间", n.get("label", "—")))
+            if ntype == "intersection":
+                _rt = n.get("roomType", "")
+                _rt_cn = {"corridor": "走道/走廊", "lobby": "门厅/大厅",
+                          "activity": "活动空间", "atrium": "中庭"}.get(_rt, _rt or "开放空间")
+                rows.append(("空间类型", _rt_cn))
             if label_n:
                 rows.append(("标签", label_n))
             det = {"title": label_n or ntype, "rows": rows}
-            tip = f"拓扑节点：{label_n or ntype}\\n类型：{ntype}"
+            _type_disp = label_n or ntype
+            if ntype == "intersection":
+                _rt = n.get("roomType", "")
+                _type_disp = {"corridor": "走道/走廊", "lobby": "门厅/大厅",
+                              "activity": "活动空间", "atrium": "中庭"}.get(_rt, "开放空间")
+            tip = f"拓扑节点：{label_n or ntype}\\n类型：{_type_disp}"
             attr = info_attr({"tip": tip, "detail": det, "id": nid, "kind": "node"})
 
             if ntype == "room":
