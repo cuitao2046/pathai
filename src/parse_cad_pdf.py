@@ -23,6 +23,7 @@ import math
 import re
 import sys
 import collections
+import heapq
 from pathlib import Path
 
 from shapely.ops import unary_union, polygonize
@@ -1239,17 +1240,100 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
                 return int(ids[np.argmax(cnt)])
         return 0
 
-    dup_labels = []  # QA：多个标签落入同一连通域（疑似误合并）
-    matched = []
+    # 同一原始连通域出现多个不同中文语义标签时，不再让第一个标签占据整个 cid。
+    # 以标签为等权 marker，在原始自由空间内做墙距加权的多源测地分割：
+    #   - 只能在当前 cc 内传播，不穿越墙体；
+    #   - 代价在狭窄处升高，分界倾向落在井道/卫生间之间的窄颈；
+    #   - marker 不按 roomType 或 cid 设置优先级。
+    labels_by_cid = collections.defaultdict(list)
     for text, (px, py) in probes:
         cid = comp_at(px, py)
         if cid == 0 or cid in border_ids:
             continue
-        if cid in seen:
-            dup_labels.append(text)
+        labels_by_cid[cid].append((text, px, py))
+
+    matched = []
+    dup_labels = []
+    next_split_id = int(n)
+    for cid, labels in labels_by_cid.items():
+        # 同名标签属于同一语义 marker；不同语义才触发几何分割。
+        distinct = []
+        for item in labels:
+            if item[0] not in {x[0] for x in distinct}:
+                distinct.append(item)
+            else:
+                dup_labels.append(item[0])
+        if len(distinct) <= 1:
+            matched.append((distinct[0][0], cid))
             continue
-        seen.add(cid)
-        matched.append((text, cid))
+
+        # 仅对本次目标问题——竖井与卫生间混合——执行二次分割。
+        # 其它多标签共域仍沿用原流程，避免把走道/教室等正常语义区域
+        # 任意切碎；类型之间没有优先级。
+        distinct_types = {classify_room_type(x[0]) for x in distinct}
+        is_shaft_toilet_mix = ("shaft" in distinct_types and
+                               "toilet" in distinct_types)
+        if not is_shaft_toilet_mix:
+            matched.append((distinct[0][0], cid))
+            dup_labels.extend(x[0] for x in distinct[1:])
+            continue
+
+        component = (cc == cid)
+        ys0, xs0 = np.where(component)
+        if len(xs0) == 0:
+            continue
+        clearance = cv2.distanceTransform(component.astype(np.uint8), cv2.DIST_L2, 5)
+        # 每个标签吸附到本连通域内最近的自由像素，避免从墙/文字墨线穿越。
+        seeds = []
+        used_seed = set()
+        for text, px, py in distinct:
+            d2 = (xs0 - px) ** 2 + (ys0 - py) ** 2
+            order = np.argsort(d2)
+            seed = None
+            for oi in order:
+                cand = (int(xs0[oi]), int(ys0[oi]))
+                if cand not in used_seed:
+                    seed = cand
+                    used_seed.add(cand)
+                    break
+            if seed is not None:
+                seeds.append((text, seed))
+        if len(seeds) <= 1:
+            matched.append((distinct[0][0], cid))
+            continue
+
+        # 多源 Dijkstra：墙距越小，穿越代价越高；同代价不以 marker/cid 决胜。
+        inf = np.float32(1e30)
+        cost = np.full((H, W), inf, np.float32)
+        owner_local = np.full((H, W), -1, np.int32)
+        heap = []
+        for mi, (_text, (sx, sy)) in enumerate(seeds):
+            cost[sy, sx] = 0.0
+            owner_local[sy, sx] = mi
+            heapq.heappush(heap, (0.0, mi, sx, sy))
+        while heap:
+            cur, mi, x, y = heapq.heappop(heap)
+            if cur > float(cost[y, x]) + 1e-5 or owner_local[y, x] != mi:
+                continue
+            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                if nx < 0 or nx >= W or ny < 0 or ny >= H or not component[ny, nx]:
+                    continue
+                step = 1.0 + 4.0 / (float(clearance[ny, nx]) + 1.0)
+                nc = cur + step
+                if nc + 1e-5 < float(cost[ny, nx]):
+                    cost[ny, nx] = nc
+                    owner_local[ny, nx] = mi
+                    heapq.heappush(heap, (nc, mi, nx, ny))
+        for mi, (text, _seed) in enumerate(seeds):
+            new_id = next_split_id
+            next_split_id += 1
+            part = component & (owner_local == mi)
+            owner[part] = np.float32(new_id)
+            matched.append((text, new_id))
+        print(f"    [分割] 多标签连通域 cid={cid}: "
+              f"{[x[0] for x in distinct]} -> {len(seeds)} 个子空间")
+
+    seen = {cid for _, cid in matched}
 
     # --- 标签播种：标签落在被隔断切碎的小单元里（整个空间无 >=2m2 区域），
     #     直接认领标签处的小单元为房间种子（标签本身即权威），
@@ -1327,7 +1411,12 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
             room_mask, cv2.MORPH_CLOSE,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
         area = int(np.count_nonzero(room_mask))
-        if not (area_min_px <= area <= area_max_px):
+        # 风井/水井通常小于普通房间 3m²；二次分割后允许最小 0.2m²，
+        # 否则正确切出的红框小井道会再次被全局房间面积阈值丢弃。
+        min_px_for_label = (0.2 / m2_per_px
+                            if classify_room_type(text) == "shaft"
+                            else area_min_px)
+        if not (min_px_for_label <= area <= area_max_px):
             continue
         ys_idx, xs_idx = np.where(room_mask)
         mg = 20
@@ -1681,22 +1770,37 @@ def parse_floor(pdf_path, floor_no):
             used_labels.add(label_by_text[label])
         centroid_m = pt2m((poly.centroid.x, poly.centroid.y))
         coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
-        # 匹配 A-ANNO-150-TXT 编号：代码点须在房间内（或距边界 < 1m）
-        best_code, best_d = None, 1.0 * PT_PER_M
-        for code, (cx, cy) in room_codes:
-            p = Point(cx, cy)
-            d = poly.exterior.distance(p)
-            if d < best_d:
-                best_d, best_code = d, code
         rooms.append({
             "id": f"R{floor_no}{idx + 1:03d}",
             "label": label,
             "roomType": classify_room_type(label),
-            "code": best_code or "",
+            "code": "",
             "polygon_pt": poly,
             "coords_m": coords_m,
             "centroid_m": list(centroid_m),
         })
+
+    # 英文编号仅附着到已有中文语义房间，不参与重分类；全局一对一分配，
+    # 优先 code 点落在多边形内部，其次才允许距边界 <1m。
+    # II-WR-* 是卫生间编号，只能附着到 toilet，禁止误挂到相邻 shaft。
+    code_candidates = []
+    for ci, (code, (cx, cy)) in enumerate(room_codes):
+        p = Point(cx, cy)
+        for ri, room in enumerate(rooms):
+            if code.startswith("II-WR-") and room["roomType"] != "toilet":
+                continue
+            poly = room["polygon_pt"]
+            inside = poly.covers(p)
+            d = 0.0 if inside else poly.exterior.distance(p)
+            if inside or d < 1.0 * PT_PER_M:
+                code_candidates.append((0 if inside else 1, d, ci, ri))
+    used_codes, coded_rooms = set(), set()
+    for _outside, _dist, ci, ri in sorted(code_candidates):
+        if ci in used_codes or ri in coded_rooms:
+            continue
+        rooms[ri]["code"] = room_codes[ci][0]
+        used_codes.add(ci)
+        coded_rooms.add(ri)
     print(f"[F{floor_no}] 语义房间(带标签): {len(rooms)}")
 
     # --- 追加楼梯间 room（build_rooms 栅格化通常漏掉开放式楼梯井）---
