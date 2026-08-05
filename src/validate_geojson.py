@@ -23,7 +23,10 @@ DEFAULT = str(
 # 非"封闭房间"的类型：不参与零门检查
 # 公共空间（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭）也是非"封闭"空间
 NON_ENCLOSED = ("staircase", "elevator_hall", "shaft", "atrium",
-                "corridor", "lobby", "entrance", "accessible_entrance")
+                "corridor", "lobby", "entrance", "accessible_entrance",
+                # 活动空间(学生活动区/社团等)为开放式流通/活动区，非封闭房间，
+                # 不要求有门（与走廊/门厅同属 circulation，由拓扑骨架直连）。
+                "activity")
 
 GEOM_KEYS = ["walls", "rooms", "doors", "stairs", "elevators",
              "columns", "windowSegments"]

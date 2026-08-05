@@ -143,6 +143,9 @@ ROOM_TYPE_RULES = [
     ("水井", "shaft"), ("风井", "shaft"), ("排风井", "shaft"), ("管井", "shaft"), ("井", "shaft"),
     ("储藏", "storage"), ("存放", "storage"), ("资料", "storage"), ("档案", "storage"),
     ("广播", "equipment"), ("管控", "equipment"),
+    # 饮水处为服务核心内的开敞壁龛（无门，紧贴水井/卫生间模块），
+    # 归为服务设备类，纳入「服务核心模块豁免」，避免误判为不可达封闭房间。
+    ("饮水", "equipment"),
     ("图书", "library"), ("阅览", "library"),
     ("卫生室", "medical"), ("心理", "counseling"), ("辅导", "counseling"),
     ("活动", "activity"), ("社团", "activity"),
@@ -1172,6 +1175,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     """
     import cv2
     import numpy as np
+    from scipy.ndimage import distance_transform_edt
 
     if not all_segs and not closures:
         return []
@@ -1303,11 +1307,31 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
     #   - 代价在狭窄处升高，分界倾向落在井道/卫生间之间的窄颈；
     #   - marker 不按 roomType 或 cid 设置优先级。
     labels_by_cid = collections.defaultdict(list)
+    _open_label_dropped = []
     for text, (px, py), size in probes:
         cid = comp_at(px, py)
+        # --- 开放空间标签「不得跨墙认领封闭房间」-------------------------
+        # 本图纸的走道/过道/门厅等公共交通空间并未被墙完全封闭（经建筑
+        # 出入口与室外连通），其自由空间连通域会并入室外大组件(border)。
+        # 此时 comp_at 的邻域众数兜底是**欧氏方框**投票，会直接跨过墙体，
+        # 把走道标签投到墙另一侧相邻封闭房间的组件上；该房间于是被当作
+        # 「走道 + 房间」多标签共域触发几何分割，被切掉一角
+        # ——渲染图中「美术工作室」右下角被走道占据即由此产生。
+        # 规则：开放空间标签只认自己所在的那个封闭连通域；只要它落在
+        # 室外/未封闭组件，或兜底投票把它挪到了别的组件，一律丢弃该标签，
+        # 绝不让走道/过道侵蚀房间等封闭空间。
+        if classify_room_type(text) in _OPEN_RT:
+            c0 = int(cc[py, px]) if (0 <= px < W and 0 <= py < H) else 0
+            if c0 == 0 or c0 in border_ids or c0 != cid:
+                _open_label_dropped.append(text)
+                continue
         if cid == 0 or cid in border_ids:
             continue
         labels_by_cid[cid].append((text, px, py, size))
+    if _open_label_dropped:
+        _cnt = collections.Counter(_open_label_dropped)
+        print("    开放空间标签落在未封闭公共域(不参与房间识别): "
+              + ", ".join(f"{k}x{v}" for k, v in _cnt.most_common()))
 
     matched = []
     dup_labels = []
@@ -1342,11 +1366,21 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
         has_enc = bool(distinct_types & ENCLOSED_TYPES)
         needs_split = is_shaft_toilet_mix or (has_open and has_enc)
         if not needs_split:
-            # 同一封闭空间内多标签：字号最大的中文标签为该空间语义层（用户规则）
-            winner = max(distinct, key=lambda x: x[3])
-            matched.append((winner[0], cid))
-            dup_labels.extend(x[0] for x in distinct if x[0] != winner[0])
-            continue
+            # 同一封闭空间内多标签：字号最大的中文标签为该空间语义层（用户规则）。
+            # 但「最大字号」必须唯一才具备裁决力：若多个标签并列最大字号，
+            # 它们是同级空间名（如「水井」与「饮水」同为 9.5pt），
+            # 字号无法定语义层 —— 退回几何分割让它们各自成空间。
+            _mx = max(x[3] for x in distinct)
+            _top = [x for x in distinct if x[3] >= _mx - 0.05]
+            if len(_top) == 1:
+                winner = _top[0]
+                matched.append((winner[0], cid))
+                dup_labels.extend(x[0] for x in distinct if x[0] != winner[0])
+                continue
+            # 并列最大字号 -> 仅在这些同级空间名之间分割；
+            # 更小字号的标签视为其所在空间的附注，不单独成空间。
+            dup_labels.extend(x[0] for x in distinct if x not in _top)
+            distinct = _top
 
         component = (cc == cid)
         ys0, xs0 = np.where(component)
@@ -1512,6 +1546,104 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
         room_cids.append(cid)
     if dup_labels:
         print(f"    [QA] 多标签共域(疑似误合并): {dup_labels}")
+
+    # ---- 真实公共交通空间（走道/门厅）提取 ------------------------------
+    # 走道/过道在本图纸中并未被墙完全封闭：它经建筑出入口与室外连通，自由空间
+    # 连通域会整片并入「室外」大组件，因此无法像房间那样按连通域直接识别
+    # （此前正是靠标签邻域投票跨墙抓一块房间充数，才出现走道侵占房间的现象）。
+    # 这里改为按几何反推真实走道：
+    #   1) 把墙体膨胀 R(≈1.5m)，封住建筑出入口 -> 求出真正的室外域；
+    #   2) 将室外域反向膨胀 R 还原 -> 得到「建筑内部自由空间」；
+    #   3) 内部自由空间中不属于任何已识别房间的部分 = 真实公共交通空间。
+    n_circ = 0
+    try:
+        R = max(4, int(round(1.5 / (SCALE / Z))))       # 1.5m -> px
+        dist_free = cv2.distanceTransform(free, cv2.DIST_L2, 5)
+        free_d = (dist_free > R).astype(np.uint8)       # 墙膨胀 R 后的自由空间
+        _nd, ccd = cv2.connectedComponents(free_d, connectivity=4)
+        out_ids = set(np.unique(np.concatenate([
+            ccd[0, :], ccd[-1, :], ccd[:, 0], ccd[:, -1]])))
+        out_ids.discard(0)
+        outdoor_d = np.isin(ccd, np.array(sorted(out_ids), dtype=np.int32))
+        # 反向膨胀 R 还原室外域（出入口已被封住，不会漏进建筑内部）
+        dt_out = cv2.distanceTransform(
+            (~outdoor_d).astype(np.uint8) * 255, cv2.DIST_L2, 5)
+        outdoor = dt_out <= R
+        circ = ((free > 0) & (~outdoor) & (owner <= 0)).astype(np.uint8)
+        # 去掉房间内未归属微单元造成的碎点，并抹平锯齿
+        circ = cv2.morphologyEx(
+            circ, cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        # 交通域整片相连（主走道串联各分区），直接成面会得到一个覆盖整层的
+        # 巨型多边形。改为用图纸上的开放空间标注(走道/门厅/出入口/庭园上空)
+        # 作为种子做最近邻切分——走廊狭长，欧氏 Voronoi 已足够贴近测地切分，
+        # 于是每段走道各自成空间，质心也落在真实走道上。
+        seeds = [(t, px, py, sz) for t, (px, py), sz in probes
+                 if classify_room_type(t) in _OPEN_RT
+                 and 0 <= px < W and 0 <= py < H]
+        # 用最近邻(Voronoi)把交通域切成「每段走道各自成面」。
+        # 实现：以种子点为源做多源距离变换，求每个像素的最近种子下标。
+        seg_key = np.zeros((H, W), np.int32)        # 0 = 无种子 -> 默认"走道"
+        seed_name = {0: "走道"}
+        if seeds:
+            sy = np.array([int(py) for _t, _px, py, _s in seeds], dtype=np.int64)
+            sx = np.array([int(px) for _t, px, _py, _s in seeds], dtype=np.int64)
+            inv = np.ones((H, W), dtype=bool)        # 非种子=前景，种子=原点
+            inv[sy, sx] = False
+            _dist, (iy, ix) = distance_transform_edt(
+                inv, return_distances=True, return_indices=True)
+            seed_lut = np.full((H, W), -1, np.int32)
+            seed_lut[sy, sx] = np.arange(len(seeds), dtype=np.int32)
+            nearest = seed_lut[iy, ix]               # 每像素最近种子下标 0..n-1
+            nearest = np.where(nearest < 0, 0, nearest)
+            seg_key = (nearest + 1).astype(np.int32)  # 1..n，与 0(默认)区分
+            seed_name = {i + 1: t for i, (t, _px, _py, _s) in enumerate(seeds)}
+            seed_name[0] = "走道"
+        nc, ccc, stc, _cc2 = cv2.connectedComponentsWithStats(
+            (circ > 0).astype(np.uint8), connectivity=4)
+        # 同一连通块内再按种子归属切开
+        combo = ccc.astype(np.int64) * (int(seg_key.max()) + 1) + seg_key
+        combo[circ == 0] = -1
+        CIRC_MIN_M2 = 4.0
+        for key in np.unique(combo):
+            if key < 0:
+                continue
+            mask_c = (combo == key).astype(np.uint8) * 255
+            if int(np.count_nonzero(mask_c)) * m2_per_px < CIRC_MIN_M2:
+                continue
+            name = seed_name.get(int(key % (int(seg_key.max()) + 1)), "走道")
+            ys_i, xs_i = np.where(mask_c)
+            mg = 20
+            x0c, x1c = max(0, xs_i.min() - mg), min(W, xs_i.max() + mg)
+            y0c, y1c = max(0, ys_i.min() - mg), min(H, ys_i.max() + mg)
+            cnts, _h = cv2.findContours(mask_c[y0c:y1c, x0c:x1c],
+                                        cv2.RETR_EXTERNAL,
+                                        cv2.CHAIN_APPROX_SIMPLE)
+            if not cnts:
+                continue
+            approx = cv2.approxPolyDP(max(cnts, key=cv2.contourArea),
+                                      Z * 1.5, True)
+            pts = [((float(p[0][0] + x0c) / Z + minx),
+                    (float(p[0][1] + y0c) / Z + miny)) for p in approx]
+            if len(pts) < 3:
+                continue
+            poly = Polygon(pts)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.is_empty:
+                continue
+            # 交通域写入 owner，使门洞两侧投票能把门归属到走道
+            new_cid = next_split_id
+            next_split_id += 1
+            owner[combo == key] = np.float32(new_cid)
+            rooms.append((name, poly))
+            room_cids.append(new_cid)
+            n_circ += 1
+        print(f"    公共交通空间(走道/门厅)识别: {n_circ} 处, "
+              f"总面积 {float(np.count_nonzero(circ)) * m2_per_px:.0f}m2")
+    except Exception as e:                                   # pragma: no cover
+        print(f"    [WARN] 公共交通空间提取失败: {e}")
+
     # owner 归属图随房间一并返回，供门洞两侧投票使用
     return {"polys": rooms, "owner": owner, "minx": minx, "miny": miny,
             "Z": Z, "cids": room_cids}
