@@ -1629,12 +1629,10 @@ def parse_floor(pdf_path, floor_no):
             _stair_pts.append((_q[0], _q[2]))
     _stair_boxes = bbox_clusters(_stair_pts, gap_pt=4 * PT_PER_M) if _stair_pts else []
     # 楼梯间尺寸约束：
-    #   - 面积 ≤ 50m²（典型 5×8m ≈ 40m²；R1S004 = 6.1×32.1m = 196m² 是 A-FLOR-STRS
-    #     把楼梯护栏+走廊一起聚成的伪箱——按面积上限剔除）；
+    #   - 面积 4–50m²（楼梯间可能仅 4m² 梯段，三面有墙即可认定）；
     #   - 长宽比 ≤ 2.0（防止阶梯+走廊/楼梯井拉伸成长条）；
-    #   - 最小 8m²（碎片噪点）。
     _stair_boxes = [b for b in _stair_boxes
-                    if 8 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 50
+                    if 4 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 50
                     and (max(b[2]-b[0], b[3]-b[1]) /
                          min(b[2]-b[0], b[3]-b[1])) < 2.0]
 
