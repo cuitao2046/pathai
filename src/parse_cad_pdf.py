@@ -1614,8 +1614,15 @@ def parse_floor(pdf_path, floor_no):
         for _q in _si["quads"]:
             _stair_pts.append((_q[0], _q[2]))
     _stair_boxes = bbox_clusters(_stair_pts, gap_pt=4 * PT_PER_M) if _stair_pts else []
+    # 楼梯间尺寸约束：
+    #   - 面积 ≤ 50m²（典型 5×8m ≈ 40m²；R1S004 = 6.1×32.1m = 196m² 是 A-FLOR-STRS
+    #     把楼梯护栏+走廊一起聚成的伪箱——按面积上限剔除）；
+    #   - 长宽比 ≤ 2.0（防止阶梯+走廊/楼梯井拉伸成长条）；
+    #   - 最小 8m²（碎片噪点）。
     _stair_boxes = [b for b in _stair_boxes
-                    if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+                    if 8 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 50
+                    and (max(b[2]-b[0], b[3]-b[1]) /
+                         min(b[2]-b[0], b[3]-b[1])) < 2.0]
 
     # --- DOOR_FIRE 防火门仅由摆弧(curve)经 detect_doors 生成（需求：只处理 arc based door）---
     # fire["lines"]/fire["quads"] 不用于门识别，由 detect_doors 的 fire_curves 分支处理。
