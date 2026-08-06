@@ -35,6 +35,107 @@ except ImportError:
 BLIND_WALK_SPEED = 0.8
 
 
+def _merge_nearby_points(pts, radius_m=1.0):
+    """贪心合并：距离 < radius 的点收成簇，取均值坐标。
+
+    用于压缩栅格骨架上过密的 degree≥3 微交叉口，降低 TI 数量。
+    """
+    if not pts:
+        return []
+    used = [False] * len(pts)
+    out = []
+    r2 = radius_m * radius_m
+    for i, (x, y) in enumerate(pts):
+        if used[i]:
+            continue
+        sx, sy, n = float(x), float(y), 1
+        used[i] = True
+        for j in range(i + 1, len(pts)):
+            if used[j]:
+                continue
+            dx = pts[j][0] - x
+            dy = pts[j][1] - y
+            if dx * dx + dy * dy <= r2:
+                used[j] = True
+                sx += pts[j][0]
+                sy += pts[j][1]
+                n += 1
+        out.append((sx / n, sy / n))
+    return out
+
+
+
+def _contract_nearby_graph_nodes(G: nx.Graph, radius_m: float = 1.0) -> nx.Graph:
+    """把距离 < radius 的 key 节点（degree≠2）收缩成超点，边权累加。
+
+    比只合并坐标更安全：收缩后图连通性保持，TI 可与图节点 1:1 对齐。
+    """
+    if G.number_of_nodes() == 0:
+        return G
+    deg = dict(G.degree())
+    keys = [n for n, d in deg.items() if d != 2]
+    if len(keys) <= 1:
+        return G
+
+    # 并查集合并近邻 key 节点
+    parent = {n: n for n in keys}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    r2 = radius_m * radius_m
+    for i, a in enumerate(keys):
+        ax, ay = G.nodes[a]["x"], G.nodes[a]["y"]
+        for b in keys[i + 1:]:
+            bx, by = G.nodes[b]["x"], G.nodes[b]["y"]
+            if (ax - bx) ** 2 + (ay - by) ** 2 <= r2:
+                union(a, b)
+
+    # 代表点：簇内坐标均值；映射 old → rep
+    clusters = {}
+    for n in keys:
+        r = find(n)
+        clusters.setdefault(r, []).append(n)
+
+    rep_of = {}
+    H = nx.Graph()
+    for members in clusters.values():
+        sx = sum(G.nodes[m]["x"] for m in members) / len(members)
+        sy = sum(G.nodes[m]["y"] for m in members) / len(members)
+        rep = members[0]
+        H.add_node(rep, x=sx, y=sy, row=G.nodes[rep].get("row", 0),
+                   col=G.nodes[rep].get("col", 0))
+        for m in members:
+            rep_of[m] = rep
+
+    # degree=2 中间点：映射到自身（简化图通常已无 degree=2，但兼容）
+    for n in G.nodes():
+        if n not in rep_of:
+            rep_of[n] = n
+            if n not in H:
+                H.add_node(n, **G.nodes[n])
+
+    for a, b, data in G.edges(data=True):
+        ra, rb = rep_of[a], rep_of[b]
+        if ra == rb:
+            continue
+        length = float(data.get("length") or 0.0)
+        if H.has_edge(ra, rb):
+            if length < H.edges[ra, rb].get("length", float("inf")):
+                H.edges[ra, rb]["length"] = length
+        else:
+            H.add_edge(ra, rb, length=length)
+    return H
+
+
 def _obj_id(floor, abbr, seq):
     return f"F{floor}-{abbr}-{seq:04d}"
 
@@ -68,18 +169,32 @@ def build_skeleton_for_walkables(
     if not valid:
         return {
             "graph": nx.Graph(), "lines": [], "junctions": [],
-            "terminals": [], "raw_masks_meta": [], "empty": True,
+            "terminals": [], "key_nodes": [], "raw_masks_meta": [], "empty": True,
         }
 
     try:
-        # buffer(0) 修自交；unary_union 合并相接碎片
-        merged = unary_union([p.buffer(0) for p in valid])
+        # 软合并：先外扩 0.25m 填走廊缝隙，unary_union 后再内缩，
+        # 把「几乎相连」的走道/门厅合成更少块（原 22→22 因缝隙未合并）。
+        MERGE_GAP_M = 0.25
+        buffered = [p.buffer(0).buffer(MERGE_GAP_M) for p in valid]
+        merged = unary_union(buffered)
+        if not merged.is_empty:
+            merged = merged.buffer(-MERGE_GAP_M)
         if isinstance(merged, MultiPolygon):
-            pieces = [g for g in merged.geoms if g.area >= 0.5]
-        elif merged.is_empty:
+            pieces = [g for g in merged.geoms if g.area >= 1.0]
+        elif merged is None or merged.is_empty:
             pieces = valid
         else:
             pieces = [merged]
+        # 若软合并后块数未减少且 valid 很多，退化为整层一次栅格
+        # （单块可能很大，但只跑一次中轴，总时间通常更短）
+        if len(pieces) >= max(8, len(valid) - 2) and len(valid) >= 8:
+            try:
+                whole = unary_union([p.buffer(0) for p in valid])
+                if not whole.is_empty:
+                    pieces = [whole]
+            except Exception:
+                pass
     except Exception:
         pieces = valid
 
@@ -127,6 +242,7 @@ def build_skeleton_for_walkables(
             "lines": [],
             "junctions": [],
             "terminals": [],
+            "key_nodes": [],
             "raw_masks_meta": metas,
             "empty": True,
         }
@@ -143,15 +259,24 @@ def build_skeleton_for_walkables(
         for a, b, data in g.edges(data=True):
             Gm.add_edge(mapping_nodes[a], mapping_nodes[b], **data)
 
+    # 在图上收缩邻近 key 节点（避免仅合并坐标导致 TI 与图边脱节）
+    Gm = _contract_nearby_graph_nodes(Gm, radius_m=1.0)
     info = detect_junctions(Gm)
     junctions = [(x, y) for _, x, y in info["junctions"]]
     terminals = [(x, y) for _, x, y in info["terminals"]]
+    # 附带：图节点坐标列表（用于 TI 与图严格对齐）
+    key_nodes = [
+        (n, data["x"], data["y"])
+        for n, data in Gm.nodes(data=True)
+        if Gm.degree(n) != 2
+    ]
 
     return {
         "graph": Gm,
         "lines": all_lines,
         "junctions": junctions,
         "terminals": terminals,
+        "key_nodes": key_nodes,  # (node_id, x, y)
         "raw_masks_meta": metas,
         "empty": False,
     }
@@ -263,29 +388,40 @@ def build_skeleton_topology(
             "accessible": r["roomType"] not in NON_ACC,
         })
 
-    # ---------- TI: 骨架交叉口 ----------
+    # ---------- TI: 与简化骨架 key 节点 1:1（保证 TI↔TI 邻接 = 图边） ----------
+    G = sk["graph"]
     ti_ids = []
-    for i, (x, y) in enumerate(sk["junctions"]):
-        nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
-        ti_ids.append(nid)
-        nodes.append({
-            "id": nid,
-            "type": "intersection",
-            "roomType": "corridor",
-            "label": f"交叉口{i + 1}",
-            "coordinates": [round(x, 3), round(y, 3)],
-        })
-    # 无交叉口时，用 terminal / 骨架节点补 circulation 点
-    if not ti_ids and sk["terminals"]:
-        for i, (x, y) in enumerate(sk["terminals"][:8]):
+    ti_of_gn = {}  # graph node → TI id
+    # 优先用收缩后的 key_nodes；否则用 junctions+terminals
+    key_list = sk.get("key_nodes") or []
+    if not key_list and G.number_of_nodes():
+        key_list = [
+            (n, G.nodes[n]["x"], G.nodes[n]["y"])
+            for n in G.nodes() if G.degree(n) != 2
+        ]
+    if not key_list:
+        # 兜底：junctions / terminals 坐标
+        for i, (x, y) in enumerate(sk["junctions"] or sk["terminals"][:8]):
             nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
             ti_ids.append(nid)
             nodes.append({
                 "id": nid,
                 "type": "intersection",
                 "roomType": "corridor",
-                "label": f"走廊节点{i + 1}",
+                "label": f"交叉口{i + 1}",
                 "coordinates": [round(x, 3), round(y, 3)],
+            })
+    else:
+        for i, (gn, x, y) in enumerate(key_list):
+            nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
+            ti_ids.append(nid)
+            ti_of_gn[gn] = nid
+            nodes.append({
+                "id": nid,
+                "type": "intersection",
+                "roomType": "corridor",
+                "label": f"交叉口{i + 1}",
+                "coordinates": [round(float(x), 3), round(float(y), 3)],
             })
 
     # ---------- TD: 门投影到骨架 ----------
@@ -376,60 +512,82 @@ def build_skeleton_topology(
                      a_level=2 if dr.get("kind") == "fire" else 0,
                      r_level=5 if dr.get("kind") == "fire" else 0.5)
 
-    # 2) TD ↔ 最近 TI（骨架接入）
+    # 2) TD ↔ 最近 TI（优先：最近图节点对应的 TI；否则欧氏最近 TI）
     for i, dnid in enumerate(door_node_ids):
         dcoord = next(n["coordinates"] for n in nodes if n["id"] == dnid)
         if not ti_ids:
             continue
         best_ti, best_d = None, float("inf")
-        for tid in ti_ids:
-            tc = next(n["coordinates"] for n in nodes if n["id"] == tid)
-            d = math.hypot(dcoord[0] - tc[0], dcoord[1] - tc[1])
-            if d < best_d:
-                best_d, best_ti = d, tid
+        if G.number_of_nodes() and ti_of_gn:
+            gn, gd = nearest_graph_node(G, dcoord[0], dcoord[1])
+            if gn is not None and gn in ti_of_gn:
+                tid = ti_of_gn[gn]
+                tc = next(n["coordinates"] for n in nodes if n["id"] == tid)
+                best_d = math.hypot(dcoord[0] - tc[0], dcoord[1] - tc[1])
+                best_ti = tid
+            elif gn is not None:
+                # 图节点不是 key：在图上找最近的已映射 TI
+                try:
+                    lengths = nx.single_source_dijkstra_path_length(
+                        G, gn, cutoff=40.0, weight="length")
+                    for g2, plen in lengths.items():
+                        if g2 in ti_of_gn and plen < best_d:
+                            best_d = plen + (gd or 0)
+                            best_ti = ti_of_gn[g2]
+                except Exception:
+                    pass
+        if best_ti is None:
+            for tid in ti_ids:
+                tc = next(n["coordinates"] for n in nodes if n["id"] == tid)
+                d = math.hypot(dcoord[0] - tc[0], dcoord[1] - tc[1])
+                if d < best_d:
+                    best_d, best_ti = d, tid
         if best_ti is not None and best_d < 40.0:
             add_edge(dnid, best_ti, best_d)
 
-    # 3) TI ↔ TI：沿骨架段邻接连接（G2 简化图边 = 走廊段）
-    #    不做 all-pairs 测地（O(n²) 会爆炸出数十万条边——TI 1313 个时可达 53 万条）。
-    #    每条骨架段两端映射到最近 TI 拓扑节点 → 生成一条导航边，数量 ≈ 骨架段数。
+    # 3) TI ↔ TI：图边 → TE（1:1，禁止 all-pairs）
+    #    TI 已与 key 节点对齐，故每条骨架边直接对应一条 TI-TI 边，连通性=骨架连通性。
     G = sk["graph"]
-    if G.number_of_edges() > 0 and len(ti_ids) >= 2:
-        ti_by_id = {}
-        for tid in ti_ids:
-            ti_by_id[tid] = next(n["coordinates"] for n in nodes
-                                 if n["id"] == tid)
-
-        def _nearest_ti(x, y):
-            best, bd = None, float("inf")
-            for tid, tc in ti_by_id.items():
-                d = math.hypot(x - tc[0], y - tc[1])
-                if d < bd:
-                    bd, best = d, tid
-            return best if bd < 5.0 else None  # 5m 内才算匹配到同一交叉口
-
-        edge_added = set()
-        for u, v, data in G.edges(data=True):
-            ux, uy = G.nodes[u]["x"], G.nodes[u]["y"]
-            vx, vy = G.nodes[v]["x"], G.nodes[v]["y"]
-            a, b = _nearest_ti(ux, uy), _nearest_ti(vx, vy)
-            if a is None or b is None or a == b:
+    linked = set()
+    n_adj = 0
+    if G.number_of_edges() and ti_of_gn:
+        for ua, ub, edata in G.edges(data=True):
+            ta = ti_of_gn.get(ua)
+            tb = ti_of_gn.get(ub)
+            if not ta or not tb or ta == tb:
                 continue
-            key = (a, b) if a < b else (b, a)
-            if key in edge_added:
+            key = tuple(sorted((ta, tb)))
+            if key in linked:
                 continue
-            edge_added.add(key)
-            d = data.get("length", math.hypot(ux - vx, uy - vy))
-            add_edge(a, b, d)
+            linked.add(key)
+            length = float(edata.get("length") or 0.0)
+            if length <= 0:
+                ca = next(n["coordinates"] for n in nodes if n["id"] == ta)
+                cb = next(n["coordinates"] for n in nodes if n["id"] == tb)
+                length = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
+            add_edge(ta, tb, length)
+            n_adj += 1
     elif len(ti_ids) >= 2:
-        # 无图：近距离 TI 直连
-        for i in range(len(ti_ids)):
-            for j in range(i + 1, len(ti_ids)):
-                ca = next(n["coordinates"] for n in nodes if n["id"] == ti_ids[i])
-                cb = next(n["coordinates"] for n in nodes if n["id"] == ti_ids[j])
-                d = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
-                if d <= 50:
-                    add_edge(ti_ids[i], ti_ids[j], d)
+        # 无图：k=2 近邻兜底
+        for i, tid in enumerate(ti_ids):
+            ca = next(n["coordinates"] for n in nodes if n["id"] == tid)
+            dists = []
+            for j, tid2 in enumerate(ti_ids):
+                if i == j:
+                    continue
+                cb = next(n["coordinates"] for n in nodes if n["id"] == tid2)
+                dists.append((math.hypot(ca[0] - cb[0], ca[1] - cb[1]), tid2))
+            dists.sort()
+            for d, tid2 in dists[:2]:
+                if d > 30:
+                    break
+                key = tuple(sorted((tid, tid2)))
+                if key in linked:
+                    continue
+                linked.add(key)
+                add_edge(tid, tid2, d)
+                n_adj += 1
+    print(f"    [skeleton] TI-TI 邻接边 {n_adj} 条 (TI={len(ti_ids)})")
 
     # 4) TF ↔ 最近 TD
     for fn in [n for n in nodes if n["type"] == "facility"]:
