@@ -26,15 +26,15 @@ from .skeleton_vectorize import (
 )
 from .junction_detector import detect_junctions, simplify_degree2_paths
 from .door_projector import project_doors_to_skeleton, project_points_to_skeleton
+try:
+    from topology import bridge_disconnected_components
+except ImportError:
+    bridge_disconnected_components = None  # type: ignore
 
 
 BLIND_WALK_SPEED = 0.8
 
 
-try:
-    from topology import bridge_disconnected_components
-except ImportError:
-    bridge_disconnected_components = None  # type: ignore
 def _obj_id(floor, abbr, seq):
     return f"F{floor}-{abbr}-{seq:04d}"
 
@@ -48,31 +48,58 @@ def build_skeleton_for_walkables(
     """
     对一层所有 walkable 区域提取并合并骨架。
 
-    Returns
-    -------
-    {
-      "graph": nx.Graph (简化后),
-      "lines": [LineString, ...],
-      "junctions": [(x,y), ...],
-      "terminals": [(x,y), ...],
-      "raw_masks_meta": [...],
-      "empty": bool,
-    }
+    性能：先把重叠/邻近的 walkable 合并，再逐块提取；单块自适应分辨率。
     """
+    from shapely.ops import unary_union
+    from shapely.geometry import MultiPolygon
+
     keep_pts = list(door_centers_m)
     if facility_centers_m:
         keep_pts.extend(facility_centers_m)
+
+    # 过滤空几何，合并相交/贴近的碎片（减少中轴次数）
+    valid = []
+    for poly in walkable_polys_m:
+        if poly is None or getattr(poly, "is_empty", True):
+            continue
+        if poly.area < 0.5:
+            continue
+        valid.append(poly)
+    if not valid:
+        return {
+            "graph": nx.Graph(), "lines": [], "junctions": [],
+            "terminals": [], "raw_masks_meta": [], "empty": True,
+        }
+
+    try:
+        # buffer(0) 修自交；unary_union 合并相接碎片
+        merged = unary_union([p.buffer(0) for p in valid])
+        if isinstance(merged, MultiPolygon):
+            pieces = [g for g in merged.geoms if g.area >= 0.5]
+        elif merged.is_empty:
+            pieces = valid
+        else:
+            pieces = [merged]
+    except Exception:
+        pieces = valid
+
+    print(f"    [skeleton] walkable {len(valid)} → 合并后 {len(pieces)} 块, "
+          f"base_res={resolution}m")
 
     all_graphs = []
     all_lines = []
     metas = []
 
-    for wi, poly in enumerate(walkable_polys_m):
+    for wi, poly in enumerate(pieces):
         if poly is None or poly.is_empty:
             continue
+        import time as _time
+        t0 = _time.time()
         meta = extract_medial_axis(poly, resolution=resolution)
         metas.append(meta)
         if meta["empty"]:
+            print(f"    [skeleton] 块{wi+1}/{len(pieces)} 空 "
+                  f"(area={poly.area:.0f}m², {(_time.time()-t0)*1000:.0f}ms)")
             continue
         skel = prune_dangling_branches(
             meta["skeleton_mask"],
@@ -89,6 +116,10 @@ def build_skeleton_for_walkables(
         G2 = simplify_degree2_paths(G)
         all_graphs.append(G2)
         all_lines.extend(graph_to_linestrings(G2, simplify_tol_m=0.12))
+        print(f"    [skeleton] 块{wi+1}/{len(pieces)} area={poly.area:.0f}m² "
+              f"res={meta['resolution']:.3f}m "
+              f"nodes={G2.number_of_nodes()} "
+              f"{(_time.time()-t0)*1000:.0f}ms")
 
     if not all_graphs:
         return {
@@ -359,38 +390,37 @@ def build_skeleton_topology(
         if best_ti is not None and best_d < 40.0:
             add_edge(dnid, best_ti, best_d)
 
-    # 3) TI ↔ TI 沿骨架图测地距离（若图可用）
+    # 3) TI ↔ TI：沿骨架段邻接连接（G2 简化图边 = 走廊段）
+    #    不做 all-pairs 测地（O(n²) 会爆炸出数十万条边——TI 1313 个时可达 53 万条）。
+    #    每条骨架段两端映射到最近 TI 拓扑节点 → 生成一条导航边，数量 ≈ 骨架段数。
     G = sk["graph"]
-    if G.number_of_nodes() >= 2 and len(ti_ids) >= 2:
-        # 把 TI 坐标匹配到最近图节点
-        ti_graph_nodes = []
+    if G.number_of_edges() > 0 and len(ti_ids) >= 2:
+        ti_by_id = {}
         for tid in ti_ids:
-            tc = next(n["coordinates"] for n in nodes if n["id"] == tid)
-            gn, _ = nearest_graph_node(G, tc[0], tc[1])
-            ti_graph_nodes.append((tid, gn))
-        linked = set()
-        for i in range(len(ti_graph_nodes)):
-            for j in range(i + 1, len(ti_graph_nodes)):
-                tid_a, ga = ti_graph_nodes[i]
-                tid_b, gb = ti_graph_nodes[j]
-                if ga is None or gb is None:
-                    continue
-                try:
-                    path_len = nx.shortest_path_length(G, ga, gb, weight="length")
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    # 欧氏兜底
-                    ca = next(n["coordinates"] for n in nodes if n["id"] == tid_a)
-                    cb = next(n["coordinates"] for n in nodes if n["id"] == tid_b)
-                    path_len = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
-                    if path_len > 50:
-                        continue
-                if path_len > 80:
-                    continue
-                key = (tid_a, tid_b)
-                if key in linked:
-                    continue
-                linked.add(key)
-                add_edge(tid_a, tid_b, path_len)
+            ti_by_id[tid] = next(n["coordinates"] for n in nodes
+                                 if n["id"] == tid)
+
+        def _nearest_ti(x, y):
+            best, bd = None, float("inf")
+            for tid, tc in ti_by_id.items():
+                d = math.hypot(x - tc[0], y - tc[1])
+                if d < bd:
+                    bd, best = d, tid
+            return best if bd < 5.0 else None  # 5m 内才算匹配到同一交叉口
+
+        edge_added = set()
+        for u, v, data in G.edges(data=True):
+            ux, uy = G.nodes[u]["x"], G.nodes[u]["y"]
+            vx, vy = G.nodes[v]["x"], G.nodes[v]["y"]
+            a, b = _nearest_ti(ux, uy), _nearest_ti(vx, vy)
+            if a is None or b is None or a == b:
+                continue
+            key = (a, b) if a < b else (b, a)
+            if key in edge_added:
+                continue
+            edge_added.add(key)
+            d = data.get("length", math.hypot(ux - vx, uy - vy))
+            add_edge(a, b, d)
     elif len(ti_ids) >= 2:
         # 无图：近距离 TI 直连
         for i in range(len(ti_ids)):
@@ -443,10 +473,10 @@ def build_skeleton_topology(
             "properties": {"type": "skeleton", "length_m": round(line.length, 2)},
         })
 
-
     # 同层大孤岛补边（与质心拓扑一致）
     if bridge_disconnected_components is not None:
         edges = bridge_disconnected_components(floor_no, nodes, edges)
+
     return {
         "nodes": nodes,
         "edges": edges,

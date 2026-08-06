@@ -609,7 +609,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             sx, sy = tosvg(cx, cy)
             parts.append(
                 f'<g class="layer_skeleton_node">'
-                f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="2.2" '
+                f'<circle cx="{sx}" cy="{sy}" r="2.2" '
                 f'fill="#E53935" stroke="#B71C1C" stroke-width="0.5"/>'
                 f'</g>\n'
             )
@@ -879,10 +879,18 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
 
         # 9. 拓扑边
+        # 骨架模式下 TI↔TI 连接边可达数十万条（全量渲染会让 HTML 数百 MB）。
+        # 仅渲染含 doorway/room/facility 端点的语义边；走廊骨架由 layer_skeleton
+        # （青色 polyline）直接展示，无需重复画 TI↔TI 边。
+        n_edge_skipped = 0
         for e in topo.get("edges", []):
             n1 = node_map.get(e.get("from"))
             n2 = node_map.get(e.get("to"))
             if not n1 or not n2:
+                continue
+            if (n1.get("type") == "intersection"
+                    and n2.get("type") == "intersection"):
+                n_edge_skipped += 1
                 continue
             x1, y1 = tosvg(n1["coordinates"][0], n1["coordinates"][1])
             x2, y2 = tosvg(n2["coordinates"][0], n2["coordinates"][1])
