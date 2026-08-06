@@ -409,9 +409,11 @@ svg {{ display: block; background: #fff; }}
 .layer_skeleton_node circle {{ fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
-.layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
+.layer_topo_node *, .layer_topo_edge path, .layer_topo_edge_titi path {{ cursor: pointer; }}
 .layer_topo_edge path {{ stroke: #27AE60; stroke-width: 1.6; fill: none; opacity: 0.65; stroke-dasharray: 3,2; }}
 .layer_topo_edge path:hover {{ stroke-width: 3.4; opacity: 0.9; }}
+.layer_topo_edge_titi path {{ stroke: #9CCC65; stroke-width: 1.2; fill: none; opacity: 0.55; stroke-dasharray: 2,4; }}
+.layer_topo_edge_titi path:hover {{ stroke-width: 3; opacity: 0.9; }}
 .layer_risk * {{ cursor: pointer; }}
 .layer_ramp *, .layer_tactile *, .layer_material * {{ cursor: pointer; }}
 .layer_crossfloor path {{ stroke-width: 1.6; fill: none; stroke-dasharray: 6,4; opacity: 0.65; cursor: pointer; }}
@@ -419,7 +421,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 .selected {{ stroke: #FFC107 !important; stroke-width: 2.4 !important; }}
 /* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
 .layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon {{ stroke: #FFC107 !important; stroke-width: 2.6 !important; }}
-.layer_topo_edge.selected path {{ stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }}
+.layer_topo_edge.selected path, .layer_topo_edge_titi.selected path {{ stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }}
 .layer_topo_node.path-start circle, .layer_topo_node.path-start rect, .layer_topo_node.path-start polygon {{ stroke: #4CAF50 !important; stroke-width: 3 !important; }}
 .layer_topo_node.path-end circle, .layer_topo_node.path-end rect, .layer_topo_node.path-end polygon {{ stroke: #E91E63 !important; stroke-width: 3 !important; }}
 .layer_topo_node.path-via circle, .layer_topo_node.path-via rect, .layer_topo_node.path-via polygon {{ stroke: #FF9800 !important; stroke-width: 2.2 !important; }}
@@ -504,6 +506,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('door_fire', this.checked)"> 防火门</label>
   <label><input type="checkbox" onchange="toggleLayer('topo_node', this.checked)"> 拓扑节点</label>
   <label><input type="checkbox" onchange="toggleLayer('topo_edge', this.checked)"> 拓扑边</label>
+  <label><input type="checkbox" onchange="toggleLayer('topo_edge_titi', this.checked)" title="交叉口(TI)之间的拓扑边，默认隐藏；走廊连通主视觉由青色骨架展示">交叉口连接边</label>
   <label><input type="checkbox" checked onchange="toggleLayer('crossfloor', this.checked)"> 跨层连接</label>
   <label><input type="checkbox" onchange="toggleLayer('risk', this.checked)"> 风险点</label>
   <label><input type="checkbox" onchange="toggleLayer('ramp', this.checked)"> 坡道</label>
@@ -914,19 +917,18 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
 
         # 9. 拓扑边
-        # 骨架模式下 TI↔TI 连接边可达数十万条（全量渲染会让 HTML 数百 MB）。
-        # 仅渲染含 doorway/room/facility 端点的语义边；走廊骨架由 layer_skeleton
-        # （青色 polyline）直接展示，无需重复画 TI↔TI 边。
-        n_edge_skipped = 0
+        # 骨架模式下 TI↔TI 连接边可达数十万条（早期全量渲染让 HTML 数百 MB，
+        # 已改为沿骨架段邻接，F1 53 万→2069 条）。TI↔TI 边独立成
+        # layer_topo_edge_titi 图层（默认隐藏，由图层面板开关控制），
+        # 走廊连通主视觉仍由 layer_skeleton（青色 polyline）展示。
+        n_titi = 0
         for e in topo.get("edges", []):
             n1 = node_map.get(e.get("from"))
             n2 = node_map.get(e.get("to"))
             if not n1 or not n2:
                 continue
-            if (n1.get("type") == "intersection"
-                    and n2.get("type") == "intersection"):
-                n_edge_skipped += 1
-                continue
+            is_titi = (n1.get("type") == "intersection"
+                       and n2.get("type") == "intersection")
             x1, y1 = tosvg(n1["coordinates"][0], n1["coordinates"][1])
             x2, y2 = tosvg(n2["coordinates"][0], n2["coordinates"][1])
             det = {"title": f"导航边 {e.get('id','')}", "rows": [
@@ -944,9 +946,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             attr = info_attr({"tip": tip, "detail": det, "from": e.get("from", ""),
                               "to": e.get("to", ""), "id": e.get("id", ""),
                               "kind": "edge"})
+            cls = "layer_topo_edge_titi" if is_titi else "layer_topo_edge"
             parts.append(
-                f'<g class="layer_topo_edge" {attr}><path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
+                f'<g class="{cls}" {attr}><path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
             )
+            if is_titi:
+                n_titi += 1
 
         # 10. 风险 / 坡道 / 盲道 / 材质（若存在）
         for r in acc.get("riskNodes", []):
@@ -1349,7 +1354,7 @@ wrapper.addEventListener('click', function(e) {{
       ensureLayer('topo_node', true);
       ensureLayer('topo_edge', true);
       var nbCount = 0;
-      document.querySelectorAll('.layer_topo_edge').forEach(function(g) {{
+      document.querySelectorAll('.layer_topo_edge, .layer_topo_edge_titi').forEach(function(g) {{
         var f = g.getAttribute('data-info');
         if (!f) return;
         try {{
@@ -1373,7 +1378,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
+  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
@@ -1614,7 +1619,7 @@ function drawPath(result) {
     layer.appendChild(pathEl);
   }
   // 高亮对应拓扑边
-  document.querySelectorAll('.layer_topo_edge').forEach(function(g) {
+  document.querySelectorAll('.layer_topo_edge, .layer_topo_edge_titi').forEach(function(g) {
     var f = g.getAttribute('data-info');
     if (!f) return;
     try {
