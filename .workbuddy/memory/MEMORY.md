@@ -21,9 +21,17 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - ⚠️ 验证器 `validate_geojson.py` 第 82 行 `n_fire = len(doors) - n_swing` 把 opening 也算进 fire，故其打印的 "fire 63/42" 实为 fire+opening；真值见上。
 - QA：VALIDATION PASS（无门封闭房间=0；模块豁免 F1 涵盖 R1008/R1026/R1027/R1030/R1031/R1032/R1S001/R1S002/R1S007/R1S008，F2 涵盖 R2016/R2017/R2020/R2021/R2S001/R2S003/R2S005/R2S006/R2S007）。
 
+## 当前进展（2026-08-06 骨架拓扑模式，修复依赖后实测）
+- 骨架模式（`USE_SKELETON=True`，src/skeleton/ 包）：**F1 TI=61 段=498 节点=323 边=370；F2 TI=33 段=310 节点=199 边=242**；连通率 100%/100%（分量=1）。
+- 渲染：`layer_skeleton`（青 #00ACC1）段 F1 498+F2 310=808；`layer_skeleton_node`（红）交叉口 F1 123+F2 75=198；图层面板「走廊骨架」「骨架交叉口」开关默认 骨架开/交叉口关。
+- QA PASS；仅剩告警「骨架短段比例偏高 66%/67%（可能剪枝不足）」，非硬失败。
+- walkable：F1 22 个 / F2 16 个公共空间生成成功；外轮廓裁剪 F1 14 / F2 8 个。合班教室 F1-RM-0050 真实多边形 190.4m²。
+- 门/房间：F1 门 129（swing 68/fire 53/opening 8）、F2 门 75（swing 36/fire 32/opening 7 注：此为骨架模式最新实测，解析器自 08-05 后继续演进）；房间 F1 72 / F2 55。
+
 ## 关键约定（跨会话必须遵守）
 - **目录结构约定（2026-08-04 确立，2026-08-05 删 render_v7 后更新）**：所有**正式脚本**放 `src/`（`parse_cad_pdf.py`、`topology.py`、`render_map.py`、`validate_geojson.py`、`render_interactive.py` 共 5 个）；所有**调试/诊断脚本**放 `debug/`（`debug_*.py`、`diag_*.py`、`glyph_probe.py` 共 22 个）。根目录不再保留 `.py`。`render_v7.py` 及其输入 `school_building_01_map_v7.geojson`、输出 `floor_layout_v7.html` 已由用户手动清理（2026-08-05）。
 - **运行环境 / 路径自适应（2026-08-04 改造）**：所有脚本路径均基于 `__file__` 推导。`src/` 正式脚本用 `PROJECT_ROOT = Path(__file__).resolve().parent.parent`（即项目根）；`debug/` 脚本 `sys.path` 指向 `Path(__file__).resolve().parent.parent / "src"`，结果/输入路径用 `Path(__file__).resolve().parent.parent / "result"(/"A20-*.pdf")`（debug 与 src 同在根下一级，故 `parent.parent` 即根）。不再 hardcode `E:\code\pathai`，可直接 `python src/parse_cad_pdf.py`、`python src/render_interactive.py` 运行。`parse_cad_pdf.py` 仍需带 fitz 的 Python（本机 `C:/Users/xinni/AppData/Local/Microsoft/WindowsApps/python3.exe` 含 1.28.0）；`render_interactive.py` / `validate_geojson.py` 用 managed `3.13.12` 即可（纯 JSON，无需 fitz）。`*.bak` 为旧备份，未改。
+- **骨架模式依赖（2026-08-06 修复）**：`USE_SKELETON` 默认开，但骨架包 `src/skeleton/` 依赖 **scikit-image + networkx**。缺任一依赖时 `parse_cad_pdf.py` 的 `except ImportError` 会静默把 `_HAS_SKELETON=False` → 回退质心拓扑 → **GeoJSON 的 `skeleton.features` 为空** → 渲染图「走廊骨架/骨架交叉口」图层空无一物（交叉口还因 `if not skel_feats: break` 被连带跳过）。已在本机 system python (3.14.1) 装好：scikit-image 0.26.0（清华镜像 + `--only-binary=:all:`，注意官方源直连会卡死）。⚠️ **networkx 3.6 在 Python 3.14.1 有 dataclasses bug**（`@dataclass(init=False, slots=True)` 且无显式 `__init__` 时 `_add_slots` 访问 `object.__init__.__annotate__` 崩溃，且抛的是 AttributeError 不是 ImportError——若触发会让解析器直接崩而非回退），已给 `site-packages/networkx/utils/configs.py` 的 `Config` 类手工补了一个显式 `__init__`；换机器/升级 Python 需重打补丁（或等 networkx 修复版）。
 - **门洞(opening)识别规则（v9.1，2026-08-05 简化）**：门洞 = window 图层中带 **DK 矢量 strokes 文字标注** 的部分——
   - **DK 识别**：`recognize_dk_glyph_blocks` + `is_dk_block`，按 window 图层短笔画聚类并几何识别；`is_dk_block` 旋转无关，覆盖 **4 个 DK 旋转方向**（0°/90°/180°/270°，对应东/南/西/北墙面，文字正对室内阅读者放置）。
   - **DK 生成门洞的几何**：每个 DK 块 → 一个 opening——
