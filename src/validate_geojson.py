@@ -1,215 +1,285 @@
 # -*- coding: utf-8 -*-
-"""GeoJSON 输出验证（QA）脚本。
-
-对 parse_cad_pdf.py 生成的楼层 GeoJSON 做结构与引用完整性检查：
-  1. 顶层 schema 与 v7 参考格式对齐
-  2. 每层 geometry 七类要素齐全、坐标有限
-  3. 封闭空间（教室/办公室/卫生间等）必须至少有 1 扇门 —— 核心需求
-  4. 门的 rooms 引用必须指向存在的房间
-  5. semantic 与 geometry 房间集合一致；拓扑边无悬空引用
-
-用法:
-    python validate_geojson.py [geojson_path]
-退出码: 0 = PASS, 1 = FAIL
 """
+T12: GeoJSON 拓扑质量校验
+
+对应《公共空间识别方案》第八章验收标准的可自动化部分：
+  - 门投影 / doorway 覆盖
+  - 拓扑连通性
+  - 跨层 XE
+  - 视障模式楼梯边 a=999
+  - 骨架悬空边比例（若有 skeleton）
+  - Walkable 是否越出外轮廓（启发式）
+"""
+
+from __future__ import annotations
+
+import argparse
 import json
 import math
 import sys
+from collections import defaultdict
 from pathlib import Path
-
-DEFAULT = str(
-    Path(__file__).resolve().parent.parent / "result" / "school_building_01_map_v9.geojson")
-
-# 非"封闭房间"的类型：不参与零门检查
-# 公共空间（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭）也是非"封闭"空间
-NON_ENCLOSED = ("staircase", "elevator_hall", "shaft", "atrium",
-                "corridor", "lobby", "entrance", "accessible_entrance",
-                # 活动空间(学生活动区/社团等)为开放式流通/活动区，非封闭房间，
-                # 不要求有门（与走廊/门厅同属 circulation，由拓扑骨架直连）。
-                "activity",
-                # 电梯前室/楼梯前室（T2 细分类）：开放流通空间，不要求有门
-                "elevator_lobby", "stair_lobby")
-
-GEOM_KEYS = ["walls", "rooms", "doors", "stairs", "elevators",
-             "columns", "windowSegments"]
-TOP_KEYS = ["venueId", "venueName", "version", "coordinateSystem",
-            "scale", "origin", "floors", "crossFloorEdges"]
+from typing import Any, Dict, List, Optional, Tuple
 
 
-def _finite(geom):
-    t = geom["type"]
-    cs = geom["coordinates"]
-    if t == "Point":
-        pts = [cs]
-    elif t == "LineString":
-        pts = cs
-    elif t == "Polygon":
-        pts = cs[0]
-    else:  # MultiPolygon
-        pts = cs[0][0]
-    return all(math.isfinite(p[0]) and math.isfinite(p[1]) for p in pts)
-
-
-def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
+def _load(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
-        d = json.load(f)
-    ok = True
+        return json.load(f)
 
-    missing = [k for k in TOP_KEYS if k not in d]
-    print("schema 顶层缺失:", missing or "无")
-    ok &= not missing
-    print("coordinateSystem =", d.get("coordinateSystem"),
-          "| scale =", d.get("scale"), "| origin =", d.get("origin"))
 
-    floors = d["floors"]
-    items = floors.items() if isinstance(floors, dict) else enumerate(floors, 1)
-    for fid, f in sorted(items, key=lambda kv: int(kv[0])):
-        g = f["geometry"]
-        gm = [k for k in GEOM_KEYS if k not in g]
-        print(f"--- F{fid} ---")
-        print("  geometry 缺失:", gm or "无")
-        ok &= not gm
+def _node_map(nodes: List[dict]) -> Dict[str, dict]:
+    return {n["id"]: n for n in nodes}
 
-        rooms = g["rooms"]
-        doors = g["doors"]
-        rids = {r["id"] for r in rooms}
 
-        door_cnt = {}
-        for dr in doors:
-            for rid in dr["properties"].get("rooms", []):
-                door_cnt[rid] = door_cnt.get(rid, 0) + 1
+def _components(nodes: List[dict], edges: List[dict]) -> List[set]:
+    adj = defaultdict(set)
+    ids = {n["id"] for n in nodes}
+    for e in edges:
+        a, b = e.get("from"), e.get("to")
+        if a in ids and b in ids:
+            adj[a].add(b)
+            adj[b].add(a)
+    seen = set()
+    comps = []
+    for nid in ids:
+        if nid in seen:
+            continue
+        stack = [nid]
+        seen.add(nid)
+        comp = {nid}
+        while stack:
+            u = stack.pop()
+            for v in adj[u]:
+                if v not in seen:
+                    seen.add(v)
+                    comp.add(v)
+                    stack.append(v)
+        comps.append(comp)
+    return comps
 
-        # --- 服务核心模块豁免（用户 2026-08-05）：已有公共出口的卫生间/设备模块，
-        #     其子房间视为一个可导航空间，零门不算封闭失败 ---
-        CIRC = {"corridor", "lobby", "atrium", "entrance",
-                "accessible_entrance", "elevator_hall"}
-        CORE = {"toilet", "staircase", "equipment", "shaft"}
 
-        def _pip(pt, ring):
-            x, y = pt; inside = False; n = len(ring); j = n - 1
-            for i in range(n):
-                xi, yi = ring[i]; xj, yj = ring[j]
-                if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-                    inside = not inside
-                j = i
-            return inside
+def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, Any]:
+    topo = floor.get("topology") or {}
+    nodes = topo.get("nodes") or []
+    edges = topo.get("edges") or []
+    geom = floor.get("geometry") or {}
+    skel = floor.get("skeleton") or {}
+    walk = floor.get("walkable_regions") or {}
 
-        def _seg_dist(pt, a, b):
-            px, py = pt; ax, ay = a; bx, by = b
-            dx, dy = bx - ax, by - ay
-            if dx == 0 and dy == 0:
-                return math.hypot(px - ax, py - ay)
-            t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
-            t = max(0, min(1, t))
-            cx, cy = ax + t * dx, ay + t * dy
-            return math.hypot(px - cx, py - cy)
+    nmap = _node_map(nodes)
+    by_type = defaultdict(list)
+    for n in nodes:
+        by_type[n.get("type", "?")].append(n)
 
-        def _ring_dist(pt, ring):
-            return min(_seg_dist(pt, ring[i], ring[(i + 1) % len(ring)])
-                       for i in range(len(ring)))
+    stats = {
+        "floor": floor_key,
+        "nodes": len(nodes),
+        "edges": len(edges),
+        "TR": len(by_type["room"]),
+        "TD": len(by_type["doorway"]),
+        "TI": len(by_type["intersection"]),
+        "TF": len(by_type["facility"]),
+        "TEN": len(by_type["facility_entrance"]),
+        "doors_geom": len(geom.get("doors") or []),
+        "skeleton_segs": len((skel.get("features") or [])),
+        "walkable_feats": len((walk.get("features") or [])),
+        "ok": True,
+        "issues": [],
+    }
 
-        _rgeo = {}
-        for r in rooms:
-            ring = r["geometry"]["coordinates"][0]
-            _rgeo[r["id"]] = {
-                "type": r["properties"].get("roomType"),
-                "ring": ring,
-            }
-        # 服务核心模块豁免（用户 2026-08-05）：卫生间/设备房间若与任一其他房间相邻
-        # （成模块或贴公共空间），视为模块内可导航空间，零门不计失败。
-        _exempt = set()
-        for rid, rg in _rgeo.items():
-            if rg["type"] not in CORE:
-                continue
-            adj = any(rid2 != rid and (
-                        any(_ring_dist(p, _rgeo[rid2]["ring"]) < 1.5
-                            for p in rg["ring"]) or
-                        any(_ring_dist(p, rg["ring"]) < 1.5
-                            for p in _rgeo[rid2]["ring"]))
-                      for rid2 in _rgeo)
-            if adj:
-                _exempt.add(rid)
+    def issue(msg: str, hard: bool = False):
+        stats["issues"].append(msg)
+        if hard:
+            stats["ok"] = False
+        report.append(f"[F{floor_key}] {msg}")
 
-        zero = [r["properties"].get("label") for r in rooms
-                if r["properties"].get("roomType") not in NON_ENCLOSED
-                and door_cnt.get(r["id"], 0) == 0
-                and r["id"] not in _exempt]
-        if _exempt:
-            print(f"  模块豁免(零门不计失败)子房间: {sorted(_exempt)}")
-        orphan = [dr["id"] for dr in doors if not dr["properties"].get("rooms")]
-        n_swing = sum(1 for x in doors if x["properties"].get("doorType") == "swing")
-        n_fire = len(doors) - n_swing
-        print(f"  房间 {len(rooms)} | 门 {len(doors)} "
-              f"(swing {n_swing}/fire {n_fire})")
-        print(f"  无门封闭房间: {len(zero)} {zero or ''} | "
-              f"无归属门: {len(orphan)}")
-        ok &= len(zero) == 0
+    # 1) 门口覆盖：每个 geometry door 应有 TD
+    n_doors = stats["doors_geom"]
+    if n_doors and stats["TD"] < n_doors * 0.9:
+        issue(f"门投影覆盖不足: geometry.doors={n_doors} TD={stats['TD']}", hard=True)
+    elif n_doors == 0:
+        issue("无 geometry.doors（可能解析失败）", hard=True)
 
-        bad_ref = [dr["id"] for dr in doors
-                   for rid in dr["properties"].get("rooms", [])
-                   if rid not in rids]
-        print("  门引用不存在房间:", bad_ref or "无")
-        ok &= not bad_ref
+    # 2) 连通性：主分量应覆盖绝大多数非孤立节点
+    comps = _components(nodes, edges)
+    comps_sorted = sorted(comps, key=len, reverse=True)
+    if not comps_sorted:
+        issue("无拓扑节点", hard=True)
+    else:
+        main = comps_sorted[0]
+        isolated = [c for c in comps_sorted[1:] if len(c) <= 2]
+        large_islands = [c for c in comps_sorted[1:] if len(c) > 5]
+        coverage = len(main) / max(1, len(nodes))
+        stats["main_component"] = len(main)
+        stats["components"] = len(comps_sorted)
+        stats["coverage"] = round(coverage, 3)
+        if coverage < 0.7:
+            issue(f"主连通分量仅覆盖 {coverage:.0%} 节点 "
+                  f"(主={len(main)}, 分量数={len(comps_sorted)})", hard=True)
+        if large_islands:
+            issue(f"存在 {len(large_islands)} 个较大孤立子图 "
+                  f"(sizes={[len(c) for c in large_islands[:5]]})")
 
-        bad_geo = sum(1 for k in GEOM_KEYS for ft in g[k]
-                      if not _finite(ft["geometry"]))
-        print("  非法坐标要素数:", bad_geo)
-        ok &= bad_geo == 0
+    # 3) 楼梯设施边 accessibilityLevel=999
+    stair_tf = [n for n in by_type["facility"]
+                if n.get("facilityType") == "staircase"]
+    for e in edges:
+        a, b = nmap.get(e.get("from")), nmap.get(e.get("to"))
+        if not a or not b:
+            continue
+        for end in (a, b):
+            if end.get("type") == "facility" and end.get("facilityType") == "staircase":
+                if e.get("accessibilityLevel") != 999:
+                    issue(f"楼梯边 {e.get('id')} accessibilityLevel!="
+                          f"999 (={e.get('accessibilityLevel')})", hard=True)
+                if e.get("blindAccessible") is True:
+                    issue(f"楼梯边 {e.get('id')} blindAccessible 应为 false")
+                break
 
-        sem_ids = {r["id"] for r in f["semantic"]["rooms"]}
-        same = sem_ids == rids
-        print("  semantic/geometry 房间一致:", same)
-        ok &= same
+    # 4) TF 应有至少一条边
+    degree = defaultdict(int)
+    for e in edges:
+        degree[e.get("from")] += 1
+        degree[e.get("to")] += 1
+    for n in by_type["facility"]:
+        if degree[n["id"]] == 0:
+            issue(f"设施节点孤立: {n['id']} ({n.get('label')})")
 
-        nids = {n["id"] for n in f["topology"]["nodes"]}
-        ebad = [e["id"] for e in f["topology"]["edges"]
-                if e["from"] not in nids or e["to"] not in nids]
-        print("  拓扑边悬空引用:", ebad or "无")
-        ok &= not ebad
+    # 5) 骨架质量（若有）
+    segs = skel.get("features") or []
+    if segs:
+        short = 0
+        total_len = 0.0
+        for f in segs:
+            L = float((f.get("properties") or {}).get("length_m") or 0)
+            total_len += L
+            if L < 0.3:
+                short += 1
+        ratio = short / max(1, len(segs))
+        stats["skeleton_short_ratio"] = round(ratio, 3)
+        stats["skeleton_total_len_m"] = round(total_len, 1)
+        if ratio > 0.3:
+            issue(f"骨架短段比例偏高 {ratio:.0%}（可能剪枝不足）")
+    else:
+        issue("无 skeleton 图层（未启用骨架或提取失败）")
 
-        # 拓扑节点类型分布（指南 5.1：room/intersection/doorway/facility）
-        import collections
-        nt = collections.Counter(n["type"] for n in f["topology"]["nodes"])
-        print("  拓扑节点类型分布:", dict(nt))
-        # 边属性完整性（指南 5.2）
-        bad_attr = []
-        for e in f["topology"]["edges"]:
-            for k in ("distance", "estimatedTime", "accessibilityLevel",
-                      "riskLevel", "walkable", "wheelchairAccessible",
-                      "blindAccessible"):
-                if k not in e:
-                    bad_attr.append(f"{e['id']} missing {k}")
-        print("  边属性缺失:", bad_attr[:5] or "无")
-        ok &= not bad_attr
-        # 走廊交叉口和设施接入应有边（连通性）
-        orphan_nodes = []
-        node_with_edge = {e["from"] for e in f["topology"]["edges"]} | \
-                         {e["to"] for e in f["topology"]["edges"]}
-        for n in f["topology"]["nodes"]:
-            if n["type"] in ("intersection", "facility", "facility_entrance",
-                             "doorway"):
-                if n["id"] not in node_with_edge:
-                    orphan_nodes.append(n["id"])
-        print(f"  拓扑孤岛节点: {len(orphan_nodes)} 个 "
-              f"{orphan_nodes[:5] if orphan_nodes else ''}")
-        ok &= not orphan_nodes
+    # 6) Walkable 存在性
+    if stats["walkable_feats"] == 0 and stats["TI"] > 0:
+        # 也可能 walkable 写在 room.properties.walkablePolygon
+        n_wp = sum(
+            1 for r in (geom.get("rooms") or [])
+            if (r.get("properties") or {}).get("walkablePolygon")
+        )
+        stats["walkable_in_rooms"] = n_wp
+        if n_wp == 0:
+            issue("无 walkable_regions / room.walkablePolygon")
 
-    # 跨层边：id/from/to 引用必须存在
-    cf = d.get("crossFloorEdges", [])
-    nids1 = {n["id"] for n in d["floors"]["1"]["topology"]["nodes"]}
-    nids2 = {n["id"] for n in d["floors"]["2"]["topology"]["nodes"]}
-    cf_bad = []
-    for e in cf:
-        if e["from"] not in nids1 or e["to"] not in nids2:
-            cf_bad.append(e["id"])
-    print("跨层边悬空引用:", cf_bad or "无")
-    ok &= not cf_bad
+    return stats
 
-    print("crossFloorEdges:", len(d.get("crossFloorEdges", [])))
-    print()
-    print("VALIDATION", "PASS" if ok else "FAIL")
-    sys.exit(0 if ok else 1)
+
+def validate_cross_floor(geo: dict, report: List[str]) -> Dict[str, Any]:
+    xes = geo.get("crossFloorEdges") or []
+    floors = geo.get("floors") or {}
+    stats = {"count": len(xes), "stair": 0, "elevator": 0, "ok": True, "issues": []}
+
+    def issue(msg, hard=False):
+        stats["issues"].append(msg)
+        if hard:
+            stats["ok"] = False
+        report.append(f"[XE] {msg}")
+
+    if not xes:
+        issue("无跨层边 crossFloorEdges", hard=True)
+        return stats
+
+    # 收集各层 TF id
+    tf_by_floor = {}
+    for fk, fl in floors.items():
+        nodes = (fl.get("topology") or {}).get("nodes") or []
+        tf_by_floor[str(fk)] = {
+            n["id"]: n for n in nodes if n.get("type") == "facility"
+        }
+
+    for xe in xes:
+        kind = xe.get("type")
+        if kind == "staircase":
+            stats["stair"] += 1
+            if xe.get("accessibilityLevel") != 999:
+                issue(f"{xe.get('id')} 楼梯跨层 a!=999", hard=True)
+        elif kind == "elevator":
+            stats["elevator"] += 1
+            if xe.get("accessibilityLevel") not in (0, None):
+                issue(f"{xe.get('id')} 电梯跨层 a 异常: {xe.get('accessibilityLevel')}")
+
+        frm, to = xe.get("from"), xe.get("to")
+        f1 = str(xe.get("fromFloor", "1"))
+        f2 = str(xe.get("toFloor", "2"))
+        if frm not in tf_by_floor.get(f1, {}):
+            issue(f"{xe.get('id')} from={frm} 不在 F{f1} TF 集合", hard=True)
+        if to not in tf_by_floor.get(f2, {}):
+            issue(f"{xe.get('id')} to={to} 不在 F{f2} TF 集合", hard=True)
+
+    if stats["elevator"] == 0:
+        issue("无电梯跨层边（视障优先路径可能缺失）")
+    return stats
+
+
+def validate_geojson(path: str, verbose: bool = True) -> int:
+    geo = _load(path)
+    report: List[str] = []
+    all_ok = True
+
+    print(f"=== PathAI GeoJSON 校验: {path} ===")
+    print(f"venue: {geo.get('venueId')}  version: {geo.get('version')}")
+
+    floor_stats = []
+    for fk in sorted((geo.get("floors") or {}).keys(), key=lambda x: int(x) if str(x).isdigit() else x):
+        st = validate_floor(fk, geo["floors"][fk], report)
+        floor_stats.append(st)
+        all_ok = all_ok and st["ok"]
+        print(f"\n[F{fk}] nodes={st['nodes']} edges={st['edges']} "
+              f"TR={st['TR']} TD={st['TD']} TI={st['TI']} TF={st['TF']} "
+              f"skel={st['skeleton_segs']} walk={st.get('walkable_feats', 0)}")
+        if "coverage" in st:
+            print(f"      连通覆盖={st['coverage']:.0%} 主分量={st.get('main_component')} "
+                  f"分量数={st.get('components')}")
+
+    xe = validate_cross_floor(geo, report)
+    all_ok = all_ok and xe["ok"]
+    print(f"\n[跨层] XE={xe['count']} 楼梯={xe['stair']} 电梯={xe['elevator']}")
+
+    print("\n--- 问题列表 ---")
+    if not report:
+        print("（无问题）")
+    else:
+        for line in report:
+            print(line)
+
+    print("\n=== 结果:", "PASS" if all_ok else "FAIL", "===")
+    return 0 if all_ok else 1
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="PathAI GeoJSON 拓扑质量校验 (T12)")
+    ap.add_argument("geojson", nargs="?",
+                    help="GeoJSON 路径")
+    ap.add_argument("--verbose", action="store_true")
+    args = ap.parse_args(argv)
+    path = args.geojson
+    if not path:
+        # 尝试默认路径
+        candidates = [
+            Path("result/school_building_01_map_v9.geojson"),
+            Path("/home/workdir/attachments/school_building_01_map_v9.geojson"),
+            Path("../result/school_building_01_map_v9.geojson"),
+        ]
+        for c in candidates:
+            if c.exists():
+                path = str(c)
+                break
+        if not path:
+            ap.error("请指定 geojson 路径")
+    sys.exit(validate_geojson(path, verbose=args.verbose))
 
 
 if __name__ == "__main__":

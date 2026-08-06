@@ -84,6 +84,138 @@ def _dist(a, b):
     return math.hypot(ax - bx, ay - by)
 
 
+def bridge_disconnected_components(
+    floor_no,
+    nodes,
+    edges,
+    min_island_nodes=8,
+    max_bridge_dist_m=120.0,
+    bridges_per_island=2,
+):
+    """
+    同层断连补边：当存在较大「导航孤岛」（如被屋顶平台隔开的东翼）时，
+    在孤岛与主分量的最近 intersection（走道）节点之间添加临时走廊边。
+
+    边属性（视障不可用）：
+      accessibilityLevel=999, blindAccessible=False,
+      linkType=cross_wing_platform, riskLevel=8
+    轮椅仍可用（平台可走）。
+
+    不修改原有边，仅追加；无足够大的孤岛时返回原 edges。
+    """
+    if not nodes or not edges:
+        return edges
+
+    nmap = {n["id"]: n for n in nodes}
+    adj = collections.defaultdict(set)
+    for e in edges:
+        a, b = e.get("from"), e.get("to")
+        if a in nmap and b in nmap:
+            adj[a].add(b)
+            adj[b].add(a)
+
+    seen = set()
+    comps = []
+    for nid in nmap:
+        if nid in seen:
+            continue
+        stack = [nid]
+        seen.add(nid)
+        comp = {nid}
+        while stack:
+            u = stack.pop()
+            for v in adj[u]:
+                if v not in seen:
+                    seen.add(v)
+                    comp.add(v)
+                    stack.append(v)
+        comps.append(comp)
+    comps.sort(key=len, reverse=True)
+    if len(comps) < 2:
+        return edges
+
+    main = comps[0]
+    # 仅处理规模达到阈值的孤岛（避免给单个无门卫生间补边）
+    islands = [c for c in comps[1:] if len(c) >= min_island_nodes]
+    if not islands:
+        return edges
+
+    def ti_nodes(comp):
+        out = []
+        for nid in comp:
+            n = nmap[nid]
+            if n.get("type") == "intersection":
+                out.append(n)
+        # 无 TI 时退化为 doorway
+        if not out:
+            for nid in comp:
+                n = nmap[nid]
+                if n.get("type") == "doorway":
+                    out.append(n)
+        return out
+
+    # 下一 TE 序号
+    edge_seq = 0
+    for e in edges:
+        eid = e.get("id") or ""
+        try:
+            # F2-TE-0182
+            edge_seq = max(edge_seq, int(eid.rsplit("-", 1)[-1]))
+        except (ValueError, IndexError):
+            pass
+
+    main_ti = ti_nodes(main)
+    if not main_ti:
+        return edges
+
+    new_edges = []
+    for island in islands:
+        isl_ti = ti_nodes(island)
+        if not isl_ti:
+            continue
+        pairs = []
+        for a in isl_ti:
+            ax, ay = _to_xy(a.get("coordinates"))
+            for b in main_ti:
+                bx, by = _to_xy(b.get("coordinates"))
+                d = math.hypot(ax - bx, ay - by)
+                if d <= max_bridge_dist_m:
+                    pairs.append((d, a["id"], b["id"]))
+        pairs.sort()
+        used_i, used_m = set(), set()
+        added = 0
+        for d, ai, bi in pairs:
+            if ai in used_i:
+                continue
+            edge_seq += 1
+            new_edges.append({
+                "id": obj_id(_floor_tag(floor_no), OBJ_TYPE["topo_edge"], edge_seq),
+                "from": ai,
+                "to": bi,
+                "distance": round(float(d), 2),
+                "estimatedTime": round(float(d) / BLIND_WALK_SPEED, 1),
+                "accessibilityLevel": 999,
+                "riskLevel": 8,
+                "walkable": True,
+                "wheelchairAccessible": True,
+                "blindAccessible": False,
+                "linkType": "cross_wing_platform",
+                "note": "临时跨翼连接（开放平台/屋面分隔区域），视障人士不可用",
+            })
+            used_i.add(ai)
+            used_m.add(bi)
+            added += 1
+            if added >= bridges_per_island:
+                break
+        if added:
+            print(f"[F{floor_no}] 跨翼补边: 孤岛{len(island)}节点 → 主分量 "
+                  f"新增 {added} 条 (blindAccessible=false)")
+
+    if new_edges:
+        edges = list(edges) + new_edges
+    return edges
+
+
 def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                          corridor_adjacency=None, extra_nodes=None):
     """
@@ -327,53 +459,80 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         if best_rnid:
             add_edge(cnid, best_rnid, best_rd)
 
+    # 同层大孤岛补边（如 F2 东翼被屋顶平台隔开）：视障不可用
+    edges = bridge_disconnected_components(floor_no, nodes, edges)
+
     return {"nodes": nodes, "edges": edges}
 
 
 def build_cross_floor_edges(f1, f2, floor_height_m=4.2):
     """
-    跨楼层边：F1<->F2 之间通过同名楼梯/电梯配对（按米制中心距离 <2.5m 视为同一井道）。
-    距离 = 水平距离 + 楼层高差；楼梯对视障禁用，电梯无障碍优先。
+    T10: 跨楼层边配对。
+
+    优先按设施编号（properties.code，如 II-B2-01#ST）配对；
+    无编号时退化为中心距离 <2.5m。
+    TF 编号约定：先楼梯(1..ns)后电梯(ns+1..)，与骨架/质心拓扑一致。
     """
     edges = []
 
     def center_m(feat):
         return feat["properties"]["centroid"]
 
+    def code_of(feat):
+        return (feat.get("properties") or {}).get("code") or None
+
     ns1 = len(f1.get("stairs", []))
     ns2 = len(f2.get("stairs", []))
     for kind, key, blind_ok, t_cross in (
             ("staircase", "stairs", False, 60.0),
             ("elevator", "elevators", True, 15.0)):
-        for i, s1 in enumerate(f1.get(key, [])):
+        feats1 = f1.get(key, []) or []
+        feats2 = f2.get(key, []) or []
+        codes2 = {code_of(s2): j for j, s2 in enumerate(feats2) if code_of(s2)}
+        used2 = set()
+        for i, s1 in enumerate(feats1):
             c1 = center_m(s1)
-            best, best_d = None, 2.5
-            for j, s2 in enumerate(f2.get(key, [])):
-                c2 = center_m(s2)
-                d = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
-                if d < best_d:
-                    best, best_d = j, d
-            if best is not None:
-                # 拓扑设施节点顺序：先楼梯(1..ns)后电梯(ns+1..)，引用对应 TF 编号
-                if kind == "staircase":
-                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], i + 1)
-                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], best + 1)
-                else:
-                    nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], ns1 + i + 1)
-                    nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], ns2 + best + 1)
-                edges.append({
-                    "id": obj_id("FX", OBJ_TYPE["cross_edge"], len(edges) + 1),
-                    "from": nid_src,
-                    "to": nid_dst,
-                    "fromFloor": 1,
-                    "toFloor": 2,
-                    "type": kind,
-                    "distance": floor_height_m,
-                    "estimatedTime": t_cross,
-                    "accessibilityLevel": 999 if kind == "staircase" else 0,
-                    "riskLevel": 10 if kind == "staircase" else 1,
-                    "walkable": True,
-                    "wheelchairAccessible": blind_ok,
-                    "blindAccessible": blind_ok,
-                })
+            code = code_of(s1)
+            best = codes2.get(code) if code else None
+            matched_by = "code" if best is not None else None
+            if best is None:
+                best_d = 2.5
+                for j, s2 in enumerate(feats2):
+                    if j in used2:
+                        continue
+                    # 已被编号占用的目标不参与几何配对
+                    if code_of(s2) and code_of(s2) in codes2:
+                        continue
+                    c2 = center_m(s2)
+                    d = math.hypot(c1[0] - c2[0], c1[1] - c2[1])
+                    if d < best_d:
+                        best, best_d = j, d
+                if best is not None:
+                    matched_by = "geometry"
+            if best is None:
+                continue
+            used2.add(best)
+            if kind == "staircase":
+                nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], i + 1)
+                nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], best + 1)
+            else:
+                nid_src = obj_id("F1", OBJ_TYPE["topo_facility"], ns1 + i + 1)
+                nid_dst = obj_id("F2", OBJ_TYPE["topo_facility"], ns2 + best + 1)
+            edges.append({
+                "id": obj_id("FX", OBJ_TYPE["cross_edge"], len(edges) + 1),
+                "code": code,
+                "from": nid_src,
+                "to": nid_dst,
+                "fromFloor": 1,
+                "toFloor": 2,
+                "type": kind,
+                "matchedBy": matched_by,
+                "distance": floor_height_m,
+                "estimatedTime": t_cross,
+                "accessibilityLevel": 999 if kind == "staircase" else 0,
+                "riskLevel": 10 if kind == "staircase" else 1,
+                "walkable": True,
+                "wheelchairAccessible": blind_ok,
+                "blindAccessible": blind_ok,
+            })
     return edges

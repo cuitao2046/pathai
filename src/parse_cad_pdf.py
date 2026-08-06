@@ -32,6 +32,13 @@ from shapely import snap as shp_snap
 
 # 拓扑建模（指南 第五章）
 from topology import build_floor_topology, build_cross_floor_edges, obj_id, OBJ_TYPE
+
+try:
+    from skeleton.pipeline import build_skeleton_topology
+    _HAS_SKELETON = True
+except ImportError:
+    _HAS_SKELETON = False
+    build_skeleton_topology = None  # type: ignore
 # 复用渲染脚本的建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
 # 用于 walkable 沿外墙裁剪，避免走廊多边形延伸到户外紧贴墙体的位置。
 from render_interactive import building_outline
@@ -50,6 +57,10 @@ OUT_GEOJSON = str(RESULT_DIR / "school_building_01_map_v9.geojson")
 SCALE = 0.0529          # 米 / pt
 ORIGIN_X = 2019.1       # pt
 ORIGIN_Y = 1154.8       # pt
+
+# Phase2+ 骨架导航管线开关（T3–T8）。True 时用中轴拓扑替代质心最近邻。
+USE_SKELETON = True
+SKELETON_RESOLUTION = 0.08  # 米/像素；0.05 更精但更慢
 
 # 需要解析的语义图层（仅当其在 PDF 中默认 ON 时才解析）
 LAYER_WALL = "WALL"
@@ -2928,11 +2939,77 @@ def build_geojson(f1, f2):
                 "facilityType": "accessible_entrance" if "无障碍" in label
                                 else "entrance",
             })
-        topo = build_floor_topology(floor_no, data["rooms"], doors_for_topo,
-                                    stairs, elevators,
-                                    extra_nodes=extra_nodes)
-        nodes = topo["nodes"]
-        edges = topo["edges"]
+        skeleton_fc = {"type": "FeatureCollection", "features": []}
+        walkable_fc = {"type": "FeatureCollection", "features": []}
+        # 收集 walkable（米制）供骨架
+        walkable_by_rid = {}
+        for r in data["rooms"]:
+            wp = r.get("walkable_poly_pt")
+            if wp is None or getattr(wp, "is_empty", True):
+                continue
+            # pt → m
+            def _pt_poly_to_m(g):
+                if g is None or g.is_empty:
+                    return g
+                if g.geom_type == "Polygon":
+                    ext = [list(pt2m((x, y))) for x, y in g.exterior.coords]
+                    # shapely 2.x 的 g.interiors 是 LinearRing，需 .coords 迭代
+                    holes = [[list(pt2m((x, y))) for x, y in ring.coords]
+                             for ring in g.interiors]
+                    return Polygon(ext, holes)
+                if g.geom_type == "MultiPolygon":
+                    return MultiPolygon([_pt_poly_to_m(p) for p in g.geoms])
+                return g
+            wp_m = _pt_poly_to_m(wp)
+            walkable_by_rid[r["id"]] = wp_m
+            walkable_fc["features"].append({
+                "type": "Feature",
+                "id": r["id"] + "-WP",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [list(c) for c in wp_m.exterior.coords]
+                    ] if wp_m.geom_type == "Polygon" else [],
+                },
+                "properties": {
+                    "type": "walkable",
+                    "roomId": r["id"],
+                    "roomType": r.get("roomType"),
+                    "label": r.get("label"),
+                },
+            })
+
+        use_sk = bool(USE_SKELETON and _HAS_SKELETON and walkable_by_rid)
+        if use_sk:
+            try:
+                topo = build_skeleton_topology(
+                    int(floor_no), data["rooms"], doors_for_topo,
+                    stairs, elevators,
+                    walkable_by_room_id=walkable_by_rid,
+                    extra_nodes=extra_nodes,
+                    resolution=SKELETON_RESOLUTION,
+                    obj_type=OBJ_TYPE,
+                )
+                nodes = topo["nodes"]
+                edges = topo["edges"]
+                skeleton_fc["features"] = topo.get("skeleton_features") or []
+                meta = topo.get("skeleton_meta") or {}
+                print(f"[F{floor_no}] 骨架拓扑: TI={meta.get('junction_count',0)} "
+                      f"段={meta.get('segment_count',0)} "
+                      f"节点={len(nodes)} 边={len(edges)}")
+            except Exception as e:
+                print(f"    [WARN] 骨架拓扑失败，回退质心拓扑: {e}")
+                topo = build_floor_topology(
+                    floor_no, data["rooms"], doors_for_topo,
+                    stairs, elevators, extra_nodes=extra_nodes)
+                nodes, edges = topo["nodes"], topo["edges"]
+        else:
+            if USE_SKELETON and not _HAS_SKELETON:
+                print(f"[F{floor_no}] 未找到 skeleton 包，使用质心拓扑")
+            topo = build_floor_topology(
+                floor_no, data["rooms"], doors_for_topo,
+                stairs, elevators, extra_nodes=extra_nodes)
+            nodes, edges = topo["nodes"], topo["edges"]
 
         return {
             "geometry": {
@@ -2942,6 +3019,8 @@ def build_geojson(f1, f2):
             },
             "semantic": {"rooms": rooms_s},
             "topology": {"nodes": nodes, "edges": edges},
+            "skeleton": skeleton_fc,
+            "walkable_regions": walkable_fc,
             "accessibility": {
                 "elevators": a11y_elevators,
                 "riskNodes": risk_nodes,
@@ -3037,10 +3116,24 @@ def build_geojson(f1, f2):
     }
 
 
-def main():
+def main(argv=None):
+    import argparse
+    global USE_SKELETON
+    ap = argparse.ArgumentParser(description="PathAI CAD PDF → GeoJSON")
+    ap.add_argument("--use-skeleton", dest="use_skeleton", action="store_true",
+                    default=None, help="启用中轴骨架拓扑（默认看 USE_SKELETON）")
+    ap.add_argument("--no-skeleton", dest="no_skeleton", action="store_true",
+                    help="禁用骨架拓扑，使用质心最近邻")
+    args = ap.parse_args(argv)
+    if args.no_skeleton:
+        USE_SKELETON = False
+    elif args.use_skeleton:
+        USE_SKELETON = True
+
     f1 = parse_floor(PDF_F1, 1)
     f2 = parse_floor(PDF_F2, 2)
     geo = build_geojson(f1, f2)
+    RESULT_DIR.mkdir(parents=True, exist_ok=True)
     with open(OUT_GEOJSON, "w", encoding="utf-8") as fp:
         json.dump(geo, fp, ensure_ascii=False, indent=2)
     for fl, data in (("1", f1), ("2", f2)):

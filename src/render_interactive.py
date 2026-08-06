@@ -405,6 +405,8 @@ svg {{ display: block; background: #fff; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
 .layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; pointer-events: none; }}
+.layer_skeleton path, .layer_skeleton polyline {{ stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }}
+.layer_skeleton_node circle {{ fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
@@ -475,6 +477,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('lobby_elevator', this.checked)"> 电梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('lobby_stair', this.checked)"> 楼梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('skeleton', this.checked)"> 走廊骨架</label>
+  <label><input type="checkbox" onchange="toggleLayer('skeleton_node', this.checked)"> 骨架交叉口</label>
   <label><input type="checkbox" checked onchange="toggleLayer('wall', this.checked)"> 墙体</label>
   <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
   <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
@@ -572,6 +576,46 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     )
         if n_walk:
             print(f"  [F{fk}] 可通行区域图层: {n_walk} 个")
+
+        # 1b. 走廊中轴骨架（T3–T5，来自 floors.N.skeleton）
+        skel_fc = fd.get("skeleton") or {}
+        skel_feats = skel_fc.get("features") or []
+        n_skel = 0
+        for feat in skel_feats:
+            geom_s = feat.get("geometry") or {}
+            if geom_s.get("type") != "LineString":
+                continue
+            coords = geom_s.get("coordinates") or []
+            if len(coords) < 2:
+                continue
+            pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}" for x, y in coords)
+            L = (feat.get("properties") or {}).get("length_m", "")
+            tip = f"骨架段 {feat.get('id','')}\n长度: {L}m"
+            parts.append(
+                f'<g class="layer_skeleton"><polyline points="{pts}" '
+                f'fill="none" stroke="#00ACC1" stroke-width="1.4" '
+                f'opacity="0.85"><title>{tip}</title></polyline></g>\n'
+            )
+            n_skel += 1
+        # 骨架交叉口（TI 中 type=intersection 且来自骨架）
+        n_junc = 0
+        for n in (topo.get("nodes") or []):
+            if n.get("type") != "intersection":
+                continue
+            # 仅当有骨架时绘制红色交叉口点，避免与旧质心 TI 混淆过多
+            if not skel_feats:
+                break
+            cx, cy = n.get("coordinates") or [0, 0]
+            sx, sy = tosvg(cx, cy)
+            parts.append(
+                f'<g class="layer_skeleton_node">'
+                f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="2.2" '
+                f'fill="#E53935" stroke="#B71C1C" stroke-width="0.5"/>'
+                f'</g>\n'
+            )
+            n_junc += 1
+        if n_skel:
+            print(f"  [F{fk}] 走廊骨架: {n_skel} 段, 交叉口标记 {n_junc} 个")
 
         # 2. 房间
         n_skip_bbox = 0
@@ -1175,7 +1219,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','wall','window','stairs','elevator','column','building_outline',
+var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
