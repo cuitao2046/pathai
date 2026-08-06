@@ -35,3 +35,13 @@ result/*
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+
+# 探索性/实验性代码目录（非规范源码，本地保留不入库）
+src/adjcent/
+src/fix/
+src/optimize/
+src/optimize_v2/
+src/pathai_src/
+debug/conn/
+debug/heban/
+debug/_heban_mask_crop.png
