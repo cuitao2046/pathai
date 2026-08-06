@@ -156,7 +156,9 @@ ROOM_TYPE_RULES = [
     ("门厅无障碍出入口", "accessible_entrance"),
     ("无障碍出入口", "accessible_entrance"),
     ("人防主出入口", "entrance"), ("出入口", "entrance"),
-    ("教室", "classroom"), ("合班", "classroom"), ("书法", "classroom"), ("美术", "classroom"),
+    # 合班教室 = 大型封闭教室，禁止当公共/开放空间
+    ("合班教室", "classroom"), ("合班", "classroom"),
+    ("教室", "classroom"), ("书法", "classroom"), ("美术", "classroom"),
     ("音乐", "classroom"), ("实验室", "lab"),
     (" resource", "classroom"), (" resource教室", "classroom"),
     ("办公", "office"), ("会议", "meeting"), ("接待", "meeting"),
@@ -1678,6 +1680,12 @@ def snap(geom, target, tol):
 
 
 def classify_room_type(label):
+    # 合班教室：始终为封闭教室，不得落入 corridor/lobby/activity 等开放类型
+    if label and ("合班教室" in label or ( "合班" in label and "教室" in label)):
+        return "classroom"
+    if label and "合班" in label and not any(
+            k in label for k in ("走道", "走廊", "门厅", "大厅")):
+        return "classroom"
     for kw, tp in ROOM_TYPE_RULES:
         if kw in label:
             return tp
@@ -1906,6 +1914,166 @@ def classify_elevator_stair_lobby(rooms, stair_boxes, evtr_boxes,
             r["roomType"] = "stair_lobby"
             n_re += 1
     return n_re
+
+
+
+def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no):
+    """
+    合班教室注入（隔离版）：只服务合班自身，不影响其他空间。
+
+    约束：
+      1) 占位几何极小（~3m 方），不裁切/覆盖其他房间 polygon；
+      2) 只「追加」门归属，从不删除其它 room id；
+      3) 不抢已明确归属其它封闭房间的门；
+      4) 不修改其它房间的 roomType / walkable。
+    """
+    if not labels_with_pt:
+        return 0
+
+    OPEN = {"corridor", "lobby", "activity", "atrium",
+            "elevator_lobby", "stair_lobby", "entrance", "accessible_entrance"}
+    room_by_id = {r["id"]: r for r in rooms}
+
+    def _lab(r):
+        return r.get("label") or ""
+
+    def _door_free_for_heban(dr):
+        """门未被其它封闭房间独占时才可挂合班。"""
+        for rid in dr.get("rooms") or []:
+            r = room_by_id.get(rid)
+            if r is None:
+                continue
+            if "合班" in _lab(r):
+                continue
+            rt = r.get("roomType") or ""
+            if rt not in OPEN and rt != "shaft":
+                # 已属于教室/办公/卫生间等封闭空间 → 不抢
+                return False
+        return True
+
+    targets = [r for r in rooms if "合班" in _lab(r)]
+
+    if not targets:
+        for entry in labels_with_pt:
+            label = entry[0]
+            pt_pt = entry[1]
+            if "合班" not in label:
+                continue
+            # 标签是否已落在某个已有封闭房间内？若是则不注入，避免叠房间
+            cx_m, cy_m = pt2m(pt_pt)
+            skip = False
+            for r in rooms:
+                if r.get("roomType") in OPEN:
+                    continue
+                poly = r.get("polygon_pt")
+                if poly is None or getattr(poly, "is_empty", True):
+                    continue
+                try:
+                    if poly.contains(Point(pt_pt[0], pt_pt[1])):
+                        skip = True
+                        break
+                except Exception:
+                    pass
+            if skip:
+                print(f"[F{floor_no}] 合班标签已在其它封闭房间内，跳过注入")
+                continue
+
+            def m2pt(xm, ym):
+                return (xm / SCALE + ORIGIN_X, ORIGIN_Y - ym / SCALE)
+
+            # 极小占位（3m×3m），仅作拓扑质心，降低压盖邻室风险
+            half = 1.5
+            corners_m = [
+                (cx_m - half, cy_m - half),
+                (cx_m + half, cy_m - half),
+                (cx_m + half, cy_m + half),
+                (cx_m - half, cy_m + half),
+            ]
+            corners_pt = [m2pt(x, y) for x, y in corners_m]
+            poly = Polygon(corners_pt)
+            # 若与其它封闭房间相交，尝试差集；失败则仍用小方块（拓扑用）
+            try:
+                others = []
+                for r in rooms:
+                    if r.get("roomType") in OPEN:
+                        continue
+                    op = r.get("polygon_pt")
+                    if op is not None and not getattr(op, "is_empty", True):
+                        others.append(op)
+                if others:
+                    diff = poly.difference(unary_union(others))
+                    if not diff.is_empty:
+                        if diff.geom_type == "Polygon":
+                            poly = diff
+                        elif diff.geom_type == "MultiPolygon" and diff.geoms:
+                            poly = max(diff.geoms, key=lambda g: g.area)
+            except Exception:
+                pass
+
+            seq = sum(1 for r in rooms if "-RM-" in str(r.get("id", ""))) + 1
+            rid = obj_id(f"F{floor_no}", OBJ_TYPE["room"], seq)
+            used_ids = {r["id"] for r in rooms}
+            while rid in used_ids:
+                seq += 1
+                rid = obj_id(f"F{floor_no}", OBJ_TYPE["room"], seq)
+
+            coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
+            room = {
+                "id": rid,
+                "label": label if "教室" in label else "合班教室",
+                "roomType": "classroom",
+                "polygon_pt": poly,
+                "centroid_pt": (pt_pt[0], pt_pt[1]),
+                "coords_m": coords_m,
+                "centroid_m": [cx_m, cy_m],
+                "area_m2": round(float(poly.area) * (SCALE ** 2), 2),
+                "synthetic": True,
+                "source": "heban_inject",
+            }
+            rooms.append(room)
+            room_by_id[rid] = room
+            targets.append(room)
+            print(f"[F{floor_no}] 注入合班教室(隔离): {rid} @ "
+                  f"({cx_m:.1f},{cy_m:.1f}) 占位≈{room['area_m2']}m²")
+
+    if not targets:
+        return 0
+
+    for room in targets:
+        cx, cy = room["centroid_m"][0], room["centroid_m"][1]
+        cand = []
+        for dr in doors:
+            if not _door_free_for_heban(dr):
+                continue
+            dpt = dr.get("center")
+            if not dpt:
+                continue
+            dm = pt2m(dpt)
+            dist = math.hypot(dm[0] - cx, dm[1] - cy)
+            if dist > 10.0:  # 收紧，减少误挂
+                continue
+            pri = 0 if dr.get("kind") == "fire" else (
+                1 if dr.get("kind") == "opening" else 2)
+            cand.append((pri, dist, dr))
+        cand.sort()
+        picked = []
+        for pri, dist, dr in cand:
+            if len(picked) >= 2:  # 最多 2 扇，避免吸走走廊门
+                break
+            if len(picked) >= 1 and dist > 8.0:
+                break
+            picked.append((dist, dr))
+        for dist, dr in picked:
+            rooms_list = dr.setdefault("rooms", [])
+            if room["id"] not in rooms_list:
+                rooms_list.append(room["id"])  # 只追加，不删原有
+        if not picked:
+            print(f"[F{floor_no}] 警告: 合班 {room['id']} 无可用门"
+                  f"（近门均已属其它封闭房间或过远）")
+        else:
+            print(f"[F{floor_no}] 合班 {room['id']} 关联门 {len(picked)} 扇"
+                  f"（只追加, 最近 {picked[0][0]:.1f}m）")
+    return len(targets)
 
 
 def parse_floor(pdf_path, floor_no):
@@ -2256,6 +2424,23 @@ def parse_floor(pdf_path, floor_no):
         injected += 1
     print(f"[F{floor_no}] 含楼梯间后房间数: {len(rooms)} (新注入 {injected})")
 
+    # --- 合班教室类型纠正：仅改自身 label 含「合班」的房间，不动其它空间 ---
+    _OPEN_FORCE = {"corridor", "lobby", "activity", "atrium",
+                   "elevator_lobby", "stair_lobby"}
+    n_heban = 0
+    for r in rooms:
+        lab = r.get("label") or ""
+        if "合班" not in lab:
+            continue
+        if r.get("roomType") in _OPEN_FORCE or r.get("roomType") != "classroom":
+            r["roomType"] = "classroom"
+            n_heban += 1
+        # 只清合班自己的 walkable，避免它进入公共骨架；不改其它房间
+        if r.get("roomType") == "classroom":
+            r.pop("walkable_poly_pt", None)
+    if n_heban:
+        print(f"[F{floor_no}] 合班教室类型纠正(仅自身): {n_heban} 处 → classroom")
+
     # --- 门洞归属 pass 0：门弧中点（摆动侧）落在房间内部 -> 该房间所有。
     #     门向内开，弧必然鼓入所服务房间；这是最可靠的归属信号
     #     （如 MGD1124 弧鼓入乐器存放室而非相邻的音乐教室）
@@ -2535,6 +2720,9 @@ def parse_floor(pdf_path, floor_no):
 
     # 注：Walkable Polygon 生成已移至 build_geojson（reconcile_facilities 补齐
     # 楼梯/电梯 bbox 之后），保证扣除用的井道列表与最终 GeoJSON 一致。
+
+    # 合班教室：墙未闭合时注入封闭房间并关联门洞 → 可导航至门口
+    inject_heban_classroom_rooms(rooms, doors, room_names, floor_no)
 
     return {
         "rooms": rooms,
@@ -2920,17 +3108,21 @@ def build_geojson(f1, f2):
                 "width_pt": dr["width_pt"],
                 "rooms": dr["rooms"],
             })
-        # 额外 facility_entrance 节点：未匹配到房间多边形但语义属于公共空间的标签
-        # （无障碍出入口/门厅/人防主出入口/合班教室/图书资料室等），按坐标就近接入拓扑
+        # 额外 facility_entrance 节点：仅真正公共出入口/门厅等。
+        # 合班教室是封闭大教室，不进 extra_nodes（避免当公共入口）。
         extra_nodes = []
         used_labels = {r["label"] for r in data["rooms"]}
+        _PUBLIC_EXTRA_KW = ("门厅", "出入口", "传达", "前台")
+        # 明确排除的封闭空间关键词（即使未匹配到房间多边形也不当公共入口）
+        _ENCLOSED_EXTRA_SKIP = ("合班", "教室", "图书", "资料室", "办公室",
+                                "会议室", "实验室", "卫生间", "楼梯", "电梯")
         for entry in data.get("labels_all_with_pt", []):
             label, pt_pt = entry[0], entry[1]
             if label in used_labels:
                 continue
-            if not any(k in label for k in ("门厅", "出入口", "合班", "图书",
-                                             "传达", "前台", "活动", "心理",
-                                             "辅导", "社团", "管理", "管控")):
+            if any(k in label for k in _ENCLOSED_EXTRA_SKIP):
+                continue
+            if not any(k in label for k in _PUBLIC_EXTRA_KW):
                 continue
             cx, cy = pt2m(pt_pt)
             extra_nodes.append({
