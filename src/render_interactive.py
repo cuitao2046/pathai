@@ -402,7 +402,7 @@ svg {{ display: block; background: #fff; }}
 .layer_stairs polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
-.layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.55; pointer-events: none; }}
+.layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; pointer-events: none; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
@@ -544,7 +544,28 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             f'<text x="200" y="{fbase_y + 26}" font-size="9" fill="#999">{stats}</text>\n'
         )
 
-        # 1. 房间
+        # 1. 可通行区域（Walkable Polygon，T1：公共空间扣除柱子/井道/墙体障碍物）
+        # 画在最底层：房间/前室颜色在其上，避免绿色覆盖电梯/楼梯前室等类型色
+        n_walk = 0
+        for r in geom.get("rooms", []):
+            wp = r["properties"].get("walkablePolygon")
+            if not wp:
+                continue
+            n_walk += 1
+            for rings in wp["coordinates"]:
+                for ri, ring in enumerate(rings):
+                    pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}"
+                                   for x, y in ring)
+                    # 外环浅绿填充；内环（柱洞）仅描边不填充
+                    fill = "none" if ri > 0 else "#A5D6A7"
+                    parts.append(
+                        f'<g class="layer_walkable"><polygon points="{pts}" '
+                        f'fill="{fill}" stroke="#43A047" stroke-width="0.4"/></g>\n'
+                    )
+        if n_walk:
+            print(f"  [F{fk}] 可通行区域图层: {n_walk} 个")
+
+        # 2. 房间
         n_skip_bbox = 0
         for r in geom.get("rooms", []):
             ring = r["geometry"]["coordinates"][0]
@@ -598,26 +619,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
         if n_skip_bbox:
             print(f"  [F{fk}] 跳过 {n_skip_bbox} 个文字标签包围盒（面积<{LABEL_BBOX_MAX_AREA}m² 且长宽比≥{LABEL_BBOX_MIN_ASPECT}）")
-
-        # 1.5 可通行区域（Walkable Polygon，T1：公共空间扣除柱子/井道/墙体障碍物）
-        n_walk = 0
-        for r in geom.get("rooms", []):
-            wp = r["properties"].get("walkablePolygon")
-            if not wp:
-                continue
-            n_walk += 1
-            for rings in wp["coordinates"]:
-                for ri, ring in enumerate(rings):
-                    pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}"
-                                   for x, y in ring)
-                    # 外环浅绿填充；内环（柱洞）仅描边不填充
-                    fill = "none" if ri > 0 else "#A5D6A7"
-                    parts.append(
-                        f'<g class="layer_walkable"><polygon points="{pts}" '
-                        f'fill="{fill}" stroke="#43A047" stroke-width="0.4"/></g>\n'
-                    )
-        if n_walk:
-            print(f"  [F{fk}] 可通行区域图层: {n_walk} 个")
 
         # 2. 墙体
         for w in geom.get("walls", []):
