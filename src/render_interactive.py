@@ -38,6 +38,7 @@ ROOM_COLORS = {
     "reception": "#FCE4EC", "shaft": "#ECEFF1", "atrium": "#FAFAFA",
     "library": "#DCEDC8", "activity": "#E1F5FE", "entrance": "#C8E6C9",
     "accessible_entrance": "#BBDEFB", "room": "#FAFAFA", "other": "#FAFAFA",
+    "elevator_lobby": "#FFE0B2", "stair_lobby": "#D7CCC8",
 }
 DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449"}
 # 门类型中文名（与 topology.py 的 doorway 节点 label 保持一致）

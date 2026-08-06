@@ -72697,7 +72697,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F1-CR-0050",
               "code": "",
@@ -72705,9 +72705,9 @@
                 -37.36885950392675,
                 18.24499313239975
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -73716,7 +73716,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F1-CR-0051",
               "code": "",
@@ -73724,9 +73724,9 @@
                 -37.98204370341156,
                 4.514465027896493
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -76678,7 +76678,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F1-CR-0053",
               "code": "",
@@ -76686,9 +76686,9 @@
                 -32.28663297637261,
                 -75.8250127097024
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -79696,7 +79696,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F1-CR-0055",
               "code": "",
@@ -79704,9 +79704,9 @@
                 -24.979552927805795,
                 -81.43894931780984
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -83381,7 +83381,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F1-CR-0060",
               "code": "",
@@ -83389,9 +83389,9 @@
                 -20.929222292523086,
                 -55.17214557287633
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -83852,7 +83852,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F1-CR-0061",
               "code": "",
@@ -83860,9 +83860,9 @@
                 -14.888737457355921,
                 -55.34956013474039
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -84047,7 +84047,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F1-CR-0062",
               "code": "",
@@ -84055,9 +84055,9 @@
                 -40.2029244430676,
                 -58.54694349773837
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -99949,30 +99949,30 @@
           },
           {
             "id": "F1-CR-0050",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -37.36885950392675,
               18.24499313239975
             ],
             "geometryId": "F1-CR-0050",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
             "id": "F1-CR-0051",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -37.98204370341156,
               4.514465027896493
             ],
             "geometryId": "F1-CR-0051",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
@@ -99991,16 +99991,16 @@
           },
           {
             "id": "F1-CR-0053",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -32.28663297637261,
               -75.8250127097024
             ],
             "geometryId": "F1-CR-0053",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
@@ -100019,16 +100019,16 @@
           },
           {
             "id": "F1-CR-0055",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -24.979552927805795,
               -81.43894931780984
             ],
             "geometryId": "F1-CR-0055",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
@@ -100089,44 +100089,44 @@
           },
           {
             "id": "F1-CR-0060",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -20.929222292523086,
               -55.17214557287633
             ],
             "geometryId": "F1-CR-0060",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
             "id": "F1-CR-0061",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -14.888737457355921,
               -55.34956013474039
             ],
             "geometryId": "F1-CR-0061",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
             "id": "F1-CR-0062",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -40.2029244430676,
               -58.54694349773837
             ],
             "geometryId": "F1-CR-0062",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 1
           },
           {
@@ -102831,7 +102831,7 @@
           {
             "id": "F1-TI-0009",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F1-CR-0050",
             "label": "走道",
             "coordinates": [
@@ -102842,7 +102842,7 @@
           {
             "id": "F1-TI-0010",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F1-CR-0051",
             "label": "走道",
             "coordinates": [
@@ -102864,7 +102864,7 @@
           {
             "id": "F1-TI-0012",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F1-CR-0053",
             "label": "走道",
             "coordinates": [
@@ -102886,7 +102886,7 @@
           {
             "id": "F1-TI-0014",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F1-CR-0055",
             "label": "走道",
             "coordinates": [
@@ -102941,7 +102941,7 @@
           {
             "id": "F1-TI-0019",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F1-CR-0060",
             "label": "走道",
             "coordinates": [
@@ -102952,7 +102952,7 @@
           {
             "id": "F1-TI-0020",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F1-CR-0061",
             "label": "走道",
             "coordinates": [
@@ -102963,7 +102963,7 @@
           {
             "id": "F1-TI-0021",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F1-CR-0062",
             "label": "走道",
             "coordinates": [
@@ -158843,7 +158843,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0036",
               "code": "",
@@ -158851,9 +158851,9 @@
                 -66.89776470888955,
                 -20.69693098042789
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -160134,7 +160134,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0037",
               "code": "",
@@ -160142,9 +160142,9 @@
                 -62.998847933528815,
                 -8.866183801534257
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -162300,7 +162300,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0039",
               "code": "",
@@ -162308,9 +162308,9 @@
                 -37.6236846366511,
                 18.10603809194898
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -163319,7 +163319,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0040",
               "code": "",
@@ -163327,9 +163327,9 @@
                 -34.42808876805955,
                 4.297161115613966
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -165529,7 +165529,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F2-CR-0042",
               "code": "",
@@ -165537,9 +165537,9 @@
                 -84.64384298344038,
                 -11.712857558989986
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -168906,7 +168906,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "stair_lobby",
               "label": "走道",
               "roomId": "F2-CR-0045",
               "code": "",
@@ -168914,9 +168914,9 @@
                 -7.274744028934184,
                 -71.51998549264958
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -170481,7 +170481,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0046",
               "code": "",
@@ -170489,9 +170489,9 @@
                 -29.29835735358068,
                 -65.86081586301093
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -171664,7 +171664,7 @@
             },
             "properties": {
               "type": "room",
-              "roomType": "corridor",
+              "roomType": "elevator_lobby",
               "label": "走道",
               "roomId": "F2-CR-0047",
               "code": "",
@@ -171672,9 +171672,9 @@
                 -25.345858265499004,
                 -79.72872805675016
               ],
-              "public": true,
+              "public": false,
               "accessible": true,
-              "hasIndependentEntrance": true,
+              "hasIndependentEntrance": false,
               "walkablePolygon": {
                 "type": "MultiPolygon",
                 "coordinates": [
@@ -184209,30 +184209,30 @@
           },
           {
             "id": "F2-CR-0036",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -66.89776470888955,
               -20.69693098042789
             ],
             "geometryId": "F2-CR-0036",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
             "id": "F2-CR-0037",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -62.998847933528815,
               -8.866183801534257
             ],
             "geometryId": "F2-CR-0037",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
@@ -184251,30 +184251,30 @@
           },
           {
             "id": "F2-CR-0039",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -37.6236846366511,
               18.10603809194898
             ],
             "geometryId": "F2-CR-0039",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
             "id": "F2-CR-0040",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -34.42808876805955,
               4.297161115613966
             ],
             "geometryId": "F2-CR-0040",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
@@ -184293,16 +184293,16 @@
           },
           {
             "id": "F2-CR-0042",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -84.64384298344038,
               -11.712857558989986
             ],
             "geometryId": "F2-CR-0042",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
@@ -184335,44 +184335,44 @@
           },
           {
             "id": "F2-CR-0045",
-            "type": "corridor",
+            "type": "stair_lobby",
             "label": "走道",
             "centroid": [
               -7.274744028934184,
               -71.51998549264958
             ],
             "geometryId": "F2-CR-0045",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
             "id": "F2-CR-0046",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -29.29835735358068,
               -65.86081586301093
             ],
             "geometryId": "F2-CR-0046",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
             "id": "F2-CR-0047",
-            "type": "corridor",
+            "type": "elevator_lobby",
             "label": "走道",
             "centroid": [
               -25.345858265499004,
               -79.72872805675016
             ],
             "geometryId": "F2-CR-0047",
-            "public": true,
+            "public": false,
             "accessible": true,
-            "hasIndependentEntrance": true,
+            "hasIndependentEntrance": false,
             "floor": 2
           },
           {
@@ -186082,7 +186082,7 @@
           {
             "id": "F2-TI-0004",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0036",
             "label": "走道",
             "coordinates": [
@@ -186093,7 +186093,7 @@
           {
             "id": "F2-TI-0005",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0037",
             "label": "走道",
             "coordinates": [
@@ -186115,7 +186115,7 @@
           {
             "id": "F2-TI-0007",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0039",
             "label": "走道",
             "coordinates": [
@@ -186126,7 +186126,7 @@
           {
             "id": "F2-TI-0008",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0040",
             "label": "走道",
             "coordinates": [
@@ -186148,7 +186148,7 @@
           {
             "id": "F2-TI-0010",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F2-CR-0042",
             "label": "走道",
             "coordinates": [
@@ -186181,7 +186181,7 @@
           {
             "id": "F2-TI-0013",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "stair_lobby",
             "roomId": "F2-CR-0045",
             "label": "走道",
             "coordinates": [
@@ -186192,7 +186192,7 @@
           {
             "id": "F2-TI-0014",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0046",
             "label": "走道",
             "coordinates": [
@@ -186203,7 +186203,7 @@
           {
             "id": "F2-TI-0015",
             "type": "intersection",
-            "roomType": "corridor",
+            "roomType": "elevator_lobby",
             "roomId": "F2-CR-0047",
             "label": "走道",
             "coordinates": [

@@ -1742,7 +1742,7 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
     验收口径：Walkable Polygon 不含任何柱子/墙体/井道内部区域。
     """
     from shapely.geometry import MultiPolygon
-    _open = set(_OPEN_ID_KEY)
+    _open = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"}
     obstacles = []
     # 建筑结构柱（混凝土截面 bbox），外扩安全间距防贴柱
     for (x0, y0, x1, y1) in col_boxes:
@@ -1772,6 +1772,63 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
         out[i] = wp
         r["walkable_poly_pt"] = wp
     return out
+
+
+def classify_elevator_stair_lobby(rooms, stair_boxes, evtr_boxes,
+                                  elev_dist_m=1.5, elev_area_max_m2=150.0,
+                                  stair_dist_m=3.0, stair_area_max_m2=60.0,
+                                  area_min_m2=8.0):
+    """T2: 公共空间细分类——贴近电梯/楼梯的前室重分类。
+
+    遍历 corridor/lobby 空间，计算多边形到最近楼梯井/电梯井的距离：
+      - 电梯前室：距电梯 < elev_dist_m 且面积 ≤ elev_area_max_m2
+        （本图纸电梯井小(~2.9m²)且直接贴走廊主段，无独立"电梯厅"标注，
+        面积上限放宽到 150m² 才能命中；>150m² 的为贯穿走廊/门厅，保持原类）
+      - 楼梯前室：距楼梯 < stair_dist_m 且面积 ≤ stair_area_max_m2（task.md 原条件）
+    同时贴近电梯与楼梯时优先 elevator_lobby（无障碍导航关键节点）。
+    井道位置同时参考 bbox 列表与已识别的 staircase/elevator_hall 房间
+    多边形（后者与走廊同源、更精确）。返回重分类数量。
+    """
+    elev_pt = elev_dist_m / SCALE
+    stair_pt = stair_dist_m / SCALE
+    # 井道几何分两类收集：(kind, geom)
+    elev_geoms = [box(x0, y0, x1, y1) for (x0, y0, x1, y1) in evtr_boxes]
+    stair_geoms = [box(x0, y0, x1, y1) for (x0, y0, x1, y1) in stair_boxes]
+    for r in rooms:
+        if r.get("roomType") in ("staircase", "elevator_hall", "shaft"):
+            (elev_geoms if r["roomType"] == "elevator_hall"
+             else stair_geoms).append(r["polygon_pt"])
+
+    def _min_dist(poly, geoms):
+        dmin = None
+        for g in geoms:
+            d = poly.exterior.distance(g)
+            if dmin is None or d < dmin:
+                dmin = d
+        return dmin
+
+    n_re = 0
+    for r in rooms:
+        if r.get("roomType") not in ("corridor", "lobby"):
+            continue
+        # 入口门厅（如"门厅无障碍出入口"）是 entrance 语义，不是电梯/楼梯前室
+        if "出入口" in r.get("label", ""):
+            continue
+        a_m2 = r["polygon_pt"].area * SCALE * SCALE
+        if a_m2 < area_min_m2:
+            continue
+        poly = r["polygon_pt"]
+        d_elev = _min_dist(poly, elev_geoms)
+        d_stair = _min_dist(poly, stair_geoms)
+        # 电梯前室优先判定（独立条件）：紧贴电梯 + 面积 ≤ 150m²
+        # （本图纸电梯井小(~2.9m²)且直接贴走廊主段，60m² 上限会导致永远漏分）
+        if d_elev is not None and d_elev < elev_pt and a_m2 <= elev_area_max_m2:
+            r["roomType"] = "elevator_lobby"
+            n_re += 1
+        elif d_stair is not None and d_stair < stair_pt and a_m2 <= stair_area_max_m2:
+            r["roomType"] = "stair_lobby"
+            n_re += 1
+    return n_re
 
 
 def parse_floor(pdf_path, floor_no):
@@ -2525,6 +2582,16 @@ def build_geojson(f1, f2):
                 print(f"[F{fl}] {kind} 剔除无编号伪设施: {info['dropped'][fl]} 个")
 
     def floor_block(floor_no, data):
+        # --- T2: 公共空间细分类（电梯前室/楼梯前室） ---
+        # 在 reconcile 之后执行：补齐/平移的井道 bbox 已并入列表，判定才准确。
+        try:
+            n_lobby = classify_elevator_stair_lobby(
+                data["rooms"], data["stair_boxes"], data["evtr_boxes"])
+            if n_lobby:
+                print(f"[F{floor_no}] 公共空间细分类: {n_lobby} 个重分类为前室")
+        except Exception as e:
+            print(f"    [WARN] 公共空间细分类失败: {e}")
+
         # --- T1: 公共空间 Walkable Polygon ---
         # 必须在 reconcile_facilities 之后执行：补齐/平移的楼梯/电梯 bbox
         # 已并入 data["stair_boxes"]/evtr_boxes，扣除结果才与最终 GeoJSON 一致。
@@ -2533,7 +2600,8 @@ def build_geojson(f1, f2):
                 data["rooms"], data["wall_segs"],
                 data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
             n_wp = sum(1 for r in data["rooms"]
-                       if r.get("roomType") in set(_OPEN_ID_KEY)
+                       if r.get("roomType") in
+                       (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})
                        and r.get("walkable_poly_pt") is not None)
             print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
         except Exception as e:

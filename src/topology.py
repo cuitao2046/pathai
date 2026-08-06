@@ -33,9 +33,11 @@ ACCESSIBLE_TYPES = {
     "elevator_hall", "atrium", "toilet",
 }
 NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
-# 开放流通空间：走道/门厅/大厅/活动空间/中庭 —— 与封闭空间（房间/管井/电梯/楼梯间）
-# 属不同类型，建模为 circulation 节点（intersection），不建为 enclosed-room 节点。
-OPEN_SPACE_TYPES = {"corridor", "lobby", "activity", "atrium"}
+# 开放流通空间：走道/门厅/大厅/活动空间/中庭/电梯前室/楼梯前室 —— 与封闭空间
+# （房间/管井/电梯/楼梯间）属不同类型，建模为 circulation 节点（intersection），
+# 不建为 enclosed-room 节点。
+OPEN_SPACE_TYPES = {"corridor", "lobby", "activity", "atrium",
+                    "elevator_lobby", "stair_lobby"}
 INDEPENDENT_ENTRANCE_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance",
     "staircase", "elevator_hall", "atrium",
@@ -47,6 +49,7 @@ OBJ_TYPE = {
     "wall": "W", "room": "RM", "door": "D", "stair": "ST",
     "elevator": "EL", "column": "C", "window": "WN",
     "corridor": "CR", "lobby": "LB", "activity": "AC", "atrium": "AT",
+    "elevator_lobby": "ELB", "stair_lobby": "SLB",
     "topo_room": "TR", "topo_doorway": "TD", "topo_intersection": "TI",
     "topo_facility": "TF", "topo_entrance": "TEN", "topo_edge": "TE",
     "stair_risk": "SR", "elev_a11y": "EA", "cross_edge": "XE",

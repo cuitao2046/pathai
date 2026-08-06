@@ -26,7 +26,9 @@ NON_ENCLOSED = ("staircase", "elevator_hall", "shaft", "atrium",
                 "corridor", "lobby", "entrance", "accessible_entrance",
                 # 活动空间(学生活动区/社团等)为开放式流通/活动区，非封闭房间，
                 # 不要求有门（与走廊/门厅同属 circulation，由拓扑骨架直连）。
-                "activity")
+                "activity",
+                # 电梯前室/楼梯前室（T2 细分类）：开放流通空间，不要求有门
+                "elevator_lobby", "stair_lobby")
 
 GEOM_KEYS = ["walls", "rooms", "doors", "stairs", "elevators",
              "columns", "windowSegments"]
