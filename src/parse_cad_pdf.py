@@ -1699,6 +1699,81 @@ def bbox_clusters(items, gap_pt):
 
 # ---------------------------------------------------------------- 主流程
 
+def _keep_walkable_pieces(geom, min_piece_m2):
+    """过滤差集后的微小碎片，返回 Polygon 或 MultiPolygon（pt 坐标）。"""
+    if geom is None or geom.is_empty:
+        return None
+    pieces = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+    keep = [g for g in pieces if g.area * SCALE * SCALE >= min_piece_m2]
+    if not keep:
+        return None
+    if len(keep) == 1:
+        return keep[0]
+    return MultiPolygon(keep)
+
+
+def _walkable_geojson(geom):
+    """Walkable Polygon → GeoJSON MultiPolygon 坐标（m），带内环（柱洞）。"""
+    if geom is None or geom.is_empty:
+        return None
+    polys = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+
+    def _ring(coords):
+        return [list(pt2m((x, y))) for x, y in coords]
+
+    return {
+        "type": "MultiPolygon",
+        "coordinates": [[_ring(p.exterior.coords)] + [_ring(h.coords)
+                       for h in p.interiors] for p in polys],
+    }
+
+
+def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
+                               col_boxes, wall_buffer_m=0.12,
+                               col_buffer_m=0.10, shaft_buffer_m=0.05,
+                               min_piece_m2=0.5):
+    """T1: 为公共空间（corridor/lobby/activity/atrium）生成 Walkable Polygon。
+
+    障碍物 = 柱子 bbox(buffer) ∪ 楼梯井/电梯井 bbox(buffer) ∪
+            封闭房间多边形(楼梯间/电梯厅/管井) ∪ 墙线 buffer；
+    walkable = 公共空间多边形 \\ 障碍物。
+    输入均为 pt 坐标（polygon_pt / 墙线段 / 井道/柱 bbox）。
+    结果写入各 room dict 的 walkable_poly_pt，并返回 {下标: Shapely 多边形}。
+    验收口径：Walkable Polygon 不含任何柱子/墙体/井道内部区域。
+    """
+    from shapely.geometry import MultiPolygon
+    _open = set(_OPEN_ID_KEY)
+    obstacles = []
+    # 建筑结构柱（混凝土截面 bbox），外扩安全间距防贴柱
+    for (x0, y0, x1, y1) in col_boxes:
+        if (x1 - x0) * (y1 - y0) > 0:
+            obstacles.append(box(x0, y0, x1, y1).buffer(col_buffer_m / SCALE))
+    # 楼梯井 / 电梯井（井道内部不可通行），微扩防贴井
+    for (x0, y0, x1, y1) in list(stair_boxes) + list(evtr_boxes):
+        if (x1 - x0) * (y1 - y0) > 0:
+            obstacles.append(box(x0, y0, x1, y1).buffer(shaft_buffer_m / SCALE))
+    # 封闭房间多边形（楼梯间/电梯厅/管井等，比 bbox 更精确，消除聚类差异）
+    for r in rooms:
+        if r.get("roomType") not in _open and r.get("polygon_pt") is not None:
+            obstacles.append(r["polygon_pt"])
+    # 墙体：结构墙线并集外扩 WALL_BUFFER=0.12m
+    if wall_segs:
+        obstacles.append(unary_union(
+            [LineString([a, b]) for a, b in wall_segs]).buffer(wall_buffer_m / SCALE))
+    obstacle = unary_union(obstacles) if obstacles else None
+
+    out = {}
+    for i, r in enumerate(rooms):
+        if r.get("roomType") not in _open:
+            continue
+        poly = r["polygon_pt"]
+        wp = poly.difference(obstacle) if obstacle is not None else poly
+        wp = _keep_walkable_pieces(wp, min_piece_m2)
+        out[i] = wp
+        r["walkable_poly_pt"] = wp
+    return out
+
+
 def parse_floor(pdf_path, floor_no):
     doc = fitz.open(pdf_path)
     page = doc[0]
@@ -2330,6 +2405,9 @@ def parse_floor(pdf_path, floor_no):
             ys = [p[1] for p in q]
             col_boxes.append((min(xs), min(ys), max(xs), max(ys)))
 
+    # 注：Walkable Polygon 生成已移至 build_geojson（reconcile_facilities 补齐
+    # 楼梯/电梯 bbox 之后），保证扣除用的井道列表与最终 GeoJSON 一致。
+
     return {
         "rooms": rooms,
         "doors": doors,
@@ -2447,6 +2525,20 @@ def build_geojson(f1, f2):
                 print(f"[F{fl}] {kind} 剔除无编号伪设施: {info['dropped'][fl]} 个")
 
     def floor_block(floor_no, data):
+        # --- T1: 公共空间 Walkable Polygon ---
+        # 必须在 reconcile_facilities 之后执行：补齐/平移的楼梯/电梯 bbox
+        # 已并入 data["stair_boxes"]/evtr_boxes，扣除结果才与最终 GeoJSON 一致。
+        try:
+            generate_walkable_polygons(
+                data["rooms"], data["wall_segs"],
+                data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
+            n_wp = sum(1 for r in data["rooms"]
+                       if r.get("roomType") in set(_OPEN_ID_KEY)
+                       and r.get("walkable_poly_pt") is not None)
+            print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
+        except Exception as e:
+            print(f"    [WARN] Walkable Polygon 生成失败: {e}")
+
         walls = []
         for i, (a, b) in enumerate(data["wall_segs"]):
             walls.append({
@@ -2469,6 +2561,8 @@ def build_geojson(f1, f2):
                                "public": r["roomType"] in ROOM_PUBLIC_TYPES,
                                "accessible": r["roomType"] not in NON_ACCESSIBLE_TYPES,
                                "hasIndependentEntrance": r["roomType"] in INDEPENDENT_ENTRANCE_TYPES,
+                               "walkablePolygon": _walkable_geojson(
+                                   r.get("walkable_poly_pt")),
                                "floor": int(floor_no)},
             })
             rooms_s.append({
