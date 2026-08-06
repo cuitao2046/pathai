@@ -88,7 +88,7 @@ def bridge_disconnected_components(
     floor_no,
     nodes,
     edges,
-    min_island_nodes=8,
+    min_island_nodes=5,
     max_bridge_dist_m=120.0,
     bridges_per_island=2,
 ):
@@ -226,7 +226,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     stairs: [{id, label, centroid_m, properties: {label}}]
     elevators: [{id, label, centroid_m, properties: {label}}]
     extra_nodes: [{type:'facility_entrance', label, coordinates, rooms?: []}, ...]
-        未匹配到房间多边形但语义上属于公共空间（门厅/出入口/合班教室等）的标签，
+        未匹配到房间多边形但语义上属于公共空间（门厅/出入口等）的标签；合班教室为封闭教室，不在此列，
         直接作为 facility_entrance 节点接入拓扑图。
     """
     nodes = []

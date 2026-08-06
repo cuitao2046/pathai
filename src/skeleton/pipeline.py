@@ -529,7 +529,7 @@ def build_skeleton_topology(
                 # 图节点不是 key：在图上找最近的已映射 TI
                 try:
                     lengths = nx.single_source_dijkstra_path_length(
-                        G, gn, cutoff=40.0, weight="length")
+                        G, gn, cutoff=55.0, weight="length")
                     for g2, plen in lengths.items():
                         if g2 in ti_of_gn and plen < best_d:
                             best_d = plen + (gd or 0)
@@ -542,7 +542,7 @@ def build_skeleton_topology(
                 d = math.hypot(dcoord[0] - tc[0], dcoord[1] - tc[1])
                 if d < best_d:
                     best_d, best_ti = d, tid
-        if best_ti is not None and best_d < 40.0:
+        if best_ti is not None and best_d < 55.0:
             add_edge(dnid, best_ti, best_d)
 
     # 3) TI ↔ TI：图边 → TE（1:1，禁止 all-pairs）
@@ -631,9 +631,110 @@ def build_skeleton_topology(
             "properties": {"type": "skeleton", "length_m": round(line.length, 2)},
         })
 
+    # 6) 孤立节点兜底：TR/TD/TF/TEN/TI 度为 0 时挂到最近可达节点
+    degree = {}
+    for e in edges:
+        degree[e["from"]] = degree.get(e["from"], 0) + 1
+        degree[e["to"]] = degree.get(e["to"], 0) + 1
+    nmap = {n["id"]: n for n in nodes}
+    orphans = [n for n in nodes if degree.get(n["id"], 0) == 0]
+    n_orphan_fixed = 0
+    for n in orphans:
+        nt = n.get("type")
+        # 目标类型优先级
+        if nt == "room":
+            prefer = ("doorway",)
+        elif nt == "doorway":
+            prefer = ("intersection", "doorway", "facility")
+        elif nt == "facility":
+            prefer = ("doorway", "intersection")
+        elif nt == "facility_entrance":
+            prefer = ("doorway", "intersection")
+        elif nt == "intersection":
+            prefer = ("intersection", "doorway")
+        else:
+            prefer = ("intersection", "doorway")
+        best, best_d = None, float("inf")
+        for o in nodes:
+            if o["id"] == n["id"]:
+                continue
+            if o.get("type") not in prefer:
+                continue
+            d = math.hypot(
+                n["coordinates"][0] - o["coordinates"][0],
+                n["coordinates"][1] - o["coordinates"][1],
+            )
+            # 房间→门 放宽到 25m；其它 20m
+            lim = 25.0 if nt == "room" else 20.0
+            if d < best_d and d <= lim:
+                best_d, best = d, o
+        if best is not None:
+            a_level, r_level = 0, 0.5
+            wheel = blind = True
+            if n.get("facilityType") == "staircase" or best.get("facilityType") == "staircase":
+                a_level, r_level, wheel, blind = 999, 10, False, False
+            add_edge(n["id"], best["id"], best_d,
+                     a_level=a_level, r_level=r_level, wheel=wheel, blind=blind)
+            n_orphan_fixed += 1
+    if n_orphan_fixed:
+        print(f"    [skeleton] 孤立节点挂接 {n_orphan_fixed} 条")
+
+    # 7) 骨架多连通分量：近距离 TI 软桥（非 all-pairs，每对分量最多 1 条）
+    ti_nodes = [n for n in nodes if n.get("type") == "intersection"]
+    if len(ti_nodes) >= 2:
+        # 用当前边重建 TI 子图分量
+        tset = {n["id"] for n in ti_nodes}
+        adj = {tid: set() for tid in tset}
+        for e in edges:
+            a, b = e["from"], e["to"]
+            if a in tset and b in tset:
+                adj[a].add(b)
+                adj[b].add(a)
+        seen = set()
+        comps = []
+        for tid in tset:
+            if tid in seen:
+                continue
+            st = [tid]
+            seen.add(tid)
+            c = {tid}
+            while st:
+                u = st.pop()
+                for v in adj[u]:
+                    if v not in seen:
+                        seen.add(v)
+                        c.add(v)
+                        st.append(v)
+            comps.append(c)
+        if len(comps) > 1:
+            comps.sort(key=len, reverse=True)
+            n_soft = 0
+            main = comps[0]
+            for island in comps[1:]:
+                best = None
+                best_d = 25.0  # 仅桥接 ≤25m 的近邻分量（走廊缝隙）
+                for a in island:
+                    ca = nmap[a]["coordinates"]
+                    for b in main:
+                        cb = nmap[b]["coordinates"]
+                        d = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
+                        if d < best_d:
+                            best_d, best = d, (a, b)
+                if best:
+                    add_edge(best[0], best[1], best_d)
+                    main = main | island
+                    n_soft += 1
+            if n_soft:
+                print(f"    [skeleton] TI 分量软桥 {n_soft} 条 (分量 {len(comps)}→更少)")
+
     # 同层大孤岛补边（与质心拓扑一致）
     if bridge_disconnected_components is not None:
-        edges = bridge_disconnected_components(floor_no, nodes, edges)
+        edges = bridge_disconnected_components(
+            floor_no, nodes, edges,
+            min_island_nodes=5,   # 略降，收纳中等孤岛
+            max_bridge_dist_m=120.0,
+            bridges_per_island=2,
+        )
 
     return {
         "nodes": nodes,
