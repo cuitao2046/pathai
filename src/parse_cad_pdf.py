@@ -2669,8 +2669,13 @@ def build_geojson(f1, f2):
         except Exception as e:
             print(f"    [WARN] Walkable Polygon 生成失败: {e}")
 
-        # T1.5 沿建筑外轮廓裁剪 walkable：走廊多边形可能沿真实外墙延伸到户外
-        # 紧贴墙体的位置；用 building_outline（与渲染一致）作为建筑内部 mask 裁剪
+        # T1.5 沿建筑外轮廓裁剪：室内导航不得出现户外走道/可通行区
+        # 根因：
+        #   1) 走廊房间多边形可能因自由域延伸出外墙；
+        #   2) building_outline 弥合门洞膨胀 ~1.4m，若不充分内缩会把户外条带圈入；
+        #   3) 只裁 walkable 不够——渲染走道图层(layer_corridor 等)画的是 coords_m，
+        #      必须同步裁剪公共空间多边形本身，否则渲染层仍画出墙外走道。
+        # 对照《公共空间识别方案》：Walkable ⊂ 建筑内部，须先确定 P_floor 再扣障碍。
         try:
             _flo = {
                 "walls": [{"geometry": {"type": "LineString",
@@ -2680,54 +2685,95 @@ def build_geojson(f1, f2):
                            "coordinates": [r["coords_m"]]}}
                           for r in data["rooms"]],
             }
-            _ol = building_outline(_flo)
+            # close_r=10@0.1m ≈ 1.0m 虚扩（比默认 14 更紧）；再内缩 1.2m
+            _ol = building_outline(_flo, cell=0.1, wall_hw=1, close_r=10)
             if _ol:
                 _areas = [Polygon(p).area for p in _ol]
-                _mx = max(_areas)
+                _mx = max(_areas) if _areas else 0.0
                 _thr = max(150.0, 0.05 * _mx)
-                # 剔除 outline 中"无房间中心"的块——这些是弥合门洞时圈入的户外小庭院，
-                # 包含它们的 walkable 视觉上像延伸到户外（如 F2 副楼左下方红线小月牙）
+                # 仅保留含「封闭房间」中心的轮廓块，剔除纯户外/庭院孤岛
+                _open_types = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"}
                 _room_centers = [Polygon(r["coords_m"]).centroid
                                   for r in data["rooms"]
                                   if r.get("coords_m") and
-                                  r.get("roomType") not in
-                                  (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})]
+                                  r.get("roomType") not in _open_types]
                 _kept_blocks = []
                 for _p, _a in zip(_ol, _areas):
                     if _a < _thr:
                         continue
                     _pg = Polygon(_p)
-                    if not any(_pg.covers(_c) for _c in _room_centers):
+                    if _room_centers and not any(_pg.covers(_c) for _c in _room_centers):
                         continue
                     _kept_blocks.append(_pg)
                 if not _kept_blocks:
                     _kept_blocks = [Polygon(p) for p, a in zip(_ol, _areas) if a >= _thr]
                 _mask_m = unary_union(_kept_blocks)
-                # 内缩 1.0m 剔除 outline 边缘"虚扩"区（弥合门洞半径 1.4m 引入），
-                # 避免视觉上 walkable 像延伸到户外（如 F2 副楼左下方红线小庭院）
-                _mask_m = _mask_m.buffer(-1.0)
-                # walkable_poly_pt 是 pt 单位；把 mask 从 m 单位转回 pt 坐标。
-                # 用手写循环而非 shapely.transform，因为 shapely 2.x 的
-                # transform(func, geom) 会把整段 coords 一次传入 func，而 lambda
-                # 仅能返回首对，导致变换不生效。
-                def _m_to_pt(g):
-                    if g.is_empty:
+                # 内缩 ≥ 弥合膨胀 + 半墙厚余量，确保 mask 落在真实外墙内侧
+                _mask_m = _mask_m.buffer(-1.2)
+                if _mask_m.is_empty:
+                    print(f"    [WARN] 外轮廓内缩后为空，跳过裁剪")
+                else:
+                    # mask 从 m 单位转回 pt 坐标（walkable/polygon 均为 pt 单位）。
+                    # 手写循环而非 shapely.transform：shapely 2.x 会把整段 coords
+                    # 一次性传入 func，lambda 仅返回首对导致变换不生效。
+                    def _m_to_pt(g):
+                        if g is None or g.is_empty:
+                            return g
+                        if g.geom_type == "Polygon":
+                            ext = [(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
+                                   for x, y in g.exterior.coords]
+                            ints = [[(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
+                                     for x, y in ring]
+                                    for ring in g.interiors]
+                            return Polygon(ext, ints)
+                        if g.geom_type == "MultiPolygon":
+                            return MultiPolygon([_m_to_pt(p) for p in g.geoms])
                         return g
-                    if g.geom_type == "Polygon":
-                        ext = [(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
-                               for x, y in g.exterior.coords]
-                        ints = [[(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
-                                 for x, y in r] for r in g.interiors]
-                        return Polygon(ext, ints)
-                    if g.geom_type == "MultiPolygon":
-                        return MultiPolygon([_m_to_pt(p) for p in g.geoms])
-                    return g
-                _mask = _m_to_pt(_mask_m)
-                for r in data["rooms"]:
-                    wp = r.get("walkable_poly_pt")
-                    if wp is not None:
-                        r["walkable_poly_pt"] = _keep_walkable_pieces(
-                            wp.intersection(_mask), 0.5)
+
+                    def _largest_poly(g):
+                        if g is None or g.is_empty:
+                            return None
+                        if g.geom_type == "Polygon":
+                            return g
+                        if g.geom_type == "MultiPolygon":
+                            parts = [p for p in g.geoms if not p.is_empty]
+                            return max(parts, key=lambda p: p.area) if parts else None
+                        return None
+
+                    _mask = _m_to_pt(_mask_m)
+                    n_clip_wp = 0
+                    n_clip_open = 0
+                    for r in data["rooms"]:
+                        # 1) 裁 walkable
+                        wp = r.get("walkable_poly_pt")
+                        if wp is not None:
+                            before_a = wp.area
+                            clipped = _keep_walkable_pieces(
+                                wp.intersection(_mask), 0.5)
+                            r["walkable_poly_pt"] = clipped
+                            if clipped is None or abs(
+                                    (clipped.area if clipped else 0) - before_a) > 1e-3:
+                                n_clip_wp += 1
+                        # 2) 裁公共空间房间多边形本身（走道/门厅等）
+                        #    否则渲染层仍会画出墙外走道
+                        if (r.get("roomType") in _open_types
+                                and r.get("polygon_pt") is not None):
+                            inter = r["polygon_pt"].intersection(_mask)
+                            kept = _largest_poly(inter)
+                            if kept is not None and kept.area > 1e-3:
+                                if abs(kept.area - r["polygon_pt"].area) > 1e-3:
+                                    n_clip_open += 1
+                                r["polygon_pt"] = kept
+                                r["coords_m"] = [
+                                    list(pt2m((x, y)))
+                                    for x, y in kept.exterior.coords]
+                                r["centroid_m"] = list(
+                                    pt2m((kept.centroid.x, kept.centroid.y)))
+                            else:
+                                # 整块在户外 → 清空 walkable
+                                r["walkable_poly_pt"] = None
+                    print(f"[F{floor_no}] 外轮廓裁剪: walkable {n_clip_wp} 个, "
+                          f"开放空间多边形 {n_clip_open} 个")
         except Exception as e:
             print(f"    [WARN] 沿轮廓裁剪失败: {e}")
 
