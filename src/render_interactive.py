@@ -401,6 +401,7 @@ svg {{ display: block; background: #fff; }}
 .layer_stairs polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
+.layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.55; pointer-events: none; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
@@ -464,6 +465,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 <div class="layer-controls" id="layerControls">
   <b>图层:</b>
   <label><input type="checkbox" checked onchange="toggleLayer('room', this.checked)"> 房间</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
   <label><input type="checkbox" checked onchange="toggleLayer('wall', this.checked)"> 墙体</label>
   <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
   <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
@@ -595,6 +597,26 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
         if n_skip_bbox:
             print(f"  [F{fk}] 跳过 {n_skip_bbox} 个文字标签包围盒（面积<{LABEL_BBOX_MAX_AREA}m² 且长宽比≥{LABEL_BBOX_MIN_ASPECT}）")
+
+        # 1.5 可通行区域（Walkable Polygon，T1：公共空间扣除柱子/井道/墙体障碍物）
+        n_walk = 0
+        for r in geom.get("rooms", []):
+            wp = r["properties"].get("walkablePolygon")
+            if not wp:
+                continue
+            n_walk += 1
+            for rings in wp["coordinates"]:
+                for ri, ring in enumerate(rings):
+                    pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}"
+                                   for x, y in ring)
+                    # 外环浅绿填充；内环（柱洞）仅描边不填充
+                    fill = "none" if ri > 0 else "#A5D6A7"
+                    parts.append(
+                        f'<g class="layer_walkable"><polygon points="{pts}" '
+                        f'fill="{fill}" stroke="#43A047" stroke-width="0.4"/></g>\n'
+                    )
+        if n_walk:
+            print(f"  [F{fk}] 可通行区域图层: {n_walk} 个")
 
         # 2. 墙体
         for w in geom.get("walls", []):
@@ -1133,7 +1155,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','wall','window','stairs','elevator','column','building_outline',
+var allLayers = ['room','walkable','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
