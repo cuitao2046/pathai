@@ -396,6 +396,7 @@ body {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #
 #svg-wrapper.grabbing {{ cursor: grabbing; }}
 svg {{ display: block; background: #fff; }}
 .layer_room polygon {{ opacity: 0.55; cursor: pointer; }}
+.layer_lobby_elevator polygon, .layer_lobby_stair polygon {{ opacity: 0.85; cursor: pointer; }}
 .layer_wall path {{ stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }}
 .layer_building_outline polygon {{ fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }}
 .layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; }}
@@ -606,14 +607,16 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 _stroke = "#999"
                 _sw = 0.5
                 _dash = "none"
-            # 前室类型附带独立图层 class，可单独开关查看（仍属房间图层）
-            extra_cls = ""
+            # 前室为完全独立图层（不受「房间」开关影响）：
+            # 交互走 [data-info] 属性、导出走 [class*="layer_"]，脱离 layer_room 无副作用
             if rtype == "elevator_lobby":
-                extra_cls = " layer_lobby_elevator"
+                layer_cls = "layer_lobby_elevator"
             elif rtype == "stair_lobby":
-                extra_cls = " layer_lobby_stair"
+                layer_cls = "layer_lobby_stair"
+            else:
+                layer_cls = "layer_room"
             parts.append(
-                f'<g class="layer_room{extra_cls}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="{layer_cls}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -621,7 +624,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 cy_s = sum(p_[1] for p_ in ring[:-1]) / max(len(ring) - 1, 1)
                 sx_s, sy_s = tosvg(cx_s, cy_s)
                 parts.append(
-                    f'<g class="layer_room">{info_attr({"tip": tip, "detail": det}) if False else ""}'
+                    f'<g class="{layer_cls}">{info_attr({"tip": tip, "detail": det}) if False else ""}'
                     f'<text x="{sx_s}" y="{sy_s}" font-size="6" text-anchor="middle" '
                     f'fill="#333">{label}</text></g>\n'
                 )
