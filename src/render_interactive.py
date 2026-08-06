@@ -1312,42 +1312,48 @@ function showDetail(d) {{
   }});
   box.innerHTML = h;
 }}
+// 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁
+var clickTimer = null;
 wrapper.addEventListener('click', function(e) {{
   var t = e.target.closest('[data-info]');
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
-  // 已选中 → 再次点击取消选中，并还原关联状态
-  if (t.classList.contains('selected')) {{
-    clearHighlight(); resetDetail();
-    return;
-  }}
-  // 未选中 → 切换为选中：先还原其它，再建立本要素的关联状态
-  clearHighlight(); t.classList.add('selected');
-  showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
-  // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
-  if (d.kind === 'node' && d.id) {{
-    ensureLayer('topo_node', true);
-    ensureLayer('topo_edge', true);
-    var nbCount = 0;
-    document.querySelectorAll('.layer_topo_edge').forEach(function(g) {{
-      var f = g.getAttribute('data-info');
-      if (!f) return;
-      try {{
-        var ed = JSON.parse(f);
-        if (ed.from === d.id || ed.to === d.id) {{
-          g.classList.add('selected');                 // 高亮相连边
-          var nb = (ed.from === d.id) ? ed.to : ed.from; // 直接可达节点 id
-          if (nb) {{ markNode(nb, 'neighbor'); nbCount++; }} // 高亮直接可达节点
-        }}
-      }} catch(e){{}}
-    }});
-    // 在详情面板补充「直接可达」统计
-    var stat = document.createElement('div');
-    stat.className = 'row';
-    stat.innerHTML = '<span>直接可达节点</span><span>' + nbCount + ' 个</span>';
-    document.getElementById('detail').appendChild(stat);
-  }}
+  if (clickTimer) {{ clearTimeout(clickTimer); clickTimer = null; }}
+  clickTimer = setTimeout(function() {{
+    clickTimer = null;
+    // 已选中 → 再次点击取消选中，并还原关联状态
+    if (t.classList.contains('selected')) {{
+      clearHighlight(); resetDetail();
+      return;
+    }}
+    // 未选中 → 切换为选中：先还原其它，再建立本要素的关联状态
+    clearHighlight(); t.classList.add('selected');
+    showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
+    // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
+    if (d.kind === 'node' && d.id) {{
+      ensureLayer('topo_node', true);
+      ensureLayer('topo_edge', true);
+      var nbCount = 0;
+      document.querySelectorAll('.layer_topo_edge').forEach(function(g) {{
+        var f = g.getAttribute('data-info');
+        if (!f) return;
+        try {{
+          var ed = JSON.parse(f);
+          if (ed.from === d.id || ed.to === d.id) {{
+            g.classList.add('selected');                 // 高亮相连边
+            var nb = (ed.from === d.id) ? ed.to : ed.from; // 直接可达节点 id
+            if (nb) {{ markNode(nb, 'neighbor'); nbCount++; }} // 高亮直接可达节点
+          }}
+        }} catch(e){{}}
+      }});
+      // 在详情面板补充「直接可达」统计
+      var stat = document.createElement('div');
+      stat.className = 'row';
+      stat.innerHTML = '<span>直接可达节点</span><span>' + nbCount + ' 个</span>';
+      document.getElementById('detail').appendChild(stat);
+    }}
+  }}, 250);
 }});
 
 // ---- 图层开关 ----
@@ -1728,6 +1734,7 @@ wrapper.addEventListener('dblclick', function(e) {{
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
   if (d.kind !== 'node' || !d.id) return;
+  if (clickTimer) {{ clearTimeout(clickTimer); clickTimer = null; }} // 取消挂起的单击选中
   e.preventDefault(); e.stopPropagation();
   ensureLayer('topo_node', true); ensureLayer('topo_edge', true);
   var nd = PATH_GRAPH.nodes[d.id];
