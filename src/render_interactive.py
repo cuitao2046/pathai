@@ -410,7 +410,8 @@ svg {{ display: block; background: #fff; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path {{ cursor: pointer; }}
-.layer_topo_edge path {{ stroke: #27AE60; stroke-width: 0.5; fill: none; opacity: 0.45; stroke-dasharray: 3,2; }}
+.layer_topo_edge path {{ stroke: #27AE60; stroke-width: 1.6; fill: none; opacity: 0.65; stroke-dasharray: 3,2; }}
+.layer_topo_edge path:hover {{ stroke-width: 3.4; opacity: 0.9; }}
 .layer_risk * {{ cursor: pointer; }}
 .layer_ramp *, .layer_tactile *, .layer_material * {{ cursor: pointer; }}
 .layer_crossfloor path {{ stroke-width: 1.6; fill: none; stroke-dasharray: 6,4; opacity: 0.65; cursor: pointer; }}
@@ -1312,13 +1313,26 @@ function showDetail(d) {{
   }});
   box.innerHTML = h;
 }}
-// 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁
+// 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁；
+// 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
 var clickTimer = null;
 wrapper.addEventListener('click', function(e) {{
   var t = e.target.closest('[data-info]');
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
+  // 拓扑边：即时选中/取消 + 详情 + 记录选中（启用删除按钮）
+  if (d.kind === 'edge' && d.id) {{
+    if (t.classList.contains('selected')) {{
+      clearHighlight(); resetDetail();
+      selectedEdgeId = null; selectedEdgeEl = null; updateDeleteBtn();
+      return;
+    }}
+    clearHighlight(); t.classList.add('selected');
+    showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
+    selectedEdgeId = d.id; selectedEdgeEl = t; updateDeleteBtn();
+    return;
+  }}
   if (clickTimer) {{ clearTimeout(clickTimer); clickTimer = null; }}
   clickTimer = setTimeout(function() {{
     clickTimer = null;
@@ -1774,16 +1788,6 @@ wrapper.addEventListener('dblclick', function(e) {{
   edgeStatus('已添加拓扑边 ' + edge.id + '（' + edge.distance.toFixed(1) + ' m）· 待保存');
   edgeHint('可继续双击两个节点加边，或点「保存 GeoJSON」写回文件');
 }}, true);
-// 单击拓扑边：记录选中，启用删除按钮
-wrapper.addEventListener('click', function(e) {{
-  var t = e.target.closest('[data-info]');
-  if (!t) return;
-  var d; try {{ d = JSON.parse(t.getAttribute('data-info')); }} catch (err) {{ return; }}
-  if (d.kind !== 'edge' || !d.id) return;
-  selectedEdgeId = d.id;
-  selectedEdgeEl = t;
-  updateDeleteBtn();
-}});
 function updateDeleteBtn(){{
   var btn = document.getElementById('btn-del-edge');
   if (btn) btn.disabled = !selectedEdgeId;
