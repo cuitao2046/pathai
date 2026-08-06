@@ -427,6 +427,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 #path-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
 #path-bar .hint {{ color: #666; }}
 #path-bar .result {{ color: #BF360C; font-weight: bold; }}
+#edge-bar {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #FCE4EC; border: 1px solid #F48FB1; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }}
+#edge-bar button {{ border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
+#edge-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
+#edge-bar .hint {{ color: #666; }}
+#edge-bar .result {{ color: #AD1457; font-weight: bold; }}
+.layer_manual_edge path {{ stroke: #E91E63; stroke-width: 2.2; fill: none; opacity: 0.9; stroke-dasharray: 8,4; pointer-events: stroke; cursor: crosshair; }}
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
@@ -520,6 +526,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <button type="button" onclick="clearPath()">清除路径</button>
   <span class="hint" id="path-hint">开启后依次点击两个拓扑节点（起点→终点）</span>
   <span class="result" id="path-result"></span>
+</div>
+<div id="edge-bar">
+  <b>手动加边</b>
+  <button type="button" id="btn-edge-mode" onclick="toggleEdgeMode()">加边模式</button>
+  <button type="button" onclick="exportManualEdges()" title="导出 manual_edges.json；再用 src/merge_manual_edges.py 合并进 GeoJSON">导出手工边</button>
+  <button type="button" onclick="clearManualEdges()">清除手工边</button>
+  <span class="hint" id="edge-hint">开启后依次点击两个拓扑节点，创建一条新拓扑边</span>
+  <span class="result" id="edge-list"></span>
 </div>
 <div id="svg-container">
 <div id="floor-jump"></div>
@@ -1097,6 +1111,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "floor": int(fk),
                 "x": round(sx, 1),
                 "y": round(sy, 1),
+                "mx": cx,
+                "my": cy,
                 "facilityType": n.get("facilityType"),
             }
         for e in (fd.get("topology") or {}).get("edges") or []:
@@ -1129,7 +1145,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     )
 
     # ---------------- 图例 + 详情面板 + JS ----------------
-    parts.append('''</svg>
+    parts.append('''<g id="manual-edge-layer"></g>
+</svg>
 </div><!-- /svg-wrapper -->
 </div><!-- /svg-container -->
 <div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；再次点击同一要素可取消选中。点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
@@ -1332,7 +1349,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
+  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material','manual_edge'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
@@ -1642,6 +1659,118 @@ function installPathClick() {
   }, true); // capture 优先于详情点击
 }
 installPathClick();
+
+// ---- 手动加边：点击两个拓扑节点生成拓扑边 ----
+// 新边先存在浏览器 localStorage（实时绘制、可删除），点「导出手工边」下载
+// manual_edges.json，再用 src/merge_manual_edges.py 合并进 GeoJSON 正式生效。
+var edgeMode = false;
+var edgePick = [];
+var MANUAL_EDGE_KEY = 'pathai_manual_edges_v1';
+var MANUAL_EDGES = [];
+(function(){{
+  try {{ var s = localStorage.getItem(MANUAL_EDGE_KEY); if (s) MANUAL_EDGES = JSON.parse(s); }} catch(e){{}}
+}})();
+function saveManualEdges(){{ try {{ localStorage.setItem(MANUAL_EDGE_KEY, JSON.stringify(MANUAL_EDGES)); }} catch(e){{}} }}
+function manualEdgeId(fl){{
+  var used = {{}};
+  MANUAL_EDGES.forEach(function(m){{ used[m.id] = 1; }});
+  var n = 1;
+  while (used['F' + fl + '-TE-' + ('000' + n).slice(-4)]) n++;
+  return 'F' + fl + '-TE-' + ('000' + n).slice(-4);
+}}
+function renderManualEdges(){{
+  var layer = document.getElementById('manual-edge-layer');
+  if (!layer) return;
+  layer.innerHTML = '';
+  MANUAL_EDGES.forEach(function(m){{
+    var a = PATH_GRAPH.nodes[m.from], b = PATH_GRAPH.nodes[m.to];
+    if (!a || !b) return;
+    var flTxt = (a.floor === b.floor) ? (a.floor + 'F') : (a.floor + 'F → ' + b.floor + 'F');
+    var det = {{title: '手工拓扑边 ' + m.id, rows: [
+      ['起始', m.from], ['终点', m.to],
+      ['距离', m.distance.toFixed(2) + ' m'],
+      ['预估时间', m.estimatedTime.toFixed(1) + ' s'],
+      ['楼层', flTxt],
+      ['状态', '未合并（导出手工边后用脚本合并进 GeoJSON）']
+    ]}};
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'layer_manual_edge');
+    g.setAttribute('data-info', JSON.stringify({{tip: '手工边 ' + m.id, detail: det, kind: 'manual_edge'}}));
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M ' + a.x + ' ' + a.y + ' L ' + b.x + ' ' + b.y);
+    g.appendChild(p);
+    layer.appendChild(g);
+  }});
+  var el = document.getElementById('edge-list');
+  if (el) el.textContent = MANUAL_EDGES.length ? '已添加 ' + MANUAL_EDGES.length + ' 条手工边' : '';
+}}
+function toggleEdgeMode(){{
+  edgeMode = !edgeMode;
+  var btn = document.getElementById('btn-edge-mode');
+  if (btn) btn.classList.toggle('active', edgeMode);
+  var hint = document.getElementById('edge-hint');
+  if (edgeMode) {{
+    if (pathMode) togglePathMode();
+    ensureLayer('topo_node', true);
+    if (hint) hint.textContent = '请点击第一个拓扑节点…';
+    edgePick = [];
+  }} else {{
+    if (hint) hint.textContent = '开启后依次点击两个拓扑节点，创建一条新拓扑边';
+  }}
+}}
+wrapper.addEventListener('click', function(e) {{
+  if (!edgeMode) return;
+  var t = e.target.closest('[data-info]');
+  if (!t) return;
+  var info = t.getAttribute('data-info');
+  var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
+  if (d.kind !== 'node' || !d.id) return;
+  e.stopPropagation();
+  var nd = PATH_GRAPH.nodes[d.id];
+  if (!nd) return;
+  var hint = document.getElementById('edge-hint');
+  if (edgePick.length === 0) {{
+    edgePick.push(d.id);
+    markNodeClass(d.id, 'path-start');
+    if (hint) hint.textContent = '已选第一个节点（' + (nd.label || d.id) + '），请点击第二个…';
+    return;
+  }}
+  var a = edgePick[0];
+  if (d.id === a) return;
+  edgePick = [];
+  clearPathVisual();
+  var dup = MANUAL_EDGES.some(function(m){{ return (m.from === a && m.to === d.id) || (m.from === d.id && m.to === a); }});
+  if (dup) {{ if (hint) hint.textContent = '这两个节点已存在手工边，请重新选择'; return; }}
+  var na = PATH_GRAPH.nodes[a], nb = PATH_GRAPH.nodes[d.id];
+  var distM = Math.sqrt((na.mx - nb.mx) * (na.mx - nb.mx) + (na.my - nb.my) * (na.my - nb.my));
+  var m = {{
+    id: manualEdgeId(na.floor), from: a, to: d.id,
+    distance: Math.round(distM * 100) / 100,
+    estimatedTime: Math.round(distM / 0.8 * 10) / 10,
+    accessibilityLevel: 0, riskLevel: 0.5,
+    walkable: true, wheelchairAccessible: true, blindAccessible: true,
+    floorFrom: na.floor, floorTo: nb.floor
+  }};
+  MANUAL_EDGES.push(m);
+  saveManualEdges();
+  renderManualEdges();
+  PATH_GRAPH.edges.push({{id: m.id, from: m.from, to: m.to, distance: m.distance, accessibilityLevel: 0, blindAccessible: true, wheelchairAccessible: true, manual: true}});
+  if (hint) hint.textContent = '已添加手工边 ' + m.id + '（' + m.distance.toFixed(1) + ' m），可继续选择或退出模式';
+}}, true);
+function exportManualEdges(){{
+  if (!MANUAL_EDGES.length) {{ alert('当前没有手工边可导出。'); return; }}
+  var blob = new Blob([JSON.stringify(MANUAL_EDGES, null, 2)], {{type: 'application/json'}});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'manual_edges.json'; a.click();
+  setTimeout(function(){{ URL.revokeObjectURL(url); }}, 2000);
+}}
+function clearManualEdges(){{
+  if (!MANUAL_EDGES.length) return;
+  if (!confirm('确定清除全部 ' + MANUAL_EDGES.length + ' 条手工边？')) return;
+  MANUAL_EDGES = []; saveManualEdges(); renderManualEdges();
+}}
+renderManualEdges();
 
 
 buildFloorJump(__NFLOORS__, __PERFLOOR__);
