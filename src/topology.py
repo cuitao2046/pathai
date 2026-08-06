@@ -138,7 +138,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "type": "doorway",
             "label": {"swing": "普通门", "fire": "防火门", "opening": "门洞"}[kind],
             "doorType": kind,
-            "width_m": round(float(dr.get("width_pt", 0)) * (1.0 / 18.896), 3),
+            "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
             "coordinates": list(_to_xy(dr.get("center_m"))),
             "rooms": dr.get("rooms", []),
         })
@@ -231,21 +231,38 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             add_edge(rnid, dnid, d, a_level=2 if dr.get("kind") == "fire" else 0,
                      r_level=(5 if dr.get("kind") == "fire" else 0.5))
 
-    # 2) doorway <-> 走廊交叉口（房间-走廊移动）
+    # 2) doorway <-> 开放流通空间（走廊/门厅/前室）
+    #    优先：门归属中已标明的开放空间；其次：距门口 ≤15m 的所有开放空间
+    #   （旧逻辑只连最近一个，会导致两侧走廊无法经同一门洞互通）
     if cor_node_ids:
         for i, dr in enumerate(doors):
             dnid = door_node_ids[i]
             center = _to_xy(dr.get("center_m"))
-            best_cor_id, best_d = None, float("inf")
+            linked = set()
+            for rid in dr.get("rooms", []):
+                if rid in cor_node_ids and rid not in linked:
+                    c = room_by_id[rid]
+                    d = _dist(center, c["centroid_m"])
+                    add_edge(cor_node_ids[rid], dnid, d)
+                    linked.add(rid)
             for cid, cnid in cor_node_ids.items():
+                if cid in linked:
+                    continue
                 c = room_by_id[cid]
                 d = _dist(center, c["centroid_m"])
-                if d < best_d:
-                    best_d = d
-                    best_cor_id = cid
-            if best_cor_id:
-                cnid = cor_node_ids[best_cor_id]
-                add_edge(cnid, dnid, best_d)
+                if d <= 15.0:
+                    add_edge(cnid, dnid, d)
+                    linked.add(cid)
+            # 兜底：一个都没有时仍连最近开放空间
+            if not linked:
+                best_cor_id, best_d = None, float("inf")
+                for cid, cnid in cor_node_ids.items():
+                    c = room_by_id[cid]
+                    d = _dist(center, c["centroid_m"])
+                    if d < best_d:
+                        best_d, best_cor_id = d, cid
+                if best_cor_id:
+                    add_edge(cor_node_ids[best_cor_id], dnid, best_d)
 
     # 3) facility <-> 最近的 doorway（设施接入：楼梯/电梯口连最近的门）
     all_doorways = [(door_node_ids[i], _to_xy(doors[i].get("center_m")))
@@ -265,6 +282,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                  r_level=r_level, wheel=wheel, blind=blind)
 
     # 4) intersection <-> intersection（走廊骨架：近距离走廊直连）
+    #    阈值 50m：教学楼翼展较大，质心距离常 >30m 但仍属同一流通网络
     cor_list = list(cor_node_ids.items())
     for i in range(len(cor_list)):
         for j in range(i + 1, len(cor_list)):
@@ -273,7 +291,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             ci = _to_xy(room_by_id[cid_i]["centroid_m"])
             cj = _to_xy(room_by_id[cid_j]["centroid_m"])
             d = _dist(ci, cj)
-            if d > 30:  # 远距离走廊不直连，靠房门串接
+            if d > 50:
                 continue
             add_edge(nid_i, nid_j, d)
 

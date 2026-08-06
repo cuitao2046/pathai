@@ -114,7 +114,7 @@ MAX_ROOM_AREA_M2 = 600.0
 ABSORB_CELL_M2 = 2.0       # 小于该面积的自由单元为可填充微单元（厕位格等）
 MERGE_REGION_M2 = 9.0      # 小于该面积的未标注单元可经守卫式泛洪并入邻房
 WALL_EXT_PT = 6.0          # 墙线端点外延（桥接 T 型接头/窗洞收口缝隙）
-LABEL_MIN_SIZE = 9.0       # 房间名称最小字号(pt)（II-WR-04 男/女卫生间约 9.46pt，略低于原 9.5）
+LABEL_MIN_SIZE = 8.5       # 房间名称最小字号(pt)（略降以捕获 ~9pt 卫生间等小标签）
 TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
 
 # --- 楼梯/电梯井编号（图纸权威标识，如 II-B2-01#ST / II-02#EL）---
@@ -123,6 +123,13 @@ TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
 FACILITY_CODE_RE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)*#(ST|EL)$")
 FACILITY_CODE_NEAR_M = 2.0   # 编号文字到设施 bbox 的最大容差(米)
 STAIR_MAX_ASPECT = 3.0       # 无编号且长宽比超此值 → 判为伪楼梯并剔除
+STAIR_MAX_ASPECT_CODED = 5.0 # 有编号时仍拒绝极端细长条（防走廊+踏步被吸进）
+STAIR_AREA_MIN_M2 = 3.0      # 楼梯 bbox 最小面积（覆盖踏步线缺失的碎片）
+STAIR_AREA_MAX_M2 = 80.0     # 楼梯 bbox 最大面积
+STAIR_CLUSTER_GAP_M = 1.5    # 楼梯聚类间距（米）——紧间距避免不同井道合并
+ELEV_AREA_MIN_M2 = 1.0       # 电梯井最小面积
+ELEV_AREA_MAX_M2 = 30.0      # 电梯井最大面积
+STAIR_ROOM_DEDUP_M = 2.0     # 注入楼梯间 room 时与已有 staircase 中心距 < 此值则跳过
 
 # 非封闭空间的室外/开敞标签：不参与房间探测（避免抢占附近区域）
 # 教学楼中"无障碍出入口/门厅无障碍出入口/人防主出入口"等均为公共空间节点，
@@ -1702,6 +1709,62 @@ def bbox_clusters(items, gap_pt):
 
 # ---------------------------------------------------------------- 主流程
 
+def _bbox_area_m2(b):
+    return (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE
+
+
+def _bbox_aspect(b):
+    w, h = abs(b[2] - b[0]), abs(b[3] - b[1])
+    lo, hi = min(w, h), max(w, h)
+    return (hi / lo) if lo > 1e-6 else 999.0
+
+
+def detect_stair_boxes(items_by_layer):
+    """统一楼梯 bbox 检测：STAIR + A-FLOR-STRS 合并聚类 + 面积/长宽比过滤。
+
+    返回 list[(x0,y0,x1,y1)]（pt）。早期注入 staircase room、门洞范围判定、
+    最终 geometry 共用同一套结果，消除多路径参数不一致问题。
+    """
+    pts = []
+    for lname in ("STAIR", "A-FLOR-STRS"):
+        si = items_by_layer.get(lname, {"lines": [], "quads": []})
+        for seg in si.get("lines", []):
+            pts.append(seg)
+        for q in si.get("quads", []):
+            if len(q) >= 3:
+                pts.append((q[0], q[2]))
+    if not pts:
+        return []
+    boxes = bbox_clusters(pts, gap_pt=STAIR_CLUSTER_GAP_M * PT_PER_M)
+    out = []
+    for b in boxes:
+        area = _bbox_area_m2(b)
+        if area < STAIR_AREA_MIN_M2 or area > STAIR_AREA_MAX_M2:
+            continue
+        if _bbox_aspect(b) > STAIR_MAX_ASPECT:
+            continue
+        out.append(b)
+    return out
+
+
+def detect_elevator_boxes(items_by_layer):
+    """电梯井 bbox：A-FLOR-EVTR 聚类 + 面积过滤。"""
+    evtr = items_by_layer.get(LAYER_ELEVATOR, {"lines": [], "quads": [], "curves": []})
+    pts = list(evtr.get("lines", []))
+    for q in evtr.get("quads", []):
+        if len(q) >= 2:
+            pts.append(q[:2])
+    if not pts:
+        return []
+    boxes = bbox_clusters(pts, gap_pt=2 * PT_PER_M)
+    out = []
+    for b in boxes:
+        area = _bbox_area_m2(b)
+        if ELEV_AREA_MIN_M2 <= area <= ELEV_AREA_MAX_M2:
+            out.append(b)
+    return out
+
+
 def _keep_walkable_pieces(geom, min_piece_m2):
     """过滤差集后的微小碎片，返回 Polygon 或 MultiPolygon（pt 坐标）。"""
     if geom is None or geom.is_empty:
@@ -1949,7 +2012,7 @@ def parse_floor(pdf_path, floor_no):
                 return True
         return False
 
-    def ordinary_door_arc(bz, tol_anchor=12.0):
+    def ordinary_door_arc(bz, tol_anchor=14.0):
         """普通门（window 层摆弧）识别：铰链(弧圆心)或端点贴墙即锚定。
         放宽容差以容忍绘制偏移/家具隔墙，捕获此前被 near_wall(tol=6) 漏掉的普通门；
         完全脱离墙体的悬空残段仍被排除。摆弧本就位于门口（WALL 层该处无连续墙体），
@@ -2058,24 +2121,11 @@ def parse_floor(pdf_path, floor_no):
     print(f"[F{floor_no}] 门去重: {before} -> {len(doors)}")
 
     # --- 提前计算楼梯间 bbox（要在 build_rooms 之前得到位置，便于稍后作为 staircase room 加入
-    #     rooms 列表，让门归属能找到楼梯间）。STAIR + A-FLOR-STRS 双层合并聚类：
+    #     rooms 列表，让门归属能找到楼梯间）。统一 detect_stair_boxes：
+    #     STAIR + A-FLOR-STRS 双层合并聚类 + 面积 3-80m² + 长宽比 ≤3 过滤。
     #     F2 STAIR 仅 2 个 quad，A-FLOR-STRS 含完整踏步/护栏线。
-    _stair_pts = []
-    for _lname in ("STAIR", "A-FLOR-STRS"):
-        _si = items.get(_lname, {"lines": [], "quads": []})
-        for _seg in _si["lines"]:
-            _stair_pts.append(_seg)
-        for _q in _si["quads"]:
-            _stair_pts.append((_q[0], _q[2]))
-    # 聚类间距 1.5×PT_PER_M（≈30pt）——比 4×PT_PER_M 更紧，避免不同楼梯/卫生间踏步线被合并。
-    _stair_boxes = bbox_clusters(_stair_pts, gap_pt=1.5 * PT_PER_M) if _stair_pts else []
-    # 楼梯间尺寸约束：
-    #   - 面积 4–50m²（楼梯间可能仅 4m² 梯段，三面有墙即可认定）；
-    #   - 长宽比 ≤ 2.0（防止阶梯+走廊/楼梯井拉伸成长条）。
-    _stair_boxes = [b for b in _stair_boxes
-                    if 4 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 50
-                    and (max(b[2]-b[0], b[3]-b[1]) /
-                         min(b[2]-b[0], b[3]-b[1])) < 2.0]
+    _stair_boxes = detect_stair_boxes(items)
+    print(f"[F{floor_no}] 统一楼梯 bbox: {len(_stair_boxes)} 个")
 
     # --- DOOR_FIRE 防火门仅由摆弧(curve)经 detect_doors 生成（需求：只处理 arc based door）---
     # fire["lines"]/fire["quads"] 不用于门识别，由 detect_doors 的 fire_curves 分支处理。
@@ -2149,7 +2199,32 @@ def parse_floor(pdf_path, floor_no):
 
     # --- 追加楼梯间 room（build_rooms 栅格化通常漏掉开放式楼梯井）---
     # STAIRCASE 类型让门归属能找到这些房间，使 II-Bx-yz#ST 类 DK 门洞被认领。
+    # 去重：若已有 staircase 房间中心距 bbox 中心 < STAIR_ROOM_DEDUP_M，则只更新 code，
+    # 不重复注入（避免 build_rooms 已识别出楼梯间时出现重复房间）。
+    dedup_pt = STAIR_ROOM_DEDUP_M / SCALE
+    injected = 0
     for sb_idx, (x0, y0, x1, y1) in enumerate(_stair_boxes):
+        cx_b, cy_b = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        dup = False
+        for r in rooms:
+            if r["roomType"] != "staircase":
+                continue
+            if math.hypot(r["polygon_pt"].centroid.x - cx_b,
+                          r["polygon_pt"].centroid.y - cy_b) < dedup_pt:
+                dup = True
+                # 若该已有楼梯间 room 无编号而此 bbox 有编号 → 补 code
+                if not r["code"]:
+                    best_code, best_d = None, 1.0 * PT_PER_M
+                    for code, (cx, cy) in room_codes:
+                        p = Point(cx, cy)
+                        d = math.hypot(cx - cx_b, cy - cy_b)
+                        if d < best_d:
+                            best_d, best_code = d, code
+                    if best_code and best_d < 1.0 * PT_PER_M:
+                        r["code"] = best_code
+                break
+        if dup:
+            continue
         poly = box(x0, y0, x1, y1)
         # 匹配 A-ANNO-150-TXT 编号（代码点在多边形内或距边界 < 1m）
         best_code, best_d = None, 1.0 * PT_PER_M
@@ -2160,14 +2235,15 @@ def parse_floor(pdf_path, floor_no):
                 best_d, best_code = d, code
         rooms.append({
             "id": obj_id(f"F{floor_no}", OBJ_TYPE["room"], room_seq + sb_idx + 1),
-            "label": f"楼梯间{sb_idx + 1}",
+            "label": f"楼梯间{injected + 1}",
             "roomType": "staircase",
             "code": best_code or "",
             "polygon_pt": poly,
             "coords_m": [list(pt2m((x, y))) for x, y in poly.exterior.coords],
             "centroid_m": list(pt2m((poly.centroid.x, poly.centroid.y))),
         })
-    print(f"[F{floor_no}] 含楼梯间后房间数: {len(rooms)}")
+        injected += 1
+    print(f"[F{floor_no}] 含楼梯间后房间数: {len(rooms)} (新注入 {injected})")
 
     # --- 门洞归属 pass 0：门弧中点（摆动侧）落在房间内部 -> 该房间所有。
     #     门向内开，弧必然鼓入所服务房间；这是最可靠的归属信号
@@ -2332,16 +2408,8 @@ def parse_floor(pdf_path, floor_no):
     # staircase 房间多边形，纯靠归属会把楼梯间门洞误判给走廊而被剔除。
     room_type_by_id = {r["id"]: r["roomType"] for r in rooms}
     toilet_polys = [r["polygon_pt"] for r in rooms if r["roomType"] == "toilet"]
-    stair_pts = []
-    for _ln in ("STAIR", "A-FLOR-STRS"):
-        _si = items.get(_ln, {"lines": [], "quads": []})
-        for _seg in _si["lines"]:
-            stair_pts.append(_seg)
-        for _q in _si["quads"]:
-            stair_pts.append((_q[0], _q[2]))
-    stair_boxes = bbox_clusters(stair_pts, gap_pt=4 * PT_PER_M) if stair_pts else []
-    stair_boxes = [b for b in stair_boxes
-                   if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+    # 统一楼梯 bbox（与早期注入/最终 geometry 共用 detect_stair_boxes）
+    stair_boxes = detect_stair_boxes(items)
     stair_polys = [box(b[0], b[1], b[2], b[3]) for b in stair_boxes]
 
     # --- 规则（2026-08-05 明确）：门洞 = window 图层中带 DK 矢量 strokes 的部分。
@@ -2438,22 +2506,11 @@ def parse_floor(pdf_path, floor_no):
           f"无归属门 {len(orphan_doors)} 个")
 
     # --- 楼梯 / 电梯 / 柱
-    # 楼梯来自 STAIR + A-FLOR-STRS 两层（F2 STAIR 仅 2 个 quad，
-    # 但 A-FLOR-STRS 含完整踏步/护栏线；合并才能稳定聚类）
-    stair_pts = []
-    for lname in ("STAIR", "A-FLOR-STRS"):
-        si = items.get(lname, {"lines": [], "quads": []})
-        for seg in si["lines"]:
-            stair_pts.append(seg)
-        for q in si["quads"]:
-            stair_pts.append((q[0], q[2]))
-    stair_boxes = bbox_clusters(stair_pts, gap_pt=4 * PT_PER_M) if stair_pts else []
-    stair_boxes = [b for b in stair_boxes
-                   if 10 < (b[2] - b[0]) * (b[3] - b[1]) * SCALE * SCALE < 200]
+    # 统一 detect_stair_boxes（STAIR + A-FLOR-STRS 合并 + 面积/长宽比过滤），
+    # 与早期注入 / 门洞范围判定共用同一检测路径，消除多路径参数不一致。
+    stair_boxes = detect_stair_boxes(items)
 
-    evtr_items = items.get(LAYER_ELEVATOR, {"lines": [], "quads": [], "curves": []})
-    evtr_pts = [seg for seg in evtr_items["lines"]] + [q[:2] for q in evtr_items["quads"]]
-    evtr_boxes = bbox_clusters(evtr_pts, gap_pt=2 * PT_PER_M) if evtr_pts else []
+    evtr_boxes = detect_elevator_boxes(items)
 
     col_boxes = []
     for lname in LAYER_COLUMNS:
@@ -2530,15 +2587,17 @@ def reconcile_facilities(f1, f2):
         b1, c1, cand1 = assign(f1, key, kind)
         b2, c2, cand2 = assign(f2, key, kind)
 
-        # --- 2) 剔除伪楼梯（形状离谱且无编号）---
+        # --- 2) 剔除伪楼梯（形状离谱；无编号按 STAIR_MAX_ASPECT，有编号仍拒极端细长条）---
         dropped = {"1": [], "2": []}
         if kind == "ST":
             def keep(b, c):
-                if c:
-                    return True
                 w, h = abs(b[2] - b[0]), abs(b[3] - b[1])
                 lo, hi = min(w, h), max(w, h)
-                return lo > 0 and hi / lo <= STAIR_MAX_ASPECT
+                aspect = (hi / lo) if lo > 1e-6 else 999.0
+                # 有编号：仅剔除极端细长条（防走廊+踏步被吸进）
+                if c:
+                    return aspect <= STAIR_MAX_ASPECT_CODED
+                return aspect <= STAIR_MAX_ASPECT
 
             for tag, bs, cs in (("1", b1, c1), ("2", b2, c2)):
                 kept = [(b, c) for b, c in zip(bs, cs) if keep(b, c)]
