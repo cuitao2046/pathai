@@ -397,6 +397,7 @@ body {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #
 svg {{ display: block; background: #fff; }}
 .layer_room polygon {{ opacity: 0.55; cursor: pointer; }}
 .layer_lobby_elevator polygon, .layer_lobby_stair polygon {{ opacity: 0.85; cursor: pointer; }}
+.layer_corridor polygon, .layer_lobby polygon, .layer_activity polygon, .layer_atrium polygon {{ opacity: 0.55; cursor: pointer; }}
 .layer_wall path {{ stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }}
 .layer_building_outline polygon {{ fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }}
 .layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; }}
@@ -467,6 +468,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 <div class="layer-controls" id="layerControls">
   <b>图层:</b>
   <label><input type="checkbox" checked onchange="toggleLayer('room', this.checked)"> 房间</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('corridor', this.checked)"> 走道</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby', this.checked)"> 门厅</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('activity', this.checked)"> 活动区</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('atrium', this.checked)"> 中庭</label>
   <label><input type="checkbox" checked onchange="toggleLayer('lobby_elevator', this.checked)"> 电梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('lobby_stair', this.checked)"> 楼梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
@@ -607,12 +612,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 _stroke = "#999"
                 _sw = 0.5
                 _dash = "none"
-            # 前室为完全独立图层（不受「房间」开关影响）：
+            # 开放空间/前室为完全独立图层（不受「房间」开关影响）：
             # 交互走 [data-info] 属性、导出走 [class*="layer_"]，脱离 layer_room 无副作用
             if rtype == "elevator_lobby":
                 layer_cls = "layer_lobby_elevator"
             elif rtype == "stair_lobby":
                 layer_cls = "layer_lobby_stair"
+            elif rtype in ("corridor", "lobby", "activity", "atrium"):
+                layer_cls = "layer_" + rtype
             else:
                 layer_cls = "layer_room"
             parts.append(
@@ -1168,7 +1175,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','lobby_elevator','lobby_stair','walkable','wall','window','stairs','elevator','column','building_outline',
+var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
