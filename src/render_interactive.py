@@ -419,6 +419,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 /* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
 .layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon {{ stroke: #FFC107 !important; stroke-width: 2.6 !important; }}
 .layer_topo_edge.selected path {{ stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }}
+.layer_topo_node.path-start circle, .layer_topo_node.path-start rect, .layer_topo_node.path-start polygon {{ stroke: #4CAF50 !important; stroke-width: 3 !important; }}
+.layer_topo_node.path-end circle, .layer_topo_node.path-end rect, .layer_topo_node.path-end polygon {{ stroke: #E91E63 !important; stroke-width: 3 !important; }}
+.layer_topo_node.path-via circle, .layer_topo_node.path-via rect, .layer_topo_node.path-via polygon {{ stroke: #FF9800 !important; stroke-width: 2.2 !important; }}
+#path-bar {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #FFF3E0; border: 1px solid #FFCC80; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }}
+#path-bar button {{ border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
+#path-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
+#path-bar .hint {{ color: #666; }}
+#path-bar .result {{ color: #BF360C; font-weight: bold; }}
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
@@ -498,6 +506,20 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
   <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
+</div>
+<div id="path-bar">
+  <b>路径规划</b>
+  <button type="button" id="btn-path-mode" onclick="togglePathMode()">选点导航</button>
+  <label>模式
+    <select id="path-mode-select" onchange="recomputePathIfReady()">
+      <option value="normal">普通</option>
+      <option value="blind">视障</option>
+      <option value="wheelchair">轮椅</option>
+    </select>
+  </label>
+  <button type="button" onclick="clearPath()">清除路径</button>
+  <span class="hint" id="path-hint">开启后依次点击两个拓扑节点（起点→终点）</span>
+  <span class="result" id="path-result"></span>
 </div>
 <div id="svg-container">
 <div id="floor-jump"></div>
@@ -1057,6 +1079,55 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         f'跨层连接: {len(cf)} 条 | 建筑: {geo.get("venueName","")} | 版本: {geo.get("version","?")}</text>\n'
     )
 
+
+    # ---------------- 路径规划图数据（前端 Dijkstra） ----------------
+    path_nodes = {}
+    path_edges = []
+    for fi, fk in enumerate(sorted_floors):
+        fd = geo["floors"][fk]
+        fbase_y = fi * svh_per_floor
+        for n in (fd.get("topology") or {}).get("nodes") or []:
+            cx, cy = n["coordinates"]
+            sx = MARGIN_X + (cx - ox) * SCALE
+            sy = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - cy) * SCALE
+            path_nodes[n["id"]] = {
+                "id": n["id"],
+                "type": n.get("type"),
+                "label": n.get("label") or "",
+                "floor": int(fk),
+                "x": round(sx, 1),
+                "y": round(sy, 1),
+                "facilityType": n.get("facilityType"),
+            }
+        for e in (fd.get("topology") or {}).get("edges") or []:
+            path_edges.append({
+                "id": e.get("id"),
+                "from": e.get("from"),
+                "to": e.get("to"),
+                "distance": float(e.get("distance") or 0),
+                "accessibilityLevel": e.get("accessibilityLevel", 0),
+                "blindAccessible": e.get("blindAccessible", True),
+                "wheelchairAccessible": e.get("wheelchairAccessible", True),
+            })
+    for e in geo.get("crossFloorEdges") or []:
+        path_edges.append({
+            "id": e.get("id"),
+            "from": e.get("from"),
+            "to": e.get("to"),
+            "distance": float(e.get("distance") or 0),
+            "accessibilityLevel": e.get("accessibilityLevel", 0),
+            "blindAccessible": e.get("blindAccessible", True),
+            "wheelchairAccessible": e.get("wheelchairAccessible", True),
+            "crossFloor": True,
+            "type": e.get("type"),
+        })
+    path_graph_js = json.dumps(
+        {"nodes": path_nodes, "edges": path_edges},
+        ensure_ascii=False, separators=(",", ":"))
+    parts.append(
+        f'<script type="application/json" id="path-graph-data">{path_graph_js}</script>\n'
+    )
+
     # ---------------- 图例 + 详情面板 + JS ----------------
     parts.append('''</svg>
 </div><!-- /svg-wrapper -->
@@ -1324,6 +1395,223 @@ function jumpFloor(idx, total, perFloor, btn) {{
   if (targetY < minY) targetY = minY;
   translateY = targetY; applyTransform(); setZoomInfo();
 }}
+
+// ---- 路径规划：图上选点 + Dijkstra 最优路径 ----
+var pathMode = false;
+var pathStart = null, pathEnd = null;
+var PATH_GRAPH = null;
+(function(){
+  var el = document.getElementById('path-graph-data');
+  if (el) { try { PATH_GRAPH = JSON.parse(el.textContent); } catch(e) { console.warn(e); } }
+})();
+
+function togglePathMode() {
+  pathMode = !pathMode;
+  var btn = document.getElementById('btn-path-mode');
+  if (btn) btn.classList.toggle('active', pathMode);
+  var hint = document.getElementById('path-hint');
+  if (pathMode) {
+    ensureLayer('topo_node', true);
+    ensureLayer('topo_edge', true);
+    if (hint) hint.textContent = '请点击起点拓扑节点…';
+    pathStart = pathEnd = null;
+    clearPathVisual();
+  } else {
+    if (hint) hint.textContent = '开启后依次点击两个拓扑节点（起点→终点）';
+  }
+}
+
+function clearPathVisual() {
+  document.querySelectorAll('.path-start,.path-end,.path-via').forEach(function(el){
+    el.classList.remove('path-start','path-end','path-via');
+  });
+  var g = document.getElementById('path-route-layer');
+  if (g) g.innerHTML = '';
+}
+
+function clearPath() {
+  pathStart = pathEnd = null;
+  clearPathVisual();
+  var r = document.getElementById('path-result');
+  if (r) r.textContent = '';
+  var h = document.getElementById('path-hint');
+  if (h) h.textContent = pathMode ? '请点击起点拓扑节点…' : '开启后依次点击两个拓扑节点（起点→终点）';
+}
+
+function edgeAllowed(e, mode) {
+  if (mode === 'blind') {
+    if (e.blindAccessible === false) return false;
+    if (Number(e.accessibilityLevel) === 999) return false;
+  }
+  if (mode === 'wheelchair') {
+    if (e.wheelchairAccessible === false) return false;
+    if (Number(e.accessibilityLevel) === 999) return false;
+  }
+  return true;
+}
+
+function dijkstra(startId, endId, mode) {
+  if (!PATH_GRAPH) return null;
+  var adj = {};
+  (PATH_GRAPH.edges || []).forEach(function(e) {
+    if (!edgeAllowed(e, mode)) return;
+    var a = e.from, b = e.to, w = Number(e.distance) || 0;
+    if (!PATH_GRAPH.nodes[a] || !PATH_GRAPH.nodes[b]) return;
+    if (!adj[a]) adj[a] = [];
+    if (!adj[b]) adj[b] = [];
+    adj[a].push({to: b, w: w, id: e.id});
+    adj[b].push({to: a, w: w, id: e.id});
+  });
+  var dist = {}, prev = {}, prevEdge = {};
+  Object.keys(PATH_GRAPH.nodes).forEach(function(id){ dist[id] = Infinity; });
+  dist[startId] = 0;
+  var pq = [[0, startId]]; // [d, id] simple list
+  while (pq.length) {
+    pq.sort(function(a,b){ return a[0]-b[0]; });
+    var cur = pq.shift();
+    var d = cur[0], u = cur[1];
+    if (d !== dist[u]) continue;
+    if (u === endId) break;
+    var nbrs = adj[u] || [];
+    for (var i = 0; i < nbrs.length; i++) {
+      var nb = nbrs[i];
+      var nd = d + nb.w;
+      if (nd < dist[nb.to]) {
+        dist[nb.to] = nd;
+        prev[nb.to] = u;
+        prevEdge[nb.to] = nb.id;
+        pq.push([nd, nb.to]);
+      }
+    }
+  }
+  if (dist[endId] === Infinity) return null;
+  var path = [];
+  var edgeIds = [];
+  for (var at = endId; at; at = prev[at]) {
+    path.push(at);
+    if (prevEdge[at]) edgeIds.push(prevEdge[at]);
+    if (at === startId) break;
+  }
+  path.reverse();
+  edgeIds.reverse();
+  return { nodes: path, edges: edgeIds, distance: dist[endId] };
+}
+
+function markNodeClass(id, cls) {
+  document.querySelectorAll('.layer_topo_node').forEach(function(g) {
+    var f = g.getAttribute('data-info');
+    if (!f) return;
+    try {
+      var nd = JSON.parse(f);
+      if (nd.id === id) g.classList.add(cls);
+    } catch(e) {}
+  });
+}
+
+function drawPath(result) {
+  clearPathVisual();
+  if (!result || !result.nodes.length) return;
+  var svg = document.getElementById('main-svg');
+  var layer = document.getElementById('path-route-layer');
+  if (!layer) {
+    layer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    layer.setAttribute('id', 'path-route-layer');
+    layer.setAttribute('class', 'layer_path_route');
+    svg.appendChild(layer);
+  }
+  layer.innerHTML = '';
+  var pts = [];
+  result.nodes.forEach(function(id, idx) {
+    var n = PATH_GRAPH.nodes[id];
+    if (!n) return;
+    pts.push(n.x + ',' + n.y);
+    if (idx === 0) markNodeClass(id, 'path-start');
+    else if (idx === result.nodes.length - 1) markNodeClass(id, 'path-end');
+    else markNodeClass(id, 'path-via');
+  });
+  if (pts.length >= 2) {
+    var pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    pathEl.setAttribute('points', pts.join(' '));
+    pathEl.setAttribute('fill', 'none');
+    pathEl.setAttribute('stroke', '#E91E63');
+    pathEl.setAttribute('stroke-width', '3.2');
+    pathEl.setAttribute('stroke-linecap', 'round');
+    pathEl.setAttribute('stroke-linejoin', 'round');
+    pathEl.setAttribute('opacity', '0.95');
+    layer.appendChild(pathEl);
+  }
+  // 高亮对应拓扑边
+  document.querySelectorAll('.layer_topo_edge').forEach(function(g) {
+    var f = g.getAttribute('data-info');
+    if (!f) return;
+    try {
+      var ed = JSON.parse(f);
+      if (result.edges.indexOf(ed.id) >= 0) g.classList.add('selected');
+    } catch(e) {}
+  });
+}
+
+function recomputePathIfReady() {
+  if (pathStart && pathEnd) {
+    runPath(pathStart, pathEnd);
+  }
+}
+
+function runPath(startId, endId) {
+  var mode = (document.getElementById('path-mode-select') || {}).value || 'normal';
+  var result = dijkstra(startId, endId, mode);
+  var out = document.getElementById('path-result');
+  var hint = document.getElementById('path-hint');
+  if (!result) {
+    if (out) out.textContent = '不可达（当前模式下无连通路径）';
+    clearPathVisual();
+    markNodeClass(startId, 'path-start');
+    markNodeClass(endId, 'path-end');
+    return;
+  }
+  drawPath(result);
+  var sn = PATH_GRAPH.nodes[startId] || {};
+  var en = PATH_GRAPH.nodes[endId] || {};
+  if (out) {
+    out.textContent = '路径 ' + result.nodes.length + ' 节点 · ' +
+      result.distance.toFixed(1) + ' m · ' +
+      (sn.label || startId) + ' → ' + (en.label || endId);
+  }
+  if (hint) hint.textContent = '可继续点选新的起点，或点「清除路径」';
+}
+
+// 挂到原有节点点击逻辑：pathMode 下优先选点
+var _origPathClickInstalled = false;
+function installPathClick() {
+  if (_origPathClickInstalled) return;
+  _origPathClickInstalled = true;
+  wrapper.addEventListener('click', function(e) {
+    if (!pathMode) return;
+    var t = e.target.closest('[data-info]');
+    if (!t) return;
+    var info = t.getAttribute('data-info');
+    var d; try { d = JSON.parse(info); } catch (err) { return; }
+    if (d.kind !== 'node' || !d.id) return;
+    e.stopPropagation();
+    if (!pathStart || (pathStart && pathEnd)) {
+      pathStart = d.id;
+      pathEnd = null;
+      clearPathVisual();
+      markNodeClass(pathStart, 'path-start');
+      var h = document.getElementById('path-hint');
+      if (h) h.textContent = '已选起点，请点击终点…';
+      var r = document.getElementById('path-result');
+      if (r) r.textContent = '';
+      return;
+    }
+    if (d.id === pathStart) return;
+    pathEnd = d.id;
+    runPath(pathStart, pathEnd);
+  }, true); // capture 优先于详情点击
+}
+installPathClick();
+
+
 buildFloorJump(__NFLOORS__, __PERFLOOR__);
 applyTransform(); setZoomInfo();
 </script>

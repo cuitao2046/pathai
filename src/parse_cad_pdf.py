@@ -1917,12 +1917,119 @@ def classify_elevator_stair_lobby(rooms, stair_boxes, evtr_boxes,
 
 
 
-def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no):
+def _heban_real_polygon(label_pt_pt, all_segs, furn_segs, closures):
+    """
+    合班教室真实闭合墙体识别（局部、不影响其它空间）：
+      1) 在标签点周围取局部墙图（结构墙+家具线+门/窗封口）；
+      2) 用形态学闭运算桥合标准门/窗宽度的小缺口，把真实墙体闭合成环；
+      3) 从标签点泛洪，提取包含标签点的自由空间连通域；
+      4) 轮廓简化 -> shapely Polygon。
+    多档核宽（1.2/1.6/2.0/2.4/2.8m）自动选择落在 30~250m² 的结果，
+    太大（漏进走廊）或太小（未闭合）时回退为 None。
+    """
+    import cv2
+    import numpy as np
+    if not all_segs:
+        return None
+    half_m = 18.0
+    half_pt = half_m / SCALE
+    minx = label_pt_pt[0] - half_pt
+    maxx = label_pt_pt[0] + half_pt
+    miny = label_pt_pt[1] - half_pt
+    maxy = label_pt_pt[1] + half_pt
+    Z = RENDER_ZOOM
+    W = int((maxx - minx) * Z) + 1
+    H = int((maxy - miny) * Z) + 1
+    if W <= 20 or H <= 20:
+        return None
+
+    def to_px(p):
+        return (int(round((p[0] - minx) * Z)), int(round((p[1] - miny) * Z)))
+
+    walls = np.zeros((H, W), np.uint8)
+    for a, b in list(all_segs) + list(furn_segs) + list(closures):
+        pa, pb = to_px(a), to_px(b)
+        if 0 <= pa[0] < W and 0 <= pa[1] < H and 0 <= pb[0] < W and 0 <= pb[1] < H:
+            cv2.line(walls, pa, pb, 255, thickness=2)
+
+    label_px = to_px(label_pt_pt)
+    if not (0 <= label_px[0] < W and 0 <= label_px[1] < H):
+        return None
+
+    best_poly = None
+    best_score = None
+
+    # 局部算法：合班是完整矩形房间，仅走廊侧有大开口漏进走廊。
+    # 用递增的形态学闭运算桥合开口；核足够大时漏口被封，泛洪只填房间内部→面积≈80m²。
+    # 局部图不影响全局其它空间（只取含标签点的轮廓），故可用较大核激进封口。
+    for km in (1.2, 1.6, 2.0, 2.4, 2.8, 3.5, 4.5, 6.0):
+        k = int(round(km / (SCALE / Z)))
+        k = max(5, k | 1)  # 奇数核
+        closed = cv2.morphologyEx(
+            walls, cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+        # 标签点若落在墙上，找最近自由像素
+        lx, ly = label_px
+        if closed[ly, lx] != 0:
+            found = None
+            for r in range(1, 30):
+                for dy in range(-r, r + 1):
+                    for dx in range(-r, r + 1):
+                        x, y = lx + dx, ly + dy
+                        if 0 <= x < W and 0 <= y < H and closed[y, x] == 0:
+                            found = (x, y)
+                            break
+                    if found:
+                        break
+                if found:
+                    break
+            if not found:
+                continue
+            lx, ly = found
+        mask = np.zeros((H + 2, W + 2), np.uint8)
+        try:
+            # floodFill 把填充区域(=种子点像素值0)改写为 newVal=128 写回图像 closed，
+            # 而 mask 对应像素只置为 1（非 128）。故取填充区域要用 closed==128。
+            cv2.floodFill(closed, mask, (lx, ly), 128)
+        except Exception:
+            continue
+        comp = (closed == 128).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            continue
+        cnt = max(contours, key=cv2.contourArea)
+        area_px = cv2.contourArea(cnt)
+        area_m2 = area_px * (SCALE / Z) ** 2
+        if not (30.0 <= area_m2 <= 250.0):
+            continue
+        peri = cv2.arcLength(cnt, True)
+        approx = cv2.approxPolyDP(cnt, max(1.0, 0.015 * peri), True)
+        if len(approx) < 3:
+            continue
+        pts = [(float(p[0][0]) / Z + minx,
+                float(p[0][1]) / Z + miny) for p in approx]
+        poly = Polygon(pts)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        if poly.is_empty or float(poly.area) * (SCALE ** 2) < 30.0:
+            continue
+        # 选面积最接近典型合班教室 ~80m² 的核
+        score = abs(area_m2 - 80.0)
+        if best_poly is None or score < best_score:
+            best_poly = poly
+            best_score = score
+
+    return best_poly
+
+
+def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
+                                  all_segs=(), furn_segs=(), closures=()):
     """
     合班教室注入（隔离版）：只服务合班自身，不影响其他空间。
 
     约束：
-      1) 占位几何极小（~3m 方），不裁切/覆盖其他房间 polygon；
+      1) 优先用局部闭合墙体识别得到真实多边形；失败才回退到 3m 占位方块；
       2) 只「追加」门归属，从不删除其它 room id；
       3) 不抢已明确归属其它封闭房间的门；
       4) 不修改其它房间的 roomType / walkable。
@@ -1981,17 +2088,27 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no):
             def m2pt(xm, ym):
                 return (xm / SCALE + ORIGIN_X, ORIGIN_Y - ym / SCALE)
 
-            # 极小占位（3m×3m），仅作拓扑质心，降低压盖邻室风险
-            half = 1.5
-            corners_m = [
-                (cx_m - half, cy_m - half),
-                (cx_m + half, cy_m - half),
-                (cx_m + half, cy_m + half),
-                (cx_m - half, cy_m + half),
-            ]
-            corners_pt = [m2pt(x, y) for x, y in corners_m]
-            poly = Polygon(corners_pt)
-            # 若与其它封闭房间相交，尝试差集；失败则仍用小方块（拓扑用）
+            # 优先识别真实闭合墙体多边形；失败才回退 3m 占位方块
+            real_poly = _heban_real_polygon(pt_pt, all_segs, furn_segs, closures)
+            if real_poly is not None:
+                poly = real_poly
+                source = "heban_inject_real"
+                print(f"[F{floor_no}] 合班教室识别真实闭合墙体: "
+                      f"面积≈{float(poly.area) * (SCALE ** 2):.1f}m²")
+            else:
+                # 极小占位（3m×3m），仅作拓扑质心，降低压盖邻室风险
+                half = 1.5
+                corners_m = [
+                    (cx_m - half, cy_m - half),
+                    (cx_m + half, cy_m - half),
+                    (cx_m + half, cy_m + half),
+                    (cx_m - half, cy_m + half),
+                ]
+                corners_pt = [m2pt(x, y) for x, y in corners_m]
+                poly = Polygon(corners_pt)
+                source = "heban_inject"
+                print(f"[F{floor_no}] 合班教室真实墙体识别失败，回退 3m 占位")
+            # 若与其它封闭房间相交，尝试差集；失败则仍用原多边形（拓扑用）
             try:
                 others = []
                 for r in rooms:
@@ -2028,7 +2145,7 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no):
                 "centroid_m": [cx_m, cy_m],
                 "area_m2": round(float(poly.area) * (SCALE ** 2), 2),
                 "synthetic": True,
-                "source": "heban_inject",
+                "source": source,
             }
             rooms.append(room)
             room_by_id[rid] = room
@@ -2721,8 +2838,11 @@ def parse_floor(pdf_path, floor_no):
     # 注：Walkable Polygon 生成已移至 build_geojson（reconcile_facilities 补齐
     # 楼梯/电梯 bbox 之后），保证扣除用的井道列表与最终 GeoJSON 一致。
 
-    # 合班教室：墙未闭合时注入封闭房间并关联门洞 → 可导航至门口
-    inject_heban_classroom_rooms(rooms, doors, room_names, floor_no)
+    # 合班教室：墙未闭合时注入封闭房间并关联门洞 → 可导航至门口。
+    # 注入阶段会尝试用局部墙图识别合班的真实闭合墙体多边形，仅影响合班自身。
+    inject_heban_classroom_rooms(rooms, doors, room_names, floor_no,
+                                all_segs=all_segs, furn_segs=furn_segs,
+                                closures=closures)
 
     return {
         "rooms": rooms,
