@@ -432,7 +432,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 #edge-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
 #edge-bar .hint {{ color: #666; }}
 #edge-bar .result {{ color: #AD1457; font-weight: bold; }}
-.layer_manual_edge path {{ stroke: #E91E63; stroke-width: 2.2; fill: none; opacity: 0.9; stroke-dasharray: 8,4; pointer-events: stroke; cursor: crosshair; }}
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
@@ -528,11 +527,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <span class="result" id="path-result"></span>
 </div>
 <div id="edge-bar">
-  <b>手动加边</b>
-  <button type="button" id="btn-edge-mode" onclick="toggleEdgeMode()">加边模式</button>
-  <button type="button" onclick="exportManualEdges()" title="导出 manual_edges.json；再用 src/merge_manual_edges.py 合并进 GeoJSON">导出手工边</button>
-  <button type="button" onclick="clearManualEdges()">清除手工边</button>
-  <span class="hint" id="edge-hint">开启后依次点击两个拓扑节点，创建一条新拓扑边</span>
+  <b>拓扑边编辑</b>
+  <button type="button" id="btn-del-edge" onclick="deleteSelectedEdge()" disabled title="先单击选中一条拓扑边">删除选中拓扑边</button>
+  <button type="button" onclick="saveGeojson()" title="将增删的拓扑边写回 GeoJSON 文件（弹窗选择保存位置）">保存 GeoJSON</button>
+  <span class="hint" id="edge-hint">双击拓扑节点添加拓扑边（依次双击两个节点）；单击拓扑边后可用「删除选中拓扑边」</span>
   <span class="result" id="edge-list"></span>
 </div>
 <div id="svg-container">
@@ -943,7 +941,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             ]}
             tip = f"导航边\\n距离 {e.get('distance',0):.1f}m · 视障 {('是' if e.get('blindAccessible') else '否')}"
             attr = info_attr({"tip": tip, "detail": det, "from": e.get("from", ""),
-                              "to": e.get("to", ""), "kind": "edge"})
+                              "to": e.get("to", ""), "id": e.get("id", ""),
+                              "kind": "edge"})
             parts.append(
                 f'<g class="layer_topo_edge" {attr}><path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
             )
@@ -1142,6 +1141,11 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         ensure_ascii=False, separators=(",", ":"))
     parts.append(
         f'<script type="application/json" id="path-graph-data">{path_graph_js}</script>\n'
+    )
+    # 完整 GeoJSON 数据：供「拓扑边编辑」在浏览器内增删边后整体写回文件
+    full_geojson_js = json.dumps(geo, ensure_ascii=False, separators=(",", ":"))
+    parts.append(
+        f'<script type="application/json" id="full-geojson-data">{full_geojson_js}</script>\n'
     )
 
     # ---------------- 图例 + 详情面板 + JS ----------------
@@ -1349,7 +1353,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material','manual_edge'];
+  'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
@@ -1660,117 +1664,171 @@ function installPathClick() {
 }
 installPathClick();
 
-// ---- 手动加边：点击两个拓扑节点生成拓扑边 ----
-// 新边先存在浏览器 localStorage（实时绘制、可删除），点「导出手工边」下载
-// manual_edges.json，再用 src/merge_manual_edges.py 合并进 GeoJSON 正式生效。
-var edgeMode = false;
-var edgePick = [];
-var MANUAL_EDGE_KEY = 'pathai_manual_edges_v1';
-var MANUAL_EDGES = [];
+// ---- 拓扑边编辑：双击节点加边 / 选中边删除 / 保存 GeoJSON ----
+// 增删边直接修改嵌入的完整 GeoJSON（#full-geojson-data）并在图上实时反映，
+// 点「保存 GeoJSON」用 File System Access API 写回文件（不支持则下载完整文件）。
+var FULL_DATA = null;
 (function(){{
-  try {{ var s = localStorage.getItem(MANUAL_EDGE_KEY); if (s) MANUAL_EDGES = JSON.parse(s); }} catch(e){{}}
+  var el = document.getElementById('full-geojson-data');
+  if (el) {{ try {{ FULL_DATA = JSON.parse(el.textContent); }} catch(e) {{ console.warn('full geojson parse failed', e); }} }}
 }})();
-function saveManualEdges(){{ try {{ localStorage.setItem(MANUAL_EDGE_KEY, JSON.stringify(MANUAL_EDGES)); }} catch(e){{}} }}
-function manualEdgeId(fl){{
-  var used = {{}};
-  MANUAL_EDGES.forEach(function(m){{ used[m.id] = 1; }});
-  var n = 1;
-  while (used['F' + fl + '-TE-' + ('000' + n).slice(-4)]) n++;
-  return 'F' + fl + '-TE-' + ('000' + n).slice(-4);
-}}
-function renderManualEdges(){{
-  var layer = document.getElementById('manual-edge-layer');
-  if (!layer) return;
-  layer.innerHTML = '';
-  MANUAL_EDGES.forEach(function(m){{
-    var a = PATH_GRAPH.nodes[m.from], b = PATH_GRAPH.nodes[m.to];
-    if (!a || !b) return;
-    var flTxt = (a.floor === b.floor) ? (a.floor + 'F') : (a.floor + 'F → ' + b.floor + 'F');
-    var det = {{title: '手工拓扑边 ' + m.id, rows: [
-      ['起始', m.from], ['终点', m.to],
-      ['距离', m.distance.toFixed(2) + ' m'],
-      ['预估时间', m.estimatedTime.toFixed(1) + ' s'],
-      ['楼层', flTxt],
-      ['状态', '未合并（导出手工边后用脚本合并进 GeoJSON）']
-    ]}};
-    var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('class', 'layer_manual_edge');
-    g.setAttribute('data-info', JSON.stringify({{tip: '手工边 ' + m.id, detail: det, kind: 'manual_edge'}}));
-    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', 'M ' + a.x + ' ' + a.y + ' L ' + b.x + ' ' + b.y);
-    g.appendChild(p);
-    layer.appendChild(g);
-  }});
-  var el = document.getElementById('edge-list');
-  if (el) el.textContent = MANUAL_EDGES.length ? '已添加 ' + MANUAL_EDGES.length + ' 条手工边' : '';
-}}
-function toggleEdgeMode(){{
-  edgeMode = !edgeMode;
-  var btn = document.getElementById('btn-edge-mode');
-  if (btn) btn.classList.toggle('active', edgeMode);
-  var hint = document.getElementById('edge-hint');
-  if (edgeMode) {{
-    if (pathMode) togglePathMode();
-    ensureLayer('topo_node', true);
-    if (hint) hint.textContent = '请点击第一个拓扑节点…';
-    edgePick = [];
-  }} else {{
-    if (hint) hint.textContent = '开启后依次点击两个拓扑节点，创建一条新拓扑边';
+var edgePick = [];            // 双击选点：首个节点 id
+var selectedEdgeId = null;    // 当前单击选中的拓扑边 id
+var selectedEdgeEl = null;    // 对应的 SVG 元素
+function edgeHint(msg){{ var h = document.getElementById('edge-hint'); if (h) h.textContent = msg; }}
+function edgeStatus(msg){{ var s = document.getElementById('edge-list'); if (s) s.textContent = msg; }}
+function nextEdgeId(fa, fb){{
+  if (fa === fb) {{
+    var max = 0;
+    ((FULL_DATA.floors[String(fa)].topology || {{}}).edges || []).forEach(function(e){{
+      var m = /F\\d+-TE-(\\d+)/.exec(e.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10));
+    }});
+    return 'F' + fa + '-TE-' + ('0000' + (max + 1)).slice(-4);
   }}
+  var max = 0;
+  (FULL_DATA.crossFloorEdges || []).forEach(function(e){{
+    var m = /FX-XE-(\\d+)/.exec(e.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10));
+  }});
+  return 'FX-XE-' + ('0000' + (max + 1)).slice(-4);
 }}
-wrapper.addEventListener('click', function(e) {{
-  if (!edgeMode) return;
+function edgeExists(a, b){{
+  for (var fk in FULL_DATA.floors) {{
+    var es = (FULL_DATA.floors[fk].topology || {{}}).edges || [];
+    for (var i = 0; i < es.length; i++)
+      if ((es[i].from === a && es[i].to === b) || (es[i].from === b && es[i].to === a)) return true;
+  }}
+  var xs = FULL_DATA.crossFloorEdges || [];
+  for (var j = 0; j < xs.length; j++)
+    if ((xs[j].from === a && xs[j].to === b) || (xs[j].from === b && xs[j].to === a)) return true;
+  return false;
+}}
+function drawEdgeElement(edge){{
+  var a = PATH_GRAPH.nodes[edge.from], b = PATH_GRAPH.nodes[edge.to];
+  if (!a || !b) return null;
+  var det = {{title: '导航边 ' + edge.id, rows: [
+    ['起始', edge.from], ['终点', edge.to],
+    ['距离', edge.distance.toFixed(2) + ' m'],
+    ['预估时间', (edge.estimatedTime || 0).toFixed(1) + ' s'],
+    ['可达等级', edge.accessibilityLevel], ['风险等级', edge.riskLevel],
+    ['可步行', '是'], ['轮椅', '是'], ['视障', '是']
+  ]}};
+  var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'layer_topo_edge');
+  g.setAttribute('data-info', JSON.stringify({{tip: '导航边 ' + edge.id + ' 距离 ' + edge.distance.toFixed(1) + 'm', detail: det, from: edge.from, to: edge.to, id: edge.id, kind: 'edge'}}));
+  var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', 'M ' + a.x + ' ' + a.y + ' L ' + b.x + ' ' + b.y);
+  g.appendChild(p);
+  svg.appendChild(g);
+  return g;
+}}
+// 双击拓扑节点：第一次选起点，第二次选终点自动加边
+wrapper.addEventListener('dblclick', function(e) {{
   var t = e.target.closest('[data-info]');
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
   if (d.kind !== 'node' || !d.id) return;
-  e.stopPropagation();
+  e.preventDefault(); e.stopPropagation();
+  ensureLayer('topo_node', true); ensureLayer('topo_edge', true);
   var nd = PATH_GRAPH.nodes[d.id];
-  if (!nd) return;
-  var hint = document.getElementById('edge-hint');
+  if (!nd) {{ edgeHint('节点不在图中'); return; }}
   if (edgePick.length === 0) {{
     edgePick.push(d.id);
     markNodeClass(d.id, 'path-start');
-    if (hint) hint.textContent = '已选第一个节点（' + (nd.label || d.id) + '），请点击第二个…';
+    edgeHint('已选第一个节点（' + (nd.label || d.id) + '），请双击第二个节点…');
     return;
   }}
   var a = edgePick[0];
-  if (d.id === a) return;
   edgePick = [];
   clearPathVisual();
-  var dup = MANUAL_EDGES.some(function(m){{ return (m.from === a && m.to === d.id) || (m.from === d.id && m.to === a); }});
-  if (dup) {{ if (hint) hint.textContent = '这两个节点已存在手工边，请重新选择'; return; }}
-  var na = PATH_GRAPH.nodes[a], nb = PATH_GRAPH.nodes[d.id];
-  var distM = Math.sqrt((na.mx - nb.mx) * (na.mx - nb.mx) + (na.my - nb.my) * (na.my - nb.my));
-  var m = {{
-    id: manualEdgeId(na.floor), from: a, to: d.id,
+  if (d.id === a) {{ edgeHint('两个节点相同，请重新双击选择'); return; }}
+  if (edgeExists(a, d.id)) {{ edgeHint('这两个节点已存在拓扑边，请重新选择'); return; }}
+  var na = PATH_GRAPH.nodes[a];
+  var distM = Math.sqrt((na.mx - nd.mx) * (na.mx - nd.mx) + (na.my - nd.my) * (na.my - nd.my));
+  var edge = {{
+    id: nextEdgeId(na.floor, nd.floor),
+    from: a, to: d.id,
     distance: Math.round(distM * 100) / 100,
     estimatedTime: Math.round(distM / 0.8 * 10) / 10,
     accessibilityLevel: 0, riskLevel: 0.5,
     walkable: true, wheelchairAccessible: true, blindAccessible: true,
-    floorFrom: na.floor, floorTo: nb.floor
+    manual: true
   }};
-  MANUAL_EDGES.push(m);
-  saveManualEdges();
-  renderManualEdges();
-  PATH_GRAPH.edges.push({{id: m.id, from: m.from, to: m.to, distance: m.distance, accessibilityLevel: 0, blindAccessible: true, wheelchairAccessible: true, manual: true}});
-  if (hint) hint.textContent = '已添加手工边 ' + m.id + '（' + m.distance.toFixed(1) + ' m），可继续选择或退出模式';
+  if (na.floor === nd.floor) {{
+    FULL_DATA.floors[String(na.floor)].topology.edges.push(edge);
+  }} else {{
+    edge.fromFloor = na.floor; edge.toFloor = nd.floor;
+    edge.type = 'manual'; edge.matchedBy = 'manual';
+    if (!FULL_DATA.crossFloorEdges) FULL_DATA.crossFloorEdges = [];
+    FULL_DATA.crossFloorEdges.push(edge);
+  }}
+  PATH_GRAPH.edges.push({{id: edge.id, from: edge.from, to: edge.to, distance: edge.distance, accessibilityLevel: 0, blindAccessible: true, wheelchairAccessible: true, manual: true}});
+  drawEdgeElement(edge);
+  edgeStatus('已添加拓扑边 ' + edge.id + '（' + edge.distance.toFixed(1) + ' m）· 待保存');
+  edgeHint('可继续双击两个节点加边，或点「保存 GeoJSON」写回文件');
 }}, true);
-function exportManualEdges(){{
-  if (!MANUAL_EDGES.length) {{ alert('当前没有手工边可导出。'); return; }}
-  var blob = new Blob([JSON.stringify(MANUAL_EDGES, null, 2)], {{type: 'application/json'}});
+// 单击拓扑边：记录选中，启用删除按钮
+wrapper.addEventListener('click', function(e) {{
+  var t = e.target.closest('[data-info]');
+  if (!t) return;
+  var d; try {{ d = JSON.parse(t.getAttribute('data-info')); }} catch (err) {{ return; }}
+  if (d.kind !== 'edge' || !d.id) return;
+  selectedEdgeId = d.id;
+  selectedEdgeEl = t;
+  updateDeleteBtn();
+}});
+function updateDeleteBtn(){{
+  var btn = document.getElementById('btn-del-edge');
+  if (btn) btn.disabled = !selectedEdgeId;
+}}
+function deleteSelectedEdge(){{
+  if (!selectedEdgeId) {{ alert('请先单击选中一条拓扑边'); return; }}
+  if (!confirm('确定删除拓扑边 ' + selectedEdgeId + ' ？')) return;
+  var removed = false;
+  for (var fk in FULL_DATA.floors) {{
+    var es = (FULL_DATA.floors[fk].topology || {{}}).edges || [];
+    for (var i = es.length - 1; i >= 0; i--)
+      if (es[i].id === selectedEdgeId) {{ es.splice(i, 1); removed = true; }}
+  }}
+  var xs = FULL_DATA.crossFloorEdges || [];
+  for (var j = xs.length - 1; j >= 0; j--)
+    if (xs[j].id === selectedEdgeId) {{ xs.splice(j, 1); removed = true; }}
+  for (var k = PATH_GRAPH.edges.length - 1; k >= 0; k--)
+    if (PATH_GRAPH.edges[k].id === selectedEdgeId) PATH_GRAPH.edges.splice(k, 1);
+  if (selectedEdgeEl && selectedEdgeEl.parentNode) selectedEdgeEl.parentNode.removeChild(selectedEdgeEl);
+  var del = selectedEdgeId;
+  selectedEdgeId = null; selectedEdgeEl = null;
+  updateDeleteBtn();
+  clearHighlight(); resetDetail();
+  edgeStatus(removed ? ('已删除拓扑边 ' + del + ' · 待保存') : ('未找到边 ' + del));
+}}
+// 保存：完整 GeoJSON 写回文件（File System Access API；不支持则下载完整文件）
+async function saveGeojson(){{
+  if (!FULL_DATA) {{ alert('完整数据未加载，无法保存'); return; }}
+  var json = JSON.stringify(FULL_DATA, null, 2);
+  if (window.showSaveFilePicker) {{
+    try {{
+      var handle = await window.showSaveFilePicker({{
+        suggestedName: 'school_building_01_map_v9.geojson',
+        types: [{{description: 'GeoJSON', accept: {{'application/json': ['.geojson', '.json']}}}}]
+      }});
+      var w = await handle.createWritable();
+      await w.write(json);
+      await w.close();
+      edgeStatus('已保存 GeoJSON ✔ 建议重渲染 HTML');
+      return;
+    }} catch (err) {{
+      if (err && err.name === 'AbortError') return;
+    }}
+  }}
+  var blob = new Blob([json], {{type: 'application/json'}});
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
-  a.href = url; a.download = 'manual_edges.json'; a.click();
+  a.href = url; a.download = 'school_building_01_map_v9.geojson'; a.click();
   setTimeout(function(){{ URL.revokeObjectURL(url); }}, 2000);
+  edgeStatus('已下载完整 GeoJSON（请放到 result/ 目录）');
 }}
-function clearManualEdges(){{
-  if (!MANUAL_EDGES.length) return;
-  if (!confirm('确定清除全部 ' + MANUAL_EDGES.length + ' 条手工边？')) return;
-  MANUAL_EDGES = []; saveManualEdges(); renderManualEdges();
-}}
-renderManualEdges();
+updateDeleteBtn();
 
 
 buildFloorJump(__NFLOORS__, __PERFLOOR__);
