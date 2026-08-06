@@ -26,12 +26,15 @@ import collections
 import heapq
 from pathlib import Path
 
-from shapely.ops import unary_union, polygonize
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import unary_union, polygonize, transform
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely import snap as shp_snap
 
 # 拓扑建模（指南 第五章）
 from topology import build_floor_topology, build_cross_floor_edges, obj_id, OBJ_TYPE
+# 复用渲染脚本的建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
+# 用于 walkable 沿外墙裁剪，避免走廊多边形延伸到户外紧贴墙体的位置。
+from render_interactive import building_outline
 
 # ---------------------------------------------------------------- 配置
 
@@ -2606,6 +2609,68 @@ def build_geojson(f1, f2):
             print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
         except Exception as e:
             print(f"    [WARN] Walkable Polygon 生成失败: {e}")
+
+        # T1.5 沿建筑外轮廓裁剪 walkable：走廊多边形可能沿真实外墙延伸到户外
+        # 紧贴墙体的位置；用 building_outline（与渲染一致）作为建筑内部 mask 裁剪
+        try:
+            _flo = {
+                "walls": [{"geometry": {"type": "LineString",
+                            "coordinates": [list(pt2m(a)), list(pt2m(b))]}}
+                          for (a, b) in data["wall_segs"]],
+                "rooms": [{"geometry": {"type": "Polygon",
+                           "coordinates": [r["coords_m"]]}}
+                          for r in data["rooms"]],
+            }
+            _ol = building_outline(_flo)
+            if _ol:
+                _areas = [Polygon(p).area for p in _ol]
+                _mx = max(_areas)
+                _thr = max(150.0, 0.05 * _mx)
+                # 剔除 outline 中"无房间中心"的块——这些是弥合门洞时圈入的户外小庭院，
+                # 包含它们的 walkable 视觉上像延伸到户外（如 F2 副楼左下方红线小月牙）
+                _room_centers = [Polygon(r["coords_m"]).centroid
+                                  for r in data["rooms"]
+                                  if r.get("coords_m") and
+                                  r.get("roomType") not in
+                                  (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})]
+                _kept_blocks = []
+                for _p, _a in zip(_ol, _areas):
+                    if _a < _thr:
+                        continue
+                    _pg = Polygon(_p)
+                    if not any(_pg.covers(_c) for _c in _room_centers):
+                        continue
+                    _kept_blocks.append(_pg)
+                if not _kept_blocks:
+                    _kept_blocks = [Polygon(p) for p, a in zip(_ol, _areas) if a >= _thr]
+                _mask_m = unary_union(_kept_blocks)
+                # 内缩 1.0m 剔除 outline 边缘"虚扩"区（弥合门洞半径 1.4m 引入），
+                # 避免视觉上 walkable 像延伸到户外（如 F2 副楼左下方红线小庭院）
+                _mask_m = _mask_m.buffer(-1.0)
+                # walkable_poly_pt 是 pt 单位；把 mask 从 m 单位转回 pt 坐标。
+                # 用手写循环而非 shapely.transform，因为 shapely 2.x 的
+                # transform(func, geom) 会把整段 coords 一次传入 func，而 lambda
+                # 仅能返回首对，导致变换不生效。
+                def _m_to_pt(g):
+                    if g.is_empty:
+                        return g
+                    if g.geom_type == "Polygon":
+                        ext = [(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
+                               for x, y in g.exterior.coords]
+                        ints = [[(x / SCALE + ORIGIN_X, ORIGIN_Y - y / SCALE)
+                                 for x, y in r] for r in g.interiors]
+                        return Polygon(ext, ints)
+                    if g.geom_type == "MultiPolygon":
+                        return MultiPolygon([_m_to_pt(p) for p in g.geoms])
+                    return g
+                _mask = _m_to_pt(_mask_m)
+                for r in data["rooms"]:
+                    wp = r.get("walkable_poly_pt")
+                    if wp is not None:
+                        r["walkable_poly_pt"] = _keep_walkable_pieces(
+                            wp.intersection(_mask), 0.5)
+        except Exception as e:
+            print(f"    [WARN] 沿轮廓裁剪失败: {e}")
 
         walls = []
         for i, (a, b) in enumerate(data["wall_segs"]):
