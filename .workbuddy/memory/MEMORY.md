@@ -46,10 +46,11 @@ PathAI 室内导航系统，首期试点 **初中学部 1# 教学楼 1~2 层**�
 - **DOOR_FIRE 只处理 arc based 门**（用户明确：quads/lines 非门叶片，曾回退删除 fire_door_leaves 补检逻辑，勿再加回）。
 - **图层**：家具层仅 `A-METAL-S`；`A-TECH-SANT` 在 `LAYERS_IGNORE` 整层显式剔除（PyMuPDF get_drawings 不感知图层可见性）。
 - **跨层配对按图纸井道编号**（`FACILITY_CODE_RE` 抽 II-xx#ST/EL），几何<3.5m 仅兜底。
+- **合班教室真实闭合墙体识别（2026-08-06 实现，局部隔离、零退化）**：合班教室是完整矩形大房间，仅走廊侧有大开口未被识别成门→自由空间漏进走廊→`build_rooms` 不产闭合物，旧逻辑注入 3m×3m 占位方块。新逻辑 `_heban_real_polygon(label_pt, all_segs, furn_segs, closures)`：在标签点周围取 18m×18m 局部墙图（结构墙+家具线+封口），对 (1.2/1.6/2.0/2.4/2.8/3.5/4.5/6.0)m 多档椭圆核做 `cv2.MORPH_CLOSE` 桥合开口→从标签点 `cv2.floodFill`→取含标签点的外轮廓→`approxPolyDP` 简化→面积∈[30,250]m² 且最接近 80m² 者胜出。实测 F1-RM-0050 得 **190.4 m²**（16.5m×13.0m, 9 顶点, roomType=classroom）。关键点：①算法完全局部，只产出合班自身多边形，绝不修改全局 all_segs/其它房间，故其它空间零退化（F1/F2 房间数 72/55 不变）；②`inject_heban_classroom_rooms` 优先用真实多边形（source=heban_inject_real），失败才回退 3m 占位（source=heban_inject）；③门归属只追加、不抢已有封闭房间门。⚠️ 陷阱：`cv2.floodFill` 把 newVal 写回**图像**、mask 像素只置 1（非 newVal），取填充区域须用 `图像==newVal` 不能用 `mask==newVal`。
 - **git 记忆同步**：`.gitignore` 改为 `.workbuddy/*` + `!/.workbuddy/memory/`，仅 memory/ 随仓库同步；`~/.workbuddy/MEMORY.md`（用户级）在仓库外不入库。
 
 ## 提交与同步工作流（用户 2026-08-04 明确要求）
-- **每次阶段性完成代码改动，自动 commit 并 push 到远端**（origin/master），无需用户再次要求。
+- **每次阶段性完成代码改动，自动 commit 并 push 到远端**，无需用户再次要求。当前工作分支 `codex/public-space-recognition-implementation` 的 upstream 已配置为 `origin/codex/public-space-recognition-implementation`（即推到同名 feature 分支，而非 master）；`git push origin <branch>` 即非 force 的 fast-forward push。origin/master 的领先由 PR/merge 处理，不要直推 master。
 - 提交范围：本次改动涉及的 `src/` 代码、`debug/` 调试脚本、`result/` 产物（再生成的 geojson/html）、`.workbuddy/memory/` 记忆更新。临时脚本（如 `_tmp_*.py`、`_diag_*.py`）须先删除再提交，绝不入库。
 - 提交前确认 `git status` 干净无残留临时文件；commit 用中文简述改动要点；push 用非 force 的普通 push（本仓库为 fast-forward 模式，禁止 `--force`）。
 - 若 push 前 origin/master 已领先（产生分叉），先 `git pull --ff-only` 再 push；无法 fast-forward 时停止并报告，不强行推送。
