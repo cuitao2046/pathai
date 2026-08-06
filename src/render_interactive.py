@@ -466,6 +466,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 <div class="layer-controls" id="layerControls">
   <b>图层:</b>
   <label><input type="checkbox" checked onchange="toggleLayer('room', this.checked)"> 房间</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby_elevator', this.checked)"> 电梯前室</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby_stair', this.checked)"> 楼梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
   <label><input type="checkbox" checked onchange="toggleLayer('wall', this.checked)"> 墙体</label>
   <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
@@ -604,8 +606,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 _stroke = "#999"
                 _sw = 0.5
                 _dash = "none"
+            # 前室类型附带独立图层 class，可单独开关查看（仍属房间图层）
+            extra_cls = ""
+            if rtype == "elevator_lobby":
+                extra_cls = " layer_lobby_elevator"
+            elif rtype == "stair_lobby":
+                extra_cls = " layer_lobby_stair"
             parts.append(
-                f'<g class="layer_room" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="layer_room{extra_cls}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1157,7 +1165,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','walkable','wall','window','stairs','elevator','column','building_outline',
+var allLayers = ['room','lobby_elevator','lobby_stair','walkable','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
