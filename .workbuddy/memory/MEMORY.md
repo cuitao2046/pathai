@@ -40,8 +40,16 @@
 7. 开放/封闭空间分治(OPEN_SPACE_TYPES={corridor,lobby,activity,atrium})，开放空间建 intersection 节点，不得合并处理。
 8. ⚠️ geojson 字段陷阱：最终 `semantic.rooms` 中房间类型写在 **`type`** 字段（如 type="elevator_lobby"），**不是** `roomType`；`classify_elevator_stair_lobby` 等函数内部用 `roomType` 中间变量，序列化时映射到 `type`。排查时勿误查 `roomType` 导致全 None（已踩坑）。
 9. 电梯前室/楼梯前室识别：`classify_elevator_stair_lobby`（parse_cad_pdf.py 第1862行）在 build_geojson 的设施 reconcile 之后执行；对 corridor/lobby 开放空间按"到井道几何最短距离 + 面积阈值"细分——电梯前室(d_elev<1.5m 且 ≤150m²)、楼梯前室(d_stair<3.0m 且 ≤60m²)，同时贴近时优先电梯前室。当前 v9 geojson：elevator_lobby=9、stair_lobby=6。
-10. （新）classify 调用已从 T1.5 裁剪前移到裁剪后，根治 F1-CR-0043 边界漏判（裁剪前后 polygon_pt 面积不一致）。
-11. （新）空间分解模块 `src/spatial_decompose.py`：基于中轴骨架（skeleton lines）的垂直截线法，将 walkable polygon 分解为近似矩形/梯形的独立几何块。v1 实测 F1 195 块 / F2 92 块，写入 geojson["spatial_blocks"]。分类器 v1 偏粗糙（stair_lobby 偏多），待迭代。
+
+## 方案迭代历史
+
+> 每次方案优化在此追加一条，方便回溯迭代路径。格式：`YYYY-MM-DD / 简要标题 / 问题→方案→影响`。
+
+| 日期 | 标题 | 问题 | 方案 | 影响 |
+|---|---|---|---|---|
+| 2026-08-07 | classify 后移至 T1.5 裁剪之后 | F1-CR-0043 判定面积(裁剪前≈60⁺)≠输出面积(裁剪后 59.11)，导致边界漏判楼梯前室 | 将 `classify_elevator_stair_lobby` 和 `generate_walkable_polygons` 调用从 T1.5「沿建筑外轮廓裁剪」之前移到之后 | F1-CR-0043 成功判为 stair_lobby；F1-CR-0061 裁剪后面积<8 自然退出；总前室 15 不变；walkable 基于裁剪后 poly 生成，不再需二次裁剪 |
+| 2026-08-07 | 空间分解模块 v1 | 可通行区为整块多边形，走道/前室/门厅混在一起，难以按几何特征独立标注 | 新建 `src/spatial_decompose.py`：基于中轴骨架(skeleton lines)的垂直截线法，每个骨架段两端做垂直截线→四边形→polygon clip→近似矩形/梯形。集成到 parse_cad_pdf.py floor_block，写入 geojson["spatial_blocks"] | F1 195 块 / F2 92 块 / 总计 287 块。分类器 v1 偏粗糙(stair_lobby=110 偏多，根因：贴楼梯的每个小块都独立判为前室，缺连接度/袋形约束)。525 条中轴段因长度<0.3m 跳过(骨架边缘碎枝) |
+| 2026-08-05 | 合班教室真实闭合墙体识别 | 合班教室走廊侧大开口未被识别成门→自由空间漏进走廊→build_rooms 不产闭合物→3m 占位方块 | `_heban_real_polygon`：局部 18m×18m 墙图，多档椭圆核(1.2~6.0m)MORPH_CLOSE 桥合开口→标签点 floodFill→轮廓→approxPolyDP。完全局部，不修改全局 all_segs | F1-RM-0050 得 190.4m²(16.5×13.0m, 9 顶点, classroom)，替换 3m 占位。⚠️ 陷阱：cv2.floodFill 写图像非 mask |
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层。
