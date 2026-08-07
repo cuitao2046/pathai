@@ -3335,7 +3335,6 @@ def build_geojson(f1, f2):
                 from skeleton.pipeline import build_skeleton_for_walkables
                 from spatial_decompose import (decompose_walkable_to_blocks,
                                                classify_block)
-                from shapely.ops import unary_union
                 from shapely.geometry import box as shapely_box
 
                 walkable_polys_m = list(walkable_by_rid.values())
