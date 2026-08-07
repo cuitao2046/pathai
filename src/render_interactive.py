@@ -503,6 +503,18 @@ def main():
     geo = json.load(open(GEO_IN, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
 
+    # 指纹采集网格（generate_fingerprint_grid.py 生成的独立清单，默认隐藏图层）
+    fp_path = Path(GEO_IN).parent / "fingerprint_grid.json"
+    fp_floors = {}
+    if fp_path.exists():
+        try:
+            fp_data = json.load(open(fp_path, encoding="utf-8"))
+            fp_floors = fp_data.get("floors", {})
+        except Exception as e:
+            print("  [warn] 读取 fingerprint_grid.json 失败：", e)
+    else:
+        print("  [hint] 未找到 fingerprint_grid.json，可先运行 generate_fingerprint_grid.py")
+
     # ---- 全局范围（所有楼层共用变换，便于跨层对齐） ----
     min_x, min_y = float("inf"), float("inf")
     max_x, max_y = float("-inf"), float("-inf")
@@ -590,6 +602,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 #anno-bar select {{ font-size: 12px; padding: 3px 6px; border-radius: 4px; border: 1px solid #ccc; }}
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
+.layer_fingerprint circle {{ cursor: pointer; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
 .zoom-btn {{ width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 .zoom-btn:hover {{ background: #f0f0f0; }}
@@ -665,6 +678,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" onchange="toggleLayer('ramp', this.checked)"> 坡道</label>
   <label><input type="checkbox" onchange="toggleLayer('tactile', this.checked)"> 盲道</label>
   <label><input type="checkbox" onchange="toggleLayer('material', this.checked)"> 地面材质</label>
+  <label><input type="checkbox" onchange="toggleLayer('fingerprint', this.checked)"> 指纹网格</label>
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
   <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
@@ -1195,6 +1209,38 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 f'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></g>\n'
             )
 
+        # 11. 指纹采集网格（独立清单文件，默认隐藏）
+        fp_fd = fp_floors.get(str(fk))
+        if fp_fd:
+            n_fp = 0
+            for p in fp_fd.get("points", []):
+                cx, cy = p["coordinates"][0], p["coordinates"][1]
+                sx, sy = tosvg(cx, cy)
+                is_safe = p.get("regionType") == "safe"
+                col = "#FF7043" if is_safe else "#42A5F5"
+                r = 2.4 if is_safe else 1.8
+                prio = p.get("priority", 3)
+                src = p.get("source", "")
+                tip = f"指纹采集点 {p.get('id','')}\\n区域：{'安全节点' if is_safe else '普通'} · 优先级 {prio} · 来源 {src}"
+                det = {"title": f"指纹采集点 {p.get('id','')}", "rows": [
+                    ("楼层", f"{p.get('floor','?')}F"),
+                    ("区域类型", "安全节点" if is_safe else "普通"),
+                    ("采集优先级", str(prio)),
+                    ("来源", src),
+                    ("坐标", f"({cx:.2f}, {cy:.2f})"),
+                ]}
+                if p.get("nearNodeId"):
+                    det["rows"].append(("邻近节点", f"{p['nearNodeId']} ({p.get('nearNodeType','')})"))
+                attr = info_attr({"tip": tip, "detail": det, "kind": "fingerprint", "id": p.get("id", "")})
+                parts.append(
+                    f'<g class="layer_fingerprint" {attr}>'
+                    f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
+                    f'fill-opacity="0.85" stroke="#fff" stroke-width="0.4"/></g>\n'
+                )
+                n_fp += 1
+            if n_fp:
+                print(f"  [F{fk}] 指纹网格图层: {n_fp} 个点")
+
         # 楼层分隔线
         if i < len(sorted_floors) - 1:
             sep_y = (i + 1) * svh_per_floor
@@ -1552,7 +1598,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material'];
+  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});

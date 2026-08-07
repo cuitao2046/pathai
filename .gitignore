@@ -31,6 +31,7 @@ desktop.ini
 result/*
 !result/*.geojson
 !result/floor_layout_v9_interactive.html
+!result/fingerprint_grid.json
 
 # Jupyter
 .ipynb_checkpoints/
