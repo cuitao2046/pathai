@@ -1864,7 +1864,9 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
     for i, r in enumerate(rooms):
         if r.get("roomType") not in _open:
             continue
-        poly = r["polygon_pt"]
+        poly = r.get("polygon_pt")
+        if poly is None:
+            continue
         wp = poly.difference(obstacle) if obstacle is not None else poly
         wp = _keep_walkable_pieces(wp, min_piece_m2)
         out[i] = wp
@@ -1908,6 +1910,8 @@ def classify_elevator_stair_lobby(rooms, stair_boxes, evtr_boxes,
     n_re = 0
     for r in rooms:
         if r.get("roomType") not in ("corridor", "lobby"):
+            continue
+        if r.get("polygon_pt") is None:
             continue
         # 入口门厅（如"门厅无障碍出入口"）是 entrance 语义，不是电梯/楼梯前室
         if "出入口" in r.get("label", ""):
@@ -2980,21 +2984,23 @@ def build_geojson(f1, f2):
         # T1.5 沿建筑外轮廓裁剪：室内导航不得出现户外走道/可通行区
         # 根因：
         #   1) 走廊房间多边形可能因自由域延伸出外墙；
-        #   2) building_outline 弥合门洞膨胀 ~1.4m，若不充分内缩会把户外条带圈入；
+        #   2) 旧方案用「墙+全部房间」生成建筑外轮廓，公共空间多边形本身的外溢
+        #      会被吸入轮廓，导致再内缩仍无法贴合真实外墙；
         #   3) 只裁 walkable 不够——渲染走道图层(layer_corridor 等)画的是 coords_m，
         #      必须同步裁剪公共空间多边形本身，否则渲染层仍画出墙外走道。
+        # 对策：仅用墙线生成建筑外轮廓（不受公共空间多边形外溢影响），
+        #      用较大 close_r 弥合门洞/缺口，再内缩回到墙线位置。
         # 对照《公共空间识别方案》：Walkable ⊂ 建筑内部，须先确定 P_floor 再扣障碍。
         try:
             _flo = {
                 "walls": [{"geometry": {"type": "LineString",
                             "coordinates": [list(pt2m(a)), list(pt2m(b))]}}
                           for (a, b) in data["wall_segs"]],
-                "rooms": [{"geometry": {"type": "Polygon",
-                           "coordinates": [r["coords_m"]]}}
-                          for r in data["rooms"]],
+                # 关键：不传入房间多边形，避免外溢的公共空间 polygon 把轮廓撑大
+                "rooms": [],
             }
-            # close_r=10@0.1m ≈ 1.0m 虚扩（比默认 14 更紧）；再内缩 1.2m
-            _ol = building_outline(_flo, cell=0.1, wall_hw=1, close_r=10)
+            # close_r=14@0.1m ≈ 1.4m 弥合门洞/外墙缺口；再内缩 1.2m 回到墙线外侧
+            _ol = building_outline(_flo, cell=0.1, wall_hw=1, close_r=14)
             if _ol:
                 _areas = [Polygon(p).area for p in _ol]
                 _mx = max(_areas) if _areas else 0.0
@@ -3016,8 +3022,8 @@ def build_geojson(f1, f2):
                 if not _kept_blocks:
                     _kept_blocks = [Polygon(p) for p, a in zip(_ol, _areas) if a >= _thr]
                 _mask_m = unary_union(_kept_blocks)
-                # 内缩 ≥ 弥合膨胀 + 半墙厚余量，确保 mask 落在真实外墙内侧
-                _mask_m = _mask_m.buffer(-3.5)  # 大幅内缩3.5m，building_outline偏大时排除右上庭院
+                # 内缩：抵消 close_r 膨胀并留 0.2m 外墙余量，mask 落在真实外墙外侧
+                _mask_m = _mask_m.buffer(-1.2)
                 if _mask_m.is_empty:
                     print(f"    [WARN] 外轮廓内缩后为空，跳过裁剪")
                 else:
@@ -3078,10 +3084,16 @@ def build_geojson(f1, f2):
                                 r["centroid_m"] = list(
                                     pt2m((kept.centroid.x, kept.centroid.y)))
                             else:
-                                # 整块在户外 → 清空 walkable
+                                # 整块在户外 → 清空 walkable + polygon，
+                                # 否则 T1 会基于原 polygon 重新生成外溢 walkable，
+                                # 渲染层也会继续画出墙外走道。
                                 r["walkable_poly_pt"] = None
+                                r["polygon_pt"] = None
+                                r["coords_m"] = []
                     print(f"[F{floor_no}] 外轮廓裁剪: walkable {n_clip_wp} 个, "
                           f"开放空间多边形 {n_clip_open} 个")
+                    # 保存 mask 供 T1 后二次裁剪 walkable（T1.5 执行时 walkable 尚未生成）
+                    data["building_mask_pt"] = _mask
         except Exception as e:
             print(f"    [WARN] 沿轮廓裁剪失败: {e}")
 
@@ -3106,6 +3118,31 @@ def build_geojson(f1, f2):
             generate_walkable_polygons(
                 data["rooms"], data["wall_segs"],
                 data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
+
+            # T1 后基于 T1.5 的 mask 二次裁剪 walkable：
+            # T1.5 在 T1 之前执行，当时 walkable 尚未生成，只能裁 polygon；
+            # 若 polygon 完全落在户外未被裁掉（已在上文清空），或 T1 新生成的
+            # walkable 因数值误差越过 mask，此处再做一次防御性裁剪。
+            _mask_after = data.get("building_mask_pt")
+            if _mask_after is not None and not _mask_after.is_empty:
+                n_clip_t1 = 0
+                for r in data["rooms"]:
+                    wp = r.get("walkable_poly_pt")
+                    if wp is None or getattr(wp, "is_empty", True):
+                        continue
+                    clipped = _keep_walkable_pieces(
+                        wp.intersection(_mask_after), 0.5)
+                    if clipped is None or getattr(clipped, "is_empty", True):
+                        if wp.area > 1e-3:
+                            n_clip_t1 += 1
+                        r["walkable_poly_pt"] = None
+                    elif abs(clipped.area - wp.area) > 1e-3:
+                        r["walkable_poly_pt"] = clipped
+                        n_clip_t1 += 1
+                    else:
+                        r["walkable_poly_pt"] = clipped
+                if n_clip_t1:
+                    print(f"[F{floor_no}] Walkable Polygon 后裁剪: {n_clip_t1} 处")
 
             # 二次挖空楼梯井（含室外楼梯 bbox），杜绝 walkable 绕楼梯外溢
             n_punch = 0
@@ -3160,6 +3197,9 @@ def build_geojson(f1, f2):
             })
         rooms_g, rooms_s = [], []
         for r in data["rooms"]:
+            # 跳过被 T1.5 判定为完全在户外的公共空间（coords_m 已清空）
+            if not r.get("coords_m"):
+                continue
             rooms_g.append({
                 "type": "Feature",
                 "id": r["id"],
