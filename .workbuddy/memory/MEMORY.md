@@ -38,6 +38,8 @@
 5. 孤儿门 F1 61/F2 17，validate 仅信息项。
 6. CAD 文字标签包围盒误识别为房间多边形；render_interactive 用 `_is_label_bbox`(面积<6m²且长宽比≥1.5)过滤。
 7. 开放/封闭空间分治(OPEN_SPACE_TYPES={corridor,lobby,activity,atrium})，开放空间建 intersection 节点，不得合并处理。
+8. ⚠️ geojson 字段陷阱：最终 `semantic.rooms` 中房间类型写在 **`type`** 字段（如 type="elevator_lobby"），**不是** `roomType`；`classify_elevator_stair_lobby` 等函数内部用 `roomType` 中间变量，序列化时映射到 `type`。排查时勿误查 `roomType` 导致全 None（已踩坑）。
+9. 电梯前室/楼梯前室识别：`classify_elevator_stair_lobby`（parse_cad_pdf.py 第1862行）在 build_geojson 的设施 reconcile 之后执行；对 corridor/lobby 开放空间按"到井道几何最短距离 + 面积阈值"细分——电梯前室(d_elev<1.5m 且 ≤150m²)、楼梯前室(d_stair<3.0m 且 ≤60m²)，同时贴近时优先电梯前室。当前 v9 geojson：elevator_lobby=9、stair_lobby=6。
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层。
