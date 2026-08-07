@@ -40,9 +40,6 @@ ROOM_COLORS = {
     "accessible_entrance": "#BBDEFB", "room": "#FAFAFA", "other": "#FAFAFA",
     "elevator_lobby": "#FFE0B2", "stair_lobby": "#D7CCC8",
 }
-SPATIAL_BLOCK_COLORS = {
-    "corridor": "#EEEEEE", "lobby": "#FFF9C4", "passage": "#D7EEE4",
-}
 DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449"}
 # 门类型中文名（与 topology.py 的 doorway 节点 label 保持一致）
 DOOR_TYPE_CN = {"swing": "普通门", "fire": "防火门", "opening": "门洞"}
@@ -410,7 +407,6 @@ svg {{ display: block; background: #fff; }}
 .layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; pointer-events: none; }}
 .layer_skeleton path, .layer_skeleton polyline {{ stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }}
 .layer_skeleton_node circle {{ fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }}
-.layer_spatial_block polygon {{ fill-opacity: 0.3; stroke-opacity: 0.5; stroke-width: 0.5; pointer-events: none; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path, .layer_topo_edge_titi path {{ cursor: pointer; }}
@@ -498,7 +494,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('lobby_stair', this.checked)"> 楼梯前室</label>
   <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
   <label><input type="checkbox" checked onchange="toggleLayer('skeleton', this.checked)"> 走廊骨架</label>
-  <label><input type="checkbox" onchange="toggleLayer('spatial_block', this.checked)"> 空间块</label>
   <label><input type="checkbox" onchange="toggleLayer('skeleton_node', this.checked)"> 骨架交叉口</label>
   <label><input type="checkbox" checked onchange="toggleLayer('wall', this.checked)"> 墙体</label>
   <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
@@ -619,28 +614,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     )
         if n_walk:
             print(f"  [F{fk}] 可通行区域图层: {n_walk} 个")
-
-        # 1c. 空间分解块（T9，来自 floors.N.spatial_blocks）
-        sb_fc = fd.get("spatial_blocks") or {}
-        sb_feats = sb_fc.get("features") or []
-        n_sb = 0
-        for feat in sb_feats:
-            geom_sb = feat.get("geometry") or {}
-            if geom_sb.get("type") != "Polygon":
-                continue
-            coord_sb = geom_sb.get("coordinates") or []
-            st = feat["properties"].get("space_type", "corridor")
-            color = SPATIAL_BLOCK_COLORS.get(st, "#EEEEEE")
-            for ring in coord_sb:
-                pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}"
-                               for x, y in ring)
-                parts.append(
-                    f'<g class="layer_spatial_block"><polygon points="{pts}" '
-                    f'fill="{color}" stroke="{color}"/></g>\n'
-                )
-                n_sb += 1
-        if n_sb:
-            print(f"  [F{fk}] 空间块图层: {n_sb} 个多边形")
 
         # 1b. 走廊中轴骨架（T3–T5，来自 floors.N.skeleton）
         skel_fc = fd.get("skeleton") or {}
@@ -1403,7 +1376,7 @@ wrapper.addEventListener('click', function(e) {{
 }});
 
 // ---- 图层开关 ----
-var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','spatial_block','wall','window','stairs','elevator','column','building_outline',
+var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）

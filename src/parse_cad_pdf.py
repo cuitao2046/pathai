@@ -3328,75 +3328,6 @@ def build_geojson(f1, f2):
                 stairs, elevators, extra_nodes=extra_nodes)
             nodes, edges = topo["nodes"], topo["edges"]
 
-        # --- T9: 空间分解（基于中轴切分 walkable，产出独立几何块）---
-        spatial_blocks_fc = {"type": "FeatureCollection", "features": []}
-        if walkable_by_rid:
-            try:
-                from skeleton.pipeline import build_skeleton_for_walkables
-                from spatial_decompose import (decompose_walkable_to_blocks,
-                                               classify_block)
-                from shapely.geometry import box as shapely_box
-
-                walkable_polys_m = list(walkable_by_rid.values())
-                door_pts_m = [(d["center_m"][0], d["center_m"][1])
-                              for d in doors_for_topo]
-
-                # 井道几何（米，供分类器）
-                elev_geoms_m = []
-                stair_geoms_m = []
-                for x0, y0, x1, y1 in data.get("evtr_boxes", []):
-                    c0 = list(pt2m((x0, y0)))
-                    c1 = list(pt2m((x1, y1)))
-                    elev_geoms_m.append(shapely_box(c0[0], c0[1],
-                                                    c1[0], c1[1]))
-                for x0, y0, x1, y1 in data.get("stair_boxes", []):
-                    c0 = list(pt2m((x0, y0)))
-                    c1 = list(pt2m((x1, y1)))
-                    stair_geoms_m.append(shapely_box(c0[0], c0[1],
-                                                      c1[0], c1[1]))
-                for r in data["rooms"]:
-                    if r.get("roomType") == "elevator_hall" and r.get("polygon_pt"):
-                        elev_geoms_m.append(_pt_poly_to_m(r["polygon_pt"]))
-                    elif r.get("roomType") == "staircase" and r.get("polygon_pt"):
-                        stair_geoms_m.append(_pt_poly_to_m(r["polygon_pt"]))
-
-                sk = build_skeleton_for_walkables(
-                    walkable_polys_m, door_pts_m, facility_centers_m=None,
-                    resolution=SKELETON_RESOLUTION)
-                if not sk["empty"]:
-                    unified = unary_union(walkable_polys_m)
-                    blocks = decompose_walkable_to_blocks(
-                        sk["lines"], unified, min_area_m2=1.0,
-                        junctions=sk.get("junctions", []),
-                        terminals=sk.get("terminals", []))
-                    for i, blk in enumerate(blocks):
-                        cls = classify_block(blk, elev_geoms_m, stair_geoms_m)
-                        spatial_blocks_fc["features"].append({
-                            "type": "Feature",
-                            "id": obj_id(f"F{floor_no}", "SB", i + 1),
-                            "geometry": {
-                                "type": "Polygon",
-                                "coordinates": [
-                                    [list(c) for c in
-                                     blk["geometry"].exterior.coords]
-                                ],
-                            },
-                            "properties": {
-                                "space_type": cls,
-                                "approx_shape": blk["approx_shape"],
-                                "area_m2": round(blk["area_m2"], 2),
-                                "aspect_ratio": round(blk["aspect_ratio"], 2),
-                                "width_m": round(blk["width_m"], 2),
-                                "length_m": round(blk["length_m"], 2),
-                                "endpoint_types": list(
-                                    blk.get("endpoint_types", ("mid", "mid"))),
-                            },
-                        })
-                    print(f"[F{floor_no}] 空间分解: {len(blocks)} 个几何块 "
-                          f"(共 {len(sk['lines'])} 条中轴段)")
-            except Exception as e:
-                print(f"    [WARN] 空间分解失败: {e}")
-
         return {
             "geometry": {
                 "walls": walls, "rooms": rooms_g, "doors": doors,
@@ -3407,7 +3338,6 @@ def build_geojson(f1, f2):
             "topology": {"nodes": nodes, "edges": edges},
             "skeleton": skeleton_fc,
             "walkable_regions": walkable_fc,
-            "spatial_blocks": spatial_blocks_fc,
             "accessibility": {
                 "elevators": a11y_elevators,
                 "riskNodes": risk_nodes,
