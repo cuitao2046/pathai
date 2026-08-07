@@ -3017,7 +3017,7 @@ def build_geojson(f1, f2):
                     _kept_blocks = [Polygon(p) for p, a in zip(_ol, _areas) if a >= _thr]
                 _mask_m = unary_union(_kept_blocks)
                 # 内缩 ≥ 弥合膨胀 + 半墙厚余量，确保 mask 落在真实外墙内侧
-                _mask_m = _mask_m.buffer(-1.6)  # 加大内缩，抑制户外/楼梯外溢
+                _mask_m = _mask_m.buffer(-3.5)  # 大幅内缩3.5m，building_outline偏大时排除右上庭院
                 if _mask_m.is_empty:
                     print(f"    [WARN] 外轮廓内缩后为空，跳过裁剪")
                 else:
