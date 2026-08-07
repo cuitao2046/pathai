@@ -44,4 +44,5 @@ src/optimize_v2/
 src/pathai_src/
 debug/conn/
 debug/heban/
+debug/decomp/
 debug/_heban_mask_crop.png
