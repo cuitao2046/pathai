@@ -45,4 +45,5 @@ src/pathai_src/
 debug/conn/
 debug/heban/
 debug/decomp/
+debug/walkable/
 debug/_heban_mask_crop.png

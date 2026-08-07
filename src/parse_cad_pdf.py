@@ -1815,7 +1815,9 @@ def _walkable_geojson(geom):
 
 def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
                                col_boxes, wall_buffer_m=0.12,
-                               col_buffer_m=0.10, shaft_buffer_m=0.05,
+                               col_buffer_m=0.10,
+                               stair_buffer_m=0.55,
+                               elev_buffer_m=0.25,
                                min_piece_m2=0.5):
     """T1: 为公共空间（corridor/lobby/activity/atrium）生成 Walkable Polygon。
 
@@ -1833,14 +1835,25 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
     for (x0, y0, x1, y1) in col_boxes:
         if (x1 - x0) * (y1 - y0) > 0:
             obstacles.append(box(x0, y0, x1, y1).buffer(col_buffer_m / SCALE))
-    # 楼梯井 / 电梯井（井道内部不可通行），微扩防贴井
-    for (x0, y0, x1, y1) in list(stair_boxes) + list(evtr_boxes):
+    # 楼梯井：加大缓冲（0.55m），避免 walkable 贴楼梯甚至绕出井外
+    for (x0, y0, x1, y1) in stair_boxes:
         if (x1 - x0) * (y1 - y0) > 0:
-            obstacles.append(box(x0, y0, x1, y1).buffer(shaft_buffer_m / SCALE))
-    # 封闭房间多边形（楼梯间/电梯厅/管井等，比 bbox 更精确，消除聚类差异）
+            obstacles.append(box(x0, y0, x1, y1).buffer(stair_buffer_m / SCALE))
+    # 电梯井
+    for (x0, y0, x1, y1) in evtr_boxes:
+        if (x1 - x0) * (y1 - y0) > 0:
+            obstacles.append(box(x0, y0, x1, y1).buffer(elev_buffer_m / SCALE))
+    # 封闭房间：楼梯间再外扩挖空
+    _stair_like = {"staircase", "shaft"}
     for r in rooms:
         if r.get("roomType") not in _open and r.get("polygon_pt") is not None:
-            obstacles.append(r["polygon_pt"])
+            poly = r["polygon_pt"]
+            if r.get("roomType") in _stair_like:
+                try:
+                    poly = poly.buffer(0.35 / SCALE)
+                except Exception:
+                    pass
+            obstacles.append(poly)
     # 墙体：结构墙线并集外扩 WALL_BUFFER=0.12m
     if wall_segs:
         obstacles.append(unary_union(
@@ -3004,7 +3017,7 @@ def build_geojson(f1, f2):
                     _kept_blocks = [Polygon(p) for p, a in zip(_ol, _areas) if a >= _thr]
                 _mask_m = unary_union(_kept_blocks)
                 # 内缩 ≥ 弥合膨胀 + 半墙厚余量，确保 mask 落在真实外墙内侧
-                _mask_m = _mask_m.buffer(-1.2)
+                _mask_m = _mask_m.buffer(-1.6)  # 加大内缩，抑制户外/楼梯外溢
                 if _mask_m.is_empty:
                     print(f"    [WARN] 外轮廓内缩后为空，跳过裁剪")
                 else:
@@ -3093,11 +3106,46 @@ def build_geojson(f1, f2):
             generate_walkable_polygons(
                 data["rooms"], data["wall_segs"],
                 data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
+
+            # 二次挖空楼梯井（含室外楼梯 bbox），杜绝 walkable 绕楼梯外溢
+            n_punch = 0
+            stair_obs = []
+            for (x0, y0, x1, y1) in data.get("stair_boxes") or []:
+                if (x1 - x0) * (y1 - y0) > 0:
+                    stair_obs.append(box(x0, y0, x1, y1).buffer(0.6 / SCALE))
+            for r in data["rooms"]:
+                if r.get("roomType") == "staircase" and r.get("polygon_pt") is not None:
+                    try:
+                        stair_obs.append(r["polygon_pt"].buffer(0.4 / SCALE))
+                    except Exception:
+                        stair_obs.append(r["polygon_pt"])
+            if stair_obs:
+                stair_u = unary_union(stair_obs)
+                _open_punch = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"}
+                for r in data["rooms"]:
+                    if r.get("roomType") not in _open_punch:
+                        continue
+                    wp = r.get("walkable_poly_pt")
+                    if wp is None or getattr(wp, "is_empty", True):
+                        continue
+                    try:
+                        clipped = _keep_walkable_pieces(wp.difference(stair_u), 0.5)
+                        if clipped is None or getattr(clipped, "is_empty", True):
+                            r["walkable_poly_pt"] = None
+                            n_punch += 1
+                        elif abs(clipped.area - wp.area) > 1e-3:
+                            r["walkable_poly_pt"] = clipped
+                            n_punch += 1
+                        else:
+                            r["walkable_poly_pt"] = clipped
+                    except Exception:
+                        pass
             n_wp = sum(1 for r in data["rooms"]
                        if r.get("roomType") in
                        (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})
                        and r.get("walkable_poly_pt") is not None)
-            print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
+            print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个"
+                  + (f"（楼梯挖空 {n_punch} 处）" if n_punch else ""))
         except Exception as e:
             print(f"    [WARN] Walkable Polygon 生成失败: {e}")
 
