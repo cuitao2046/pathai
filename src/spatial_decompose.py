@@ -1,231 +1,301 @@
 # -*- coding: utf-8 -*-
 """
-空间分解：基于中轴骨架将可通行区域切割为近似矩形/梯形的独立几何块。
+空间分解 v2：基于骨架连接度 + 统一分界线的 walkable 切分。
+
+v1 问题：每条骨架段独立做垂直截线，相邻段在 junction 产生不同的截线
+→ block 重叠、覆盖不全、形状非矩形/三角形。
+v2 方案：1) 聚类骨架端点识别 junction/terminal；
+2) junction 处用角平分线作为公共分界、terminal 处用垂直截线；
+3) 所有分界线 + walkable 外边界 → polygonize → 无重叠、完全覆盖。
 
 输入：skeleton lines（src/skeleton/pipeline 输出的简化中轴线列表）+ walkable polygon
-输出：空间块列表 [{geometry, approx_shape, area_m2, aspect_ratio, ...}]
+输出：空间块列表 [{geometry: Polygon, approx_shape, area_m2, aspect_ratio, ...}]
 """
 
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Optional, Sequence, Tuple
+import collections
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from shapely.geometry import LineString, Point, Polygon
-from shapely.ops import unary_union
+from shapely.ops import unary_union, polygonize
 
 
-# ── geometry helpers ────────────────────────────────────────────────
+# ── helper: 端点聚类 ──────────────────────────────────────────────────
 
-def _perpendicular_cut_line(
-    point: Tuple[float, float],
-    tangent: Tuple[float, float],
-    walkable_poly: Polygon,
-    extend_m: float = 25.0,
-) -> Optional[LineString]:
-    """在 point 处沿 tangent 的垂直方向画一条穿过 walkable 的截线。
+def _canonical_pt(pt: Tuple[float, float],
+                  tol: float = 1.5) -> Tuple[float, float]:
+    """将点量化到 tol 网格上用于端点去重聚类。"""
+    return (round(pt[0] / tol) * tol, round(pt[1] / tol) * tol)
 
-    返回：截线在 walkable_poly 内的那一段 LineString（2 端点）。
-    若交点不足 2 或截线退化则返回 None。
+
+def _build_endpoint_clusters(
+    skeleton_lines: Sequence[LineString],
+    tol_m: float = 1.5,
+) -> Dict[Tuple[float, float], List[Tuple[LineString, int, Tuple[float, float]]]]:
+    """对骨架段端点聚类。
+
+    返回 {canonical_pt: [(line, endpoint_pos, real_pt), ...]}
+    endpoint_pos: 0 = 起点, -1 = 终点。
+    每个 cluster 内是一组共享同一 canonical 点的骨架段端点。
     """
-    dx, dy = tangent
-    mag = math.hypot(dx, dy)
-    if mag < 1e-9:
-        return None
-    # 垂直方向（逆时针 90°）
-    px, py = -dy / mag, dx / mag
-    p1 = Point(point[0] + px * extend_m, point[1] + py * extend_m)
-    p2 = Point(point[0] - px * extend_m, point[1] - py * extend_m)
-    cutter = LineString([p1, p2])
-    inter = cutter.intersection(walkable_poly)
-    if inter.is_empty:
-        return None
-    if inter.geom_type == "LineString":
-        if len(list(inter.coords)) >= 2:
-            return inter
-        return None
-    if inter.geom_type == "MultiLineString":
-        # 取最长的一段（通常是穿过 walkable 的主段）
-        best = max((g for g in inter.geoms if g.length > 1e-6),
-                   key=lambda g: g.length, default=None)
-        if best is not None and len(list(best.coords)) >= 2:
-            return best
-    # 兜底：GeometryCollection 或其他类型 → 取其中的线
-    if hasattr(inter, "geoms"):
-        lines = [g for g in inter.geoms
-                 if g.geom_type == "LineString" and g.length > 1e-6]
-        if lines:
-            best = max(lines, key=lambda g: g.length)
-            if len(list(best.coords)) >= 2:
-                return best
-    return None
+    groups = collections.defaultdict(list)
+    for line in skeleton_lines:
+        if not isinstance(line, LineString) or line.is_empty:
+            continue
+        coords = list(line.coords)
+        if len(coords) < 2:
+            continue
+        s, e = (coords[0][0], coords[0][1]), (coords[-1][0], coords[-1][1])
+        cs = _canonical_pt(s, tol_m)
+        ce = _canonical_pt(e, tol_m)
+        groups[cs].append((line, 0, s))     # 起点
+        groups[ce].append((line, -1, e))  # 终点
+    return groups
 
 
-def _block_for_skeleton_segment(
+# ── cut-line generation ───────────────────────────────────────────────
+
+def _segment_direction_away_from(
     line: LineString,
-    walkable_poly: Polygon,
-    min_area_m2: float = 1.0,
-    stats: dict = None,
-) -> Optional[dict]:
-    """围绕一条中轴段构建空间块。
-
-    在中轴段两端各自生成垂直截线，两条截线的端点构成四边形，
-    再用 walkable_poly 裁剪得到最终块。
-    """
-    if line.length < 0.3:
-        if stats: stats["too_short"] += 1
-        return None
+    pos: int,       # 0 = 起点, -1 = 终点
+) -> Optional[Tuple[float, float]]:
+    """从 line 的指定端点出发、沿骨架 OUTWARD 的方向（单位向量）。"""
     coords = list(line.coords)
     if len(coords) < 2:
         return None
-
-    # 起 / 止点及方向
-    u = coords[0]
-    v = coords[-1]
-    tang_u = (coords[1][0] - u[0], coords[1][1] - u[1])
-    tang_v = (coords[-1][0] - coords[-2][0],
-              coords[-1][1] - coords[-2][1])
-
-    # 也用中点方向兜底（若端方向太短则参照整体）
-    if math.hypot(*tang_u) < 0.1 * line.length:
-        tang_u = (v[0] - u[0], v[1] - u[1])
-    if math.hypot(*tang_v) < 0.1 * line.length:
-        tang_v = (v[0] - u[0], v[1] - u[1])
-
-    cut_u = _perpendicular_cut_line(u, tang_u, walkable_poly)
-    cut_v = _perpendicular_cut_line(v, tang_v, walkable_poly)
-
-    if cut_u is None or cut_v is None:
-        if stats:
-            if cut_u is None: stats["cut_u_none"] += 1
-            if cut_v is None: stats["cut_v_none"] += 1
-        # 一端截不出 → 尝试在骨架整体中点做单截线并取中线交点
-        mid = Point(line.interpolate(line.length / 2.0, normalized=False))
-        tang_mid = (v[0] - u[0], v[1] - u[1])
-        # 用中点 + walkable 的包围盒内缩来兜底
-        return _fallback_block(u, v, walkable_poly, min_area_m2)
-
-    cu = list(cut_u.coords)
-    cv = list(cut_v.coords)
-    if len(cu) < 2 or len(cv) < 2:
-        return None
-
-    # 配对：最近端点法
-    cu0, cu1 = (cu[0][0], cu[0][1]), (cu[1][0], cu[1][1])
-    cv0, cv1 = (cv[0][0], cv[0][1]), (cv[1][0], cv[1][1])
-    d00 = math.hypot(cu0[0] - cv0[0], cu0[1] - cv0[1])
-    d01 = math.hypot(cu0[0] - cv1[0], cu0[1] - cv1[1])
-    if d00 <= d01:
-        ring = [cu0, cv0, cv1, cu1]
+    if pos == 0:
+        dx, dy = coords[0][0] - coords[1][0], coords[0][1] - coords[1][1]
     else:
-        ring = [cu0, cv1, cv0, cu1]
-    ring.append(ring[0])  # close
-
-    try:
-        block = Polygon(ring)
-        if not block.is_valid:
-            block = block.buffer(0)
-        if block.is_empty or not isinstance(block, Polygon):
-            return None
-    except Exception:
+        dx, dy = coords[-1][0] - coords[-2][0], coords[-1][1] - coords[-2][1]
+    mag = math.hypot(dx, dy)
+    if mag < 1e-9:
         return None
+    return (dx / mag, dy / mag)
 
-    # 裁剪到 walkable
-    block = block.intersection(walkable_poly)
-    if block.is_empty:
-        if stats: stats["block_none"] += 1
+
+def _bisector(d1: Tuple[float, float],
+              d2: Tuple[float, float]) -> Optional[Tuple[float, float]]:
+    """两个方向向量的角平分线方向（单位向量）。
+
+    若 d1 + d2 ≈ 0（反向），则改用 d1 旋转 90° 的垂直方向。
+    """
+    bx, by = d1[0] + d2[0], d1[1] + d2[1]
+    mag = math.hypot(bx, by)
+    if mag < 1e-9:
+        # 反向：用 d1 的垂直方向
+        bx, by = -d1[1], d1[0]
+        mag = math.hypot(bx, by)
+    if mag < 1e-9:
         return None
-    # 只保留最大组件（若切割成多块）
-    if block.geom_type in ("MultiPolygon", "GeometryCollection"):
-        parts = [g for g in block.geoms
-                 if isinstance(g, Polygon) and not g.is_empty]
-        if not parts:
-            if stats: stats["block_none"] += 1
-            return None
-        block = max(parts, key=lambda p: p.area)
-
-    if not isinstance(block, Polygon) or block.is_empty:
-        if stats: stats["block_none"] += 1
-        return None
-    area = block.area
-    if area < min_area_m2:
-        if stats: stats["block_none"] += 1
-        return None
-
-    # 近似形状：用最小旋转矩形
-    mbr = block.minimum_rotated_rectangle
-    if mbr.is_empty:
-        return None
-    # 旋转矩形的两条边方向向量
-    mbr_coords = list(mbr.exterior.coords)
-    w1 = math.hypot(mbr_coords[1][0] - mbr_coords[0][0],
-                    mbr_coords[1][1] - mbr_coords[0][1])
-    w2 = math.hypot(mbr_coords[2][0] - mbr_coords[1][0],
-                    mbr_coords[2][1] - mbr_coords[1][1])
-    w_short = min(w1, w2)
-    w_long = max(w1, w2)
-    aspect = w_long / w_short if w_short > 1e-9 else 999.0
-    approx_shape = "rect" if aspect < 2.5 else "trapezoid"
-
-    return {
-        "geometry": block,
-        "approx_shape": approx_shape,
-        "area_m2": block.area,
-        "aspect_ratio": aspect,
-        "width_m": w_short,
-        "length_m": w_long,
-        "skeleton_line": line,
-    }
+    return (bx / mag, by / mag)
 
 
-def _fallback_block(
-    u: Tuple[float, float],
-    v: Tuple[float, float],
+def _long_line_through(pt: Tuple[float, float],
+                       direction: Tuple[float, float],
+                       length: float = 200.0) -> LineString:
+    """过 pt 沿 direction 方向(±)做长线段，用于后续与 walkable boundary 求交。"""
+    dx, dy = direction
+    return LineString([
+        (pt[0] + dx * length, pt[1] + dy * length),
+        (pt[0] - dx * length, pt[1] - dy * length),
+    ])
+
+
+def generate_cut_lines(
+    skeleton_lines: Sequence[LineString],
+    tol_m: float = 1.5,
+    max_extend: float = 200.0,
+) -> List[LineString]:
+    """生成所有分界线。
+
+    - junction（≥2 条骨架段汇聚）：角平分线
+    - terminal（仅 1 条骨架段）：该段 endpoint 的垂直截线
+    """
+    cuts: List[LineString] = []
+    clusters = _build_endpoint_clusters(skeleton_lines, tol_m)
+
+    for canonical_pt, members in clusters.items():
+        # canonical_pt 是聚类网格点；取各真实端点的均值作为 junction 坐标
+        pts = [m[2] for m in members]
+        jx = sum(p[0] for p in pts) / len(pts)
+        jy = sum(p[1] for p in pts) / len(pts)
+
+        # 收集所有从该点向外辐射的骨架方向
+        dirs: List[Tuple[float, float]] = []
+        line_set: Set[int] = set()
+        for line, pos, real_pt in members:
+            lid = id(line)
+            if lid in line_set:
+                continue
+            line_set.add(lid)
+            d = _segment_direction_away_from(line, pos)
+            if d is not None:
+                dirs.append(d)
+
+        if len(dirs) < 2:
+            # terminal：仅 1 个方向 → 做垂直截线
+            if dirs:
+                d = dirs[0]
+                perp = (-d[1], d[0])
+                cuts.append(_long_line_through((jx, jy), perp, max_extend))
+            continue
+
+        # junction：按角度排序 → 相邻对之间做角平分线
+        dirs.sort(key=lambda d: math.atan2(d[1], d[0]))
+        n = len(dirs)
+        for i in range(n):
+            d1 = dirs[i]
+            d2 = dirs[(i + 1) % n]
+            b = _bisector(d1, d2)
+            if b is not None:
+                cuts.append(_long_line_through((jx, jy), b, max_extend))
+
+    return cuts
+
+
+# ── polygonize + assignment ───────────────────────────────────────────
+
+def _polygonize_partition(
     walkable_poly: Polygon,
+    cut_lines: Sequence[LineString],
+) -> List[Polygon]:
+    """用分界线 + walkable 边界做 polygonize，得到无重叠、完全覆盖的子多边形。"""
+    if walkable_poly.is_empty:
+        return []
+
+    # 组合 walkable 外边界 + 所有分界线
+    all_lines = [walkable_poly.exterior]
+    all_lines.extend(cut_lines)
+
+    merged = unary_union(all_lines)
+    candidates = list(polygonize(merged))
+
+    # 仅保留重心在 walkable 内的多边形（剔除外部多边形和洞）
+    result = []
+    for c in candidates:
+        if not isinstance(c, Polygon) or c.is_empty:
+            continue
+        centroid = c.centroid
+        if walkable_poly.contains(centroid) or walkable_poly.buffer(1e-6).contains(centroid):
+            result.append(c)
+    return result
+
+
+def _assign_polygons_to_segments(
+    polygons: List[Polygon],
+    skeleton_lines: Sequence[LineString],
+) -> Dict[int, List[Polygon]]:
+    """将子多边形按最近骨架段归类。
+
+    返回 {line_index_in_skeleton_lines: [polygons]}。
+    """
+    assignment: Dict[int, List[Polygon]] = collections.defaultdict(list)
+    for poly in polygons:
+        centroid = poly.centroid
+        best_i = None
+        best_d = float("inf")
+        for i, line in enumerate(skeleton_lines):
+            if not isinstance(line, LineString) or line.is_empty:
+                continue
+            d = line.distance(centroid)
+            if d < best_d:
+                best_d = d
+                best_i = i
+        if best_i is not None:
+            assignment[best_i].append(poly)
+    return assignment
+
+
+def _build_blocks_for_lines(
+    assignment: Dict[int, List[Polygon]],
+    skeleton_lines: Sequence[LineString],
     min_area_m2: float,
-) -> Optional[dict]:
-    """裁线失败时的兜底：直接用 uv 连线 + walkable 的局部裁剪。"""
-    uv = LineString([u, v])
-    buf = uv.buffer(2.0)  # 2m 缓冲，足够覆盖走廊宽度的一半
-    clipped = buf.intersection(walkable_poly)
-    if clipped.is_empty:
-        return None
-    if clipped.geom_type in ("MultiPolygon", "GeometryCollection"):
-        parts = [g for g in clipped.geoms
-                 if isinstance(g, Polygon) and not g.is_empty]
-        clipped = max(parts, key=lambda p: p.area) if parts else None
-    if clipped is None or not isinstance(clipped, Polygon) or clipped.is_empty:
-        return None
-    area = clipped.area
-    if area < min_area_m2:
-        return None
-    return {
-        "geometry": clipped,
-        "approx_shape": "rect",  # 缓冲近似的默认
-        "area_m2": area,
-        "aspect_ratio": 1.0,
-        "width_m": math.sqrt(area),
-        "length_m": math.sqrt(area),
-        "skeleton_line": uv,
-    }
+    junction_points: Set[Tuple[float, float]],
+    terminal_points: Set[Tuple[float, float]],
+    tol_m: float = 1.5,
+) -> List[dict]:
+    """对已归类的子多边形做合并 + 几何元数据提取，返回 block 列表。"""
+    blocks: List[dict] = []
+    for seg_idx, polys in assignment.items():
+        if seg_idx >= len(skeleton_lines) or not polys:
+            continue
+        line = skeleton_lines[seg_idx]
+        if not isinstance(line, LineString) or line.is_empty:
+            continue
+
+        merged = unary_union(polys)
+        if merged.is_empty:
+            continue
+        merged = merged.buffer(0)  # 消除 sliver / 微小自交
+        if merged.is_empty:
+            continue
+        if merged.geom_type == "Polygon":
+            geoms = [merged]
+        elif hasattr(merged, "geoms"):
+            geoms = [g for g in merged.geoms
+                     if isinstance(g, Polygon) and not g.is_empty
+                     and g.area >= min_area_m2]
+        else:
+            continue
+
+        for g in geoms:
+            if g.area < min_area_m2:
+                continue
+
+            # 近似形状
+            mbr = g.minimum_rotated_rectangle
+            if mbr.is_empty:
+                continue
+            mbr_coords = list(mbr.exterior.coords)
+            w1 = math.hypot(mbr_coords[1][0] - mbr_coords[0][0],
+                            mbr_coords[1][1] - mbr_coords[0][1])
+            w2 = math.hypot(mbr_coords[2][0] - mbr_coords[1][0],
+                            mbr_coords[2][1] - mbr_coords[1][1])
+            w_short = min(w1, w2)
+            w_long = max(w1, w2)
+            aspect = w_long / w_short if w_short > 1e-9 else 999.0
+            approx_shape = "rect" if aspect < 2.5 else "trapezoid"
+
+            # 端点类型
+            coords = list(line.coords)
+            ep_start = _canonical_pt((coords[0][0], coords[0][1]), tol_m)
+            ep_end = _canonical_pt((coords[-1][0], coords[-1][1]), tol_m)
+            et0 = ("junction" if ep_start in junction_points else
+                   ("terminal" if ep_start in terminal_points else "mid"))
+            et1 = ("junction" if ep_end in junction_points else
+                   ("terminal" if ep_end in terminal_points else "mid"))
+
+            blocks.append({
+                "geometry": g,
+                "approx_shape": approx_shape,
+                "area_m2": g.area,
+                "aspect_ratio": aspect,
+                "width_m": w_short,
+                "length_m": w_long,
+                "skeleton_line": line,
+                "endpoint_types": (et0, et1),
+            })
+
+    return blocks
 
 
-def _endpoint_type(pt: Tuple[float, float],
-                   junctions: Sequence[Tuple[float, float]],
-                   terminals: Sequence[Tuple[float, float]],
-                   tol_m: float = 1.5) -> str:
-    """判断骨架端点类型：terminal(死胡同)、junction(交叉口)、mid(中间点)。"""
-    px, py = pt
-    for jx, jy in junctions:
-        if math.hypot(px - jx, py - jy) < tol_m:
-            return "junction"
-    for tx, ty in terminals:
-        if math.hypot(px - tx, py - ty) < tol_m:
-            return "terminal"
-    return "mid"
+# ── public API ─────────────────────────────────────────────────────────
 
+def _lines_touching_poly(
+    skeleton_lines: Sequence[LineString],
+    poly: Polygon,
+) -> List[LineString]:
+    """筛选与指定多边形相交/内含的骨架线。"""
+    result: List[LineString] = []
+    for line in skeleton_lines:
+        if not isinstance(line, LineString) or line.is_empty:
+            continue
+        if poly.contains(line) or poly.intersects(line):
+            result.append(line)
+    return result
 
-# ── public API ───────────────────────────────────────────────────────
 
 def decompose_walkable_to_blocks(
     skeleton_lines: Sequence[LineString],
@@ -235,22 +305,22 @@ def decompose_walkable_to_blocks(
     terminals: Sequence[Tuple[float, float]] = (),
     connectivity_tol_m: float = 1.5,
 ) -> List[dict]:
-    """主入口：将可通行区域按中轴分解为独立几何块。
+    """主入口：将可通行区域按中轴分解为独立几何块（v2, 无重叠、全覆盖）。
 
     Parameters
     ----------
     skeleton_lines : list of LineString
-        src/skeleton/pipeline.build_skeleton_for_walkables 返回的 "lines"。
+        src/skeleton/pipeline 输出的 "lines"。
     walkable_polygon_m : Polygon
         统一的可通行区域多边形（米坐标）。
     min_area_m2 : float
         丢弃面积过小的碎块（默认 1 m²）。
     junctions : list of (x, y)
-        骨架交叉口点（degree≥3），用于判定"穿越型"块。
+        骨架交叉口点（degree≥3），用于判定端点类型。
     terminals : list of (x, y)
-        骨架端点（degree=1），用于判定"服务型/袋形"块。
+        骨架端点（degree=1），用于判定端点类型。
     connectivity_tol_m : float
-        端点匹配交叉口/端点的容差（默认 1.5m）。
+        端点匹配容差（默认 1.5m）。
 
     Returns
     -------
@@ -260,57 +330,116 @@ def decompose_walkable_to_blocks(
         "area_m2": float, "aspect_ratio": float,
         "width_m": float, "length_m": float,
         "skeleton_line": LineString,
-        "endpoint_types": ("terminal"|"junction"|"mid", ...),
+        "endpoint_types": (str, str),
     }
     """
-    blocks = []
-    stats = {"total": 0, "too_short": 0, "cut_u_none": 0, "cut_v_none": 0,
-             "block_none": 0, "block_ok": 0}
-
-    # 支持 Polygon 或 MultiPolygon
+    # 归一化 walkable
     raw = walkable_polygon_m
     if raw.is_empty:
-        return blocks
+        return []
+    # 兼容 MultiPolygon → 拆分成多个 Polygon 独立处理
     if raw.geom_type == "MultiPolygon":
         polys = [g for g in raw.geoms
                  if isinstance(g, Polygon) and not g.is_empty]
     elif raw.geom_type == "Polygon":
         polys = [raw] if not raw.is_empty else []
     else:
-        return blocks
+        return []
     polys = [p.buffer(0) for p in polys if not p.is_empty]
     if not polys:
-        return blocks
+        return []
 
-    # 为每条骨架线找所在的多边形组件
-    for line in skeleton_lines:
-        if not isinstance(line, LineString) or line.is_empty:
+    # 预处理：junctions / terminals → canonical set
+    junction_set: Set[Tuple[float, float]] = set()
+    for j in junctions:
+        junction_set.add(_canonical_pt((j[0], j[1]), connectivity_tol_m))
+    terminal_set: Set[Tuple[float, float]] = set()
+    for t in terminals:
+        terminal_set.add(_canonical_pt((t[0], t[1]), connectivity_tol_m))
+
+    total_segs = len([l for l in skeleton_lines
+                      if isinstance(l, LineString) and not l.is_empty])
+    all_blocks: List[dict] = []
+
+    for poly in polys:
+        # 1. 仅用当前 polygon 组件内的骨架线（避免跨组件分界污染）
+        relevant_lines = _lines_touching_poly(skeleton_lines, poly)
+        if not relevant_lines:
             continue
-        stats["total"] += 1
-        mid_pt = Point(line.interpolate(line.length / 2, normalized=True))
-        best_poly = None
-        for p in polys:
-            if p.contains(mid_pt) or p.buffer(0.1).contains(mid_pt):
-                best_poly = p
-                break
-        if best_poly is None:
-            best_poly = min(polys, key=lambda p: p.exterior.distance(mid_pt))
-        bk = _block_for_skeleton_segment(line, best_poly, min_area_m2, stats)
-        if bk:
-            # 判定端点连接类型
-            coords = list(line.coords)
-            ep_types = [_endpoint_type(coords[0], junctions, terminals,
-                                       connectivity_tol_m),
-                        _endpoint_type(coords[-1], junctions, terminals,
-                                       connectivity_tol_m)]
-            bk["endpoint_types"] = tuple(ep_types)
-            blocks.append(bk)
-            stats["block_ok"] += 1
-    if blocks:
-        print(f"    [decompose] {len(blocks)}/{stats['total']} 分解成功 "
-              f"(跳过短边:{stats['too_short']})")
-    return blocks
 
+        # 2. 用 relevant_lines 生成分界线（junction bisectors + terminal perpendiculars）
+        cuts = generate_cut_lines(relevant_lines, tol_m=connectivity_tol_m)
+
+        # 3. polygonize：boundary + cuts → 子多边形
+        sub_polys = _polygonize_partition(poly, cuts)
+        if not sub_polys:
+            # polygonize 无结果（可能 cuts 太少）→ 整块兜底赋给最近的骨架段
+            assignment = _assign_polygons_to_segments([poly], relevant_lines)
+            all_blocks.extend(_build_blocks_for_lines(
+                assignment, relevant_lines, min_area_m2,
+                junction_set, terminal_set, connectivity_tol_m))
+            continue
+
+        # 4. 子多边形 → 最近骨架段
+        assigned = _assign_polygons_to_segments(sub_polys, relevant_lines)
+
+        # 5. 合并同属相同骨架段的子多边形 → 最终 block
+        blocks = _build_blocks_for_lines(assigned, relevant_lines, min_area_m2,
+                                         junction_set, terminal_set,
+                                         connectivity_tol_m)
+        all_blocks.extend(blocks)
+
+    # ── 全局去重叠：逐块减去与更大块的重叠区域 ──
+    if len(all_blocks) > 1:
+        # 按面积从大到小排序，大块优先
+        all_blocks.sort(key=lambda b: b["area_m2"], reverse=True)
+        cleaned: List[dict] = []
+        union_so_far = None
+        for b in all_blocks:
+            g = b["geometry"]
+            if union_so_far is not None:
+                g = g.difference(union_so_far)
+                if g.is_empty:
+                    continue
+                if g.geom_type in ("MultiPolygon", "GeometryCollection"):
+                    parts = [p for p in g.geoms
+                             if isinstance(p, Polygon) and not p.is_empty
+                             and p.area >= min_area_m2]
+                    if not parts:
+                        continue
+                    g = max(parts, key=lambda p: p.area)
+                elif not isinstance(g, Polygon):
+                    continue
+                if g.area < min_area_m2:
+                    continue
+                # 更新面积/形状元数据（几何变了）
+                mbr = g.minimum_rotated_rectangle
+                if not mbr.is_empty:
+                    mc = list(mbr.exterior.coords)
+                    w1 = math.hypot(mc[1][0]-mc[0][0], mc[1][1]-mc[0][1])
+                    w2 = math.hypot(mc[2][0]-mc[1][0], mc[2][1]-mc[1][1])
+                    ws = min(w1, w2)
+                    wl = max(w1, w2)
+                    b["geometry"] = g
+                    b["area_m2"] = g.area
+                    b["width_m"] = ws
+                    b["length_m"] = wl
+                    b["aspect_ratio"] = wl / ws if ws > 1e-9 else 999
+                    b["approx_shape"] = "rect" if b["aspect_ratio"] < 2.5 else "trapezoid"
+            if union_so_far is None:
+                union_so_far = g
+            else:
+                union_so_far = union_so_far.union(g)
+            cleaned.append(b)
+        all_blocks = cleaned
+
+    if all_blocks:
+        print(f"    [decompose v2] {len(all_blocks)} 个几何块 "
+              f"(共 {total_segs} 条中轴段, polygonize 分区后归并)")
+    return all_blocks
+
+
+# ── 分类器（从 v1 继承，无变化）────────────────────────────────────────
 
 def classify_block(block: dict,
                    elevator_geoms_m: Sequence = (),
