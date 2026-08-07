@@ -49,6 +49,7 @@
 |---|---|---|---|---|
 | 2026-08-07 | classify 后移至 T1.5 裁剪之后 | F1-CR-0043 判定面积(裁剪前≈60⁺)≠输出面积(裁剪后 59.11)，导致边界漏判楼梯前室 | 将 `classify_elevator_stair_lobby` 和 `generate_walkable_polygons` 调用从 T1.5「沿建筑外轮廓裁剪」之前移到之后 | F1-CR-0043 成功判为 stair_lobby；F1-CR-0061 裁剪后面积<8 自然退出；总前室 15 不变；walkable 基于裁剪后 poly 生成，不再需二次裁剪 |
 | 2026-08-07 | 空间分解模块 v1 | 可通行区为整块多边形，走道/前室/门厅混在一起，难以按几何特征独立标注 | 新建 `src/spatial_decompose.py`：基于中轴骨架(skeleton lines)的垂直截线法，每个骨架段两端做垂直截线→四边形→polygon clip→近似矩形/梯形。集成到 parse_cad_pdf.py floor_block，写入 geojson["spatial_blocks"] | F1 195 块 / F2 92 块 / 总计 287 块。分类器 v1 偏粗糙(stair_lobby=110 偏多，根因：贴楼梯的每个小块都独立判为前室，缺连接度/袋形约束)。525 条中轴段因长度<0.3m 跳过(骨架边缘碎枝) |
+| 2026-08-07 | 分类器 v2：端点连接度 | v1 分类器把贴楼梯的每个小块都判为 stair_lobby(110个 vs 预期~6)，因为只依赖距离+面积，不知道块是穿越型还是服务型 | 给每个块增加 `endpoint_types` 属性（通过匹配 skeleton 端点与 junctions/terminals）。分类规则改为"前室 = 贴近井道 **且** 至少一端为 terminal(死胡同)"，穿越型(junction-junction)块保持 corridor | stair_lobby 110→50(-55%)；elevator_lobby 16→3(F2 归零，因电梯区域全为穿越型)；corridor 151→223。端点类型验证：107个 junction-junction 块中 97 个正确判 corridor |
 | 2026-08-05 | 合班教室真实闭合墙体识别 | 合班教室走廊侧大开口未被识别成门→自由空间漏进走廊→build_rooms 不产闭合物→3m 占位方块 | `_heban_real_polygon`：局部 18m×18m 墙图，多档椭圆核(1.2~6.0m)MORPH_CLOSE 桥合开口→标签点 floodFill→轮廓→approxPolyDP。完全局部，不修改全局 all_segs | F1-RM-0050 得 190.4m²(16.5×13.0m, 9 顶点, classroom)，替换 3m 占位。⚠️ 陷阱：cv2.floodFill 写图像非 mask |
 
 ## 失败实验速记
