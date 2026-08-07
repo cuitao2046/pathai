@@ -11,8 +11,8 @@
 - `render_interactive.py`：自包含交互式 HTML(result/floor_layout_v9_interactive.html)。图层开关、缩放/平移(含触控板双指手势)、悬停/点击详情、楼层跳转、拓扑联动高亮、导出所选图层 SVG、拓扑边编辑(双击加边/选中删除/浏览器直写 GeoJSON)、「交叉口连接边 TI↔TI」图层开关。
 - `merge_manual_edges.py`：把渲染图中手动编辑/添加的拓扑边合并回 GeoJSON。
 
-## 当前进展(v9, 2026-08-06)
-房间 F1 72/F2 55；门 F1 129(swing68/fire53/opening8)/F2 75(swing36/fire32/opening7)；跨层边10(楼梯7+电梯3, matchedBy:code)；DK F1 26/F2 31(旋转无关4方向)；合班 F1-RM-0050 真实多边形 190.4m²(16.5×13.0m, 9顶点, classroom)，由 `_heban_real_polygon` 局部泛洪+形态学闭运算重建，替换3m占位，零退化；骨架模式 TI F1 61段/498节点/323边、F2 33段/310节点/199边；walkable F1 22/F2 16。QA PASS(无门封闭房间=0；模块豁免 F1=R1027/R1028/R1031/R1032/R1033、F2=R2016/R2017/R2020/R2021)。
+## 当前进展(v9, 2026-08-07 深夜)
+房间 F1 72/F2 55；门 F1 129(swing68/fire53/opening8)/F2 75(swing36/fire32/opening7)；门属性覆盖率 85%/81%(开启方向/铰链侧/轮椅可达)；墙 4442 段含厚度/材质；跨层边10(楼梯7+电梯3, matchedBy:code)；DK F1 26/F2 31(旋转无关4方向)；合班 F1-RM-0050 真实多边形 190.4m²(16.5×13.0m, 9顶点, classroom)，由 `_heban_real_polygon` 局部泛洪+形态学闭运算重建，替换3m占位，零退化；骨架模式 F1 147段/317节点/363边、F2 70段/178节点/215边；walkable F1 31/F2 16；指纹点 F1 975/F2 467。QA PASS(无门封闭房间=0；连通覆盖 100%)。
 
 ## 关键约定
 - 目录：正式脚本仅 src/(6个)；调试脚本 debug/；根目录不留.py。探索性副本(src/optimize*/src/adjcent/src/fix/src/pathai_src/debug/conn/debug/heban)已 .gitignore 取消跟踪(本地保留)。
@@ -55,6 +55,7 @@
 | 2026-08-07 | 空间块去前室化：功能空间划分 | 电梯/楼梯前室属消防通道语义，本项目(视障导航)不需要，前室标注无意义 | classify_block 重写：移除 elevator_lobby/stair_lobby 判定；lobby(面积≥40m²+长宽比<2.2+宽≥3m)、passage(宽<2.2m 窄通道)、corridor(默认)；删除 `_min_boundary_dist`/`_touches_shaft` 死代码；渲染色移除前室色新增 passage(#D7EEE4) | F1 224块(corridor 98/passage 119/lobby 7)、F2 101块(46/52/3)；覆盖98%、重叠≈0%、0异常。⚠️ passage 偏多(F1 119个,均3.6m² 多为窄碎块)，必要时加面积下限 |
 | 2026-08-07 | 空间分解 v3：debug/decomp 方案替代 v2 | v2 实测覆盖率缺陷：F1 仅 92.3%(丢206m²)、F2 101.4%(块越界出 walkable)——上一轮只验证 overlap 未验证覆盖率 | 采用 debug/decomp/spatial_decompose.py 替换 src 版：① `_collect_cut_points` 按 0.6m 聚类端点、平均切向；② `shapely.ops.split` 剖分(polygonize 兜底)；③ `_coverage_repair` 残片并入最近块；④ 全局去重叠 difference；⑤ `_shape_stats` 支持 **triangle**(简化≤3顶点) | F1 228块/F2 101块；覆盖 **98%** / 重叠≈0%；0 异常。v2 备份于 debug/decomp/spatial_decompose_v2_backup.py(本地,gitignore) |
 | 2026-08-07 | 空间分解 v2：polygonize 分区 | v1 独立垂直截线导致块重叠(~5m² F2)且公共区覆盖不全，不符合"近似矩形+三角形"目标 | 重写 `spatial_decompose.py`：① 聚类骨架端点识别 junction(≥2段)/terminal(1段)；② junction 处用角平分线作为**共享分界线**替代 v1 的各自垂直截线；③ 全部 cuts + walkable boundary → `shapely.ops.polygonize` → 无重叠完全覆盖分区；④ 全局逐块去重叠(Difference)清扫残留 sliver；⑤ 每 polygon 组件独立处理避免跨组件分界污染 | ⚠️ 已被 v3 替代（覆盖率 F1 92.3% / F2 101.4% 不达标）。教训：需同时验证覆盖/重叠/形状三指标 |
+| 2026-08-07 | 走廊/教室多边形重叠修复 | 红圈公共区域无骨架/指纹：合班教室北侧走廊被 F1-CR-0048 corridor 多边形吞入，walkable 又把教室挖空成洞 | 新增 `_resolve_open_closed_overlaps`：开放空间多边形与封闭房间取差，保留最大块；重跑指纹网格 | F1-CR-0048 565.5→192.6m²；红圈中心进入 walkable，3m 内指纹点 0→7；F1 拓扑 347→317 节点。validate PASS |
 | 2026-08-05 | 合班教室真实闭合墙体识别 | 合班教室走廊侧大开口未被识别成门→自由空间漏进走廊→build_rooms 不产闭合物→3m 占位方块 | `_heban_real_polygon`：局部 18m×18m 墙图，多档椭圆核(1.2~6.0m)MORPH_CLOSE 桥合开口→标签点 floodFill→轮廓→approxPolyDP。完全局部，不修改全局 all_segs | F1-RM-0050 得 190.4m²(16.5×13.0m, 9 顶点, classroom)，替换 3m 占位。⚠️ 陷阱：cv2.floodFill 写图像非 mask |
 
 ## 失败实验速记

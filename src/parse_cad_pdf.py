@@ -1995,6 +1995,58 @@ def _walkable_geojson(geom):
     }
 
 
+def _resolve_open_closed_overlaps(rooms, min_area_m2=1.0):
+    """开放空间（走廊/门厅/活动/中庭/前室）不得覆盖封闭房间。
+
+    build_rooms 分水岭阶段可能把「走道」标签投到包含教室的连通域，
+    导致走廊 polygon 误吞教室；后续 Walkable 生成会把教室作为障碍扣除，
+    在重叠区留下空洞（用户截图红圈处无骨架/无指纹）。
+    本函数在 Walkable 生成前做后处理：从每个开放空间 polygon 中扣除
+    其与所有封闭房间的重叠部分，保留最大残片，并同步更新 coords_m/centroid_m。
+    """
+    from shapely.geometry import MultiPolygon
+    from shapely.ops import unary_union
+
+    _OPEN = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"}
+    closed = [(r, r["polygon_pt"]) for r in rooms
+              if r.get("roomType") not in _OPEN
+              and r.get("polygon_pt") is not None
+              and not r["polygon_pt"].is_empty]
+    if not closed:
+        return 0
+    closed_union = unary_union([p for _, p in closed]).buffer(-0.01 / SCALE)
+    if closed_union.is_empty:
+        return 0
+    n = 0
+    min_pt = min_area_m2 / (SCALE * SCALE)
+    for r in rooms:
+        if r.get("roomType") not in _OPEN:
+            continue
+        poly = r.get("polygon_pt")
+        if poly is None or poly.is_empty:
+            continue
+        inter = poly.intersection(closed_union)
+        if inter.is_empty or inter.area < min_pt:
+            continue
+        clipped = poly.difference(closed_union)
+        pieces = []
+        if clipped.geom_type == "Polygon":
+            pieces = [clipped]
+        elif clipped.geom_type == "MultiPolygon":
+            pieces = [g for g in clipped.geoms if not g.is_empty]
+        pieces = [g for g in pieces if g.area >= min_pt]
+        if not pieces:
+            continue
+        # 保留最大块，避免走廊被切成多块同名房间；若残片仍>=min_area_m2则接受
+        biggest = max(pieces, key=lambda g: g.area)
+        if abs(biggest.area - poly.area) > min_pt:
+            r["polygon_pt"] = biggest
+            r["coords_m"] = [list(pt2m((x, y))) for x, y in biggest.exterior.coords]
+            r["centroid_m"] = list(pt2m((biggest.centroid.x, biggest.centroid.y)))
+            n += 1
+    return n
+
+
 def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
                                col_boxes, wall_buffer_m=0.12,
                                col_buffer_m=0.10,
@@ -3232,6 +3284,16 @@ def build_geojson(f1, f2):
                 print(f"[F{fl}] {kind} 剔除无编号伪设施: {info['dropped'][fl]} 个")
 
     def floor_block(floor_no, data):
+
+        # T0.5 开放/封闭房间多边形重叠裁剪
+        # 根因：走廊 polygon 可能误吞教室等封闭空间；后续 Walkable 会把教室
+        # 当障碍扣除，在重叠区留下无骨架/无指纹的空洞。
+        try:
+            n_ov = _resolve_open_closed_overlaps(data["rooms"])
+            if n_ov:
+                print(f"[F{floor_no}] 开放/封闭房间重叠裁剪: {n_ov} 个")
+        except Exception as e:
+            print(f"    [WARN] 开放/封闭房间重叠裁剪失败: {e}")
 
         # T1.5 沿建筑外轮廓裁剪：室内导航不得出现户外走道/可通行区
         # 根因：
