@@ -216,6 +216,40 @@ def bridge_disconnected_components(
     return edges
 
 
+def assign_node_risk_levels(nodes, rooms):
+    """给拓扑节点逐个赋风险等级（指南 §6.3）。
+
+    指南定义：楼梯口 r=10、玻璃门 r=5、自动门 r=3、普通走廊 r=0.5。
+    玻璃门/自动门图纸不可判（列入 accessibility.surveyRequired 待现场补录），
+    故此处只落实可从图纸推导的部分；另按视障场景补一条：
+    外开门的门扇会扫入走廊、无法提前感知，风险高于普通门口，取 r=2。
+
+    作为独立函数以便骨架拓扑与质心拓扑两条路径共用。
+    """
+    rtype_by_id = {r["id"]: r["roomType"] for r in rooms}
+    for n in nodes:
+        ntype = n.get("type")
+        if ntype == "facility":
+            r_lv = 10.0 if n.get("facilityType") == "staircase" else 1.0
+        elif ntype == "facility_entrance":
+            r_lv = 1.0
+        elif ntype == "doorway":
+            # 门口紧邻楼梯间 → 视为楼梯口，取最高风险
+            if any(rtype_by_id.get(rid) == "staircase"
+                   for rid in n.get("rooms", [])):
+                r_lv = 10.0
+            elif n.get("openDirection") == "outward":
+                r_lv = 2.0
+            else:
+                r_lv = 1.0
+        elif ntype == "room":
+            r_lv = 10.0 if n.get("roomType") == "staircase" else 0.5
+        else:                      # intersection（走廊/门厅/大厅等）
+            r_lv = 0.5
+        n["riskLevel"] = r_lv
+    return nodes
+
+
 def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                          corridor_adjacency=None, extra_nodes=None):
     """
@@ -273,6 +307,9 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
             "coordinates": list(_to_xy(dr.get("center_m"))),
             "rooms": dr.get("rooms", []),
+            # 指南 §3.2 开向：外开门（门扇扫入走廊）对视障用户风险更高
+            "openDirection": dr.get("openDirection"),
+            "hingeSide": dr.get("hingeSide"),
         })
 
     # ---------- 开放空间节点（circulation / intersection） ----------

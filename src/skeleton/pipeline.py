@@ -454,6 +454,9 @@ def build_skeleton_topology(
             "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
             "coordinates": [round(coords[0], 3), round(coords[1], 3)],
             "rooms": dr.get("rooms", []),
+            # 指南 §3.2 开向：外开门门扇扫入走廊，视障风险更高
+            "openDirection": dr.get("openDirection"),
+            "hingeSide": dr.get("hingeSide"),
         })
 
     # ---------- TF: 设施 ----------

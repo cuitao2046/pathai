@@ -29,9 +29,11 @@ from pathlib import Path
 from shapely.ops import unary_union, polygonize, transform
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely import snap as shp_snap
+from shapely.strtree import STRtree
 
 # 拓扑建模（指南 第五章）
-from topology import build_floor_topology, build_cross_floor_edges, obj_id, OBJ_TYPE
+from topology import (build_floor_topology, build_cross_floor_edges, obj_id,
+                      OBJ_TYPE, assign_node_risk_levels)
 
 try:
     from skeleton.pipeline import build_skeleton_topology
@@ -670,6 +672,108 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     return doors
 
 
+# ------------------------------------------------------------ 门属性（指南 §3.2）
+
+# 门开向探测：沿摆弧鼓出侧法向逐级外推，判断门扇扫入哪个房间
+DOOR_PROBE_STEPS_M = (0.5, 0.9, 1.4)
+
+# 图纸不可判、必须现场勘测补充的门属性（指南 §6.2）
+DOOR_SURVEY_FIELDS = ("hasThreshold", "isGlass", "isAutomatic")
+
+DOOR_SUBTYPE = {
+    "swing": "hinged",        # 平开门
+    "fire": "fire_hinged",    # 防火平开门
+    "opening": "opening",     # 无门扇洞口
+}
+
+# 判定「外开」的参照：门扇扫入的若是这些通行空间，则为外开（对视障用户风险更高）
+DOOR_CIRCULATION_TYPES = {
+    "corridor", "lobby", "entrance", "accessible_entrance", "atrium",
+    "elevator_hall", "elevator_lobby", "stair_lobby",
+}
+
+
+def door_swing_attributes(dr, rooms_by_id, public_types):
+    """从摆弧几何推导门的开向与铰链侧（指南 §3.2「开向：内开/外开/左开/右开」）。
+
+    几何依据：
+      - hinge 为门轴（落在墙线上），tip 为闭门端（门扇关闭时沿墙方向的端点），
+        故 hinge→tip 即墙线方向，radius=门宽；
+      - arc_mid 为摆弧中点，必然鼓向门扇扫过的一侧 = 门的开向侧。
+
+    判定：
+      - openDirection：沿鼓出侧法向从门中心外推，落入的房间若为公共通行空间
+        （走廊/门厅等）则为「外开」outward，否则为「内开」inward；
+      - hingeSide：站在开向侧面向门洞，铰链在观察者左手边为「左开」left。
+        左右手性依赖坐标系朝向，故在**米制坐标**（Y 已翻转为向上的右手系）下计算，
+        直接用 pt 坐标会左右颠倒。
+    """
+    out = {"openDirection": None, "hingeSide": None, "swingIntoRoom": None,
+           "swingIntoRoomType": None, "openDirectionSource": None}
+    if dr.get("kind") == "opening":
+        return out                      # 无门扇洞口，不存在开向
+    axis, arc_mid = dr.get("axis"), dr.get("arc_mid")
+    if not axis or not arc_mid:
+        return out
+    hinge_pt, tip_pt = axis
+    cx_pt, cy_pt = dr["center"]
+
+    # 墙线方向（pt）
+    ux, uy = tip_pt[0] - hinge_pt[0], tip_pt[1] - hinge_pt[1]
+    L = math.hypot(ux, uy)
+    if L < 1e-9:
+        return out
+    ux, uy = ux / L, uy / L
+    # 摆弧中点相对墙线的侧向分量 → 决定鼓出侧法向
+    side = (arc_mid[0] - cx_pt) * (-uy) + (arc_mid[1] - cy_pt) * ux
+    if abs(side) < 1e-9:
+        return out
+    sgn = 1.0 if side > 0 else -1.0
+    nx_pt, ny_pt = -uy * sgn, ux * sgn   # pt 空间中指向开门侧的单位法向
+
+    # --- openDirection：沿法向外推，找门扇扫入的房间 ---
+    # 门的 rooms 常只记录一侧（另一侧走廊未必成为归属房间），故先查门自身
+    # 关联的房间，再回退到全库房间；两者都落空时用「反向排除」推断。
+    own_ids = [rid for rid in (dr.get("rooms") or []) if rid in rooms_by_id]
+    other_ids = [rid for rid in rooms_by_id if rid not in set(own_ids)]
+    for step_m in DOOR_PROBE_STEPS_M:
+        d_pt = step_m / SCALE
+        probe = Point(cx_pt + nx_pt * d_pt, cy_pt + ny_pt * d_pt)
+        for rid in own_ids + other_ids:
+            poly = rooms_by_id[rid].get("polygon_pt")
+            if poly is not None and poly.contains(probe):
+                rtype = rooms_by_id[rid].get("roomType")
+                out["swingIntoRoom"] = rid
+                out["swingIntoRoomType"] = rtype
+                out["openDirection"] = ("outward" if rtype in public_types
+                                        else "inward")
+                out["openDirectionSource"] = "polygon"
+                break
+        if out["openDirection"]:
+            break
+
+    # 反向排除：门只关联到一个房间且门扇明显不扫入它，则必然扫向对侧。
+    # 对侧若是该房间之外的通行空间即为外开；若已知侧本身是走廊则反之。
+    if out["openDirection"] is None and len(own_ids) == 1:
+        known_type = rooms_by_id[own_ids[0]].get("roomType")
+        out["openDirection"] = ("inward" if known_type in public_types
+                                else "outward")
+        out["openDirectionSource"] = "inferred_opposite"
+
+    # --- hingeSide：在米制右手系下判定左右开 ---
+    hx, hy = pt2m(hinge_pt)
+    cx_m, cy_m = pt2m((cx_pt, cy_pt))
+    mx, my = pt2m((cx_pt + nx_pt, cy_pt + ny_pt))
+    nx_m, ny_m = mx - cx_m, my - cy_m
+    nl = math.hypot(nx_m, ny_m)
+    if nl > 1e-12:
+        nx_m, ny_m = nx_m / nl, ny_m / nl
+        # 观察者站在开向侧面向门：视线 d=-n，其左手方向 = (n_y, -n_x)
+        dot_left = (hx - cx_m) * ny_m + (hy - cy_m) * (-nx_m)
+        out["hingeSide"] = "left" if dot_left > 0 else "right"
+    return out
+
+
 # ---------------------------------------------------------------- 墙体与房间
 
 def wall_segments(wall_items):
@@ -684,6 +788,82 @@ def wall_segments(wall_items):
             if seg_len(a, b) > 0.3:
                 segs.append((a, b))
     return segs
+
+
+# ---- 墙体厚度与材质（指南 §3.1「CAD 中墙体是双线表示」/ §3.3 thickness+material）
+
+WALL_THICKNESS_MIN_M = 0.06      # 小于此值视为同一条线的重复描边
+WALL_THICKNESS_MAX_M = 0.60      # 大于此值不再是同一道墙的两个墙面
+WALL_PAIR_ANGLE_TOL = math.radians(5)
+WALL_PAIR_OVERLAP_RATIO = 0.30   # 两线沿轴向的重叠比例下限
+
+
+def _point_line_distance(p, a, b):
+    """点到**无限长直线** ab 的距离（区别于点到线段）。"""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    L = math.hypot(dx, dy)
+    if L < 1e-12:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    return abs((p[0] - a[0]) * dy - (p[1] - a[1]) * dx) / L
+
+
+def estimate_wall_thickness(wall_segs):
+    """双线配对求墙厚：为每条墙面线找最近的平行对侧墙面线，间距即墙厚。
+
+    配对条件：夹角 <5°、垂距落在 [0.06, 0.60] m、沿轴向重叠 ≥30%。
+    返回与 wall_segs 等长的 list[float|None]（米），未配对为 None。
+    """
+    n = len(wall_segs)
+    result = [None] * n
+    if n == 0:
+        return result
+    tmin = WALL_THICKNESS_MIN_M / SCALE      # pt
+    tmax = WALL_THICKNESS_MAX_M / SCALE
+    lines = [LineString([a, b]) for a, b in wall_segs]
+    tree = STRtree(lines)
+    for i, (a, b) in enumerate(wall_segs):
+        li = lines[i]
+        ang_i = seg_angle(a, b)
+        len_i = seg_len(a, b)
+        if len_i < 1e-9:
+            continue
+        ux, uy = (b[0] - a[0]) / len_i, (b[1] - a[1]) / len_i
+        lo_i, hi_i = sorted((a[0] * ux + a[1] * uy, b[0] * ux + b[1] * uy))
+        best = None
+        for j in tree.query(li.buffer(tmax)):
+            j = int(j)
+            if j == i:
+                continue
+            c, d = wall_segs[j]
+            if angle_diff(ang_i, seg_angle(c, d)) > WALL_PAIR_ANGLE_TOL:
+                continue
+            # 垂距（取对侧两端点到本线所在直线距离的均值）
+            dist = 0.5 * (_point_line_distance(c, a, b)
+                          + _point_line_distance(d, a, b))
+            if dist < tmin or dist > tmax:
+                continue
+            # 轴向重叠比例
+            lo_j, hi_j = sorted((c[0] * ux + c[1] * uy, d[0] * ux + d[1] * uy))
+            ov = min(hi_i, hi_j) - max(lo_i, lo_j)
+            if ov <= 0 or ov < WALL_PAIR_OVERLAP_RATIO * min(len_i,
+                                                             seg_len(c, d)):
+                continue
+            if best is None or dist < best:
+                best = dist
+        if best is not None:
+            result[i] = round(best * SCALE, 3)
+    return result
+
+
+def wall_material_from_thickness(t_m):
+    """按墙厚启发式推断材质（图纸未标材质，仅由常见做法反推，须现场核实）。"""
+    if t_m is None:
+        return None
+    if t_m >= 0.30:
+        return "concrete"        # 剪力墙 / 结构墙
+    if t_m >= 0.18:
+        return "brick"           # 240 砌体墙
+    return "partition"           # 轻质隔墙
 
 
 def opening_closures(axis, cap_len=10.0):
@@ -3260,14 +3440,31 @@ def build_geojson(f1, f2):
             print(f"    [WARN] Walkable Polygon 生成失败: {e}")
 
         walls = []
+        try:
+            wall_th = estimate_wall_thickness(data["wall_segs"])
+        except Exception as e:
+            print(f"    [WARN] 墙厚估算失败: {e}")
+            wall_th = [None] * len(data["wall_segs"])
         for i, (a, b) in enumerate(data["wall_segs"]):
+            t_m = wall_th[i]
             walls.append({
                 "type": "Feature",
                 "id": obj_id(f"F{floor_no}", OBJ_TYPE["wall"], i + 1),
                 "geometry": {"type": "LineString",
                              "coordinates": [list(pt2m(a)), list(pt2m(b))]},
-                "properties": {"type": "wall", "sourceLayer": LAYER_WALL},
+                "properties": {
+                    "type": "wall",
+                    # 指南 §3.3：thickness 由 CAD 双线间距实测，material 按厚度反推
+                    "thickness": t_m,
+                    "material": wall_material_from_thickness(t_m),
+                    "materialSource": ("inferred_from_thickness"
+                                       if t_m is not None else None),
+                    "sourceLayer": LAYER_WALL,
+                },
             })
+        n_th = sum(1 for t in wall_th if t is not None)
+        print(f"[F{floor_no}] 墙厚配对: {n_th}/{len(wall_th)} "
+              f"({n_th * 100.0 / max(1, len(wall_th)):.0f}%)")
         rooms_g, rooms_s = [], []
         for r in data["rooms"]:
             # 跳过被 T1.5 判定为完全在户外的公共空间（coords_m 已清空）
@@ -3297,9 +3494,14 @@ def build_geojson(f1, f2):
                 "floor": int(floor_no),
             })
         doors = []
+        rooms_by_id = {r["id"]: r for r in data["rooms"]}
         for i, dr in enumerate(data["doors"]):
             cx, cy = pt2m(dr["center"])
             kind = dr["kind"]
+            width_m = round(dr["width_pt"] * SCALE, 2)
+            swing = door_swing_attributes(dr, rooms_by_id,
+                                          DOOR_CIRCULATION_TYPES)
+            dr["swing_attrs"] = swing      # 供拓扑层门口节点复用
             doors.append({
                 "type": "Feature",
                 "id": obj_id(f"F{floor_no}", OBJ_TYPE["door"], i + 1),
@@ -3307,9 +3509,22 @@ def build_geojson(f1, f2):
                 "properties": {
                     "type": "door",
                     "doorType": kind,
-                    "width_m": round(dr["width_pt"] * SCALE, 2),
+                    "doorSubType": DOOR_SUBTYPE.get(kind, kind),
+                    "width_m": width_m,
                     "mergedCount": dr.get("merged", 1),
                     "rooms": dr["rooms"],
+                    # 指南 §3.2 开向（内开/外开 + 左开/右开），由摆弧几何推导
+                    "openDirection": swing["openDirection"],
+                    "openDirectionSource": swing["openDirectionSource"],
+                    "hingeSide": swing["hingeSide"],
+                    "swingIntoRoom": swing["swingIntoRoom"],
+                    # 指南 §3.2 门宽判轮椅可通行（≥0.8m）
+                    "wheelchairAccessible": width_m >= 0.8,
+                    # 以下图纸不可判，须现场勘测补充（指南 §6.2）
+                    "hasThreshold": None,
+                    "isGlass": None,
+                    "isAutomatic": None,
+                    "surveyRequired": list(DOOR_SURVEY_FIELDS),
                     "sourceLayer": ("window" if kind == "swing"
                                     else "DOOR_FIRE" if kind == "fire"
                                     else "window+geometry"),
@@ -3372,12 +3587,36 @@ def build_geojson(f1, f2):
                 "properties": {"type": "column", "sourceLayer": "COLUMN"},
             })
 
+        # --- 风险节点（指南 §6.3）---
+        # 楼梯口 r=10；电梯口 r=1（§5.3 电梯边同值）；
+        # 外开门 r=2（门扇扫入走廊，视障不可预判，属图纸可推导的风险）；
+        # 玻璃门 r=5 / 自动门 r=3 图纸不可判，列入 surveyRequired 待现场补录。
         risk_nodes = [{
             "id": obj_id(f"F{floor_no}", OBJ_TYPE["stair_risk"], i + 1),
             "type": "stair_entrance",
             "riskLevel": 10, "label": s["properties"]["label"],
             "coordinates": s["properties"]["centroid"],
         } for i, s in enumerate(stairs)]
+        for i, e in enumerate(elevators):
+            risk_nodes.append({
+                "id": f"F{floor_no}-ER-{i + 1:04d}",
+                "type": "elevator_entrance",
+                "riskLevel": 1, "label": e["properties"]["label"],
+                "coordinates": e["properties"]["centroid"],
+            })
+        _od = 0
+        for d in doors:
+            if d["properties"].get("openDirection") != "outward":
+                continue
+            _od += 1
+            risk_nodes.append({
+                "id": f"F{floor_no}-DR-{_od:04d}",
+                "type": "outward_door",
+                "riskLevel": 2,
+                "label": f"外开门（{d['properties'].get('hingeSide') or '?'}）",
+                "coordinates": d["geometry"]["coordinates"],
+                "doorId": d["id"],
+            })
         a11y_elevators = [{
             "id": obj_id(f"F{floor_no}", OBJ_TYPE["elev_a11y"], i + 1),
             "label": e["properties"]["label"],
@@ -3388,11 +3627,14 @@ def build_geojson(f1, f2):
         doors_for_topo = []
         for dr in data["doors"]:
             cx, cy = pt2m(dr["center"])
+            sw = dr.get("swing_attrs") or {}
             doors_for_topo.append({
                 "center_m": [cx, cy],
                 "kind": dr["kind"],
                 "width_pt": dr["width_pt"],
                 "rooms": dr["rooms"],
+                "openDirection": sw.get("openDirection"),
+                "hingeSide": sw.get("hingeSide"),
             })
         # 额外 facility_entrance 节点：仅真正公共出入口/门厅等。
         # 合班教室是封闭大教室，不进 extra_nodes（避免当公共入口）。
@@ -3489,6 +3731,9 @@ def build_geojson(f1, f2):
                 stairs, elevators, extra_nodes=extra_nodes)
             nodes, edges = topo["nodes"], topo["edges"]
 
+        # 节点级风险等级（指南 §6.3）——骨架/质心两条拓扑路径统一施加
+        assign_node_risk_levels(nodes, data["rooms"])
+
         return {
             "geometry": {
                 "walls": walls, "rooms": rooms_g, "doors": doors,
@@ -3502,7 +3747,18 @@ def build_geojson(f1, f2):
             "accessibility": {
                 "elevators": a11y_elevators,
                 "riskNodes": risk_nodes,
+                # 以下三层本套图纸无对应 CAD 图层（无无障碍设计专篇），
+                # 按指南 §6.2 属必须现场勘测补充的要素，保持空数组并声明来源。
                 "ramps": [], "tactilePaths": [], "groundMaterialChanges": [],
+                "surveyRequired": {
+                    "reason": "本套施工图无无障碍设计专篇图层（坡道/盲道/地面材质均未标注）",
+                    "pendingLayers": ["ramps", "tactilePaths",
+                                      "groundMaterialChanges"],
+                    "pendingNodeAttributes": ["isGlass(玻璃门 r=5)",
+                                              "isAutomatic(自动门 r=3)",
+                                              "hasThreshold(门槛高度)"],
+                    "guideRef": "docs/03-地图构建指南.md §6.2 / §七",
+                },
             },
         }
 

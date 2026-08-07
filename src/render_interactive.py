@@ -907,11 +907,27 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             print(f"  [F{fk}] 跳过 {n_skip_bbox} 个文字标签包围盒（面积<{LABEL_BBOX_MAX_AREA}m² 且长宽比≥{LABEL_BBOX_MIN_ASPECT}）")
 
         # 2. 墙体
+        MAT_CN = {"concrete": "混凝土", "brick": "砖墙", "partition": "轻质隔墙"}
         for w in geom.get("walls", []):
             c = w["geometry"]["coordinates"]
             x1, y1 = tosvg(c[0][0], c[0][1])
             x2, y2 = tosvg(c[1][0], c[1][1])
-            parts.append(f'<g class="layer_wall"><path d="M {x1} {y1} L {x2} {y2}"/></g>\n')
+            wp = w.get("properties", {})
+            t_m = wp.get("thickness")
+            mat = wp.get("material")
+            t_disp = f"{t_m*100:.0f} cm" if isinstance(t_m, (int, float)) else "—"
+            mat_disp = MAT_CN.get(mat, mat or "—")
+            wtip = f"墙体\\n厚度：{t_disp}\\n材质：{mat_disp}"
+            wdet = {"title": "墙体", "rows": [
+                ("厚度", t_disp),
+                ("材质", mat_disp),
+                ("材质来源", wp.get("materialSource", "—")),
+                ("来源图层", wp.get("sourceLayer", "—")),
+            ]}
+            parts.append(
+                f'<g class="layer_wall" {info_attr({"tip": wtip, "detail": wdet, "kind": "wall"})}>'
+                f'<path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
+            )
 
         # 3. 窗户段
         for wn in geom.get("windowSegments", []):
@@ -988,14 +1004,36 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             dtype = p.get("doorType", "swing")
             w = float(p.get("width_m", 0.9))
             dname = DOOR_TYPE_CN.get(dtype, dtype)
-            tip = f"{dname}\\n宽度：{w:.2f}m"
+            # 新属性：开启方向 / 合页侧 / 子类
+            od = p.get("openDirection")
+            OD_CN = {"inward": "内开", "outward": "外开", "none": "无（门洞）"}
+            hs = p.get("hingeSide")
+            HS_CN = {"left": "左铰链", "right": "右铰链"}
+            od_disp = OD_CN.get(od, od or "—")
+            hs_disp = HS_CN.get(hs, hs or "—")
+            if od in ("inward", "outward") and hs:
+                od_full = f"{od_disp} · {hs_disp}"
+            else:
+                od_full = od_disp
+            sub = p.get("doorSubType") or "—"
+            wa = p.get("wheelchairAccessible")
+            wa_disp = "是" if wa else ("否" if wa is False else "—")
+            swing_room = p.get("swingIntoRoom") or "—"
+            surv = p.get("surveyRequired") or []
+            surv_disp = "、".join(surv) if surv else "无"
+            tip = f"{dname}\\n宽度：{w:.2f}m\\n开启：{od_full}"
             det = {"title": dname,
                    "rows": [
-                       ("门编号", p.get("id", "—")),
+                       ("门编号", p.get("id") or "—"),
                        ("类型", f"{dname}（{dtype}）"),
+                       ("子类", sub),
+                       ("开启方向", od_full),
+                       ("摆向房间", swing_room),
                        ("宽度", f"{w:.2f} m"),
+                       ("轮椅可达", wa_disp),
                        ("归属房间", "、".join(p.get("rooms", [])) or "—"),
                        ("来源图层", p.get("sourceLayer", "—")),
+                       ("待现场核实", surv_disp),
                    ]}
             attr = info_attr({"tip": tip, "detail": det, "id": p.get("id", ""), "kind": "door"})
             dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
@@ -1031,6 +1069,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             nid = n["id"]
             # 详情
             rows = [("节点ID", nid), ("类型", ntype)]
+            _rl = n.get("riskLevel")
+            if isinstance(_rl, (int, float)):
+                rows.append(("风险等级", f"{_rl:g}"))
             if ntype == "facility":
                 rows.append(("设施类型", n.get("facilityType", "—")))
                 rows.append(("视障可达", "是" if n.get("blindAccessible") else "否"))
