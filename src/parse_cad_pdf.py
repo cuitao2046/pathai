@@ -188,6 +188,7 @@ _OPEN_ID_KEY = {
 ROOM_PUBLIC_TYPES = {
     "toilet", "staircase", "elevator_hall", "corridor", "lobby",
     "entrance", "accessible_entrance", "atrium",
+    "elevator_lobby", "stair_lobby",
 }
 
 # 无障碍可达性（指南 4.2：楼梯对视障禁用；电梯/出入口/走廊/大厅均无障碍）
@@ -204,6 +205,7 @@ NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
 INDEPENDENT_ENTRANCE_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance",
     "staircase", "elevator_hall", "atrium",
+    "elevator_lobby", "stair_lobby",
 }
 
 
@@ -1874,63 +1876,133 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
     return out
 
 
-def classify_elevator_stair_lobby(rooms, stair_boxes, evtr_boxes,
-                                  elev_dist_m=1.5, elev_area_max_m2=150.0,
-                                  stair_dist_m=3.0, stair_area_max_m2=60.0,
-                                  area_min_m2=8.0):
-    """T2: 公共空间细分类——贴近电梯/楼梯的前室重分类。
+def _lobby_largest_poly(geom):
+    """返回 geom 中面积最大的 Polygon 部分；空/无面积返回 None。"""
+    if geom is None or getattr(geom, "is_empty", True):
+        return None
+    if geom.geom_type == "Polygon":
+        return geom if geom.area > 0 else None
+    if geom.geom_type == "MultiPolygon":
+        return max(geom.geoms, key=lambda g: g.area) if geom.geoms else None
+    return None
 
-    遍历 corridor/lobby 空间，计算多边形到最近楼梯井/电梯井的距离：
-      - 电梯前室：距电梯 < elev_dist_m 且面积 ≤ elev_area_max_m2
-        （本图纸电梯井小(~2.9m²)且直接贴走廊主段，无独立"电梯厅"标注，
-        面积上限放宽到 150m² 才能命中；>150m² 的为贯穿走廊/门厅，保持原类）
-      - 楼梯前室：距楼梯 < stair_dist_m 且面积 ≤ stair_area_max_m2（task.md 原条件）
-    同时贴近电梯与楼梯时优先 elevator_lobby（无障碍导航关键节点）。
-    井道位置同时参考 bbox 列表与已识别的 staircase/elevator_hall 房间
-    多边形（后者与走廊同源、更精确）。返回重分类数量。
+
+def _make_lobby_room(rid, kind, poly, src, floor_no):
+    """由切出的前室多边形 poly(pt 坐标) 构造一个新的房间 dict。"""
+    room_type = "elevator_lobby" if kind == "elevator" else "stair_lobby"
+    label = "电梯前室" if kind == "elevator" else "楼梯前室"
+    return {
+        "id": rid,
+        "label": label,
+        "roomType": room_type,
+        "code": (src.get("code", "") if isinstance(src, dict) else ""),
+        "polygon_pt": poly,
+        "walkable_poly_pt": poly,
+        "coords_m": [list(pt2m((x, y))) for x, y in poly.exterior.coords],
+        "centroid_m": list(pt2m((poly.centroid.x, poly.centroid.y))),
+        "floor": floor_no,
+    }
+
+
+def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
+                        band_m=2.0, area_min_m2=1.5, area_max_m2=14.0,
+                        floor_no=None):
+    """T2.5: 在可通行区(走廊/门厅)中切出紧邻电梯井/楼梯井的小前室。
+
+    旧逻辑把整间走廊误标为前室(可达 150m²)，不符合"前室<10m² 且紧邻井道"
+    的常识。本函数改用几何切分：
+      对每口电梯井/楼梯井，取其缓冲 band_m 与相邻开放空间的交集口袋，
+      该口袋即真实前室(通常 2~12m²)；原开放空间被口袋吃掉的部分收缩、
+      其余仍保留为走廊/门厅。
+
+    只针对电梯(elevator)与楼梯(staircase)井，不处理其它 utility shaft。
+    新建房间追加到 rooms 列表，由 build_geojson 自动落到 geometry/semantic。
+    返回新建前室数量。
     """
-    elev_pt = elev_dist_m / SCALE
-    stair_pt = stair_dist_m / SCALE
-    # 井道几何分两类收集：(kind, geom)
-    elev_geoms = [box(x0, y0, x1, y1) for (x0, y0, x1, y1) in evtr_boxes]
-    stair_geoms = [box(x0, y0, x1, y1) for (x0, y0, x1, y1) in stair_boxes]
-    for r in rooms:
-        if r.get("roomType") in ("staircase", "elevator_hall", "shaft"):
-            (elev_geoms if r["roomType"] == "elevator_hall"
-             else stair_geoms).append(r["polygon_pt"])
+    def boxes_to_polys(boxes):
+        out = []
+        for (x0, y0, x1, y1) in (boxes or []):
+            if (x1 - x0) > 0 and (y1 - y0) > 0:
+                out.append(box(x0, y0, x1, y1))
+        return out
 
-    def _min_dist(poly, geoms):
-        dmin = None
-        for g in geoms:
-            d = poly.exterior.distance(g)
-            if dmin is None or d < dmin:
-                dmin = d
-        return dmin
-
-    n_re = 0
+    elev_geoms = boxes_to_polys(evtr_boxes)
+    stair_geoms = boxes_to_polys(stair_boxes)
+    # 补充井道房间多边形（比 bbox 更精确），并区分电梯/楼梯
     for r in rooms:
-        if r.get("roomType") not in ("corridor", "lobby"):
+        rt = r.get("roomType")
+        if rt in ("elevator_hall", "staircase") and r.get("polygon_pt") is not None:
+            (elev_geoms if rt == "elevator_hall" else stair_geoms).append(
+                r["polygon_pt"])
+
+    if not (elev_geoms or stair_geoms):
+        return 0
+
+    OPEN = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby", "lobby"}
+    band_pt = band_m / SCALE
+    # 面积阈值：输入为 m²，shapely 多边形面积为 pt²，换算 1 m² = 1/SCALE² pt²
+    _inv = 1.0 / (SCALE * SCALE)
+    amin = area_min_m2 * _inv
+    amax = area_max_m2 * _inv
+    claimed = []
+    new_rooms = []
+    seq = [0]
+
+    for r in rooms:
+        if r.get("roomType") not in OPEN:
             continue
-        if r.get("polygon_pt") is None:
+        rp = r.get("polygon_pt")
+        if rp is None or getattr(rp, "is_empty", True):
             continue
-        # 入口门厅（如"门厅无障碍出入口"）是 entrance 语义，不是电梯/楼梯前室
-        if "出入口" in r.get("label", ""):
+        base = rp
+        for c in claimed:
+            base = base.difference(c)   # 避免同一口袋被两个开放空间重复认领
+        if getattr(base, "is_empty", True) or base.area < amin:
             continue
-        a_m2 = r["polygon_pt"].area * SCALE * SCALE
-        if a_m2 < area_min_m2:
+        pockets = []
+        is_elev = False
+        for kind, geoms in (("elevator", elev_geoms), ("stair", stair_geoms)):
+            for g in geoms:
+                if base.distance(g) > band_pt + 0.5 / SCALE:
+                    continue
+                pkt = base.intersection(g.buffer(band_pt))
+                pkt = _lobby_largest_poly(pkt)
+                if pkt is None or pkt.area < amin:
+                    continue
+                pockets.append((kind, pkt))
+                if kind == "elevator":
+                    is_elev = True
+        if not pockets:
             continue
-        poly = r["polygon_pt"]
-        d_elev = _min_dist(poly, elev_geoms)
-        d_stair = _min_dist(poly, stair_geoms)
-        # 电梯前室优先判定（独立条件）：紧贴电梯 + 面积 ≤ 150m²
-        # （本图纸电梯井小(~2.9m²)且直接贴走廊主段，60m² 上限会导致永远漏分）
-        if d_elev is not None and d_elev < elev_pt and a_m2 <= elev_area_max_m2:
-            r["roomType"] = "elevator_lobby"
-            n_re += 1
-        elif d_stair is not None and d_stair < stair_pt and a_m2 <= stair_area_max_m2:
-            r["roomType"] = "stair_lobby"
-            n_re += 1
-    return n_re
+        u = unary_union([p for _, p in pockets])
+        u = _lobby_largest_poly(u)   # 同一开放空间贴两口井时取最大口袋
+        if u is None or u.area < amin or u.area > amax:
+            continue
+        kind = "elevator" if is_elev else "stair"
+        seq[0] += 1
+        rid = "F{}-{}L-{:02d}".format(
+            floor_no if floor_no is not None else "X",
+            ("EL" if kind == "elevator" else "ST"), seq[0])
+        new_rooms.append(_make_lobby_room(rid, kind, u, r, floor_no))
+        claimed.append(u)
+        # 收缩原开放空间（去掉口袋区域），其余保留为走廊/门厅
+        shrunk = _lobby_largest_poly(rp.difference(u))
+        if shrunk is not None and not getattr(shrunk, "is_empty", True) \
+                and shrunk.area > amin:
+            r["polygon_pt"] = shrunk
+            r["walkable_poly_pt"] = shrunk
+            r["coords_m"] = [list(pt2m((x, y))) for x, y in shrunk.exterior.coords]
+            r["centroid_m"] = list(pt2m((shrunk.centroid.x, shrunk.centroid.y)))
+            # roomType 保持原类（走廊/门厅），不再整间标前室
+        else:
+            # 原空间几乎全被口袋吃掉 → 直接改标为前室
+            r["roomType"] = "elevator_lobby" if kind == "elevator" else "stair_lobby"
+            r["polygon_pt"] = u
+            r["walkable_poly_pt"] = u
+            r["coords_m"] = [list(pt2m((x, y))) for x, y in u.exterior.coords]
+            r["centroid_m"] = list(pt2m((u.centroid.x, u.centroid.y)))
+    rooms.extend(new_rooms)
+    return len(new_rooms)
 
 
 
@@ -3097,18 +3169,19 @@ def build_geojson(f1, f2):
         except Exception as e:
             print(f"    [WARN] 沿轮廓裁剪失败: {e}")
 
-        # --- T2: 公共空间细分类（电梯前室/楼梯前室） ---
-        # 移到 T1.5 裁剪之后执行：使判定面积（polygon_pt.area × SCALE²）与
-        # 最终输出几何一致，避免裁剪前后面积差异导致的边界漏判。
-        # 例：F1-CR-0043 裁剪前≈60⁺ m² 卡在 stair_area_max_m2=60 上限外，
-        # 裁剪后 59.11 m² 满足条件却已错过判定。
+        # --- T2.5: 前室切分（电梯前室/楼梯前室） ---
+        # 在 T1.5 裁剪之后、T1(walkable) 之前执行：把整间走廊误标成大前室
+        # 的旧逻辑移除，改为几何切分——走廊 ∩ 缓冲(电梯/楼梯井, 2m) = 真实
+        # 小前室(2~12m²)，原走廊缩掉口袋后仍为走廊。T1 随后会基于切分后的
+        # polygon_pt 正常生成 walkable（前室与走廊都算可通行）。
         try:
-            n_lobby = classify_elevator_stair_lobby(
-                data["rooms"], data["stair_boxes"], data["evtr_boxes"])
+            n_lobby = split_lobby_pockets(
+                data["rooms"], data["stair_boxes"], data["evtr_boxes"],
+                band_m=2.0, floor_no=floor_no)
             if n_lobby:
-                print(f"[F{floor_no}] 公共空间细分类: {n_lobby} 个重分类为前室")
+                print(f"[F{floor_no}] 前室切分: 新建 {n_lobby} 个电梯/楼梯前室")
         except Exception as e:
-            print(f"    [WARN] 公共空间细分类失败: {e}")
+            print(f"    [WARN] 前室切分失败: {e}")
 
         # --- T1: 公共空间 Walkable Polygon ---
         # 移到 T1.5 之后：walkable 基于裁剪后 polygon_pt 生成 → 天然在室内，

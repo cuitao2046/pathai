@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Tuple
 
 import networkx as nx
@@ -92,3 +93,52 @@ def simplify_degree2_paths(G: nx.Graph) -> nx.Graph:
                     H.add_edge(start, end, length=length)
 
     return H
+
+
+def collapse_short_edges(G: nx.Graph, min_len_m: float = 0.3) -> nx.Graph:
+    """
+    收缩简化骨架图中长度 < min_len_m 的边（微交叉口对 / 微悬挂），
+    把一端并入另一端，保留连通性，用于降低骨架短段比例。
+
+    必须在 simplify_degree2_paths 之后调用：此时图仅含 degree≠2 节点，
+    每条边代表一条完整的「交叉口→交叉口」路径，收缩短边 = 合并相邻微交叉口，
+    不会误并长走廊（长走廊在简化图中是单条长边，不会被收缩）。
+    """
+    if G.number_of_nodes() < 3 or min_len_m <= 0:
+        return G
+
+    G = G.copy()
+    changed = True
+    guard = 0
+    while changed and guard < 5000:
+        changed = False
+        guard += 1
+        # 升序遍历边，优先处理最短的
+        for u, v, d in sorted(
+            G.edges(data=True), key=lambda e: e[2].get("length", 0.0)
+        ):
+            if d.get("length", 0.0) >= min_len_m:
+                break  # 已升序，余下更长
+            if u == v:
+                continue
+            du, dv = G.degree(u), G.degree(v)
+            # 度更大者保留为 survivor，避免反复挪动高连接节点
+            keep, drop = (u, v) if du >= dv else (v, u)
+            # 将 drop 的其余邻居重定向到 keep（取最短直线距离）
+            for w in list(G.neighbors(drop)):
+                if w == keep:
+                    continue
+                dkw = math.hypot(
+                    G.nodes[keep]["x"] - G.nodes[w]["x"],
+                    G.nodes[keep]["y"] - G.nodes[w]["y"],
+                )
+                if G.has_edge(keep, w):
+                    if dkw < G.edges[keep, w].get("length", float("inf")):
+                        G.edges[keep, w]["length"] = dkw
+                else:
+                    G.add_edge(keep, w, length=dkw)
+            G.remove_node(drop)
+            changed = True
+            break  # 图已变更，重启外层循环重新排序
+
+    return G

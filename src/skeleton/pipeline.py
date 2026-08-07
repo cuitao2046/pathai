@@ -24,7 +24,11 @@ from .skeleton_vectorize import (
     nearest_graph_node,
     skeleton_to_graph,
 )
-from .junction_detector import detect_junctions, simplify_degree2_paths
+from .junction_detector import (
+    detect_junctions,
+    simplify_degree2_paths,
+    collapse_short_edges,
+)
 from .door_projector import project_doors_to_skeleton, project_points_to_skeleton
 try:
     from topology import bridge_disconnected_components
@@ -229,6 +233,9 @@ def build_skeleton_for_walkables(
         if G.number_of_nodes() == 0:
             continue
         G2 = simplify_degree2_paths(G)
+        # 收缩长度 <0.3m 的微段（相邻微交叉口对 / 微悬挂），降低短段比例，
+        # 在简化图上操作不会误并长走廊。
+        G2 = collapse_short_edges(G2, min_len_m=0.3)
         all_graphs.append(G2)
         all_lines.extend(graph_to_linestrings(G2, simplify_tol_m=0.12))
         print(f"    [skeleton] 块{wi+1}/{len(pieces)} area={poly.area:.0f}m² "

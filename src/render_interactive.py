@@ -353,6 +353,152 @@ def build_node_lookup(geo_json):
     return lookup
 
 
+def build_anno_script(min_x, max_y, svh_per_floor, sorted_floors):
+    """生成「区域标注」交互脚本（独立 <script>，普通字符串，花括号为字面量）。
+
+    通过 __CONSTS__ 占位符注入坐标变换常量，使浏览器端能把屏幕拖拽框
+    （SVG 用户空间）反算回米制局部坐标，并写回房间类型。
+    """
+    floor_keys_js = json.dumps([str(k) for k in sorted_floors], ensure_ascii=False)
+    consts = (
+        "var GEOX = {ox:%r, oy:%r, scale:7.0, marginX:50, marginY:30, "
+        "titleH:46, perFloor:%d, nFloors:%d, floorKeys:%s};"
+        % (min_x, max_y, svh_per_floor, len(sorted_floors), floor_keys_js)
+    )
+    tpl = '''<script>
+// ===== 区域标注：手动指定房间类型并写回 GeoJSON =====
+__CONSTS__
+
+var ANNO_MODE = false;
+var annoDrawing = false;
+var annoStartSvg = null;
+var annoRectEl = null;
+var ANNO_OVERRIDES = [];
+
+var ANNO_ROOM_COLORS = {
+  "classroom":"#FFF9C4","office":"#D7CCC8","meeting":"#F8BBD0","reception":"#FFE0B2",
+  "medical":"#C8E6C9","storage":"#D7CCC8","equipment":"#CFD8DC","shaft":"#B0BEC5",
+  "toilet":"#BBDEFB","staircase":"#FFCDD2","corridor":"#FAFAFA","lobby":"#FFF59D",
+  "activity":"#F8BBD0","atrium":"#F3E5F5","elevator_lobby":"#FFCCBC","stair_lobby":"#FFE0B2",
+  "room":"#FAFAFA","other":"#FAFAFA","entrance":"#BBDEFB","accessible_entrance":"#BBDEFB"
+};
+
+function roomLayerClass(t){
+  if (t==="elevator_lobby") return "layer_lobby_elevator";
+  if (t==="stair_lobby") return "layer_lobby_stair";
+  if (t==="corridor"||t==="lobby"||t==="activity"||t==="atrium") return "layer_"+t;
+  return "layer_room";
+}
+// SVG 用户空间 -> 米制局部坐标（精确复刻 Python tosvg 的反变换）
+function svg2geo(sx, sy){
+  var i = Math.min(GEOX.nFloors-1, Math.max(0, Math.floor(sy / GEOX.perFloor)));
+  var fk = GEOX.floorKeys[i];
+  var gx = (sx - GEOX.marginX) / GEOX.scale + GEOX.ox;
+  var gy = GEOX.oy - (sy - i*GEOX.perFloor - GEOX.titleH - GEOX.marginY) / GEOX.scale;
+  return {floor: fk, x: gx, y: gy};
+}
+// 屏幕坐标 -> SVG 用户空间（自动含缩放/平移的 CSS transform）
+function clientToSvg(cx, cy){
+  var pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  var m = svg.getScreenCTM(); if(!m) return {x:cx, y:cy};
+  var p = pt.matrixTransform(m.inverse());
+  return {x: p.x, y: p.y};
+}
+function annoHint(m){ var h=document.getElementById('anno-hint'); if(h) h.textContent=m; }
+function annoList(m){ var h=document.getElementById('anno-list'); if(h) h.textContent=m; }
+function toggleAnnoMode(){
+  ANNO_MODE = !ANNO_MODE; window.annoMode = ANNO_MODE;
+  var btn = document.getElementById('btn-anno-toggle');
+  btn.textContent = ANNO_MODE ? '退出标注模式' : '进入标注模式';
+  btn.classList.toggle('active', ANNO_MODE);
+  wrapper.style.cursor = ANNO_MODE ? 'crosshair' : '';
+  annoHint(ANNO_MODE ? '标注模式：在图上拖拽框选区域，松手即把落在框内(质心)的房间标记为所选类型。' : '已退出标注模式。');
+}
+function startAnnoDraw(e){
+  if(!ANNO_MODE) return;
+  annoDrawing = true; annoStartSvg = clientToSvg(e.clientX, e.clientY);
+  if(annoRectEl && annoRectEl.parentNode) annoRectEl.parentNode.removeChild(annoRectEl);
+  annoRectEl = document.createElementNS('http://www.w3.org/2000/svg','rect');
+  annoRectEl.setAttribute('fill','rgba(33,150,243,0.18)');
+  annoRectEl.setAttribute('stroke','#1976D2'); annoRectEl.setAttribute('stroke-dasharray','4,3');
+  annoRectEl.setAttribute('stroke-width','1');
+  svg.appendChild(annoRectEl);
+  e.preventDefault(); e.stopPropagation();
+}
+document.addEventListener('mousemove', function(e){
+  if(!annoDrawing || !ANNO_MODE) return;
+  var sp = clientToSvg(e.clientX, e.clientY);
+  var x = Math.min(sp.x, annoStartSvg.x), y = Math.min(sp.y, annoStartSvg.y);
+  annoRectEl.setAttribute('x', x); annoRectEl.setAttribute('y', y);
+  annoRectEl.setAttribute('width', Math.abs(sp.x-annoStartSvg.x));
+  annoRectEl.setAttribute('height', Math.abs(sp.y-annoStartSvg.y));
+});
+document.addEventListener('mouseup', function(e){
+  if(!annoDrawing || !ANNO_MODE) return;
+  annoDrawing = false;
+  var sp = clientToSvg(e.clientX, e.clientY);
+  var x0 = Math.min(sp.x, annoStartSvg.x), y0 = Math.min(sp.y, annoStartSvg.y);
+  var x1 = Math.max(sp.x, annoStartSvg.x), y1 = Math.max(sp.y, annoStartSvg.y);
+  if(annoRectEl && annoRectEl.parentNode) annoRectEl.parentNode.removeChild(annoRectEl);
+  annoRectEl = null;
+  if((x1-x0)<4 || (y1-y0)<4){ annoHint('框选过小，已取消。'); return; }
+  applyAnnoRect(x0,y0,x1,y1);
+});
+// 把框选矩形（SVG 用户空间）映射到米制，标注重心落在框内的房间
+function applyAnnoRect(x0,y0,x1,y1){
+  var cs = [svg2geo(x0,y0), svg2geo(x1,y0), svg2geo(x0,y1), svg2geo(x1,y1)];
+  var gxmin=1e9,gxmax=-1e9,gymin=1e9,gymax=-1e9;
+  cs.forEach(function(c){ gxmin=Math.min(gxmin,c.x); gxmax=Math.max(gxmax,c.x); gymin=Math.min(gymin,c.y); gymax=Math.max(gymax,c.y); });
+  var fk = cs[0].floor;
+  var target = document.getElementById('anno-type').value;
+  var gRooms = ((FULL_DATA.floors[fk]||{}).geometry||{}).rooms || [];
+  var matched = [];
+  gRooms.forEach(function(r){
+    var props = r.properties||{};
+    var c = props.centroid;
+    if(!c && r.geometry && r.geometry.coordinates && r.geometry.coordinates[0]){
+      var ring = r.geometry.coordinates[0]; var sx=0,sy=0;
+      ring.forEach(function(p){ sx+=p[0]; sy+=p[1]; });
+      c=[sx/ring.length, sy/ring.length];
+    }
+    if(!c) return;
+    if(c[0]>=gxmin && c[0]<=gxmax && c[1]>=gymin && c[1]<=gymax) matched.push(r);
+  });
+  if(matched.length===0){ annoHint('框选区域内没有房间质心，未标注（可放大后重试）。'); return; }
+  var changed = [];
+  matched.forEach(function(r){
+    var props = r.properties||{};
+    var roomId = props.roomId;
+    var oldType = props.roomType || props.type || 'room';
+    props.roomType = target; if('type' in props) props.type = target;
+    var rid = r.id;
+    var sRooms = ((FULL_DATA.floors[fk]||{}).semantic||{}).rooms || [];
+    sRooms.forEach(function(s){ if(s.geometryId===rid) s.type=target; });
+    var el = document.querySelector('[data-roomid="'+ (roomId||'') +'"]');
+    if(el){
+      var poly = el.querySelector('polygon');
+      var col = ANNO_ROOM_COLORS[target] || '#FAFAFA';
+      if(poly){ poly.setAttribute('fill', target==='corridor'?'none':col); poly.setAttribute('stroke', target==='staircase'?'#E57373':'#999'); }
+      el.setAttribute('class', roomLayerClass(target));
+    }
+    ANNO_OVERRIDES.push({floor: parseInt(fk,10), roomId: roomId, type: target});
+    changed.push((props.label||roomId||rid) + ' (' + oldType + '->' + target + ')');
+  });
+  annoList('已标注 ' + changed.length + ' 间：' + changed.join('、'));
+  annoHint('已应用。点「保存 GeoJSON」写回文件，或「导出标注」供重解析后复现。');
+}
+function exportAnnoOverrides(){
+  if(ANNO_OVERRIDES.length===0){ alert('尚无标注项。'); return; }
+  var blob = new Blob([JSON.stringify({overrides: ANNO_OVERRIDES}, null, 2)], {type:'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href=url; a.download='room_overrides.json'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  annoList('已导出 ' + ANNO_OVERRIDES.length + ' 条覆盖项 -> room_overrides.json');
+}
+</script>'''
+    return tpl.replace('__CONSTS__', consts)
+
+
 def main():
     geo = json.load(open(GEO_IN, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
@@ -435,6 +581,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 #edge-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
 #edge-bar .hint {{ color: #666; }}
 #edge-bar .result {{ color: #AD1457; font-weight: bold; }}
+/* 区域标注工具条 */
+#anno-bar {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #E8F5E9; border: 1px solid #A5D6A7; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }}
+#anno-bar .hint {{ color: #555; }}
+#anno-bar .result {{ color: #2E7D32; font-weight: bold; }}
+#anno-bar button {{ border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
+#anno-bar button.active {{ background: #2E7D32; color: #fff; border-color: #1B5E20; }}
+#anno-bar select {{ font-size: 12px; padding: 3px 6px; border-radius: 4px; border: 1px solid #ccc; }}
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
@@ -536,6 +689,25 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <button type="button" onclick="saveGeojson()" title="将增删的拓扑边写回 GeoJSON 文件（弹窗选择保存位置）">保存 GeoJSON</button>
   <span class="hint" id="edge-hint">双击拓扑节点添加拓扑边（依次双击两个节点）；单击拓扑边后可用「删除选中拓扑边」</span>
   <span class="result" id="edge-list"></span>
+</div>
+<div id="anno-bar">
+  <b>区域标注</b>
+  <button type="button" id="btn-anno-toggle" onclick="toggleAnnoMode()">进入标注模式</button>
+  <label>目标类型
+    <select id="anno-type">
+      <option value="elevator_lobby">电梯前厅</option>
+      <option value="stair_lobby">楼梯前厅</option>
+      <option value="lobby">门厅/大堂</option>
+      <option value="corridor">走廊</option>
+      <option value="activity">活动室</option>
+      <option value="atrium">中庭</option>
+      <option value="room">普通房间</option>
+    </select>
+  </label>
+  <button type="button" onclick="exportAnnoOverrides()" title="导出已标注的覆盖项，供重新解析后 apply_room_overrides.py 复现">导出标注(JSON)</button>
+  <button type="button" onclick="saveGeojson()" title="将标注类型写回 GeoJSON 文件">保存 GeoJSON</button>
+  <span class="hint" id="anno-hint">点「进入标注模式」后，在图上拖拽框选区域，松手即把该层落在框内（质心）的房间标记为所选类型。</span>
+  <span class="result" id="anno-list"></span>
 </div>
 <div id="svg-container">
 <div id="floor-jump"></div>
@@ -705,7 +877,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             else:
                 layer_cls = "layer_room"
             parts.append(
-                f'<g class="{layer_cls}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="{layer_cls}" data-roomid="{p.get("roomId","")}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1262,6 +1434,7 @@ wrapper.addEventListener('gesturechange', function(e) {{
 }});
 
 wrapper.addEventListener('mousedown', function(e) {{
+  if (window.annoMode) {{ startAnnoDraw(e); return; }}
   isDragging = true; startX = e.clientX - translateX; startY = e.clientY - translateY;
   wrapper.classList.add('grabbing');
 }});
@@ -1322,6 +1495,7 @@ function showDetail(d) {{
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
 var clickTimer = null;
 wrapper.addEventListener('click', function(e) {{
+  if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
   var t = e.target.closest('[data-info]');
   if (!t) return;
   var info = t.getAttribute('data-info');
@@ -1858,6 +2032,9 @@ applyTransform(); setZoomInfo();
                  .replace("{{", "{").replace("}}", "}")
                  .replace("__NFLOORS__", str(len(sorted_floors)))
                  .replace("__PERFLOOR__", str(svh_per_floor)))
+    # 注入「区域标注」交互脚本（独立 <script>，含坐标反变换常量）
+    anno_script = build_anno_script(min_x, max_y, svh_per_floor, sorted_floors)
+    parts[-1] = parts[-1].replace("</body></html>", anno_script + "\n</body></html>")
 
     with open(HTML_OUT, "w", encoding="utf-8") as f:
         f.write("".join(parts))
