@@ -463,48 +463,100 @@ def decompose_walkable_to_blocks(
     return result
 
 
+def _min_boundary_dist(poly, geoms) -> Optional[float]:
+    """多边形边界到井道几何的最小距离（与房间级 classify 一致）。"""
+    dmin = None
+    for g in geoms:
+        if g is None or getattr(g, "is_empty", True):
+            continue
+        try:
+            # exterior.distance 比 poly.distance 更贴近「贴井道」语义
+            if hasattr(poly, "exterior") and poly.exterior is not None:
+                d = poly.exterior.distance(g)
+            else:
+                d = poly.distance(g)
+        except Exception:
+            continue
+        if dmin is None or d < dmin:
+            dmin = d
+    return dmin
+
+
+def _touches_shaft(poly, geoms, pad_m: float = 0.35) -> bool:
+    """是否与井道缓冲发生实质相交（共享边界/紧贴）。"""
+    for g in geoms:
+        if g is None or getattr(g, "is_empty", True):
+            continue
+        try:
+            if poly.intersects(g.buffer(pad_m)):
+                inter = poly.intersection(g.buffer(pad_m))
+                if not inter.is_empty and inter.area > 0.05:
+                    return True
+                # 线接触也算
+                if poly.distance(g) < pad_m:
+                    return True
+        except Exception:
+            continue
+    return False
+
+
 def classify_block(
     block: dict,
     elevator_geoms_m: Sequence = (),
     stair_geoms_m: Sequence = (),
 ) -> str:
-    """根据几何 + 端点类型 + 井道关系标注空间用途。
+    """空间块用途分类（对齐房间级前室规则，并抑制走廊误判）。
 
-    规则：
-      1. 电梯前室：近电梯 + 袋形(terminal) + 面积≤150
-      2. 楼梯前室：近楼梯 + 袋形 + 面积≤60
-      3. 门厅/大厅：面积>50 且 较方正
-      4. 默认 corridor
+    相对旧版改动：
+      - **不再强制 terminal**：中轴端点匹配不稳定，导致电梯前室全漏
+      - 电梯前室优先于楼梯前室（无障碍关键节点）
+      - 楼梯前室距离/面积收紧，减少「路过楼梯的走道段」误标
+      - 用边界距离 + 贴井相交双重信号
     """
     geo = block["geometry"]
-    aspect = block["aspect_ratio"]
-    area = block["area_m2"]
+    aspect = float(block.get("aspect_ratio") or 1.0)
+    area = float(block.get("area_m2") or 0.0)
+    width = float(block.get("width_m") or 0.0)
+    length = float(block.get("length_m") or 0.0)
     ep = block.get("endpoint_types", ("mid", "mid"))
     has_terminal = "terminal" in ep
 
-    d_elev = None
-    d_stair = None
-    for g in elevator_geoms_m:
-        try:
-            d = geo.distance(g)
-        except Exception:
-            d = float("inf")
-        if d_elev is None or d < d_elev:
-            d_elev = d
-    for g in stair_geoms_m:
-        try:
-            d = geo.distance(g)
-        except Exception:
-            d = float("inf")
-        if d_stair is None or d < d_stair:
-            d_stair = d
+    d_elev = _min_boundary_dist(geo, elevator_geoms_m)
+    d_stair = _min_boundary_dist(geo, stair_geoms_m)
+    near_elev = _touches_shaft(geo, elevator_geoms_m, 0.4)
+    near_stair = _touches_shaft(geo, stair_geoms_m, 0.5)
 
-    if (d_elev is not None and d_elev < 1.5 and area <= 150.0
-            and has_terminal):
-        return "elevator_lobby"
-    if (d_stair is not None and d_stair < 3.0 and area <= 60.0
-            and has_terminal):
-        return "stair_lobby"
-    if area > 50.0 and aspect < 2.0:
+    # 极细长条优先视为走道，即使贴井也不当前室
+    is_sliver_corridor = aspect >= 5.0 and width > 0 and width < 2.2
+
+    # ── 1) 电梯前室（优先）────────────────────────────────
+    # 房间级：d<1.5m 且 area≤150。块级面积通常更碎，上限 120。
+    # 不要求 terminal；要求「够近」且不是细长走廊。
+    elev_close = (d_elev is not None and d_elev < 1.5) or near_elev
+    if elev_close and 3.0 <= area <= 120.0 and not is_sliver_corridor:
+        # 若同时更靠近楼梯且几乎贴楼梯、远离电梯，让给楼梯规则
+        if (d_stair is not None and d_elev is not None
+                and d_stair + 0.3 < d_elev and near_stair and not near_elev):
+            pass
+        else:
+            return "elevator_lobby"
+
+    # ── 2) 楼梯前室（收紧，抑制过量）──────────────────────
+    # 旧：d<3m + area≤60 + terminal → 大量走道段被误标
+    # 新：更近、面积更小、不能是细长走廊；terminal 仅作加分非必须
+    stair_close = (d_stair is not None and d_stair < 1.6) or near_stair
+    if stair_close and 3.0 <= area <= 45.0 and not is_sliver_corridor:
+        # 长宽比不宜过大（前室偏方/短廊）
+        if aspect <= 4.0 and (width <= 0 or width >= 1.2):
+            # 若明显更近电梯，已在上面处理；此处再排除「只是路过」的长段
+            if length <= 18.0 or has_terminal or (d_stair is not None and d_stair < 0.8):
+                # 电梯更近则不当楼梯前室
+                if d_elev is None or d_stair is None or d_stair <= d_elev + 0.2:
+                    return "stair_lobby"
+
+    # ── 3) 门厅 / 大厅 ────────────────────────────────────
+    if area >= 40.0 and aspect < 2.2 and (width <= 0 or width >= 3.0):
         return "lobby"
+
+    # ── 4) 默认走道 ───────────────────────────────────────
     return "corridor"
