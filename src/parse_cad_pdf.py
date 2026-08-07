@@ -3357,7 +3357,7 @@ def build_geojson(f1, f2):
                 for r in data["rooms"]:
                     if r.get("roomType") == "elevator_hall" and r.get("polygon_pt"):
                         elev_geoms_m.append(_pt_poly_to_m(r["polygon_pt"]))
-                    elif r.get("roomType") in ("staircase", "shaft") and r.get("polygon_pt"):
+                    elif r.get("roomType") == "staircase" and r.get("polygon_pt"):
                         stair_geoms_m.append(_pt_poly_to_m(r["polygon_pt"]))
 
                 sk = build_skeleton_for_walkables(
