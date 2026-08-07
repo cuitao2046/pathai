@@ -41,8 +41,7 @@ ROOM_COLORS = {
     "elevator_lobby": "#FFE0B2", "stair_lobby": "#D7CCC8",
 }
 SPATIAL_BLOCK_COLORS = {
-    "corridor": "#EEEEEE", "elevator_lobby": "#FFE0B2",
-    "stair_lobby": "#D7CCC8", "lobby": "#FFF9C4",
+    "corridor": "#EEEEEE", "lobby": "#FFF9C4", "passage": "#D7EEE4",
 }
 DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449"}
 # 门类型中文名（与 topology.py 的 doorway 节点 label 保持一致）
