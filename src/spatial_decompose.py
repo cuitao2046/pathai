@@ -210,12 +210,30 @@ def _fallback_block(
     }
 
 
+def _endpoint_type(pt: Tuple[float, float],
+                   junctions: Sequence[Tuple[float, float]],
+                   terminals: Sequence[Tuple[float, float]],
+                   tol_m: float = 1.5) -> str:
+    """判断骨架端点类型：terminal(死胡同)、junction(交叉口)、mid(中间点)。"""
+    px, py = pt
+    for jx, jy in junctions:
+        if math.hypot(px - jx, py - jy) < tol_m:
+            return "junction"
+    for tx, ty in terminals:
+        if math.hypot(px - tx, py - ty) < tol_m:
+            return "terminal"
+    return "mid"
+
+
 # ── public API ───────────────────────────────────────────────────────
 
 def decompose_walkable_to_blocks(
     skeleton_lines: Sequence[LineString],
     walkable_polygon_m: Polygon,
     min_area_m2: float = 1.0,
+    junctions: Sequence[Tuple[float, float]] = (),
+    terminals: Sequence[Tuple[float, float]] = (),
+    connectivity_tol_m: float = 1.5,
 ) -> List[dict]:
     """主入口：将可通行区域按中轴分解为独立几何块。
 
@@ -227,17 +245,22 @@ def decompose_walkable_to_blocks(
         统一的可通行区域多边形（米坐标）。
     min_area_m2 : float
         丢弃面积过小的碎块（默认 1 m²）。
+    junctions : list of (x, y)
+        骨架交叉口点（degree≥3），用于判定"穿越型"块。
+    terminals : list of (x, y)
+        骨架端点（degree=1），用于判定"服务型/袋形"块。
+    connectivity_tol_m : float
+        端点匹配交叉口/端点的容差（默认 1.5m）。
 
     Returns
     -------
     list of {
-        "geometry": Polygon,       # 空间块的几何（米坐标）
+        "geometry": Polygon,
         "approx_shape": "rect" | "trapezoid",
-        "area_m2": float,
-        "aspect_ratio": float,
-        "width_m": float,
-        "length_m": float,
+        "area_m2": float, "aspect_ratio": float,
+        "width_m": float, "length_m": float,
         "skeleton_line": LineString,
+        "endpoint_types": ("terminal"|"junction"|"mid", ...),
     }
     """
     blocks = []
@@ -274,6 +297,13 @@ def decompose_walkable_to_blocks(
             best_poly = min(polys, key=lambda p: p.exterior.distance(mid_pt))
         bk = _block_for_skeleton_segment(line, best_poly, min_area_m2, stats)
         if bk:
+            # 判定端点连接类型
+            coords = list(line.coords)
+            ep_types = [_endpoint_type(coords[0], junctions, terminals,
+                                       connectivity_tol_m),
+                        _endpoint_type(coords[-1], junctions, terminals,
+                                       connectivity_tol_m)]
+            bk["endpoint_types"] = tuple(ep_types)
             blocks.append(bk)
             stats["block_ok"] += 1
     if blocks:
@@ -286,18 +316,24 @@ def classify_block(block: dict,
                    elevator_geoms_m: Sequence = (),
                    stair_geoms_m: Sequence = (),
                    ) -> str:
-    """根据几何特征和井道关系标注空间块用途。
+    """根据几何特征 + 块连接度 + 井道关系标注空间块用途。
 
-    分类规则（v1，参考诊断报告的改进方向）：
-    - 长宽比 > 3.0 且两端连通     → corridor (走道)
-    - 距电梯 < 1.5m、袋形           → elevator_lobby
-    - 距楼梯 < 3.0m、袋形           → stair_lobby
-    - 面积 > 50m²、长宽比 < 2.0    → lobby (门厅/大厅)
-    - 默认                         → corridor
+    分类规则（v2，引入端点连接度）：
+    - "terminal" 端点 = 死胡同/袋形 → 服务型空间（前室）
+    - "junction" 端点 = 交叉口 → 穿越型空间（走道）
+    - 仅当一个块至少有一端是 terminal 且贴近井道时才判为前室
+
+    具体优先级：
+    1. 电梯前室：贴近电梯(<1.5m) 且 至少一端为 terminal 且 面积≤150
+    2. 楼梯前室：贴近楼梯(<3.0m) 且 至少一端为 terminal 且 面积≤60
+    3. 门厅/大厅：面积>50 且 长宽比<2.0 且 至少一端非 terminal
+    4. 默认：corridor（穿越型走道）
     """
     geo = block["geometry"]
     aspect = block["aspect_ratio"]
     area = block["area_m2"]
+    ep = block.get("endpoint_types", ("mid", "mid"))
+    has_terminal = ("terminal" in ep)
 
     # 距电梯 / 楼梯最近距离
     d_elev = None
@@ -311,13 +347,17 @@ def classify_block(block: dict,
         if d_stair is None or d < d_stair:
             d_stair = d
 
-    # 袋形判定（简化：最近井道距 < 阈值）
-    if d_elev is not None and d_elev < 1.5 and area <= 150.0:
+    # 电梯前室：贴近 + 袋形（至少一端是死胡同）
+    if (d_elev is not None and d_elev < 1.5 and area <= 150.0
+            and has_terminal):
         return "elevator_lobby"
-    if d_stair is not None and d_stair < 3.0 and area <= 60.0:
+
+    # 楼梯前室：贴近 + 袋形
+    if (d_stair is not None and d_stair < 3.0 and area <= 60.0
+            and has_terminal):
         return "stair_lobby"
 
-    # 大厅/门厅
+    # 大厅/门厅：大空间 + 方正 + 非纯穿越
     if area > 50.0 and aspect < 2.0:
         return "lobby"
 

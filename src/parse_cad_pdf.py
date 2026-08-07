@@ -3367,7 +3367,9 @@ def build_geojson(f1, f2):
                 if not sk["empty"]:
                     unified = unary_union(walkable_polys_m)
                     blocks = decompose_walkable_to_blocks(
-                        sk["lines"], unified, min_area_m2=1.0)
+                        sk["lines"], unified, min_area_m2=1.0,
+                        junctions=sk.get("junctions", []),
+                        terminals=sk.get("terminals", []))
                     for i, blk in enumerate(blocks):
                         cls = classify_block(blk, elev_geoms_m, stair_geoms_m)
                         spatial_blocks_fc["features"].append({
@@ -3387,6 +3389,8 @@ def build_geojson(f1, f2):
                                 "aspect_ratio": round(blk["aspect_ratio"], 2),
                                 "width_m": round(blk["width_m"], 2),
                                 "length_m": round(blk["length_m"], 2),
+                                "endpoint_types": list(
+                                    blk.get("endpoint_types", ("mid", "mid"))),
                             },
                         })
                     print(f"[F{floor_no}] 空间分解: {len(blocks)} 个几何块 "
