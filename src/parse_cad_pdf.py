@@ -2963,30 +2963,6 @@ def build_geojson(f1, f2):
                 print(f"[F{fl}] {kind} 剔除无编号伪设施: {info['dropped'][fl]} 个")
 
     def floor_block(floor_no, data):
-        # --- T2: 公共空间细分类（电梯前室/楼梯前室） ---
-        # 在 reconcile 之后执行：补齐/平移的井道 bbox 已并入列表，判定才准确。
-        try:
-            n_lobby = classify_elevator_stair_lobby(
-                data["rooms"], data["stair_boxes"], data["evtr_boxes"])
-            if n_lobby:
-                print(f"[F{floor_no}] 公共空间细分类: {n_lobby} 个重分类为前室")
-        except Exception as e:
-            print(f"    [WARN] 公共空间细分类失败: {e}")
-
-        # --- T1: 公共空间 Walkable Polygon ---
-        # 必须在 reconcile_facilities 之后执行：补齐/平移的楼梯/电梯 bbox
-        # 已并入 data["stair_boxes"]/evtr_boxes，扣除结果才与最终 GeoJSON 一致。
-        try:
-            generate_walkable_polygons(
-                data["rooms"], data["wall_segs"],
-                data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
-            n_wp = sum(1 for r in data["rooms"]
-                       if r.get("roomType") in
-                       (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})
-                       and r.get("walkable_poly_pt") is not None)
-            print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
-        except Exception as e:
-            print(f"    [WARN] Walkable Polygon 生成失败: {e}")
 
         # T1.5 沿建筑外轮廓裁剪：室内导航不得出现户外走道/可通行区
         # 根因：
@@ -3095,6 +3071,35 @@ def build_geojson(f1, f2):
                           f"开放空间多边形 {n_clip_open} 个")
         except Exception as e:
             print(f"    [WARN] 沿轮廓裁剪失败: {e}")
+
+        # --- T2: 公共空间细分类（电梯前室/楼梯前室） ---
+        # 移到 T1.5 裁剪之后执行：使判定面积（polygon_pt.area × SCALE²）与
+        # 最终输出几何一致，避免裁剪前后面积差异导致的边界漏判。
+        # 例：F1-CR-0043 裁剪前≈60⁺ m² 卡在 stair_area_max_m2=60 上限外，
+        # 裁剪后 59.11 m² 满足条件却已错过判定。
+        try:
+            n_lobby = classify_elevator_stair_lobby(
+                data["rooms"], data["stair_boxes"], data["evtr_boxes"])
+            if n_lobby:
+                print(f"[F{floor_no}] 公共空间细分类: {n_lobby} 个重分类为前室")
+        except Exception as e:
+            print(f"    [WARN] 公共空间细分类失败: {e}")
+
+        # --- T1: 公共空间 Walkable Polygon ---
+        # 移到 T1.5 之后：walkable 基于裁剪后 polygon_pt 生成 → 天然在室内，
+        # 无需二次裁剪；同时 T1.5 步骤中"裁 walkable"的代码因 walkable 尚未
+        # 生成（NULL）自然跳过，无害。
+        try:
+            generate_walkable_polygons(
+                data["rooms"], data["wall_segs"],
+                data["stair_boxes"], data["evtr_boxes"], data["col_boxes"])
+            n_wp = sum(1 for r in data["rooms"]
+                       if r.get("roomType") in
+                       (set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby"})
+                       and r.get("walkable_poly_pt") is not None)
+            print(f"[F{floor_no}] Walkable Polygon: 公共空间 {n_wp} 个生成成功")
+        except Exception as e:
+            print(f"    [WARN] Walkable Polygon 生成失败: {e}")
 
         walls = []
         for i, (a, b) in enumerate(data["wall_segs"]):
