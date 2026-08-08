@@ -1024,7 +1024,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             tip = f"{dname}\\n宽度：{w:.2f}m\\n开启：{od_full}"
             det = {"title": dname,
                    "rows": [
-                       ("门编号", p.get("id") or "—"),
+                       ("门编号", dr.get("id") or p.get("id") or "—"),
                        ("类型", f"{dname}（{dtype}）"),
                        ("子类", sub),
                        ("开启方向", od_full),
@@ -1035,7 +1035,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                        ("来源图层", p.get("sourceLayer", "—")),
                        ("待现场核实", surv_disp),
                    ]}
-            attr = info_attr({"tip": tip, "detail": det, "id": p.get("id", ""), "kind": "door"})
+            attr = info_attr({"tip": tip, "detail": det, "id": dr.get("id", p.get("id", "")), "kind": "door"})
             dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
             if dtype == "fire":
                 s = max(3.0, w * SCALE * 0.22)
@@ -1102,8 +1102,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     f'<circle cx="{sx}" cy="{sy}" r="3" fill="{NODE_COLORS["room"]}" opacity="0.85"/></g>\n'
                 )
             elif ntype == "doorway":
-                # 门显示编号（TD-xxxx），替代类型名"普通门/防火门/门洞"
-                door_no = nid.split("-", 1)[-1]
+                # 门显示完整编号（楼层-类型-序号），替代类型名"普通门/防火门/门洞"
+                door_no = nid
                 parts.append(
                     f'<g class="layer_topo_node" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="2.4" fill="{NODE_COLORS["doorway"]}" opacity="0.85"/>'
