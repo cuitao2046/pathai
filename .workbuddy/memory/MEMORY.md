@@ -3,19 +3,25 @@
 ## 定位
 初中学部 1# 教学楼 1~2 层室内导航（视障核心用户）。平面图 PDF：`A20-002/003-II-...首层/二层平面图-A0_BIAD-无签名.pdf`。设计文档在 `docs/`（8 篇）。
 
-## 代码（src/ 正式脚本，共 6 个）
+## 代码（src/ 正式脚本，共 12 个）
 - `parse_cad_pdf.py`：主解析器。PyMuPDF 按 OCG 提取矢量→坐标标定(SCALE=0.0529 m/pt, 原点(2019.1,1154.8)pt, Y翻转, set_rotation(0) 处理270°旋转)→墙体矢量化→房间识别(OpenCV栅格化+形态学+分水岭+标签探测)→门洞识别(window摆弧/DOOR_FIRE/DK笔画)→门归属链→GeoJSON。需带 fitz 的 Python。
 - `topology.py`：导航拓扑（节点5类 room/doorway/intersection/facility/facility_entrance；边含 distance/estimatedTime(0.8m/s)/accessibilityLevel/riskLevel；开放空间建 intersection 型 circulation 节点）。
 - `render_map.py`：GeoJSON→PNG（需 matplotlib/shapely venv）。
 - `validate_geojson.py`：QA，核心指标"无门封闭房间数=0"。
-- `render_interactive.py`：自包含交互式 HTML(result/floor_layout_v9_interactive.html)。图层开关、缩放/平移(含触控板双指手势)、悬停/点击详情、楼层跳转、拓扑联动高亮、导出所选图层 SVG、拓扑边编辑(双击加边/选中删除/浏览器直写 GeoJSON)、「交叉口连接边 TI↔TI」图层开关。
+- `render_interactive.py`：自包含交互式 HTML(result/floor_layout_v9_interactive.html)。图层开关、缩放/平移(含触控板双指手势)、悬停/点击详情、楼层跳转、拓扑联动高亮、导出所选图层 SVG、拓扑边编辑(双击加边/选中删除/浏览器直写 GeoJSON)、「交叉口连接边 TI↔TI」图层开关、手动标注骨架 SVG 模板导出、门节点编号显示(TD-xxxx)。
 - `merge_manual_edges.py`：把渲染图中手动编辑/添加的拓扑边合并回 GeoJSON。
+- `generate_fingerprint_grid.py`：指纹采集网格生成模块(指南§八) + 渲染图层。
+- `export_skeleton_template.py`：导出 SVG 模板用于手动标注走廊中轴骨架(坐标系统对齐渲染页)。
+- `import_manual_skeleton.py`：导入手动标注的骨架(SVG 坐标系统)。
+- `apply_manual_skeleton.py`：手动标注骨架覆盖自动骨架，重生成渲染图。
+- `apply_room_overrides.py`：房间属性覆盖(手动修正房间类型/归属等)。
+- `fix_crossing_edges.py`：修复拓扑交叉边(穿墙/穿管井边改为绕行)。
 
 ## 当前进展(v9, 2026-08-07 深夜)
 房间 F1 72/F2 55；门 F1 129(swing68/fire53/opening8)/F2 75(swing36/fire32/opening7)；门属性覆盖率 85%/81%(开启方向/铰链侧/轮椅可达)；墙 4442 段含厚度/材质；跨层边10(楼梯7+电梯3, matchedBy:code)；DK F1 26/F2 31(旋转无关4方向)；合班 F1-RM-0050 真实多边形 190.4m²(16.5×13.0m, 9顶点, classroom)，由 `_heban_real_polygon` 局部泛洪+形态学闭运算重建，替换3m占位，零退化；骨架模式 F1 147段/317节点/363边、F2 70段/178节点/215边；walkable F1 31/F2 16；指纹点 F1 975/F2 467。QA PASS(无门封闭房间=0；连通覆盖 100%)。
 
 ## 关键约定
-- 目录：正式脚本仅 src/(6个)；调试脚本 debug/；根目录不留.py。探索性副本(src/optimize*/src/adjcent/src/fix/src/pathai_src/debug/conn/debug/heban)已 .gitignore 取消跟踪(本地保留)。
+- 目录：正式脚本仅 src/(12个)；调试脚本 debug/；根目录不留.py。探索性副本(src/optimize*/src/adjcent/src/fix/src/pathai_src/debug/conn/debug/heban)已 .gitignore 取消跟踪(本地保留)。
 - 路径基于 `__file__` 推导，不 hardcode E:\code\pathai。
 - 骨架模式依赖 scikit-image + networkx；缺则静默回退质心拓扑致骨架图层空。networkx 3.6 在 Py3.14 有 dataclasses bug，需给 configs.py 的 Config 补显式 `__init__`。
 - 门洞(opening)=window层带 DK 矢量笔画。DK 旋转无关4方向。几何优先级：① DK距window组<13pt用其真实轴/宽并移除该window；② 否则复用50pt内最近墙缝；③ 否则吸附最近墙(轴⊥墙,宽=30pt≈1.6m)。`dedupe_doorways` 合并中心距<13pt同洞口。摆弧门避让：距摆弧门中心<DK_NEAR_ARC_PT 的 DK 跳过。
@@ -57,6 +63,7 @@
 | 2026-08-07 | 空间分解 v2：polygonize 分区 | v1 独立垂直截线导致块重叠(~5m² F2)且公共区覆盖不全，不符合"近似矩形+三角形"目标 | 重写 `spatial_decompose.py`：① 聚类骨架端点识别 junction(≥2段)/terminal(1段)；② junction 处用角平分线作为**共享分界线**替代 v1 的各自垂直截线；③ 全部 cuts + walkable boundary → `shapely.ops.polygonize` → 无重叠完全覆盖分区；④ 全局逐块去重叠(Difference)清扫残留 sliver；⑤ 每 polygon 组件独立处理避免跨组件分界污染 | ⚠️ 已被 v3 替代（覆盖率 F1 92.3% / F2 101.4% 不达标）。教训：需同时验证覆盖/重叠/形状三指标 |
 | 2026-08-07 | 走廊/教室多边形重叠修复 | 红圈公共区域无骨架/指纹：合班教室北侧走廊被 F1-CR-0048 corridor 多边形吞入，walkable 又把教室挖空成洞 | 新增 `_resolve_open_closed_overlaps`：开放空间多边形与封闭房间取差，保留最大块；重跑指纹网格 | F1-CR-0048 565.5→192.6m²；红圈中心进入 walkable，3m 内指纹点 0→7；F1 拓扑 347→317 节点。validate PASS |
 | 2026-08-05 | 合班教室真实闭合墙体识别 | 合班教室走廊侧大开口未被识别成门→自由空间漏进走廊→build_rooms 不产闭合物→3m 占位方块 | `_heban_real_polygon`：局部 18m×18m 墙图，多档椭圆核(1.2~6.0m)MORPH_CLOSE 桥合开口→标签点 floodFill→轮廓→approxPolyDP。完全局部，不修改全局 all_segs | F1-RM-0050 得 190.4m²(16.5×13.0m, 9 顶点, classroom)，替换 3m 占位。⚠️ 陷阱：cv2.floodFill 写图像非 mask |
+| 2026-08-08 | 骨架手动标注工作流 + 导航绕行修复 | 自动骨架在狭窄走廊/管井通道缺失，导航出现穿墙/贴墙边；门节点无编号不易定位 | 新增骨架手动标注闭环：`export_skeleton_template.py` 导出 SVG 模板→手动标注→`import_manual_skeleton.py` 导入→`apply_manual_skeleton.py` 覆盖自动骨架并重生成渲染图；`fix_crossing_edges.py` 把穿墙/穿管井的 TD→TI 边改为走道可见图绕行；导航中间节点白名单化 + TR→TD 归属校验 + 卫生间穿墙例外 + 管井不参与导航；`generate_fingerprint_grid.py` 生成指纹采集网格；渲染图门节点显示编号 TD-xxxx | src 扩至 12 个脚本；geojson/HTML 随码重生成(12f051f)。路径更贴合走廊中线，连通覆盖 100% |
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层。
