@@ -116002,35 +116002,11 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0048",
-            "from": "F1-TR-0032",
-            "to": "F1-TD-0093",
-            "distance": 7.933,
-            "estimatedTime": 9.92,
-            "accessibilityLevel": 2,
-            "riskLevel": 5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F1-TE-0049",
             "from": "F1-TR-0003",
             "to": "F1-TD-0094",
             "distance": 5.397,
             "estimatedTime": 6.75,
-            "accessibilityLevel": 2,
-            "riskLevel": 5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0050",
-            "from": "F1-TR-0003",
-            "to": "F1-TD-0095",
-            "distance": 7.947,
-            "estimatedTime": 9.93,
             "accessibilityLevel": 2,
             "riskLevel": 5,
             "walkable": true,
@@ -116583,18 +116559,6 @@
             "to": "F1-TD-0038",
             "distance": 1.71,
             "estimatedTime": 2.14,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0347",
-            "from": "F1-TR-0017",
-            "to": "F1-TD-0009",
-            "distance": 5.084,
-            "estimatedTime": 6.36,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -119427,18 +119391,6 @@
             "to": "F1-TR-0025",
             "distance": 1.672,
             "estimatedTime": 2.09,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "1-TE-HC-1152",
-            "from": "F1-TD-0005",
-            "to": "F1-TR-0028",
-            "distance": 5.72,
-            "estimatedTime": 7.15,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -218616,20 +218568,6 @@
             "riskLevel": 0.5
           },
           {
-            "id": "F2-TR-0024",
-            "type": "room",
-            "roomType": "staircase",
-            "roomId": "F2-RM-0024",
-            "label": "楼梯间",
-            "coordinates": [
-              -18.226381287143887,
-              7.93369595009791
-            ],
-            "public": true,
-            "accessible": false,
-            "riskLevel": 10.0
-          },
-          {
             "id": "F2-TR-0025",
             "type": "room",
             "roomType": "office",
@@ -221124,18 +221062,6 @@
         ],
         "edges": [
           {
-            "id": "F2-TE-0001",
-            "from": "F2-TR-0017",
-            "to": "F2-TD-0001",
-            "distance": 9.24,
-            "estimatedTime": 11.55,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F2-TE-0002",
             "from": "F2-TR-0021",
             "to": "F2-TD-0002",
@@ -221304,18 +221230,6 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0017",
-            "from": "F2-TR-0012",
-            "to": "F2-TD-0016",
-            "distance": 8.039,
-            "estimatedTime": 10.05,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F2-TE-0019",
             "from": "F2-TR-0029",
             "to": "F2-TD-0018",
@@ -221393,18 +221307,6 @@
             "to": "F2-TD-0026",
             "distance": 2.251,
             "estimatedTime": 2.81,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F2-TE-0027",
-            "from": "F2-TR-0018",
-            "to": "F2-TD-0027",
-            "distance": 8.0,
-            "estimatedTime": 10.0,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -221664,18 +221566,6 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0050",
-            "from": "F2-TR-0027",
-            "to": "F2-TD-0061",
-            "distance": 8.276,
-            "estimatedTime": 10.35,
-            "accessibilityLevel": 2,
-            "riskLevel": 5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F2-TE-0051",
             "from": "F2-TR-0020",
             "to": "F2-TD-0062",
@@ -221885,18 +221775,6 @@
             "to": "F2-TD-0016",
             "distance": 2.126,
             "estimatedTime": 2.66,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F2-TE-0201",
-            "from": "F2-TR-0024",
-            "to": "F2-TD-0004",
-            "distance": 6.943,
-            "estimatedTime": 8.68,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -223937,18 +223815,6 @@
             "to": "2-TI-016",
             "distance": 4.571,
             "estimatedTime": 5.71,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "2-TE-HC-1086",
-            "from": "F2-TD-0010",
-            "to": "F2-TR-0005",
-            "distance": 7.99,
-            "estimatedTime": 9.99,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
