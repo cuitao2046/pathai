@@ -1102,9 +1102,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     f'<circle cx="{sx}" cy="{sy}" r="3" fill="{NODE_COLORS["room"]}" opacity="0.85"/></g>\n'
                 )
             elif ntype == "doorway":
+                # 门显示编号（TD-xxxx），替代类型名"普通门/防火门/门洞"
+                door_no = nid.split("-", 1)[-1]
                 parts.append(
                     f'<g class="layer_topo_node" {attr}>'
-                    f'<circle cx="{sx}" cy="{sy}" r="2.4" fill="{NODE_COLORS["doorway"]}" opacity="0.85"/></g>\n'
+                    f'<circle cx="{sx}" cy="{sy}" r="2.4" fill="{NODE_COLORS["doorway"]}" opacity="0.85"/>'
+                    f'<text x="{float(sx)+3:.1f}" y="{float(sy)+2:.1f}" font-size="4.2" '
+                    f'fill="{NODE_COLORS["doorway"]}">{door_no}</text></g>\n'
                 )
             elif ntype == "intersection":
                 s = 3.2
