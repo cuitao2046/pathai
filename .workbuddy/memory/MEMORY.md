@@ -13,7 +13,7 @@
 - `merge_manual_edges.py`：把渲染图中手动编辑/添加的拓扑边合并回 GeoJSON。
 - `generate_fingerprint_grid.py`：指纹采集网格生成模块(指南§八) + 渲染图层。
 - `export_skeleton_template.py`：导出 SVG 模板用于手动标注走廊中轴骨架(坐标系统对齐渲染页)。
-- `import_manual_skeleton.py`：导入手动标注的骨架(SVG 坐标系统)。
+- `import_manual_skeleton.py`：导入手动标注骨架(SVG 坐标系统)。**关键约定**：实际导航拓扑由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology` 生成，**不是**本脚本；本脚本仅用于「手工骨架覆盖」工作流。2026-08-09 重大修复：① 解析新增红色 `<path>`(相对 m/c 命令 + 贝塞尔采样 + RDP 抽稀，旧 `_path_to_points` 只读首控制点且忽略相对命令，连廊 path 完全漏解析)；② 手动线端点 `snap_tol=0.8m` 吸附既有 TI(避免坐标重合 id 不同的幽灵节点)；③ `--apply` 内新增**缺口缝合**：同层内分属不同连通分量且 <2m 的 TI 自动补边(手绘端点常留 0.5–0.7m 小缺口)。重导前务必先从干净自动拓扑(无手动骨架污染)重置 geojson，否则旧坏 apply 的幽灵 TI 会被再次吸附。
 - `apply_manual_skeleton.py`：手动标注骨架覆盖自动骨架，重生成渲染图。
 - `apply_room_overrides.py`：房间属性覆盖(手动修正房间类型/归属等)。
 - `fix_crossing_edges.py`：修复拓扑交叉边(穿墙/穿管井边改为绕行)。
