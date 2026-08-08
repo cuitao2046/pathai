@@ -353,6 +353,114 @@ def build_node_lookup(geo_json):
     return lookup
 
 
+def _seg_crosses_wall(p1, p2, A, B):
+    """路径段 p1->p2 是否真正「穿透」墙体线段 A-B（与 route_rules 同源）。
+
+    判定：两端点位于墙线两侧(opposite sides)且交点落在线段内；共线/同侧
+    （沿墙并行）不算穿墙。
+    """
+    ax, ay = A[0], A[1]
+    bx, by = B[0], B[1]
+    px, py = p1[0], p1[1]
+    qx, qy = p2[0], p2[1]
+    dx, dy = bx - ax, by - ay
+
+    def side(x, y):
+        return (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+
+    s1 = side(px, py)
+    s2 = side(qx, qy)
+    if s1 == 0 and s2 == 0:
+        return False  # 共线：沿墙，非穿透
+    if s1 * s2 > 0:
+        return False  # 同侧：沿墙并行，非穿透
+    if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+        return False  # 退化墙线
+    ex, ey = qx - px, qy - py
+    det = dx * ey - dy * ex
+    if abs(det) < 1e-12:
+        return False
+    u = (ex * (ay - py) - ey * (ax - px)) / det  # 沿墙 A->B 参数
+    t = (dy * (px - ax) - dx * (py - ay)) / det  # 沿路径 p1->p2 参数
+    return (-1e-9) <= t <= (1 + 1e-9) and (-1e-9) <= u <= (1 + 1e-9)
+
+
+def compute_route_rule_extras(geo):
+    """为前端 Dijkstra 预计算路由规则辅助量（对齐 src/route_rules.py）。
+
+    返回 dict：
+    - edge_door_type: edge_id -> doorType(str|None)，从门节点推导；
+    - room_best_door: room 节点 id -> 该房间最高优先级门类型(swing>fire>opening)；
+    - wall_crossing_titi: 两端均为 intersection 且直线段真正穿墙的 TI<->TI 边 id 集合。
+    """
+    DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}
+    node_by_id = {}
+    for fk, fd in geo["floors"].items():
+        for n in (fd.get("topology", {}) or {}).get("nodes", []):
+            node_by_id[n["id"]] = n
+
+    def edge_door_type(e):
+        a = node_by_id.get(e["from"])
+        b = node_by_id.get(e["to"])
+        if a and a.get("type") == "doorway":
+            return a.get("doorType")
+        if b and b.get("type") == "doorway":
+            return b.get("doorType")
+        return None
+
+    edge_door_type_map = {}
+    for fk, fd in geo["floors"].items():
+        for e in (fd.get("topology", {}) or {}).get("edges", []):
+            edge_door_type_map[e["id"]] = edge_door_type(e)
+
+    # 房间最佳门类型（每间房取优先级最高的门）
+    best_door = {}
+    for n in node_by_id.values():
+        if n.get("type") == "doorway":
+            for rid in (n.get("rooms") or []):
+                t = n.get("doorType")
+                cur = best_door.get(rid)
+                if cur is None or DOOR_PENALTY.get(t, 9) < DOOR_PENALTY.get(cur, 9):
+                    best_door[rid] = t
+    room_best_door = {}
+    for n in node_by_id.values():
+        if n.get("type") == "room":
+            rid = n.get("roomId") or n["id"]
+            if rid in best_door:
+                room_best_door[n["id"]] = best_door[rid]
+
+    # 穿墙 TI<->TI 边集合
+    wall_lines = []
+    for fk, fd in geo["floors"].items():
+        for w in (fd.get("geometry", {}) or {}).get("walls", []):
+            g = w.get("geometry", {})
+            if g.get("type") == "LineString" and len(g.get("coordinates", [])) >= 2:
+                cs = g["coordinates"]
+                wall_lines.append((tuple(cs[0]), tuple(cs[-1])))
+    wall_crossing_titi = set()
+    for fk, fd in geo["floors"].items():
+        for e in (fd.get("topology", {}) or {}).get("edges", []):
+            a = node_by_id.get(e["from"])
+            b = node_by_id.get(e["to"])
+            if not a or not b:
+                continue
+            if a.get("type") != "intersection" or b.get("type") != "intersection":
+                continue
+            ca, cb = a.get("coordinates"), b.get("coordinates")
+            if not ca or not cb:
+                continue
+            for (A, B) in wall_lines:
+                if _seg_crosses_wall(ca, cb, A, B):
+                    wall_crossing_titi.add(e["id"])
+                    break
+
+    return {
+        "edge_door_type": edge_door_type_map,
+        "room_best_door": room_best_door,
+        "wall_crossing_titi": wall_crossing_titi,
+    }
+
+
 def build_anno_script(min_x, max_y, svh_per_floor, sorted_floors):
     """生成「区域标注」交互脚本（独立 <script>，普通字符串，花括号为字面量）。
 
@@ -1363,6 +1471,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 
 
     # ---------------- 路径规划图数据（前端 Dijkstra） ----------------
+    # 预计算路由规则辅助量（对齐 src/route_rules.py）：门类型、房间最佳门、
+    # 穿墙 TI<->TI 边集合。前端据此在浏览器内执行与后端完全一致的受限 Dijkstra。
+    _rule_extras = compute_route_rule_extras(geo)
+    _edge_door_type_map = _rule_extras["edge_door_type"]
+    _room_best_door = _rule_extras["room_best_door"]
+    _wall_crossing_titi = _rule_extras["wall_crossing_titi"]
+
     path_nodes = {}
     path_edges = []
     for fi, fk in enumerate(sorted_floors):
@@ -1372,7 +1487,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             cx, cy = n["coordinates"]
             sx = MARGIN_X + (cx - ox) * SCALE
             sy = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - cy) * SCALE
-            path_nodes[n["id"]] = {
+            nd = {
                 "id": n["id"],
                 "type": n.get("type"),
                 "label": n.get("label") or "",
@@ -1382,8 +1497,16 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "mx": cx,
                 "my": cy,
                 "facilityType": n.get("facilityType"),
+                "roomType": n.get("roomType"),
+                "roomId": n.get("roomId"),
+                "doorType": n.get("doorType"),
+                "rooms": n.get("rooms") or [],
             }
+            if n.get("type") == "room" and n["id"] in _room_best_door:
+                nd["bestDoorType"] = _room_best_door[n["id"]]
+            path_nodes[n["id"]] = nd
         for e in (fd.get("topology") or {}).get("edges") or []:
+            edt = _edge_door_type_map.get(e.get("id"))
             path_edges.append({
                 "id": e.get("id"),
                 "from": e.get("from"),
@@ -1392,6 +1515,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "accessibilityLevel": e.get("accessibilityLevel", 0),
                 "blindAccessible": e.get("blindAccessible", True),
                 "wheelchairAccessible": e.get("wheelchairAccessible", True),
+                "crossFloor": False,
+                "type": e.get("type"),
+                "doorType": edt,
+                "wallCrossing": e.get("id") in _wall_crossing_titi,
             })
     for e in geo.get("crossFloorEdges") or []:
         path_edges.append({
@@ -1404,6 +1531,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             "wheelchairAccessible": e.get("wheelchairAccessible", True),
             "crossFloor": True,
             "type": e.get("type"),
+            "doorType": None,
+            "wallCrossing": False,
         })
     path_graph_js = json.dumps(
         {"nodes": path_nodes, "edges": path_edges},
@@ -1785,6 +1914,8 @@ function edgeAllowed(e, mode) {
   if (mode === 'blind') {
     if (e.blindAccessible === false) return false;
     if (Number(e.accessibilityLevel) === 999) return false;
+    // 规则 2：盲模式跨层必须走电梯，禁用楼梯跨层边
+    if (e.crossFloor && e.type === 'staircase') return false;
   }
   if (mode === 'wheelchair') {
     if (e.wheelchairAccessible === false) return false;
@@ -1793,25 +1924,80 @@ function edgeAllowed(e, mode) {
   return true;
 }
 
-function dijkstra(startId, endId, mode) {
-  if (!PATH_GRAPH) return null;
-  // 路径中间节点白名单：公共空间(intersection)、楼梯/电梯
-  // (facility/facility_entrance) 与门(doorway)。门是房间↔走廊的
-  // 过渡节点，必须允许（否则 TR→TD→走廊 第一步就断了、房间不可达）。
-  // 房间(room) 禁止中转——否则会把房间内部当捷径（穿合班教室）。
-  var MID_TYPES = { intersection: 1, facility: 1, facility_entrance: 1, doorway: 1 };
+// 门类型边权惩罚（米），越小越优先。与 route_rules.DOOR_PENALTY 一致。
+function doorPenalty(dt) {
+  var P = { swing: 0.0, fire: 0.5, opening: 1.0 };
+  return (dt in P) ? P[dt] : 9;
+}
+
+function isSameFloor(s, e) {
+  var ns = PATH_GRAPH.nodes[s], ne = PATH_GRAPH.nodes[e];
+  return !!(ns && ne && ns.floor === ne.floor);
+}
+
+// 门类型边权（仅在 room<->door 边施加，避免每扇门重复惩罚）
+function edgeWeight(e, nodes) {
+  var w = Number(e.distance) || 0;
+  var dt = e.doorType;
+  if (dt) {
+    var a = nodes[e.from], b = nodes[e.to];
+    if ((a && a.type === 'room') || (b && b.type === 'room')) {
+      w += doorPenalty(dt);
+    }
+  }
+  return w;
+}
+
+// 规则 3：禁止 room->door->room 穿透（门必须连接公共空间）
+function doorPassThroughBlocked(u, prev, nb, nodes) {
+  var nu = nodes[u];
+  if (!nu || nu.type !== 'doorway') return false;
+  if (u === prev || u === nb) return false;
+  var np = nodes[prev], nnb = nodes[nb];
+  if (np && nnb && np.type === 'room' && nnb.type === 'room') return true;
+  return false;
+}
+
+// 构造受限邻接表（对齐 route_rules._build_adjacency）
+function buildPathAdj(mode, doorFilter, allowWall) {
+  var nodes = PATH_GRAPH.nodes;
   var adj = {};
   (PATH_GRAPH.edges || []).forEach(function(e) {
     if (!edgeAllowed(e, mode)) return;
-    var a = e.from, b = e.to, w = Number(e.distance) || 0;
-    if (!PATH_GRAPH.nodes[a] || !PATH_GRAPH.nodes[b]) return;
+    // 规则 3：剔除穿墙 TI<->TI 边（默认不穿墙；桥边回退时 allowWall=true 重新纳入）
+    if (!allowWall && e.wallCrossing) return;
+    var a = e.from, b = e.to;
+    if (!nodes[a] || !nodes[b]) return;
+    // 规则 3：房间只可使用优先级不低于自身最佳门的门
+    if (doorFilter) {
+      var ta = nodes[a].type, tb = nodes[b].type;
+      if (ta === 'room' && tb === 'doorway') {
+        var best = nodes[a].bestDoorType;
+        if (best != null && doorPenalty(e.doorType) > doorPenalty(best)) return;
+      }
+      if (tb === 'room' && ta === 'doorway') {
+        var best2 = nodes[b].bestDoorType;
+        if (best2 != null && doorPenalty(e.doorType) > doorPenalty(best2)) return;
+      }
+    }
+    var w = edgeWeight(e, nodes);
     if (!adj[a]) adj[a] = [];
     if (!adj[b]) adj[b] = [];
-    adj[a].push({to: b, w: w, id: e.id});
-    adj[b].push({to: a, w: w, id: e.id});
+    adj[a].push({ to: b, w: w, id: e.id });
+    adj[b].push({ to: a, w: w, id: e.id });
   });
+  return adj;
+}
+
+// 核心 Dijkstra（应用规则 1 中间节点白名单 + 规则 3 门穿透防护）
+function dijkstraCore(startId, endId, mode, adj) {
+  var nodes = PATH_GRAPH.nodes;
+  // 规则 1：同层禁 facility 中转；跨层允许 facility 中转（电梯/楼梯用于跨层）
+  var MID_TYPES = isSameFloor(startId, endId)
+    ? { intersection: 1, facility_entrance: 1, doorway: 1 }
+    : { intersection: 1, facility_entrance: 1, doorway: 1, facility: 1 };
   var dist = {}, prev = {}, prevEdge = {};
-  Object.keys(PATH_GRAPH.nodes).forEach(function(id){ dist[id] = Infinity; });
+  Object.keys(nodes).forEach(function(id){ dist[id] = Infinity; });
   dist[startId] = 0;
   var pq = [[0, startId]]; // [d, id] simple list
   while (pq.length) {
@@ -1820,15 +2006,17 @@ function dijkstra(startId, endId, mode) {
     var d = cur[0], u = cur[1];
     if (d !== dist[u]) continue;
     if (u === endId) break;
-    // 中间节点白名单：房间(room)禁止中转（穿墙捷径），其余节点
-    // (TI/TF/TEN/TD) 均允许。
+    // 中间节点白名单：房间(room)禁止中转；同层额外禁 facility 中转
     if (u !== startId && u !== endId) {
-      var _ut = PATH_GRAPH.nodes[u] && PATH_GRAPH.nodes[u].type;
+      var _ut = nodes[u] && nodes[u].type;
       if (!MID_TYPES[_ut]) continue;
     }
     var nbrs = adj[u] || [];
     for (var i = 0; i < nbrs.length; i++) {
       var nb = nbrs[i];
+      // 规则 3：门不得作为两房间直连通道
+      var prevU = (prev[u] != null) ? prev[u] : u;
+      if (doorPassThroughBlocked(u, prevU, nb.to, nodes)) continue;
       var nd = d + nb.w;
       if (nd < dist[nb.to]) {
         dist[nb.to] = nd;
@@ -1848,7 +2036,28 @@ function dijkstra(startId, endId, mode) {
   }
   path.reverse();
   edgeIds.reverse();
-  return { nodes: path, edges: edgeIds, distance: dist[endId] };
+  // 距离对齐 route_rules：保留 2 位小数（含门类型边权惩罚）
+  return { nodes: path, edges: edgeIds, distance: Math.round(dist[endId] * 100) / 100 };
+}
+
+function dijkstra(startId, endId, mode) {
+  if (!PATH_GRAPH) return null;
+  // 三层回退（对齐 route_rules.shortest_path）：
+  // 1) 仅用最佳门 + 不穿墙 TI<->TI 边；
+  // 2) 若不可达（最佳门未接入路网）回退允许所有门；
+  // 3) 仍不可达（穿墙边是桥边）回退纳入穿墙边保连通。
+  var sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false));
+  var note = null;
+  if (!sp) {
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, false, false));
+    if (sp) note = 'door_fallback';
+  }
+  if (!sp) {
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, true));
+    if (sp) note = 'wall_fallback';
+  }
+  if (sp && note) sp.note = note;
+  return sp;
 }
 
 function markNodeClass(id, cls) {
@@ -1927,9 +2136,12 @@ function runPath(startId, endId) {
   var sn = PATH_GRAPH.nodes[startId] || {};
   var en = PATH_GRAPH.nodes[endId] || {};
   if (out) {
+    var noteTxt = '';
+    if (result.note === 'door_fallback') noteTxt = '（门回退：最佳门未接入路网）';
+    else if (result.note === 'wall_fallback') noteTxt = '（桥边回退：穿墙走廊边为保连通保留）';
     out.textContent = '路径 ' + result.nodes.length + ' 节点 · ' +
       result.distance.toFixed(1) + ' m · ' +
-      (sn.label || startId) + ' → ' + (en.label || endId);
+      (sn.label || startId) + ' → ' + (en.label || endId) + noteTxt;
   }
   if (hint) hint.textContent = '可继续点选新的起点，或点「清除路径」';
 }
