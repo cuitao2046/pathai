@@ -115923,6 +115923,18 @@
             "type": "intersection",
             "floor": 1,
             "coordinates": [
+              -81.688,
+              -19.179
+            ],
+            "public": true,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "1-TWI-003",
+            "type": "intersection",
+            "floor": 1,
+            "coordinates": [
               -81.916,
               -19.678
             ],
@@ -115931,7 +115943,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-003",
+            "id": "1-TWI-004",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -115943,7 +115955,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-004",
+            "id": "1-TWI-005",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -115955,7 +115967,19 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-005",
+            "id": "1-TWI-006",
+            "type": "intersection",
+            "floor": 1,
+            "coordinates": [
+              -81.214,
+              -20.015
+            ],
+            "public": true,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "1-TWI-007",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -115967,7 +115991,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-006",
+            "id": "1-TWI-008",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -115979,7 +116003,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-007",
+            "id": "1-TWI-009",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -115991,7 +116015,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-008",
+            "id": "1-TWI-010",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -116003,7 +116027,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-009",
+            "id": "1-TWI-011",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -116015,7 +116039,19 @@
             "riskLevel": 0.5
           },
           {
-            "id": "1-TWI-010",
+            "id": "1-TWI-012",
+            "type": "intersection",
+            "floor": 1,
+            "coordinates": [
+              -79.62,
+              -20.102
+            ],
+            "public": true,
+            "accessible": true,
+            "riskLevel": 10
+          },
+          {
+            "id": "1-TWI-013",
             "type": "intersection",
             "floor": 1,
             "coordinates": [
@@ -117997,23 +118033,11 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0164",
-            "from": "F1-TD-0094",
-            "to": "F1-TI-0079",
-            "distance": 1.08,
-            "estimatedTime": 1.3,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F1-TE-003",
-            "from": "F1-TD-0095",
+            "from": "F1-TD-0094",
             "to": "1-TWI-002",
-            "distance": 2.695,
-            "estimatedTime": 3.37,
+            "distance": 1.0,
+            "estimatedTime": 1.25,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -118024,8 +118048,8 @@
             "id": "F1-TE-004",
             "from": "1-TWI-002",
             "to": "F1-TI-0079",
-            "distance": 1.413,
-            "estimatedTime": 1.77,
+            "distance": 0.914,
+            "estimatedTime": 1.14,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -118034,10 +118058,10 @@
           },
           {
             "id": "F1-TE-005",
-            "from": "F1-TD-0096",
+            "from": "F1-TD-0095",
             "to": "1-TWI-003",
-            "distance": 1.847,
-            "estimatedTime": 2.31,
+            "distance": 2.695,
+            "estimatedTime": 3.37,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -118047,6 +118071,30 @@
           {
             "id": "F1-TE-006",
             "from": "1-TWI-003",
+            "to": "F1-TI-0079",
+            "distance": 1.413,
+            "estimatedTime": 1.77,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-007",
+            "from": "F1-TD-0096",
+            "to": "1-TWI-004",
+            "distance": 1.847,
+            "estimatedTime": 2.31,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-008",
+            "from": "1-TWI-004",
             "to": "F1-TI-0072",
             "distance": 1.574,
             "estimatedTime": 1.97,
@@ -118081,9 +118129,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-007",
+            "id": "F1-TE-009",
             "from": "F1-TD-0099",
-            "to": "1-TWI-004",
+            "to": "1-TWI-005",
             "distance": 2.048,
             "estimatedTime": 2.56,
             "accessibilityLevel": 0,
@@ -118093,8 +118141,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-008",
-            "from": "1-TWI-004",
+            "id": "F1-TE-010",
+            "from": "1-TWI-005",
             "to": "F1-TI-0070",
             "distance": 1.349,
             "estimatedTime": 1.69,
@@ -118309,10 +118357,22 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0187",
+            "id": "F1-TE-011",
             "from": "F1-TD-0117",
+            "to": "1-TWI-006",
+            "distance": 1.5,
+            "estimatedTime": 1.88,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-012",
+            "from": "1-TWI-006",
             "to": "F1-TI-0079",
-            "distance": 1.86,
+            "distance": 1.838,
             "estimatedTime": 2.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
@@ -118321,9 +118381,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-009",
+            "id": "F1-TE-013",
             "from": "F1-TD-0118",
-            "to": "1-TWI-005",
+            "to": "1-TWI-007",
             "distance": 2.686,
             "estimatedTime": 3.36,
             "accessibilityLevel": 0,
@@ -118333,8 +118393,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-010",
-            "from": "1-TWI-005",
+            "id": "F1-TE-014",
+            "from": "1-TWI-007",
             "to": "F1-TI-0079",
             "distance": 1.413,
             "estimatedTime": 1.77,
@@ -118669,9 +118729,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-011",
+            "id": "F1-TE-015",
             "from": "F1-TI-0018",
-            "to": "1-TWI-006",
+            "to": "1-TWI-008",
             "distance": 3.888,
             "estimatedTime": 4.86,
             "accessibilityLevel": 0,
@@ -118681,9 +118741,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-012",
-            "from": "1-TWI-006",
-            "to": "1-TWI-007",
+            "id": "F1-TE-016",
+            "from": "1-TWI-008",
+            "to": "1-TWI-009",
             "distance": 3.448,
             "estimatedTime": 4.31,
             "accessibilityLevel": 0,
@@ -118693,8 +118753,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-013",
-            "from": "1-TWI-007",
+            "id": "F1-TE-017",
+            "from": "1-TWI-009",
             "to": "F1-TI-0021",
             "distance": 3.15,
             "estimatedTime": 3.94,
@@ -119353,9 +119413,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-014",
+            "id": "F1-TE-018",
             "from": "F1-TI-0063",
-            "to": "1-TWI-008",
+            "to": "1-TWI-010",
             "distance": 7.879,
             "estimatedTime": 9.85,
             "accessibilityLevel": 0,
@@ -119365,8 +119425,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-015",
-            "from": "1-TWI-008",
+            "id": "F1-TE-019",
+            "from": "1-TWI-010",
             "to": "F1-TI-0064",
             "distance": 0.854,
             "estimatedTime": 1.07,
@@ -119473,9 +119533,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-016",
+            "id": "F1-TE-020",
             "from": "F1-TI-0074",
-            "to": "1-TWI-009",
+            "to": "1-TWI-011",
             "distance": 6.517,
             "estimatedTime": 8.15,
             "accessibilityLevel": 0,
@@ -119485,8 +119545,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-017",
-            "from": "1-TWI-009",
+            "id": "F1-TE-021",
+            "from": "1-TWI-011",
             "to": "F1-TI-0079",
             "distance": 1.43,
             "estimatedTime": 1.79,
@@ -120013,11 +120073,23 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0324",
+            "id": "F1-TE-022",
             "from": "F1-TF-0004",
+            "to": "1-TWI-012",
+            "distance": 3.293,
+            "estimatedTime": 4.12,
+            "accessibilityLevel": 999,
+            "riskLevel": 10,
+            "walkable": true,
+            "wheelchairAccessible": false,
+            "blindAccessible": false
+          },
+          {
+            "id": "F1-TE-023",
+            "from": "1-TWI-012",
             "to": "F1-TD-0095",
-            "distance": 2.49,
-            "estimatedTime": 3.1,
+            "distance": 0.8,
+            "estimatedTime": 1.0,
             "accessibilityLevel": 999,
             "riskLevel": 10,
             "walkable": true,
@@ -120217,9 +120289,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-018",
+            "id": "F1-TE-024",
             "from": "F1-TEN-0008",
-            "to": "1-TWI-010",
+            "to": "1-TWI-013",
             "distance": 40.539,
             "estimatedTime": 50.67,
             "accessibilityLevel": 0,
@@ -120229,8 +120301,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-019",
-            "from": "1-TWI-010",
+            "id": "F1-TE-025",
+            "from": "1-TWI-013",
             "to": "F1-TD-0022",
             "distance": 0.47,
             "estimatedTime": 0.59,
@@ -224391,6 +224463,18 @@
             "type": "intersection",
             "floor": 2,
             "coordinates": [
+              -59.41,
+              -3.17
+            ],
+            "public": true,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "2-TWI-002",
+            "type": "intersection",
+            "floor": 2,
+            "coordinates": [
               -21.403,
               -81.174
             ],
@@ -224399,7 +224483,19 @@
             "riskLevel": 0.5
           },
           {
-            "id": "2-TWI-002",
+            "id": "2-TWI-003",
+            "type": "intersection",
+            "floor": 2,
+            "coordinates": [
+              -59.333,
+              -3.609
+            ],
+            "public": true,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "2-TWI-004",
             "type": "intersection",
             "floor": 2,
             "coordinates": [
@@ -224411,7 +224507,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "2-TWI-003",
+            "id": "2-TWI-005",
             "type": "intersection",
             "floor": 2,
             "coordinates": [
@@ -224423,7 +224519,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "2-TWI-004",
+            "id": "2-TWI-006",
             "type": "intersection",
             "floor": 2,
             "coordinates": [
@@ -224435,7 +224531,7 @@
             "riskLevel": 0.5
           },
           {
-            "id": "2-TWI-005",
+            "id": "2-TWI-007",
             "type": "intersection",
             "floor": 2,
             "coordinates": [
@@ -224447,7 +224543,7 @@
             "riskLevel": 8
           },
           {
-            "id": "2-TWI-006",
+            "id": "2-TWI-008",
             "type": "intersection",
             "floor": 2,
             "coordinates": [
@@ -225229,11 +225325,23 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0065",
+            "id": "F2-TE-001",
             "from": "F2-TD-0008",
+            "to": "2-TWI-001",
+            "distance": 2.0,
+            "estimatedTime": 2.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-002",
+            "from": "2-TWI-001",
             "to": "F2-TI-0039",
-            "distance": 8.69,
-            "estimatedTime": 10.9,
+            "distance": 10.375,
+            "estimatedTime": 12.97,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -225637,9 +225745,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-001",
+            "id": "F2-TE-003",
             "from": "F2-TD-0042",
-            "to": "2-TWI-001",
+            "to": "2-TWI-002",
             "distance": 2.239,
             "estimatedTime": 2.8,
             "accessibilityLevel": 0,
@@ -225649,8 +225757,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-002",
-            "from": "2-TWI-001",
+            "id": "F2-TE-004",
+            "from": "2-TWI-002",
             "to": "F2-TI-0003",
             "distance": 1.353,
             "estimatedTime": 1.69,
@@ -225721,11 +225829,23 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0105",
+            "id": "F2-TE-005",
             "from": "F2-TD-0048",
+            "to": "2-TWI-003",
+            "distance": 1.5,
+            "estimatedTime": 1.88,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-006",
+            "from": "2-TWI-003",
             "to": "F2-TI-0039",
-            "distance": 8.92,
-            "estimatedTime": 11.1,
+            "distance": 10.187,
+            "estimatedTime": 12.73,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -225877,9 +225997,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-003",
+            "id": "F2-TE-007",
             "from": "F2-TD-0061",
-            "to": "2-TWI-002",
+            "to": "2-TWI-004",
             "distance": 2.461,
             "estimatedTime": 3.08,
             "accessibilityLevel": 0,
@@ -225889,8 +226009,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-004",
-            "from": "2-TWI-002",
+            "id": "F2-TE-008",
+            "from": "2-TWI-004",
             "to": "F2-TI-0001",
             "distance": 2.298,
             "estimatedTime": 2.87,
@@ -226525,9 +226645,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-005",
+            "id": "F2-TE-009",
             "from": "F2-TI-0038",
-            "to": "2-TWI-003",
+            "to": "2-TWI-005",
             "distance": 8.704,
             "estimatedTime": 10.88,
             "accessibilityLevel": 0,
@@ -226537,9 +226657,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-006",
-            "from": "2-TWI-003",
-            "to": "2-TWI-004",
+            "id": "F2-TE-010",
+            "from": "2-TWI-005",
+            "to": "2-TWI-006",
             "distance": 10.22,
             "estimatedTime": 12.78,
             "accessibilityLevel": 0,
@@ -226549,8 +226669,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-007",
-            "from": "2-TWI-004",
+            "id": "F2-TE-011",
+            "from": "2-TWI-006",
             "to": "F2-TI-0042",
             "distance": 3.652,
             "estimatedTime": 4.56,
@@ -227065,9 +227185,9 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-008",
+            "id": "F2-TE-012",
             "from": "F2-TI-0017",
-            "to": "2-TWI-005",
+            "to": "2-TWI-007",
             "distance": 40.255,
             "estimatedTime": 50.32,
             "accessibilityLevel": 999,
@@ -227077,8 +227197,8 @@
             "blindAccessible": false
           },
           {
-            "id": "F2-TE-009",
-            "from": "2-TWI-005",
+            "id": "F2-TE-013",
+            "from": "2-TWI-007",
             "to": "F2-TI-0032",
             "distance": 4.735,
             "estimatedTime": 5.92,
@@ -227089,9 +227209,9 @@
             "blindAccessible": false
           },
           {
-            "id": "F2-TE-010",
+            "id": "F2-TE-014",
             "from": "F2-TI-0018",
-            "to": "2-TWI-006",
+            "to": "2-TWI-008",
             "distance": 40.567,
             "estimatedTime": 50.71,
             "accessibilityLevel": 999,
@@ -227101,8 +227221,8 @@
             "blindAccessible": false
           },
           {
-            "id": "F2-TE-011",
-            "from": "2-TWI-006",
+            "id": "F2-TE-015",
+            "from": "2-TWI-008",
             "to": "F2-TI-0032",
             "distance": 4.735,
             "estimatedTime": 5.92,

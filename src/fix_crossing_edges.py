@@ -282,6 +282,18 @@ def edge_crosses_room(A, B, rooms):
     return None
 
 
+def _node_room(node, rooms):
+    """节点归属的房间 id（点在房间内部或边界附近）。容差 0.25m，覆盖门口略偏内的情况。"""
+    from shapely.geometry import Point as _Pt
+    pt = _Pt(node["coordinates"])
+    best, bd = None, 0.25
+    for rid, rt, lab, poly, nbuf in rooms:
+        d = poly.exterior.distance(pt)
+        if d < bd:
+            bd = d; best = rid
+    return best
+
+
 def _dist_seg(p, A, B):
     ax, ay = A; bx, by = B
     vx, vy = bx - ax, by - ay
@@ -490,19 +502,60 @@ def process_floor(fl, floor_no):
         hit = edge_crosses_room(a["coordinates"], b["coordinates"], rooms)
         if not hit:
             new_edges.append(e); kept += 1; continue
-        # TD/TEN/TF 端点：区分两类
-        #  - TD→TR（房间中心→门口）：房间内部连接，保留
-        #  - TD→TI/TEN/TF（门口→走道/楼梯中心）且穿过房间：会构成误导性
-        #    「穿越管井/楼梯间」的导航路线，必须绕行（与拓扑公共边同等处理）
-        if a.get("type") == "doorway" or b.get("type") == "doorway":
-            if a.get("type") == "room" or b.get("type") == "room":
+        # TD/TEN/TF 端点：区分三类
+        #  - TD→TR/TR→TD（房间中心↔门口）：已在上面 continue（内部连接）
+        #  - TF→TD 两端归属同一房间（如楼梯中心↔本楼梯门口的内部连接）：保留
+        #  - TD/TF→TI/TEN 穿过房间（会构成误导性的「穿越管井/楼梯间」）：绕行
+        ta, tb = a.get("type"), b.get("type")
+        td_node = a if ta == "doorway" else (b if tb == "doorway" else None)
+        other_node = b if td_node is a else a
+        if td_node is not None and other_node.get("type") in ("facility", "facility_entrance"):
+            td_room = _node_room(td_node, rooms)
+            other_room = _node_room(other_node, rooms)
+            if td_room and other_room and td_room == other_room:
                 new_edges.append(e); kept_td += 1; continue
-            # TD/TF→TI/TEN：穿过房间则绕行
-            # 走非绕行分支
-        if (a.get("type") == "doorway" or b.get("type") == "doorway"):
-            # 上面的 if (TD→TR) 已 continue；这里处理 TD/TF→TI/TEN 穿墙
-            wps = reroute_via_walkable(a["coordinates"], b["coordinates"],
+        if td_node is not None:
+            td_coord = td_node["coordinates"]
+            other_coord = other_node["coordinates"]
+            wps = reroute_via_walkable(td_coord, other_coord,
                                        W_buf, walk_verts, rooms)
+            # TD 经常贴在房间边界（甚至略偏内），可见图找不到路径。
+            # 退路 1：把 TD 沿房间外法线推到走道里再走可见图。
+            if not wps:
+                td_room = _node_room(td_node, rooms)
+                if td_room:
+                    rp = next(p for rid,_,_,p,_ in rooms if rid == td_room)
+                    cx, cy = rp.centroid.coords[0]
+                    dx, dy = td_coord[0] - cx, td_coord[1] - cy
+                    L = math.hypot(dx, dy) or 1.0
+                    for off_m in (0.3, 0.5, 0.8):
+                        td_off = (td_coord[0] + dx / L * off_m,
+                                  td_coord[1] + dy / L * off_m)
+                        if W is not None and not W.buffer(-0.05).contains(
+                                Point(td_off)):
+                            continue
+                        wps2 = reroute_via_walkable(td_off, other_coord,
+                                                  W_buf, walk_verts, rooms)
+                        if wps2:
+                            wps = [list(td_off)] + wps2
+                            break
+            # 退路 2：可见图仍找不到。手动构造一个简单链：
+            #   TD → offset(0.5/0.8/1.0m，走道内) → 对方端点
+            # 只要 offset 落在走道里，TD→offset→other 的直线都不再穿本房间。
+            if not wps:
+                td_room = _node_room(td_node, rooms)
+                if td_room:
+                    rp = next(p for rid,_,_,p,_ in rooms if rid == td_room)
+                    cx, cy = rp.centroid.coords[0]
+                    dx, dy = td_coord[0] - cx, td_coord[1] - cy
+                    L = math.hypot(dx, dy) or 1.0
+                    for off_m in (0.5, 0.8, 1.0, 1.5, 2.0):
+                        td_off = (td_coord[0] + dx / L * off_m,
+                                  td_coord[1] + dy / L * off_m)
+                        if W is not None and W.buffer(-0.05).contains(
+                                Point(td_off)):
+                            wps = [list(td_off)]
+                            break
             if not wps:
                 new_edges.append(e); kept_td += 1; continue
             wps = smooth_into_corridor(wps, W, rooms)
