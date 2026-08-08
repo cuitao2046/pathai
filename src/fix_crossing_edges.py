@@ -27,7 +27,7 @@ import heapq
 from collections import defaultdict, deque
 from pathlib import Path
 
-from shapely.geometry import LineString, Polygon, MultiPolygon, shape, mapping
+from shapely.geometry import LineString, Polygon, MultiPolygon, Point, shape, mapping
 from shapely.ops import unary_union
 
 OPEN = {
@@ -174,33 +174,48 @@ def reroute_via_walkable(A, B, W_buf, walk_verts, rooms):
     def in_box(p):
         return minx <= p[0] <= maxx and miny <= p[1] <= maxy
 
-    cand = [tuple(A), tuple(B)]
-    # 相关房间：取与线段相交的房间（最多几个），用其全部外环顶点
+    # 候选点：{A,B, kind='end'} + 房间外环顶点(kind='raw') +
+    # 房间外环顶点向外偏移 0.4m(kind='off',) + 走道条带顶点(kind='walk')。
+    # Dijkstra 对 raw 端点加 +1.0m 惩罚，使路径优先走走廊中线（off）而非贴墙。
+    cand = []
+    kinds = []  # 与 cand 一一对应：'end'/'raw'/'off'/'walk'
+    cand.append(tuple(A)); kinds.append("end")
+    cand.append(tuple(B)); kinds.append("end")
     seg = LineString([A, B])
+    ROOM_OFFSET_M = 0.4
     for rid, rt, lab, poly, nbuf in rooms:
-        if seg.intersects(nbuf):
-            for x, y in poly.exterior.coords:
-                if in_box((x, y)):
-                    cand.append((x, y))
-    # 走道条带内顶点
+        if not seg.intersects(nbuf):
+            continue
+        cx, cy = poly.centroid.coords[0]
+        for x, y in poly.exterior.coords:
+            if not in_box((x, y)):
+                continue
+            cand.append((x, y)); kinds.append("raw")
+            # 外环顶点向外偏移（远离房间形心）= 走廊侧候选
+            dx, dy = x - cx, y - cy
+            L = math.hypot(dx, dy) or 1.0
+            cand.append((x + dx / L * ROOM_OFFSET_M,
+                         y + dy / L * ROOM_OFFSET_M))
+            kinds.append("off")
     for v in walk_verts:
         if not in_box(v):
             continue
         if _dist_seg(v, A, B) <= 3.0:
-            cand.append(v)
+            cand.append(v); kinds.append("walk")
     # 去重
-    uniq, seen = [], set()
-    for p in cand:
-        k = (round(p[0], 3), round(p[1], 3))
-        if k in seen:
+    uniq_p, uniq_k, seen = [], [], set()
+    for p, k in zip(cand, kinds):
+        key = (round(p[0], 3), round(p[1], 3))
+        if key in seen:
             continue
-        seen.add(k); uniq.append(p)
-    cand = uniq
+        seen.add(key); uniq_p.append(p); uniq_k.append(k)
+    cand = uniq_p; kinds = uniq_k
     n = len(cand)
     if n < 2:
         return None
-    # 预筛边：O(n^2) 合法性（用预计算缓冲，避免重复 buffer）
+    # 预筛边
     adj = defaultdict(list)
+    RAW_PENALTY = 1.0
     for i in range(n):
         for j in range(i + 1, n):
             u, v = cand[i], cand[j]
@@ -215,6 +230,10 @@ def reroute_via_walkable(A, B, W_buf, walk_verts, rooms):
             if not ok:
                 continue
             d = math.hypot(u[0] - v[0], u[1] - v[1])
+            if kinds[i] == "raw":
+                d += RAW_PENALTY
+            if kinds[j] == "raw":
+                d += RAW_PENALTY
             adj[i].append((j, d))
             adj[j].append((i, d))
     # Dijkstra 0->1
@@ -245,6 +264,39 @@ def reroute_via_walkable(A, B, W_buf, walk_verts, rooms):
     if len(path) < 2:
         return None
     return [list(p) for p in path[1:-1]]
+
+
+def smooth_into_corridor(wps, W, rooms, ideal_offset=0.5):
+    """把贴墙 waypoint 推到走道中线方向（远离房间外墙），让路径不再贴墙。
+
+    可见图绕行的 waypoint 默认落在被绕房间的外环顶点（=墙角），渲染上看就像
+    路线沿墙走。这里把每个 waypoint 沿「远离房间形心」方向外推 ideal_offset，
+    若新点不在走道内则递减 (0.4→0.3→0.2→0.15→0.1)，仍失败则保留原 waypoint。
+    """
+    if not wps:
+        return wps
+    out = []
+    for wp in wps:
+        pt = Point(wp)
+        # 找最近的封闭房间（绕的就是它）
+        nearest, nd = None, float("inf")
+        for _, _, _, poly, _ in rooms:
+            d = poly.exterior.distance(pt)
+            if d < nd:
+                nd, nearest = d, poly
+        if nearest is None or nd > 0.6:
+            out.append(wp); continue
+        cx, cy = nearest.centroid.coords[0]
+        dx, dy = wp[0] - cx, wp[1] - cy
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = dx / L, dy / L
+        chosen = wp
+        for off in (ideal_offset, 0.4, 0.3, 0.2, 0.15, 0.1):
+            cand = (wp[0] + nx * off, wp[1] + ny * off)
+            if W is None or W.buffer(-0.05).contains(Point(cand)):
+                chosen = list(cand); break
+        out.append(chosen)
+    return out
 
 
 def component_count(fl, active_only=False):
@@ -310,6 +362,8 @@ def process_floor(fl, floor_no):
                                    W_buf, walk_verts, rooms)
         if not wps:
             new_edges.append(e); failed += 1; continue
+        # 把贴墙 waypoint 推到走道中线附近（远离房间外墙），避免路线「沿墙走」
+        wps = smooth_into_corridor(wps, W, rooms)
         chain = [a["coordinates"]] + wps + [b["coordinates"]]
         prev = e["from"]
         for k, wp in enumerate(wps):
