@@ -95,71 +95,119 @@ def collect_walkable(fl):
     return W, W.buffer(TOL), verts
 
 
-def clip_skeleton(fl, W):
-    """把骨架 LineString 裁到 walkable 内（去掉穿入封闭房间的部分）。就地修改。"""
+def reroute_skeleton(fl, W, W_buf, walk_verts, rooms):
+    """骨架 LineString 处理：
+  - 穿过封闭房间的 → 可见图绕行（A→B 沿走道，避开房间），保持连续
+  - 仅部分穿入（指尖在房间内）→ 裁切到 walkable 内，去掉指尖
+  - 其余保持原样
+
+  之前的 clip_skeleton 会把穿越线一刀切成两段（左/右），导致上方走道里
+  没有骨架线；这里改为绕行以保留连续骨架（用户期望的紫色线形状）。
+    """
     if W is None:
-        return 0
+        return 0, 0
     sk = fl.get("skeleton")
     if not sk or "features" not in sk:
-        return 0
+        return 0, 0
     new_feats = []
     n_clip = 0
+    n_reroute = 0
     for feat in sk["features"]:
         g = feat.get("geometry") or {}
         if g.get("type") != "LineString":
-            new_feats.append(feat)
-            continue
+            new_feats.append(feat); continue
         try:
             line = shape(feat["geometry"])
         except Exception:
-            new_feats.append(feat)
-            continue
+            new_feats.append(feat); continue
+        coords = list(line.coords)
+        if len(coords) < 2:
+            new_feats.append(feat); continue
+        crosses_room = False
+        for _, _, _, _, nbuf in rooms:
+            if line.intersects(nbuf):
+                crosses_room = True; break
+        if crosses_room:
+            A = (coords[0][0], coords[0][1])
+            B = (coords[-1][0], coords[-1][1])
+            wps = reroute_via_walkable(A, B, W_buf, walk_verts, rooms)
+            if wps:
+                wps = smooth_into_corridor(wps, W, rooms)
+                chain = [A] + wps + [B]
+                feat["geometry"] = {
+                    "type": "LineString",
+                    "coordinates": [[round(c[0], 3), round(c[1], 3)] for c in chain],
+                }
+                n_reroute += 1
+                new_feats.append(feat); continue
         inter = line.intersection(W)
         if inter.is_empty:
-            n_clip += 1
-            continue
+            n_clip += 1; continue
         if inter.geom_type == "LineString":
-            feat["geometry"] = mapping(inter)
-            new_feats.append(feat)
+            feat["geometry"] = mapping(inter); new_feats.append(feat)
         elif inter.geom_type == "MultiLineString":
-            # 拆成多条，保留最长一段为主，其余也保留
             for i, part in enumerate(inter.geoms):
                 if i == 0:
-                    feat["geometry"] = mapping(part)
-                    new_feats.append(feat)
+                    feat["geometry"] = mapping(part); new_feats.append(feat)
                 else:
                     nf = dict(feat)
                     nf["id"] = f"{feat.get('id','SK')}_p{i}"
-                    nf["geometry"] = mapping(part)
-                    new_feats.append(nf)
+                    nf["geometry"] = mapping(part); new_feats.append(nf)
             n_clip += 1
         else:
             new_feats.append(feat)
     fl["skeleton"]["features"] = new_feats
-    return n_clip
+    return n_clip, n_reroute
 
 
 def _corridor_extent_outward(pt, out_dx, out_dy, W, rooms, max_d=6.0):
-    """从 pt 沿 (out_dx,out_dy) 方向射线，能走多远才撞墙/出 walkable。返回距离。"""
-    if not isinstance(pt, Point):
-        pt = Point(pt[0], pt[1])
-    ex, ey = pt.x + out_dx * max_d, pt.y + out_dy * max_d
-    ray = LineString([(pt.x, pt.y), (ex, ey)])
-    cands = []
+    """返回走廊在 pt 处的完整宽度（房间外墙 → 对面墙，m）。
+
+    关键修复：pt 通常正好落在房间外墙 = walkable 边界上。如果射线从这里
+    直接出发，第一次与 W.boundary 相交是「走出 walkable」的入口（距离 ≈0），
+    真实宽度被误判。正确做法：先把 pt 沿外推方向偏一个明显大于 0 的距离
+    (0.8m 起步，验证在 walkable 内)，让射线从走道内部干净地撞到对面墙。
+    返回完整走廊宽度（外偏距离 + 射线在走道内长度），调用方取半宽。
+    """
+    eff_offset = None
+    ix = iy = None
+    for off in (0.8, 0.5, 0.3, 0.2, 0.1):
+        tx = pt[0] + out_dx * off
+        ty = pt[1] + out_dy * off
+        if W is None or W.contains(Point(tx, ty)):
+            eff_offset = off; ix, iy = tx, ty; break
+    if eff_offset is None:
+        return 0.1  # 走廊极窄（<0.1m），跳过
+    ex, ey = ix + out_dx * max_d, iy + out_dy * max_d
+    ray = LineString([(ix, iy), (ex, ey)])
+    # 找对面墙：射线在走道内能走多远（W.boundary 的出口 = 最远边界点）
+    far = max_d
     if W is not None:
-        bd = W.boundary
-        inter = ray.intersection(bd)
+        inter = ray.intersection(W.boundary)
         if not inter.is_empty:
-            d = pt.distance(inter)
-            if 0 < d < max_d:
-                cands.append(d)
+            ds = []
+            if inter.geom_type == "Point":
+                ds = [((ix - inter.x) ** 2 + (iy - inter.y) ** 2) ** 0.5]
+            elif inter.geom_type == "MultiPoint":
+                for p in inter.geoms:
+                    ds.append(((ix - p.x) ** 2 + (iy - p.y) ** 2) ** 0.5)
+            valid = [d for d in ds if 0 < d < max_d]
+            if valid:
+                far = min(valid)
+    # 房间阻挡：最近的房间相交点 = 走廊尽头
+    near = max_d
     for _, _, _, poly, _ in rooms:
         inter = ray.intersection(poly)
-        if not inter.is_empty:
-            d = pt.distance(inter)
-            if 0 < d < max_d:
-                cands.append(d)
-    return min(cands) if cands else max_d
+        if inter.is_empty:
+            continue
+        if inter.geom_type == "Point":
+            d = ((ix - inter.x) ** 2 + (iy - inter.y) ** 2) ** 0.5
+            if 0 < d < near: near = d
+        elif inter.geom_type == "MultiPoint":
+            for p in inter.geoms:
+                d = ((ix - p.x) ** 2 + (iy - p.y) ** 2) ** 0.5
+                if 0 < d < near: near = d
+    return eff_offset + min(far, near)
 
 
 def shift_skeleton_into_corridor(fl, W, rooms, wall_threshold=0.9, min_half_width=0.25):
@@ -423,7 +471,7 @@ def process_floor(fl, floor_no):
     edges = fl.get("topology", {}).get("edges") or []
     nmap = {n["id"]: n for n in nodes}
 
-    n_clip = clip_skeleton(fl, W)
+    n_clip, n_reroute = reroute_skeleton(fl, W, W_buf, walk_verts, rooms)
     n_shift = shift_skeleton_into_corridor(fl, W, rooms)
 
     new_edges = []
@@ -473,7 +521,7 @@ def process_floor(fl, floor_no):
 
     fl.setdefault("topology", {})["edges"] = new_edges
     fl["topology"]["nodes"] = nodes + new_nodes
-    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip, n_shift
+    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip, n_shift, n_reroute
 
 
 def _mk_edge(seq, frm, to, dist, src):
@@ -501,11 +549,11 @@ def main():
 
     for fk, fl in (geo.get("floors") or {}).items():
         fn = int(fk)
-        total, kept_edges, rerouted, kept_td, failed, n_clip, n_shift = process_floor(fl, fn)
+        total, kept_edges, rerouted, kept_td, failed, n_clip, n_shift, n_reroute = process_floor(fl, fn)
         c_all, main_all = component_count(fl, False)
         c_act, main_act = component_count(fl, True)
         print(f"[F{fk}] 边 {total} → {kept_edges}（绕行 {rerouted}，门口边保留 {kept_td}"
-              f"，绕行失败保留 {failed}）；骨架裁切 {n_clip} 段，推入走道 {n_shift} 段")
+              f"，绕行失败保留 {failed}）；骨架绕行 {n_reroute} 段，裁切 {n_clip} 段，推入走道 {n_shift} 段")
         print(f"      全边连通分量 {c_all}（主 {main_all}）  可导航连通分量 {c_act}（主 {main_act}）")
 
     out = Path(args.output) if args.output else path
