@@ -93,12 +93,31 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
             stats["ok"] = False
         report.append(f"[F{floor_key}] {msg}")
 
-    # 1) 门口覆盖：每个 geometry door 应有 TD
+    # 1) 门口覆盖：拓扑设计上 doorway 节点只为「服务封闭房间的门」建模
+    #    （走廊↔走廊的纯通行门归入走廊骨架 TI↔TI，同开口的摆弧/防火/门洞合并为一个 TD）。
+    #    因此校验目标改为：每个封闭房间(TR)均应能经门(doorway)进入——即存在 TR↔TD 边。
     n_doors = stats["doors_geom"]
-    if n_doors and stats["TD"] < n_doors * 0.9:
-        issue(f"门投影覆盖不足: geometry.doors={n_doors} TD={stats['TD']}", hard=True)
+    room_ids = {n["id"] for n in by_type["room"]}
+    td_ids = {n["id"] for n in by_type["doorway"]}
+    room_has_door = set()
+    for e in edges:
+        a, b = e.get("from"), e.get("to")
+        if a in room_ids and b in td_ids:
+            room_has_door.add(a)
+        elif b in room_ids and a in td_ids:
+            room_has_door.add(b)
+    missing = room_ids - room_has_door
+    stats["rooms_total"] = len(room_ids)
+    stats["rooms_with_door"] = len(room_has_door)
+    if room_ids and missing:
+        issue(f"有 {len(missing)} 个房间无门口(TD)边: "
+              f"{sorted(missing)[:10]}{' …' if len(missing) > 10 else ''}", hard=True)
     elif n_doors == 0:
         issue("无 geometry.doors（可能解析失败）", hard=True)
+    # 仅作信息提示：物理门数 vs TD 节点数（不再强约束）
+    if n_doors:
+        report.append(f"[F{floor_key}] 信息: geometry.doors={n_doors} TD={stats['TD']} "
+                       f"(走廊通行门/合并后不再各建 TD)")
 
     # 2) 连通性：主分量应覆盖绝大多数非孤立节点
     comps = _components(nodes, edges)

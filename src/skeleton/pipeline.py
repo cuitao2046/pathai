@@ -289,6 +289,54 @@ def build_skeleton_for_walkables(
     }
 
 
+def _merge_nearby_doors(doors: list, max_dist_m: float = 0.8,
+                        coords: Optional[Sequence] = None) -> list:
+    """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
+
+    同一物理开口常被识别为多条门记录（swing + fire + opening），其几何中心重合；
+    也可能在投影到骨架后落到同一骨架点（同一房间多个邻近入口）。合并后 rooms 取并集、
+    kind 取 fire 优先、width 取最大，避免拓扑层出现重叠/重复的 TD 节点
+    （这也是渲染时「两个重叠的拓扑节点」的根因）。
+
+    coords: 可选，预先算好的合并依据坐标（如投影后的最终坐标）；为 None 时退回用
+    door 的 center_m。返回合并后的门列表，次序按簇首排列。
+    """
+    if not doors:
+        return []
+    if coords is None:
+        coords = [tuple(dr.get("center_m") or (0.0, 0.0)) for dr in doors]
+    used = [False] * len(doors)
+    merged = []
+    for i in range(len(doors)):
+        if used[i]:
+            continue
+        ci = tuple(coords[i])
+        cluster = [i]
+        used[i] = True
+        for j in range(i + 1, len(doors)):
+            if used[j]:
+                continue
+            cj = tuple(coords[j])
+            if math.hypot(ci[0] - cj[0], ci[1] - cj[1]) < max_dist_m:
+                cluster.append(j)
+                used[j] = True
+        rooms_u = []
+        for j in cluster:
+            for rid in (doors[j].get("rooms") or []):
+                if rid not in rooms_u:
+                    rooms_u.append(rid)
+        kinds = [doors[j].get("kind", "swing") for j in cluster]
+        kind = "fire" if "fire" in kinds else (kinds[0] if kinds else "swing")
+        width = max((doors[j].get("width_pt") or 0) for j in cluster)
+        md = dict(doors[cluster[0]])
+        md["center_m"] = list(ci)
+        md["kind"] = kind
+        md["width_pt"] = width
+        md["rooms"] = rooms_u
+        merged.append(md)
+    return merged
+
+
 def build_skeleton_topology(
     floor_no: int,
     rooms: list,
@@ -334,8 +382,12 @@ def build_skeleton_topology(
                 if wp is not None and not getattr(wp, "is_empty", True):
                     walkables.append(wp)
 
+    # 合并同开口门（同一物理开口的摆弧/防火/门洞），避免拓扑层重叠 TD 节点
+    MERGE_DIST_M = 0.8
+    td_doors = _merge_nearby_doors(doors, MERGE_DIST_M)
+
     door_centers = []
-    for dr in doors:
+    for dr in td_doors:
         c = dr.get("center_m")
         if c is not None:
             door_centers.append((float(c[0]), float(c[1])))
@@ -431,20 +483,33 @@ def build_skeleton_topology(
                 "coordinates": [round(float(x), 3), round(float(y), 3)],
             })
 
-    # ---------- TD: 门投影到骨架 ----------
-    door_node_ids = []
+    # ---------- TD: 门投影到骨架 + 二次合并（投影重合的门） ----------
     door_projs = project_doors_to_skeleton(
         door_centers, sk["lines"], max_dist_m=10.0
     ) if sk["lines"] else []
+    # 二次合并：以投影后最终坐标为依据（阈值 1.0m），吸收「不同门但投影到同一
+    # 骨架点」造成的重叠 TD 节点（如同一房间多个邻近入口）。合并时 center_m
+    # 被改写为最终投影坐标，下方直接采用。
+    _final = []
+    for i, dr in enumerate(td_doors):
+        c = list(dr.get("center_m") or [0, 0])
+        if i < len(door_projs) and door_projs[i].get("projected"):
+            c = list(door_projs[i]["projected"])
+        _final.append(tuple(c))
+    td_doors = _merge_nearby_doors(td_doors, 1.0, coords=_final)
 
-    for i, dr in enumerate(doors):
-        nid = _obj_id(floor_no, obj_type["topo_doorway"], i + 1)
+    door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None
+    for i, dr in enumerate(td_doors):
+        # 该门是否连到至少一个封闭房间（TR）；无房间归属则跳过，
+        # 避免生成悬空 corridor-only 门节点（走廊连通性由 TI↔TI 边承担）。
+        has_room = any(rid in room_index for rid in dr.get("rooms", []))
+        if not has_room:
+            door_node_ids.append(None)
+            continue
+        nid = _obj_id(floor_no, obj_type["topo_doorway"], len(door_node_ids) + 1)
         door_node_ids.append(nid)
         kind = dr.get("kind", "swing")
-        # 优先投影点，否则门中心
-        coords = list(dr.get("center_m") or [0, 0])
-        if i < len(door_projs) and door_projs[i].get("projected"):
-            coords = list(door_projs[i]["projected"])
+        coords = list(dr.get("center_m") or [0, 0])  # 已为最终（投影）坐标
         nodes.append({
             "id": nid,
             "type": "doorway",
@@ -506,8 +571,10 @@ def build_skeleton_topology(
 
     # ---------- 边 ----------
     # 1) TR ↔ TD
-    for i, dr in enumerate(doors):
+    for i, dr in enumerate(td_doors):
         dnid = door_node_ids[i]
+        if dnid is None:
+            continue
         dcoord = next(n["coordinates"] for n in nodes if n["id"] == dnid)
         for rid in dr.get("rooms", []):
             rnid = room_index.get(rid)
@@ -524,6 +591,8 @@ def build_skeleton_topology(
 
     # 2) TD ↔ 最近 TI（优先：最近图节点对应的 TI；否则欧氏最近 TI）
     for i, dnid in enumerate(door_node_ids):
+        if dnid is None:
+            continue
         dcoord = next(n["coordinates"] for n in nodes if n["id"] == dnid)
         if not ti_ids:
             continue
@@ -605,6 +674,8 @@ def build_skeleton_topology(
             break
         best_d, best_dn = float("inf"), None
         for dnid in door_node_ids:
+            if dnid is None:
+                continue
             dc = next(n["coordinates"] for n in nodes if n["id"] == dnid)
             d = math.hypot(fn["coordinates"][0] - dc[0],
                            fn["coordinates"][1] - dc[1])
@@ -623,6 +694,8 @@ def build_skeleton_topology(
             break
         best_d, best_dn = float("inf"), None
         for dnid in door_node_ids:
+            if dnid is None:
+                continue
             dc = next(n["coordinates"] for n in nodes if n["id"] == dnid)
             d = math.hypot(en["coordinates"][0] - dc[0],
                            en["coordinates"][1] - dc[1])

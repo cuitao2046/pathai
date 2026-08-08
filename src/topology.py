@@ -250,6 +250,53 @@ def assign_node_risk_levels(nodes, rooms):
     return nodes
 
 
+def _merge_nearby_doors(doors, max_dist_m=0.8, coords=None):
+    """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
+
+    同一物理开口常被识别为多条门记录（swing + fire + opening），几何中心重合；
+    coords 可传入预先算好的合并依据坐标（如投影后的最终坐标），为 None 时退回用
+    door 的 center_m。合并后 rooms 取并集、kind 取 fire 优先、width 取最大。
+    返回合并后的门列表，次序按簇首排列。
+    """
+    if not doors:
+        return []
+    if coords is None:
+        try:
+            coords = [tuple(_to_xy(dr.get("center_m") or (0.0, 0.0))) for dr in doors]
+        except Exception:
+            coords = [tuple(dr.get("center_m") or (0.0, 0.0)) for dr in doors]
+    used = [False] * len(doors)
+    merged = []
+    for i in range(len(doors)):
+        if used[i]:
+            continue
+        ci = centers[i]
+        cluster = [i]
+        used[i] = True
+        for j in range(i + 1, len(doors)):
+            if used[j]:
+                continue
+            cj = centers[j]
+            if math.hypot(ci[0] - cj[0], ci[1] - cj[1]) < max_dist_m:
+                cluster.append(j)
+                used[j] = True
+        rooms_u = []
+        for j in cluster:
+            for rid in (doors[j].get("rooms") or []):
+                if rid not in rooms_u:
+                    rooms_u.append(rid)
+        kinds = [doors[j].get("kind", "swing") for j in cluster]
+        kind = "fire" if "fire" in kinds else (kinds[0] if kinds else "swing")
+        width = max((doors[j].get("width_pt") or 0) for j in cluster)
+        md = dict(doors[cluster[0]])
+        md["center_m"] = list(ci)
+        md["kind"] = kind
+        md["width_pt"] = width
+        md["rooms"] = rooms_u
+        merged.append(md)
+    return merged
+
+
 def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                          corridor_adjacency=None, extra_nodes=None):
     """
@@ -294,9 +341,15 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         })
 
     # ---------- 门口节点（doorway） ----------
-    door_node_ids = []
-    for i, dr in enumerate(doors):
-        nid = _nid(floor_no, OBJ_TYPE["topo_doorway"], i + 1)
+    # 合并同开口门（避免重叠 TD 节点），并跳过无房间归属的门（避免悬空 corridor-only 节点）
+    td_doors = _merge_nearby_doors(doors, 0.8)
+    door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None
+    for i, dr in enumerate(td_doors):
+        has_room = any(rid in room_index for rid in dr.get("rooms", []))
+        if not has_room:
+            door_node_ids.append(None)
+            continue
+        nid = _nid(floor_no, OBJ_TYPE["topo_doorway"], len(door_node_ids) + 1)
         door_node_ids.append(nid)
         kind = dr.get("kind", "swing")
         nodes.append({
@@ -387,8 +440,10 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         })
 
     # 1) doorway <-> 所属封闭房间质心（房间内移动）
-    for i, dr in enumerate(doors):
+    for i, dr in enumerate(td_doors):
         dnid = door_node_ids[i]
+        if dnid is None:
+            continue
         center = _to_xy(dr.get("center_m"))
         for rid in dr.get("rooms", []):
             rnid = room_index.get(rid)
@@ -404,8 +459,10 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
     #    优先：门归属中已标明的开放空间；其次：距门口 ≤15m 的所有开放空间
     #   （旧逻辑只连最近一个，会导致两侧走廊无法经同一门洞互通）
     if cor_node_ids:
-        for i, dr in enumerate(doors):
+        for i, dr in enumerate(td_doors):
             dnid = door_node_ids[i]
+            if dnid is None:
+                continue
             center = _to_xy(dr.get("center_m"))
             linked = set()
             for rid in dr.get("rooms", []):
@@ -434,8 +491,8 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                     add_edge(cor_node_ids[best_cor_id], dnid, best_d)
 
     # 3) facility <-> 最近的 doorway（设施接入：楼梯/电梯口连最近的门）
-    all_doorways = [(door_node_ids[i], _to_xy(doors[i].get("center_m")))
-                    for i in range(len(doors))]
+    all_doorways = [(door_node_ids[i], _to_xy(td_doors[i].get("center_m")))
+                    for i in range(len(td_doors)) if door_node_ids[i] is not None]
     facility_nodes = [n for n in nodes if n["type"] == "facility"]
     for fn in facility_nodes:
         if not all_doorways:

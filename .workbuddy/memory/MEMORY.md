@@ -5,7 +5,8 @@
 
 ## 代码（src/ 正式脚本，共 12 个）
 - `parse_cad_pdf.py`：主解析器。PyMuPDF 按 OCG 提取矢量→坐标标定(SCALE=0.0529 m/pt, 原点(2019.1,1154.8)pt, Y翻转, set_rotation(0) 处理270°旋转)→墙体矢量化→房间识别(OpenCV栅格化+形态学+分水岭+标签探测)→门洞识别(window摆弧/DOOR_FIRE/DK笔画)→门归属链→GeoJSON。需带 fitz 的 Python。
-- `topology.py`：导航拓扑（节点5类 room/doorway/intersection/facility/facility_entrance；边含 distance/estimatedTime(0.8m/s)/accessibilityLevel/riskLevel；开放空间建 intersection 型 circulation 节点）。
+- `topology.py`：导航拓扑（节点5类 room/doorway/intersection/facility/facility_entrance；边含 distance/estimatedTime(0.8m/s)/accessibilityLevel/riskLevel；开放空间建 intersection 型 circulation 节点）。⚠️ **实际产物由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology` 生成**，topology.py 的 `build_floor_topology` 仅回退路径；改拓扑须两处同步。
+- **门节点(doorway)生成规则（v9 净化后）**：同物理开口门(swing+fire+opening)按 center_m(0.8m)与投影后坐标(1.0m)两次合并为一个 TD；仅当 `any(rid in room_index)`（即门归属至少一个封闭房间）才建 TD 节点，纯走廊通行门(corridor/lobby)不建 TD（走廊连通性由 TI↔TI 承担）。`validate_geojson.py` 校验项改为「每个 TR 须有 TR↔TD 边」。
 - `render_map.py`：GeoJSON→PNG（需 matplotlib/shapely venv）。
 - `validate_geojson.py`：QA，核心指标"无门封闭房间数=0"。
 - `render_interactive.py`：自包含交互式 HTML(result/floor_layout_v9_interactive.html)。图层开关、缩放/平移(含触控板双指手势)、悬停/点击详情、楼层跳转、拓扑联动高亮、导出所选图层 SVG、拓扑边编辑(双击加边/选中删除/浏览器直写 GeoJSON)、「交叉口连接边 TI↔TI」图层开关、手动标注骨架 SVG 模板导出、门节点编号显示(TD-xxxx)。
