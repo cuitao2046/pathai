@@ -1791,10 +1791,11 @@ function edgeAllowed(e, mode) {
 
 function dijkstra(startId, endId, mode) {
   if (!PATH_GRAPH) return null;
-  // 路径中间节点白名单：只允许公共空间(intersection)与楼梯/电梯相关
-  // (facility/facility_entrance)。房间(room)与普通门(doorway)不得作为
-  // 中转——否则会把房间内部当捷径(穿合班教室)或把门口当路网节点。
-  var MID_TYPES = { intersection: 1, facility: 1, facility_entrance: 1 };
+  // 路径中间节点白名单：公共空间(intersection)、楼梯/电梯
+  // (facility/facility_entrance) 与门(doorway)。门是房间↔走廊的
+  // 过渡节点，必须允许（否则 TR→TD→走廊 第一步就断了、房间不可达）。
+  // 房间(room) 禁止中转——否则会把房间内部当捷径（穿合班教室）。
+  var MID_TYPES = { intersection: 1, facility: 1, facility_entrance: 1, doorway: 1 };
   var adj = {};
   (PATH_GRAPH.edges || []).forEach(function(e) {
     if (!edgeAllowed(e, mode)) return;
@@ -1815,7 +1816,8 @@ function dijkstra(startId, endId, mode) {
     var d = cur[0], u = cur[1];
     if (d !== dist[u]) continue;
     if (u === endId) break;
-    // 中间节点白名单：房间/普通门不得作为中转（房间穿墙、门口非路网）。
+    // 中间节点白名单：房间(room)禁止中转（穿墙捷径），其余节点
+    // (TI/TF/TEN/TD) 均允许。
     if (u !== startId && u !== endId) {
       var _ut = PATH_GRAPH.nodes[u] && PATH_GRAPH.nodes[u].type;
       if (!MID_TYPES[_ut]) continue;
