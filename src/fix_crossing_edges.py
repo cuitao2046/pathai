@@ -139,6 +139,91 @@ def clip_skeleton(fl, W):
     return n_clip
 
 
+def _corridor_extent_outward(pt, out_dx, out_dy, W, rooms, max_d=6.0):
+    """从 pt 沿 (out_dx,out_dy) 方向射线，能走多远才撞墙/出 walkable。返回距离。"""
+    if not isinstance(pt, Point):
+        pt = Point(pt[0], pt[1])
+    ex, ey = pt.x + out_dx * max_d, pt.y + out_dy * max_d
+    ray = LineString([(pt.x, pt.y), (ex, ey)])
+    cands = []
+    if W is not None:
+        bd = W.boundary
+        inter = ray.intersection(bd)
+        if not inter.is_empty:
+            d = pt.distance(inter)
+            if 0 < d < max_d:
+                cands.append(d)
+    for _, _, _, poly, _ in rooms:
+        inter = ray.intersection(poly)
+        if not inter.is_empty:
+            d = pt.distance(inter)
+            if 0 < d < max_d:
+                cands.append(d)
+    return min(cands) if cands else max_d
+
+
+def shift_skeleton_into_corridor(fl, W, rooms, wall_threshold=0.9, min_half_width=0.25):
+    """把贴墙骨架段沿径向（远离房间形心）推到走廊中线（自适应半宽）。
+
+    中轴线在「走廊+房间凹槽」上跑出来会沿凹槽边走。把每个贴近房间外墙
+    （< wall_threshold）的骨架采样点，用走廊实际半宽把它推到中线。
+    """
+    sk = fl.get("skeleton")
+    if not sk or "features" not in sk:
+        return 0
+    n_shift = 0
+    new_feats = []
+    for feat in sk["features"]:
+        g = feat.get("geometry") or {}
+        if g.get("type") != "LineString":
+            new_feats.append(feat); continue
+        try:
+            line = shape(feat["geometry"])
+        except Exception:
+            new_feats.append(feat); continue
+        # 密化：每 ~0.4m 一个采样点
+        n_samples = max(11, int(line.length / 0.4) + 1)
+        samples = [line.interpolate(i / (n_samples - 1), normalized=True)
+                   for i in range(n_samples)]
+        new_pts = []
+        changed = False
+        for sp in samples:
+            p = (sp.x, sp.y)
+            # 找最近房间
+            nearest, nd = None, float("inf")
+            for _, _, _, poly, _ in rooms:
+                d = poly.exterior.distance(sp)
+                if d < nd: nd, nearest = d, poly
+            if nearest is None or nd > wall_threshold:
+                new_pts.append(p); continue
+            # 径向外推方向 = 远离房间形心
+            cx, cy = nearest.centroid.coords[0]
+            dx, dy = p[0] - cx, p[1] - cy
+            L = math.hypot(dx, dy) or 1.0
+            udx, udy = dx / L, dy / L
+            # 走廊实际半宽
+            ext = _corridor_extent_outward(p, udx, udy, W, rooms)
+            half_w = ext / 2.0
+            if half_w < min_half_width:
+                new_pts.append(p); continue  # 太窄，不强行推
+            # 推到走廊中线（半宽处）。但如果当前已在中线外侧（>half_w），保留
+            if nd >= half_w:
+                new_pts.append(p); continue
+            target = (p[0] + udx * (half_w - nd + 0.05),
+                      p[1] + udy * (half_w - nd + 0.05))
+            # 验证仍在 walkable 内
+            if W is not None and not W.buffer(-0.03).contains(Point(target)):
+                new_pts.append(p); continue
+            new_pts.append(target)
+            changed = True
+        if changed:
+            n_shift += 1
+            feat["geometry"] = mapping(LineString(new_pts))
+        new_feats.append(feat)
+    fl["skeleton"]["features"] = new_feats
+    return n_shift
+
+
 def edge_crosses_room(A, B, rooms):
     seg = LineString([A, B])
     if seg.length < TOL:
@@ -339,6 +424,7 @@ def process_floor(fl, floor_no):
     nmap = {n["id"]: n for n in nodes}
 
     n_clip = clip_skeleton(fl, W)
+    n_shift = shift_skeleton_into_corridor(fl, W, rooms)
 
     new_edges = []
     new_nodes = []
@@ -387,7 +473,7 @@ def process_floor(fl, floor_no):
 
     fl.setdefault("topology", {})["edges"] = new_edges
     fl["topology"]["nodes"] = nodes + new_nodes
-    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip
+    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip, n_shift
 
 
 def _mk_edge(seq, frm, to, dist, src):
@@ -415,11 +501,11 @@ def main():
 
     for fk, fl in (geo.get("floors") or {}).items():
         fn = int(fk)
-        total, kept_edges, rerouted, kept_td, failed, n_clip = process_floor(fl, fn)
+        total, kept_edges, rerouted, kept_td, failed, n_clip, n_shift = process_floor(fl, fn)
         c_all, main_all = component_count(fl, False)
         c_act, main_act = component_count(fl, True)
         print(f"[F{fk}] 边 {total} → {kept_edges}（绕行 {rerouted}，门口边保留 {kept_td}"
-              f"，绕行失败保留 {failed}）；骨架裁切 {n_clip} 段")
+              f"，绕行失败保留 {failed}）；骨架裁切 {n_clip} 段，推入走道 {n_shift} 段")
         print(f"      全边连通分量 {c_all}（主 {main_all}）  可导航连通分量 {c_act}（主 {main_act}）")
 
     out = Path(args.output) if args.output else path
