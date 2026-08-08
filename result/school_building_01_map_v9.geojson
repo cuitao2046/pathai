@@ -125233,6 +125233,888 @@
               "type": "skeleton",
               "length_m": 1.42
             }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-001",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -42.86948827246587,
+                  -31.147127391913152
+                ],
+                [
+                  -41.57638758448664,
+                  -35.090607310818164
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 4.15
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-002",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -33.725255808022006,
+                  -32.744147381378745
+                ],
+                [
+                  -34.4578422167082,
+                  -34.77000018464168
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.15
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-003",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -28.072758727787864,
+                  -30.61576525225591
+                ],
+                [
+                  -27.22794937599162,
+                  -29.85403225805201
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.14
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-004",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -10.278793649093453,
+                  -27.04841698901438
+                ],
+                [
+                  -26.932267758026455,
+                  -35.090607310818164
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 18.49
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-005",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -8.287804170583184,
+                  -37.24521805723633
+                ],
+                [
+                  -10.497269414964215,
+                  -30.335288096505153
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 7.25
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-006",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -11.46291139358486,
+                  -37.823151211515864
+                ],
+                [
+                  -32.82213955511768,
+                  -39.77041689515402
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 21.45
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-007",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -36.171339257776474,
+                  -36.961761765517295
+                ],
+                [
+                  -33.742807066574194,
+                  -54.089604044177406
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 17.3
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-008",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -45.17824341780555,
+                  -56.92206893793032
+                ],
+                [
+                  -38.26705012106294,
+                  -53.968415912235685
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 7.52
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-009",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -58.724903549541004,
+                  -56.45125196336358
+                ],
+                [
+                  -52.85991832948092,
+                  -53.90485259773588
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.39
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-010",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -49.7628756293447,
+                  -10.228949697955418
+                ],
+                [
+                  -46.57648269994707,
+                  -10.36924602972085
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.19
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-011",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -41.62216935799199,
+                  -9.861070564548953
+                ],
+                [
+                  -44.539665184973,
+                  -10.007234528887986
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.92
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-012",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -43.06188095263296,
+                  -28.34707196046751
+                ],
+                [
+                  -42.123660324854995,
+                  -30.22331433077233
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.1
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-013",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -83.7935398305038,
+                  -21.172684516404004
+                ],
+                [
+                  -82.79527660797997,
+                  -20.805078135135766
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.06
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-014",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -59.01765778801737,
+                  -19.746506935585856
+                ],
+                [
+                  -60.71384250666397,
+                  -19.74724810303796
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.7
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-015",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -74.007585562628,
+                  -0.8887596090177935
+                ],
+                [
+                  -71.20411958736067,
+                  -8.980562473112196
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 8.56
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-016",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -72.70403897519354,
+                  1.733615483266993
+                ],
+                [
+                  -67.30698398334884,
+                  -0.8313011834641945
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 5.98
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-017",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -67.2689464073174,
+                  -8.391269419715405
+                ],
+                [
+                  -68.9738390435655,
+                  -13.338428776889764
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 5.23
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-018",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -67.26986918439461,
+                  -4.710791788100116
+                ],
+                [
+                  -64.50714628305738,
+                  1.5535134244231785
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.85
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-019",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -46.278966403017264,
+                  5.148078676285189
+                ],
+                [
+                  -45.07495078417311,
+                  3.331490721281887
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.18
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-020",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -44.39886617676155,
+                  1.4016444792130551
+                ],
+                [
+                  -42.098430422332775,
+                  -9.393740050451798
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 11.04
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-021",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -46.78745804277942,
+                  -4.461936430415039
+                ],
+                [
+                  -47.15933728271203,
+                  -9.929028276068827
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 5.48
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-022",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -36.210470622733155,
+                  14.392855138643366
+                ],
+                [
+                  -40.773537058449094,
+                  26.538111785121313
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 12.97
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-023",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -33.25009976765951,
+                  13.77021526311866
+                ],
+                [
+                  -34.021438715635135,
+                  10.568806450458995
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.29
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-024",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -9.042569254930696,
+                  -88.64408451640399
+                ],
+                [
+                  -10.339748637905759,
+                  -81.28213586891553
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 7.48
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-025",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -15.97198608611621,
+                  -82.34829975830566
+                ],
+                [
+                  -13.944183728075272,
+                  -88.64408451640398
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.61
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-026",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -11.75082410223204,
+                  -79.83023648801725
+                ],
+                [
+                  -13.426587813975209,
+                  -81.05939986660232
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.08
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-027",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -28.382145287462215,
+                  -79.54608007853854
+                ],
+                [
+                  -21.896774800789295,
+                  -78.857094123547
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.52
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-028",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -30.883405829734397,
+                  -83.26732074240863
+                ],
+                [
+                  -19.780644888758772,
+                  -82.253482632356
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 11.15
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-029",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -30.451681305507087,
+                  -73.01759265643851
+                ],
+                [
+                  -24.765243903762887,
+                  -71.15187149253063
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 5.98
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-030",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -27.93529983860156,
+                  -78.87664572873848
+                ],
+                [
+                  -30.218095270756177,
+                  -79.4757612675399
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.36
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-031",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -24.73807517976305,
+                  -68.13614312854827
+                ],
+                [
+                  -26.012313654233125,
+                  -68.65072022097121
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.37
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-032",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -20.692399997243562,
+                  -61.50096535774487
+                ],
+                [
+                  -30.103715351851474,
+                  -62.28741037483396
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 9.44
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-033",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -32.66607876279723,
+                  -60.23074132949003
+                ],
+                [
+                  -32.40026959350629,
+                  -61.60644445200643
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.4
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-034",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -23.91816538320538,
+                  -66.3449647095132
+                ],
+                [
+                  -31.316020123049935,
+                  -68.13576823443998
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 7.61
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-035",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -36.51340261762442,
+                  -58.35253467083198
+                ],
+                [
+                  -34.90552777208452,
+                  -69.68460236240632
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 11.45
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-036",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -37.545141657035394,
+                  -55.77318707230455
+                ],
+                [
+                  -40.24897300366997,
+                  -57.107225165785
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.02
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-037",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -20.647688746881215,
+                  -54.54359311272104
+                ],
+                [
+                  -24.659878620549744,
+                  -54.38884799622293
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 4.02
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-038",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -33.23246643432617,
+                  21.31564273718777
+                ],
+                [
+                  -30.559385126709167,
+                  26.827252250779
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.13
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-039",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -26.03165068127925,
+                  5.734835291716687
+                ],
+                [
+                  -30.37398559364856,
+                  20.213684747221127
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 15.12
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-040",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -31.985570160083434,
+                  13.178589350036818
+                ],
+                [
+                  -31.238673885840697,
+                  10.568806450458995
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.71
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-041",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -13.518024572595946,
+                  -33.537626777125894
+                ],
+                [
+                  -15.195672239321029,
+                  -35.090607310818164
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.29
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-042",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -47.15279271305201,
+                  -42.44426354725941
+                ],
+                [
+                  -48.30584544516967,
+                  -43.40638750094458
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.5
+            }
           }
         ]
       },
@@ -229857,6 +230739,510 @@
             "properties": {
               "type": "skeleton",
               "length_m": 3.87
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-001",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -66.45404900814394,
+                  -19.756965172857573
+                ],
+                [
+                  -71.94728814536602,
+                  -19.514726684524167
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 5.5
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-002",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -74.07742700428841,
+                  -0.7607126230862732
+                ],
+                [
+                  -70.7904635461398,
+                  -11.92185357354622
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 11.64
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-003",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -68.45776368067199,
+                  -0.9247811234676763
+                ],
+                [
+                  -67.77261469985399,
+                  -4.119285021565623
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.27
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-004",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -67.13609575307211,
+                  -10.619613001658978
+                ],
+                [
+                  -68.15667365844946,
+                  -14.414555468899096
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.93
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-005",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -59.761221229557776,
+                  -18.407862087844585
+                ],
+                [
+                  -64.41994681732719,
+                  -5.725754351155979
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 13.51
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-006",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -64.85275584403685,
+                  -14.620059357663008
+                ],
+                [
+                  -67.11846241973876,
+                  -11.456651807829168
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.89
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-007",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -49.780573874496,
+                  -3.932408508839101
+                ],
+                [
+                  -49.1225551841568,
+                  -2.6881002353266474
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 1.41
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-008",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -57.03906161979057,
+                  -1.2895375680890158
+                ],
+                [
+                  -50.084610694127846,
+                  -1.5732112231010642
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.96
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-009",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -47.49651815568251,
+                  5.398852250976563
+                ],
+                [
+                  -43.81175081116646,
+                  3.430219224614166
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 4.18
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-010",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -42.28277642163343,
+                  -6.217775515283234
+                ],
+                [
+                  -44.748165861009646,
+                  0.1222583639037876
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.8
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-011",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -40.17649275722835,
+                  6.323652858133068
+                ],
+                [
+                  -42.80238328882762,
+                  3.998852250976557
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.51
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-012",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -30.212255833305637,
+                  -78.55318387218055
+                ],
+                [
+                  -19.783103163490587,
+                  -78.78316980796363
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 10.43
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-013",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -23.859782971440243,
+                  -59.04523284967171
+                ],
+                [
+                  -23.077760360431018,
+                  -61.84698680498593
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 2.91
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-014",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -17.522419877044815,
+                  -78.42511751500777
+                ],
+                [
+                  -22.081215830402915,
+                  -63.663621396609194
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 15.45
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-015",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -22.97410599687324,
+                  -73.40254323258802
+                ],
+                [
+                  -24.833729086405437,
+                  -70.82834821700123
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.18
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-016",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -30.409156834747364,
+                  -57.048861933626014
+                ],
+                [
+                  -24.851362419738766,
+                  -59.86033157838013
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.23
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-017",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -25.39309170545048,
+                  -73.3159461270211
+                ],
+                [
+                  -27.44292097959741,
+                  -69.06211625622556
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 4.72
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-018",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -32.62110584069078,
+                  -60.81469536088538
+                ],
+                [
+                  -30.22927893170411,
+                  -68.2845935980292
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 7.84
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-019",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -26.13543846887103,
+                  6.769369604613468
+                ],
+                [
+                  -30.158493653587424,
+                  20.59813876981894
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 14.4
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-020",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -31.13589278024837,
+                  10.568806450458995
+                ],
+                [
+                  -33.60356496886223,
+                  13.96297018530639
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 4.2
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-021",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -33.57235086569843,
+                  20.697412942896413
+                ],
+                [
+                  -30.932782694519368,
+                  26.69610981634996
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.55
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-022",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -39.19362718094998,
+                  26.922474833885996
+                ],
+                [
+                  -33.63276241973877,
+                  24.525651088761485
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 6.06
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-023",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -33.63276241973877,
+                  14.387712276036506
+                ],
+                [
+                  -34.63945743903256,
+                  10.78051278779158
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 3.75
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "SK-FILL-024",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [
+                  -40.498108129443345,
+                  24.346583236436764
+                ],
+                [
+                  -37.193021010855674,
+                  13.230729207572677
+                ]
+              ]
+            },
+            "properties": {
+              "type": "skeleton",
+              "length_m": 11.6
             }
           }
         ]

@@ -210,6 +210,79 @@ def _corridor_extent_outward(pt, out_dx, out_dy, W, rooms, max_d=6.0):
     return eff_offset + min(far, near)
 
 
+def complete_skeleton_gaps(fl, W, rooms, coverage_radius=1.0):
+    """在 walkable 但无骨架穿过的狭窄走廊区域，用最小旋转矩形长轴补中轴线。
+
+    现有骨架已正确处理「穿越封闭房间」的问题（reroute_skeleton）。
+    本函数处理对称问题：狭窄走廊（管井/设备房之间的通道）中轴线算法没产出。
+    检测：walkable 中离现有骨架 > coverage_radius 的连通区域 → 若纵横比 > 1.5
+    且长轴 > 2m，按长轴方向补一条中轴线。仅追加，不修改现有骨架。
+    """
+    if W is None:
+        return 0
+    sk = fl.get("skeleton")
+    if not sk or "features" not in sk:
+        return 0
+    feats = list(sk["features"])
+    covered = None
+    from shapely.ops import unary_union
+    for feat in feats:
+        if feat.get("geometry", {}).get("type") != "LineString":
+            continue
+        try:
+            line = shape(feat["geometry"])
+        except Exception:
+            continue
+        buf = line.buffer(coverage_radius)
+        covered = buf if covered is None else covered.union(buf)
+    uncovered = W if covered is None else W.difference(covered)
+    if uncovered.is_empty:
+        return 0
+    comps = list(uncovered.geoms) if hasattr(uncovered, "geoms") else [uncovered]
+    n_added = 0
+    for comp in comps:
+        if comp.area < 1.0:
+            continue
+        try:
+            mrr = comp.minimum_rotated_rectangle
+        except Exception:
+            continue
+        rcoords = list(mrr.exterior.coords)
+        if len(rcoords) < 4:
+            continue
+        edges = [(Point(rcoords[i]), Point(rcoords[i + 1]))
+                 for i in range(len(rcoords) - 1)]
+        lengths = [e[0].distance(e[1]) for e in edges]
+        long_axis = max(lengths)
+        short_axis = min(lengths)
+        if long_axis < 2.0 or short_axis < 0.1:
+            continue
+        if long_axis / max(short_axis, 0.01) < 1.5:
+            continue
+        short_idx = [i for i, l in enumerate(lengths) if abs(l - short_axis) < 0.05]
+        if len(short_idx) < 2:
+            continue
+        from shapely.geometry import LineString as _LS
+        i0, i1 = short_idx[0], short_idx[-1]
+        p1 = _LS([edges[i0][0], edges[i0][1]]).interpolate(0.5)
+        p2 = _LS([edges[i1][0], edges[i1][1]]).interpolate(0.5)
+        centerline = _LS([p1, p2])
+        clipped = centerline.intersection(comp)
+        if clipped.is_empty or clipped.geom_type != "LineString":
+            continue
+        if clipped.length < 0.5:
+            continue
+        feats.append({
+            "type": "Feature",
+            "id": f"SK-FILL-{n_added + 1:03d}",
+            "geometry": mapping(clipped),
+            "properties": {"type": "skeleton", "length_m": round(clipped.length, 2)},
+        })
+        n_added += 1
+    sk["features"] = feats
+    return n_added
+
+
 def shift_skeleton_into_corridor(fl, W, rooms, wall_threshold=0.9, min_half_width=0.25):
     """把贴墙骨架段沿径向（远离房间形心）推到走廊中线（自适应半宽）。
 
@@ -485,6 +558,7 @@ def process_floor(fl, floor_no):
 
     n_clip, n_reroute = reroute_skeleton(fl, W, W_buf, walk_verts, rooms)
     n_shift = shift_skeleton_into_corridor(fl, W, rooms)
+    n_fill = complete_skeleton_gaps(fl, W, rooms)
 
     new_edges = []
     new_nodes = []
@@ -609,7 +683,7 @@ def process_floor(fl, floor_no):
 
     fl.setdefault("topology", {})["edges"] = new_edges
     fl["topology"]["nodes"] = nodes + new_nodes
-    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip, n_shift, n_reroute
+    return len(edges), len(new_edges), rerouted, kept_td, failed, n_clip, n_shift, n_reroute, n_fill
 
 
 def _mk_edge(seq, frm, to, dist, src):
@@ -637,11 +711,11 @@ def main():
 
     for fk, fl in (geo.get("floors") or {}).items():
         fn = int(fk)
-        total, kept_edges, rerouted, kept_td, failed, n_clip, n_shift, n_reroute = process_floor(fl, fn)
+        total, kept_edges, rerouted, kept_td, failed, n_clip, n_shift, n_reroute, n_fill = process_floor(fl, fn)
         c_all, main_all = component_count(fl, False)
         c_act, main_act = component_count(fl, True)
         print(f"[F{fk}] 边 {total} → {kept_edges}（绕行 {rerouted}，门口边保留 {kept_td}"
-              f"，绕行失败保留 {failed}）；骨架绕行 {n_reroute} 段，裁切 {n_clip} 段，推入走道 {n_shift} 段")
+              f"，绕行失败保留 {failed}）；骨架绕行 {n_reroute} 段，裁切 {n_clip} 段，推入走道 {n_shift} 段，补充 {n_fill} 段")
         print(f"      全边连通分量 {c_all}（主 {main_all}）  可导航连通分量 {c_act}（主 {main_act}）")
 
     out = Path(args.output) if args.output else path
