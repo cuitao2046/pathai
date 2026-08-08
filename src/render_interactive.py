@@ -1791,6 +1791,10 @@ function edgeAllowed(e, mode) {
 
 function dijkstra(startId, endId, mode) {
   if (!PATH_GRAPH) return null;
+  // 路径中间节点白名单：只允许公共空间(intersection)与楼梯/电梯相关
+  // (facility/facility_entrance)。房间(room)与普通门(doorway)不得作为
+  // 中转——否则会把房间内部当捷径(穿合班教室)或把门口当路网节点。
+  var MID_TYPES = { intersection: 1, facility: 1, facility_entrance: 1 };
   var adj = {};
   (PATH_GRAPH.edges || []).forEach(function(e) {
     if (!edgeAllowed(e, mode)) return;
@@ -1811,6 +1815,11 @@ function dijkstra(startId, endId, mode) {
     var d = cur[0], u = cur[1];
     if (d !== dist[u]) continue;
     if (u === endId) break;
+    // 中间节点白名单：房间/普通门不得作为中转（房间穿墙、门口非路网）。
+    if (u !== startId && u !== endId) {
+      var _ut = PATH_GRAPH.nodes[u] && PATH_GRAPH.nodes[u].type;
+      if (!MID_TYPES[_ut]) continue;
+    }
     var nbrs = adj[u] || [];
     for (var i = 0; i < nbrs.length; i++) {
       var nb = nbrs[i];
