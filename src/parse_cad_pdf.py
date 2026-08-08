@@ -53,6 +53,33 @@ RESULT_DIR = PROJECT_ROOT / "result"
 PDF_F1 = str(PROJECT_ROOT / "A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf")
 PDF_F2 = str(PROJECT_ROOT / "A20-003-II-初中学部 1# 教学楼二层平面图-A0_BIAD-无签名.pdf")
 OUT_GEOJSON = str(RESULT_DIR / "school_building_01_map_v9.geojson")
+# 手绘骨架 JSON：由 src/import_manual_skeleton.py 导出。存在时优先于自动中轴骨架，
+# 仅替代 TI 节点 / TI-TI 边 / 骨架线；TR/TD/TF/TEN 仍自动生成并挂接到手动 TI。
+MANUAL_SKELETON_PATH = str(RESULT_DIR / "skeleton_manual_parsed.json")
+MANUAL_SKELETON = None  # None=未加载; {} = 无(文件不存在/被关闭); dict=已加载
+
+
+def _load_manual_skeleton():
+    """按楼层读取手绘骨架 JSON；文件不存在则返回空 dict（视为无手动骨架）。
+
+    仅在文件存在时启用「手动骨架优先于自动中轴骨架」的生成路径。
+    """
+    global MANUAL_SKELETON
+    if MANUAL_SKELETON is not None:
+        return MANUAL_SKELETON
+    p = Path(MANUAL_SKELETON_PATH)
+    if p.exists():
+        try:
+            MANUAL_SKELETON = json.loads(p.read_text(encoding="utf-8"))
+            print(f"[manual-skeleton] 已加载手绘骨架: {MANUAL_SKELETON_PATH} "
+                  f"(楼层: {list(MANUAL_SKELETON.keys())})")
+        except Exception as e:
+            print(f"[WARN] 手绘骨架 JSON 解析失败，回退自动骨架: {e}")
+            MANUAL_SKELETON = {}
+    else:
+        print(f"[manual-skeleton] 未找到 {MANUAL_SKELETON_PATH}，使用自动中轴骨架")
+        MANUAL_SKELETON = {}
+    return MANUAL_SKELETON
 
 # 比例尺校准：轴网 8400mm = 158.8pt（AXIS 层间距众数），
 # 与窗编号 M2GW5924(5900mm)=111.5pt 互证。v7 的 0.0644 偏大 22%，已弃用。
@@ -3771,6 +3798,7 @@ def build_geojson(f1, f2):
                     extra_nodes=extra_nodes,
                     resolution=SKELETON_RESOLUTION,
                     obj_type=OBJ_TYPE,
+                    manual_skeleton=_load_manual_skeleton().get(str(floor_no)),
                 )
                 nodes = topo["nodes"]
                 edges = topo["edges"]
@@ -3920,11 +3948,17 @@ def main(argv=None):
                     default=None, help="启用中轴骨架拓扑（默认看 USE_SKELETON）")
     ap.add_argument("--no-skeleton", dest="no_skeleton", action="store_true",
                     help="禁用骨架拓扑，使用质心最近邻")
+    ap.add_argument("--no-manual-skeleton", dest="no_manual_skeleton",
+                    action="store_true",
+                    help="忽略手绘骨架 JSON，强制走自动中轴骨架")
     args = ap.parse_args(argv)
     if args.no_skeleton:
         USE_SKELETON = False
     elif args.use_skeleton:
         USE_SKELETON = True
+    if args.no_manual_skeleton:
+        global MANUAL_SKELETON
+        MANUAL_SKELETON = {}
 
     f1 = parse_floor(PDF_F1, 1)
     f2 = parse_floor(PDF_F2, 2)

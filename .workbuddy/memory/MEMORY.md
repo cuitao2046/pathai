@@ -13,7 +13,7 @@
 - `merge_manual_edges.py`：把渲染图中手动编辑/添加的拓扑边合并回 GeoJSON。
 - `generate_fingerprint_grid.py`：指纹采集网格生成模块(指南§八) + 渲染图层。
 - `export_skeleton_template.py`：导出 SVG 模板用于手动标注走廊中轴骨架(坐标系统对齐渲染页)。
-- `import_manual_skeleton.py`：导入手动标注骨架(SVG 坐标系统)。**关键约定**：实际导航拓扑由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology` 生成，**不是**本脚本；本脚本仅用于「手工骨架覆盖」工作流。2026-08-09 重大修复：① 解析新增红色 `<path>`(相对 m/c 命令 + 贝塞尔采样 + RDP 抽稀，旧 `_path_to_points` 只读首控制点且忽略相对命令，连廊 path 完全漏解析)；② 手动线端点 `snap_tol=0.8m` 吸附既有 TI(避免坐标重合 id 不同的幽灵节点)；③ `--apply` 内新增**缺口缝合**：同层内分属不同连通分量且 <2m 的 TI 自动补边(手绘端点常留 0.5–0.7m 小缺口)。重导前务必先从干净自动拓扑(无手动骨架污染)重置 geojson，否则旧坏 apply 的幽灵 TI 会被再次吸附。
+- `import_manual_skeleton.py`：导入手动标注骨架(SVG 坐标系统)。**关键约定**：实际导航拓扑由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology` 生成，**不是**本脚本；本脚本仅用于「手工骨架覆盖」工作流。2026-08-09 重大修复：① 解析新增红色 `<path>`(相对 m/c 命令 + 贝塞尔采样 + RDP 抽稀，旧 `_path_to_points` 只读首控制点且忽略相对命令，连廊 path 完全漏解析)；② 手动线端点 `snap_tol=0.8m` 吸附既有 TI(避免坐标重合 id 不同的幽灵节点)；③ `--apply` 内新增**缺口缝合**：同层内分属不同连通分量且 <2m 的 TI 自动补边(手绘端点常留 0.5–0.7m 小缺口)。重导前务必先从干净自动拓扑(无手动骨架污染)重置 geojson，否则旧坏 apply 的幽灵 TI 会被再次吸附。该脚本输出 `result/skeleton_manual_parsed.json`(per-floor 的 ti_nodes/edges/skeleton_features)，**已提交入库**，作为 `build_skeleton_topology` 的「手动骨架优先」输入。
 - `apply_manual_skeleton.py`：手动标注骨架覆盖自动骨架，重生成渲染图。
 - `apply_room_overrides.py`：房间属性覆盖(手动修正房间类型/归属等)。
 - `fix_crossing_edges.py`：修复拓扑交叉边(穿墙/穿管井边改为绕行)。
@@ -33,6 +33,7 @@
 - 图层：家具层仅 A-METAL-S；A-TECH-SANT 整层剔除。跨层配对按井道编号(II-xx#ST/EL)，几何<3.5m兜底。
 - ⚠️ 合班 `_heban_real_polygon` 陷阱：`cv2.floodFill` 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
 - git：仅 `.workbuddy/memory/` 随仓库同步。⚠️ 编辑 .gitignore 后务必 `git add` 再 commit，否则 merge 中静默丢失。
+- ⚠️ **手动骨架优先(2026-08-09)**：`result/skeleton_manual_parsed.json` 存在时，`build_skeleton_topology(manual_skeleton=...)` 用其 **TI 节点 / TI-TI 边 / 骨架线 直接替代**中轴提取(跳过 medial-axis 栅格化)，TR/TD/TF/TEN 仍自动生成并挂到手动 TI；文件不存在则走自动中轴。F2 手动骨架若留孤岛，pipeline 的连通性保障(section 7 软桥)会补 1 条桥边使其 100% 连通。`parse_cad_pdf.py` 自动检测该文件；`--no-manual-skeleton` 强制自动。验证脚本 `debug/verify_manual_skeleton_mode.py`(合成输入+手动 JSON 驱动，无需 CAD)。
 
 ## 提交工作流
 当前仅 master 分支(feature 分支已删并合入 master)。阶段性改动直接 commit 并 push origin master(fast-forward，禁 --force)。范围 src/代码、debug/脚本、result/产物、.workbuddy/memory/更新；临时脚本先删再提交。
@@ -65,6 +66,7 @@
 | 2026-08-07 | 走廊/教室多边形重叠修复 | 红圈公共区域无骨架/指纹：合班教室北侧走廊被 F1-CR-0048 corridor 多边形吞入，walkable 又把教室挖空成洞 | 新增 `_resolve_open_closed_overlaps`：开放空间多边形与封闭房间取差，保留最大块；重跑指纹网格 | F1-CR-0048 565.5→192.6m²；红圈中心进入 walkable，3m 内指纹点 0→7；F1 拓扑 347→317 节点。validate PASS |
 | 2026-08-05 | 合班教室真实闭合墙体识别 | 合班教室走廊侧大开口未被识别成门→自由空间漏进走廊→build_rooms 不产闭合物→3m 占位方块 | `_heban_real_polygon`：局部 18m×18m 墙图，多档椭圆核(1.2~6.0m)MORPH_CLOSE 桥合开口→标签点 floodFill→轮廓→approxPolyDP。完全局部，不修改全局 all_segs | F1-RM-0050 得 190.4m²(16.5×13.0m, 9 顶点, classroom)，替换 3m 占位。⚠️ 陷阱：cv2.floodFill 写图像非 mask |
 | 2026-08-08 | 骨架手动标注工作流 + 导航绕行修复 | 自动骨架在狭窄走廊/管井通道缺失，导航出现穿墙/贴墙边；门节点无编号不易定位 | 新增骨架手动标注闭环：`export_skeleton_template.py` 导出 SVG 模板→手动标注→`import_manual_skeleton.py` 导入→`apply_manual_skeleton.py` 覆盖自动骨架并重生成渲染图；`fix_crossing_edges.py` 把穿墙/穿管井的 TD→TI 边改为走道可见图绕行；导航中间节点白名单化 + TR→TD 归属校验 + 卫生间穿墙例外 + 管井不参与导航；`generate_fingerprint_grid.py` 生成指纹采集网格；渲染图门节点显示编号 TD-xxxx | src 扩至 12 个脚本；geojson/HTML 随码重生成(12f051f)。路径更贴合走廊中线，连通覆盖 100% |
+| 2026-08-09 | 手动骨架 JSON 入库 + pipeline 优先逻辑 | 手动骨架每次靠 `import_manual_skeleton.py --apply` 手工覆盖 geojson，不可复现；需让「有 JSON 用 JSON、无则自动」 | `build_skeleton_topology` 增 `manual_skeleton` 参数：`import_manual_skeleton.py` 导出的 `result/skeleton_manual_parsed.json`(per-floor ti_nodes/edges/skeleton_features) 存在时替代中轴提取(TI/TI-TI/骨架线直接取用，跳过 medial-axis)，TR/TD/TF/TEN 仍统一生成并挂到手动 TI；`parse_cad_pdf.py` 自动检测该文件传入，`--no-manual-skeleton` 强制自动 | 手动骨架成为确定性可复现输入；F1/F2 TI 精确沿用(63/64)，F2 孤岛上补 1 桥边保 100% 连通；`debug/verify_manual_skeleton_mode.py` 验证通过 |
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层。

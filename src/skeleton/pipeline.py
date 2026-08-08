@@ -11,7 +11,7 @@ import math
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import networkx as nx
-from shapely.geometry import LineString, Point, mapping
+from shapely.geometry import LineString, Point, mapping, shape
 from shapely.ops import unary_union
 
 from .medial_axis import (
@@ -347,7 +347,20 @@ def build_skeleton_topology(
     extra_nodes: Optional[list] = None,
     resolution: float = DEFAULT_RESOLUTION,
     obj_type: Optional[dict] = None,
+    manual_skeleton: Optional[dict] = None,
 ) -> dict:
+    """T8 替代逻辑：基于骨架生成 topology nodes/edges。
+
+    rooms: parse_cad_pdf 的 rooms（含 roomType, centroid_m, id, polygon 可选）
+    doors: [{center_m, kind, width_pt, rooms}, ...]
+    stairs/elevators: GeoJSON-like features with properties.centroid
+    walkable_by_room_id: room_id → Shapely walkable poly (meters)
+    manual_skeleton: 可选，按楼层从「手绘骨架 JSON」传入
+        {"ti_nodes":[...], "edges":[...], "skeleton_features":[...]}。
+        若提供，则 TI 节点 / TI-TI 边 / 骨架线 直接取自 JSON，**跳过中轴提取**；
+        TR/TD/TF/TEN 节点及挂接边仍按下方统一逻辑生成（门/设施挂到手动 TI）。
+        若省略，则走自动中轴骨架生成。
+    """
     """
     T8 替代逻辑：基于骨架生成 topology nodes/edges。
 
@@ -402,9 +415,19 @@ def build_skeleton_topology(
         if c:
             fac_centers.append((float(c[0]), float(c[1])))
 
-    sk = build_skeleton_for_walkables(
-        walkables, door_centers, fac_centers, resolution=resolution
-    )
+    # 手动骨架覆盖：本层 JSON 存在时，TI 节点 / TI-TI 边 / 骨架线 直接取自 JSON，
+    # 跳过中轴提取（省去整层 walkable 栅格化）；TR/TD/TF/TEN 节点及挂接边仍统一生成。
+    manual_ti, manual_ti_edges, manual_skel_features = [], [], []
+    if manual_skeleton is not None:
+        manual_ti = manual_skeleton.get("ti_nodes") or []
+        manual_ti_edges = manual_skeleton.get("edges") or []
+        manual_skel_features = manual_skeleton.get("skeleton_features") or []
+        sk = {"graph": nx.Graph(), "lines": [], "junctions": [],
+              "terminals": [], "key_nodes": [], "empty": True}
+    else:
+        sk = build_skeleton_for_walkables(
+            walkables, door_centers, fac_centers, resolution=resolution
+        )
 
     nodes = []
     edges = []
@@ -453,40 +476,53 @@ def build_skeleton_topology(
     ti_of_gn = {}  # graph node → TI id
     # 优先用收缩后的 key_nodes；否则用 junctions+terminals
     key_list = sk.get("key_nodes") or []
-    if not key_list and G.number_of_nodes():
-        key_list = [
-            (n, G.nodes[n]["x"], G.nodes[n]["y"])
-            for n in G.nodes() if G.degree(n) != 2
-        ]
-    if not key_list:
-        # 兜底：junctions / terminals 坐标
-        for i, (x, y) in enumerate(sk["junctions"] or sk["terminals"][:8]):
-            nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
-            ti_ids.append(nid)
-            nodes.append({
-                "id": nid,
-                "type": "intersection",
-                "roomType": "corridor",
-                "label": f"交叉口{i + 1}",
-                "coordinates": [round(x, 3), round(y, 3)],
-            })
+    skel_lines = []
+
+    if manual_skeleton is not None:
+        # 手动骨架：TI 节点原样取用（type/coordinates/属性均保留）；
+        # 无图结构 → TD↔TI 与门投影改走欧氏最近分支。
+        for n in manual_ti:
+            ti_ids.append(n["id"])
+            nodes.append(dict(n))
+        G = nx.Graph()
+        ti_of_gn = {}
+        skel_lines = [shape(f["geometry"]) for f in manual_skel_features]
     else:
-        for i, (gn, x, y) in enumerate(key_list):
-            nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
-            ti_ids.append(nid)
-            ti_of_gn[gn] = nid
-            nodes.append({
-                "id": nid,
-                "type": "intersection",
-                "roomType": "corridor",
-                "label": f"交叉口{i + 1}",
-                "coordinates": [round(float(x), 3), round(float(y), 3)],
-            })
+        if not key_list and G.number_of_nodes():
+            key_list = [
+                (n, G.nodes[n]["x"], G.nodes[n]["y"])
+                for n in G.nodes() if G.degree(n) != 2
+            ]
+        if not key_list:
+            # 兜底：junctions / terminals 坐标
+            for i, (x, y) in enumerate(sk["junctions"] or sk["terminals"][:8]):
+                nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
+                ti_ids.append(nid)
+                nodes.append({
+                    "id": nid,
+                    "type": "intersection",
+                    "roomType": "corridor",
+                    "label": f"交叉口{i + 1}",
+                    "coordinates": [round(x, 3), round(y, 3)],
+                })
+        else:
+            for i, (gn, x, y) in enumerate(key_list):
+                nid = _obj_id(floor_no, obj_type["topo_intersection"], i + 1)
+                ti_ids.append(nid)
+                ti_of_gn[gn] = nid
+                nodes.append({
+                    "id": nid,
+                    "type": "intersection",
+                    "roomType": "corridor",
+                    "label": f"交叉口{i + 1}",
+                    "coordinates": [round(float(x), 3), round(float(y), 3)],
+                })
+        skel_lines = sk["lines"]
 
     # ---------- TD: 门投影到骨架 + 二次合并（投影重合的门） ----------
     door_projs = project_doors_to_skeleton(
-        door_centers, sk["lines"], max_dist_m=10.0
-    ) if sk["lines"] else []
+        door_centers, skel_lines, max_dist_m=10.0
+    ) if skel_lines else []
     # 二次合并：以投影后最终坐标为依据（阈值 1.0m），吸收「不同门但投影到同一
     # 骨架点」造成的重叠 TD 节点（如同一房间多个邻近入口）。合并时 center_m
     # 被改写为最终投影坐标，下方直接采用。
@@ -629,7 +665,40 @@ def build_skeleton_topology(
     G = sk["graph"]
     linked = set()
     n_adj = 0
-    if G.number_of_edges() and ti_of_gn:
+    if manual_skeleton is not None:
+        # 手动骨架：TI-TI 边直接取自 JSON（保留其 accessibility/risk 等属性）
+        ti_id_set = set(ti_ids)
+        max_manual_seq = 0
+        for e in manual_ti_edges:
+            a, b = e.get("from"), e.get("to")
+            if a not in ti_id_set or b not in ti_id_set or a == b:
+                continue
+            key = tuple(sorted((a, b)))
+            if key in linked:
+                continue
+            linked.add(key)
+            try:
+                seqn = int(e.get("id", "").rsplit("-", 1)[-1])
+                max_manual_seq = max(max_manual_seq, seqn)
+            except (ValueError, AttributeError, TypeError):
+                pass
+            edges.append({
+                "id": e.get("id"),
+                "from": a, "to": b,
+                "distance": round(float(e.get("distance") or 0.0), 2),
+                "estimatedTime": round(float(
+                    e.get("estimatedTime") or
+                    (e.get("distance") or 0.0) / BLIND_WALK_SPEED), 1),
+                "accessibilityLevel": e.get("accessibilityLevel", 0),
+                "riskLevel": e.get("riskLevel", 0.5),
+                "walkable": e.get("walkable", True),
+                "wheelchairAccessible": e.get("wheelchairAccessible", True),
+                "blindAccessible": e.get("blindAccessible", True),
+            })
+            n_adj += 1
+        # 推进编号，避免后续 add_edge 与手动边 ID 冲突
+        edge_seq[0] = max(edge_seq[0], max_manual_seq)
+    elif G.number_of_edges() and ti_of_gn:
         for ua, ub, edata in G.edges(data=True):
             ta = ti_of_gn.get(ua)
             tb = ti_of_gn.get(ub)
@@ -705,14 +774,17 @@ def build_skeleton_topology(
             add_edge(en["id"], best_dn, best_d, a_level=0, r_level=5)
 
     # skeleton GeoJSON features
-    skel_features = []
-    for i, line in enumerate(sk["lines"]):
-        skel_features.append({
-            "type": "Feature",
-            "id": _obj_id(floor_no, "SK", i + 1),
-            "geometry": mapping(line),
-            "properties": {"type": "skeleton", "length_m": round(line.length, 2)},
-        })
+    if manual_skeleton is not None:
+        skel_features = [dict(f) for f in manual_skel_features]
+    else:
+        skel_features = []
+        for i, line in enumerate(sk["lines"]):
+            skel_features.append({
+                "type": "Feature",
+                "id": _obj_id(floor_no, "SK", i + 1),
+                "geometry": mapping(line),
+                "properties": {"type": "skeleton", "length_m": round(line.length, 2)},
+            })
 
     # 6) 孤立节点兜底：TR/TD/TF/TEN/TI 度为 0 时挂到最近可达节点
     degree = {}
@@ -824,9 +896,10 @@ def build_skeleton_topology(
         "edges": edges,
         "skeleton_features": skel_features,
         "skeleton_meta": {
-            "junction_count": len(sk["junctions"]),
-            "terminal_count": len(sk["terminals"]),
-            "segment_count": len(sk["lines"]),
-            "empty": sk["empty"],
+            "junction_count": len(manual_ti) if manual_skeleton is not None else len(sk["junctions"]),
+            "terminal_count": 0 if manual_skeleton is not None else len(sk["terminals"]),
+            "segment_count": len(manual_skel_features) if manual_skeleton is not None else len(sk["lines"]),
+            "empty": False if manual_skeleton is not None else sk["empty"],
+            "manual": manual_skeleton is not None,
         },
     }
