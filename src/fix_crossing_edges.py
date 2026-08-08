@@ -490,8 +490,43 @@ def process_floor(fl, floor_no):
         hit = edge_crosses_room(a["coordinates"], b["coordinates"], rooms)
         if not hit:
             new_edges.append(e); kept += 1; continue
+        # TD/TEN/TF 端点：区分两类
+        #  - TD→TR（房间中心→门口）：房间内部连接，保留
+        #  - TD→TI/TEN/TF（门口→走道/楼梯中心）且穿过房间：会构成误导性
+        #    「穿越管井/楼梯间」的导航路线，必须绕行（与拓扑公共边同等处理）
         if a.get("type") == "doorway" or b.get("type") == "doorway":
-            new_edges.append(e); kept_td += 1; continue
+            if a.get("type") == "room" or b.get("type") == "room":
+                new_edges.append(e); kept_td += 1; continue
+            # TD/TF→TI/TEN：穿过房间则绕行
+            # 走非绕行分支
+        if (a.get("type") == "doorway" or b.get("type") == "doorway"):
+            # 上面的 if (TD→TR) 已 continue；这里处理 TD/TF→TI/TEN 穿墙
+            wps = reroute_via_walkable(a["coordinates"], b["coordinates"],
+                                       W_buf, walk_verts, rooms)
+            if not wps:
+                new_edges.append(e); kept_td += 1; continue
+            wps = smooth_into_corridor(wps, W, rooms)
+            chain = [a["coordinates"]] + wps + [b["coordinates"]]
+            prev = e["from"]
+            for k, wp in enumerate(wps):
+                wi += 1
+                nid = f"{floor_no}-TWI-{wi:03d}"
+                new_nodes.append({
+                    "id": nid, "type": "intersection", "floor": floor_no,
+                    "coordinates": [round(wp[0], 3), round(wp[1], 3)],
+                    "public": True, "accessible": True,
+                    "riskLevel": e.get("riskLevel", 1),
+                })
+                d = math.hypot(chain[k][0] - wp[0], chain[k][1] - wp[1])
+                seq += 1
+                new_edges.append(_mk_edge(seq, prev, nid, d, e))
+                prev = nid
+            d = math.hypot(chain[-2][0] - b["coordinates"][0],
+                           chain[-2][1] - b["coordinates"][1])
+            seq += 1
+            new_edges.append(_mk_edge(seq, prev, e["to"], d, e))
+            rerouted += 1; continue
+        # 其他公共边穿墙：绕行
         wps = reroute_via_walkable(a["coordinates"], b["coordinates"],
                                    W_buf, walk_verts, rooms)
         if not wps:
