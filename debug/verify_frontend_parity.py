@@ -18,16 +18,37 @@ rooms_f1 = [nid for nid, n in g.nodes.items() if n["type"] == "room" and n["floo
 rooms_f2 = [nid for nid, n in g.nodes.items() if n["type"] == "room" and n["floor"] == 2]
 fac_f1 = [nid for nid, n in g.nodes.items() if n["type"] == "facility" and n["floor"] == 1]
 
+def pick_pair(list_a, list_b, mode="normal", min_len=5):
+    """挑一对在后端「真实可达」且路径足够长的节点。
+
+    直接取 rooms[0]/rooms[1] 是陷阱：部分房间（无门/门洞卫生间）在规则约束下
+    本就不可达，此时前后端同为 None 也会「通过」，断言退化为空转。
+    """
+    for a in list_a:
+        for b in list_b:
+            if a == b:
+                continue
+            sp = g.shortest_path(a, b, mode)
+            if sp and len(sp["path"]) >= min_len:
+                return a, b
+    return None, None
+
 queries = []
-if len(rooms_f1) >= 2:
-    queries.append((rooms_f1[0], rooms_f1[1], "normal"))      # 同层 room->room
-    queries.append((rooms_f1[0], rooms_f1[1], "blind"))        # 同层盲模式
-if rooms_f1 and rooms_f2:
-    queries.append((rooms_f1[0], rooms_f2[0], "normal"))       # 跨层 normal
-    queries.append((rooms_f1[0], rooms_f2[0], "blind"))        # 跨层 blind（必须电梯）
-    queries.append((rooms_f1[0], rooms_f2[0], "wheelchair"))   # 跨层轮椅
-if fac_f1 and rooms_f1:
-    queries.append((rooms_f1[0], fac_f1[0], "normal"))         # 同层 room->facility（终点设施允许）
+sf_a, sf_b = pick_pair(rooms_f1, rooms_f1, "normal")
+if sf_a:
+    queries.append((sf_a, sf_b, "normal"))                     # 同层 room->room
+    queries.append((sf_a, sf_b, "blind"))                      # 同层盲模式
+cf_a, cf_b = pick_pair(rooms_f1, rooms_f2, "blind")
+if cf_a:
+    queries.append((cf_a, cf_b, "normal"))                     # 跨层 normal
+    queries.append((cf_a, cf_b, "blind"))                      # 跨层 blind（必须电梯）
+    queries.append((cf_a, cf_b, "wheelchair"))                 # 跨层轮椅
+fa, fb = pick_pair(rooms_f1, fac_f1, "normal", min_len=4)
+if fa:
+    queries.append((fa, fb, "normal"))                         # 同层 room->facility（终点设施允许）
+# 负例：已知在规则下不可达的房间对（前端也必须判为不可达）
+if len(rooms_f1) >= 2 and g.shortest_path(rooms_f1[0], rooms_f1[1], "normal") is None:
+    queries.append((rooms_f1[0], rooms_f1[1], "normal"))
 
 expected = []
 for s, e, mode in queries:
@@ -43,6 +64,13 @@ for s, e, mode in queries:
         "used_elevator": sp["used_elevator"], "used_stair": sp["used_stair"],
     })
 
+# 守卫：若可达用例太少，说明选点退化，断言不再有意义
+n_reach = sum(1 for x in expected if x["reachable"])
+print(f"用例 {len(expected)} 条（可达 {n_reach} / 不可达 {len(expected)-n_reach}）")
+if n_reach < 4:
+    print(f"FAIL 守卫：可达用例仅 {n_reach} 条，测试会退化为空转")
+    sys.exit(1)
+
 # 2) 抽取前端 PATH_GRAPH 与 dijkstra 脚本
 html = open(HTML, encoding="utf-8").read()
 pg = json.loads(re.search(r'<script type="application/json" id="path-graph-data">(.*?)</script>', html, re.S).group(1))
@@ -54,7 +82,9 @@ for b in re.findall(r"<script[^>]*>(.*?)</script>", html, re.S):
 # 3) 构造 Node 测试
 harness = """
 // ---- DOM 桩 ----
-function _stubEl(){ return { setAttribute(){}, appendChild(){}, classList:{add(){},remove(){},contains(){return false;}}, addEventListener(){}, getAttribute(){return null;}, style:{}, innerHTML:"", textContent:"" }; }
+// textContent 用 "{}"：页面脚本会 JSON.parse(#path-graph-data / #full-geojson-data)，
+// 给空串会在 stderr 刷出误导性的 SyntaxError（虽被 catch）。
+function _stubEl(){ return { setAttribute(){}, appendChild(){}, classList:{add(){},remove(){},contains(){return false;}}, addEventListener(){}, getAttribute(){return null;}, style:{}, innerHTML:"", textContent:"{}" }; }
 global.document = { getElementById:()=>_stubEl(), querySelector:()=>null, querySelectorAll:()=>[], createElement:()=>_stubEl(), createElementNS:()=>_stubEl(), addEventListener:()=>{} };
 global.wrapper = { addEventListener:()=>{} };
 """

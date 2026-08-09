@@ -651,11 +651,11 @@ def main():
 <title>室内盲导 · 交互式楼层可视化 v9</title>
 <style>
 body {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f8f9fa; margin: 0; padding: 16px; color: #333; }}
-.header {{ max-width: 1280px; margin: 0 auto 12px; }}
+.header {{ max-width: 1400px; margin: 0 auto 12px; }}
 .header h2 {{ margin: 0 0 4px; font-size: 20px; }}
 .header .meta {{ color: #888; font-size: 12px; line-height: 1.6; }}
 .header .meta .tag {{ display: inline-block; background: #E3F2FD; color: #1565C0; padding: 1px 8px; border-radius: 3px; font-weight: bold; }}
-#app {{ max-width: 1280px; margin: 0 auto; display: flex; gap: 12px; align-items: flex-start; }}
+#app {{ max-width: 1400px; margin: 0 auto; display: flex; gap: 12px; align-items: flex-start; }}
 #left {{ flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }}
 #svg-container {{ position: relative; border: 1px solid #ddd; background: #fefefe; overflow: hidden; height: calc(100vh - 240px); min-height: 480px; border-radius: 6px; }}
 #svg-wrapper {{ width: 100%; height: 100%; overflow: hidden; cursor: grab; }}
@@ -727,9 +727,11 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 .layer-controls .bulk-btn:hover {{ background: #E3F2FD; }}
 .layer-controls .bulk-btn.primary {{ background: #1565C0; color: #fff; }}
 .layer-controls .bulk-btn.primary:hover {{ background: #0D47A1; }}
-#legend-panel {{ width: 210px; flex: 0 0 210px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; font-size: 12px; max-height: calc(100vh - 200px); overflow-y: auto; align-self: flex-start; position: sticky; top: 12px; }}
+/* 图例：移到「要素详情」下方，占据左栏整宽，内部自适应多列 */
+#legend-panel {{ background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; font-size: 12px; }}
 #legend-panel h4 {{ margin: 0 0 8px; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 4px; }}
-.lg-sec {{ margin-bottom: 8px; }}
+#legend-panel .lg-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 20px; align-items: start; }}
+.lg-sec {{ margin-bottom: 8px; break-inside: avoid; }}
 .lg-title {{ font-weight: bold; color: #555; margin-bottom: 3px; font-size: 11px; }}
 .lg-item {{ display: flex; align-items: center; margin: 2px 0; line-height: 1.5; font-size: 11px; }}
 .lg-sw {{ width: 14px; height: 14px; margin-right: 6px; flex-shrink: 0; border-radius: 2px; border: 1px solid #ccc; }}
@@ -742,6 +744,28 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 #detail .badge {{ display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: bold; }}
 .badge.ok {{ background: #E8F5E9; color: #2E7D32; }}
 .badge.no {{ background: #FFEBEE; color: #C62828; }}
+/* ---------- 右栏：路径规划完整路径列表 ---------- */
+#route-panel {{ width: 288px; flex: 0 0 288px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 12px 10px; font-size: 12px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; align-self: flex-start; position: sticky; top: 12px; }}
+#route-panel h4 {{ margin: 0 0 8px; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }}
+#route-panel h4 .rp-mode {{ font-size: 11px; font-weight: normal; color: #fff; background: #1565C0; border-radius: 3px; padding: 1px 7px; }}
+#route-summary {{ font-size: 12px; line-height: 1.7; margin-bottom: 8px; }}
+#route-summary .rp-od {{ color: #333; font-weight: bold; word-break: break-all; }}
+#route-summary .rp-kv {{ display: flex; justify-content: space-between; color: #666; border-bottom: 1px dashed #eee; padding: 2px 0; }}
+#route-summary .rp-kv b {{ color: #AD1457; }}
+#route-summary .rp-note {{ margin-top: 5px; background: #FFF8E1; border: 1px solid #FFE082; color: #8D6E63; border-radius: 4px; padding: 4px 7px; line-height: 1.5; }}
+.rp-empty {{ color: #999; line-height: 1.6; }}
+#route-steps {{ list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }}
+#route-steps li {{ display: flex; gap: 7px; padding: 5px 4px; border-radius: 4px; cursor: pointer; border-bottom: 1px solid #f4f4f4; }}
+#route-steps li:hover {{ background: #FCE4EC; }}
+#route-steps li.active {{ background: #F8BBD0; }}
+.rp-idx {{ flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 10px; line-height: 18px; text-align: center; font-weight: bold; }}
+.rp-body {{ flex: 1 1 auto; min-width: 0; }}
+.rp-name {{ color: #222; font-weight: bold; line-height: 1.4; word-break: break-all; }}
+.rp-meta {{ color: #888; font-size: 11px; line-height: 1.5; }}
+.rp-tag {{ display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 10px; margin-right: 4px; color: #fff; }}
+.rp-seg {{ flex: 0 0 auto; text-align: right; color: #AD1457; font-size: 11px; white-space: nowrap; }}
+.rp-seg .rp-cum {{ display: block; color: #aaa; font-size: 10px; }}
+.rp-xf {{ color: #E53935; font-weight: bold; }}
 </style></head><body>
 <div class="header">
   <h2>初中学部1#教学楼 · 交互式楼层图 <span class="tag">v9</span></h2>
@@ -1552,9 +1576,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 </div><!-- /svg-wrapper -->
 </div><!-- /svg-container -->
 <div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；再次点击同一要素可取消选中。点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
-</div><!-- /left -->
 <div id="legend-panel">
   <h4>图例说明 (v9)</h4>
+  <div class="lg-grid">
   <div class="lg-sec"><div class="lg-title">建筑要素</div>
     <div class="lg-item"><div class="lg-sw" style="background:#333"></div>墙体</div>
     <div class="lg-item"><div class="lg-sw line" style="--c:#81D4FA"></div>窗户段</div>
@@ -1586,7 +1610,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <div class="lg-sec"><div class="lg-title">风险</div>
     <div class="lg-item"><div class="lg-sw" style="background:#F44336;border-radius:50%"></div>风险点</div>
   </div>
+  </div><!-- /lg-grid -->
 </div><!-- /legend-panel -->
+</div><!-- /left -->
+<div id="route-panel">
+  <h4><span>路径规划 · 完整路径</span><span class="rp-mode" id="rp-mode">普通</span></h4>
+  <div id="route-summary" class="rp-empty">尚未规划路径。<br>点上方「选点导航」后依次点击起点、终点拓扑节点，这里会列出完整途经节点清单（可点击定位）。</div>
+  <ol id="route-steps"></ol>
+</div><!-- /route-panel -->
 </div><!-- /app -->
 <script>
 var svg = document.getElementById('main-svg');
@@ -1888,6 +1919,7 @@ function togglePathMode() {
     if (hint) hint.textContent = '请点击起点拓扑节点…';
     pathStart = pathEnd = null;
     clearPathVisual();
+    resetRoutePanel();
   } else {
     if (hint) hint.textContent = '开启后依次点击两个拓扑节点（起点→终点）';
   }
@@ -1908,6 +1940,7 @@ function clearPath() {
   if (r) r.textContent = '';
   var h = document.getElementById('path-hint');
   if (h) h.textContent = pathMode ? '请点击起点拓扑节点…' : '开启后依次点击两个拓扑节点（起点→终点）';
+  resetRoutePanel();
 }
 
 function edgeAllowed(e, mode) {
@@ -2114,7 +2147,159 @@ function drawPath(result) {
   });
 }
 
+// ---- 右栏：路径规划「完整路径列表」 ----
+var RP_TYPE_META = {
+  room: { name: '房间', color: '#E67E22' },
+  doorway: { name: '门口', color: '#C0392B' },
+  intersection: { name: '交叉口', color: '#27AE60' },
+  facility: { name: '设施', color: '#8E44AD' },
+  facility_entrance: { name: '设施接入', color: '#16A085' }
+};
+var RP_FAC_NAME = { staircase: '楼梯', elevator: '电梯', entrance: '出入口', escalator: '扶梯' };
+var RP_DOOR_NAME = { swing: '普通门', fire: '防火门', opening: '门洞' };
+var RP_MODE_NAME = { normal: '普通', blind: '视障', wheelchair: '轮椅' };
+var RP_EMPTY_HTML = '尚未规划路径。<br>点上方「选点导航」后依次点击起点、终点拓扑节点，这里会列出完整途经节点清单（可点击定位）。';
+var _rpEdgeMap = null;
+
+function rpEdgeMap() {
+  if (_rpEdgeMap) return _rpEdgeMap;
+  _rpEdgeMap = {};
+  ((PATH_GRAPH && PATH_GRAPH.edges) || []).forEach(function(e) { _rpEdgeMap[e.id] = e; });
+  return _rpEdgeMap;
+}
+
+function rpEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function rpSetMode(mode) {
+  var el = document.getElementById('rp-mode');
+  if (el) el.textContent = RP_MODE_NAME[mode] || mode;
+}
+
+function resetRoutePanel() {
+  var listEl = document.getElementById('route-steps');
+  if (listEl) listEl.innerHTML = '';
+  var sumEl = document.getElementById('route-summary');
+  if (sumEl) {
+    sumEl.className = 'rp-empty';
+    sumEl.innerHTML = RP_EMPTY_HTML;
+  }
+}
+
+// 把视图平移到某个节点（保持当前缩放），用于在右栏点击列表项时定位
+function focusRouteNode(id) {
+  var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
+  if (!n) return;
+  var rect = wrapper.getBoundingClientRect();
+  translateX = rect.width / 2 - n.x * scale;
+  translateY = rect.height / 2 - n.y * scale;
+  applyTransform();
+}
+
+function renderRouteList(result, mode, startId, endId) {
+  rpSetMode(mode);
+  var sumEl = document.getElementById('route-summary');
+  var listEl = document.getElementById('route-steps');
+  if (!sumEl || !listEl) return;
+  listEl.innerHTML = '';
+  var sNode = (PATH_GRAPH.nodes[startId] || {});
+  var eNode = (PATH_GRAPH.nodes[endId] || {});
+  if (!result) {
+    sumEl.className = 'rp-empty';
+    sumEl.innerHTML = '<b style="color:#C62828">不可达</b><br>' +
+      rpEsc(sNode.label || startId) + ' → ' + rpEsc(eNode.label || endId) +
+      '<br>当前模式（' + rpEsc(RP_MODE_NAME[mode] || mode) + '）下无满足导航规则的连通路径。';
+    return;
+  }
+  // 逐段几何距离（取自拓扑边 distance，不含门型惩罚）
+  var em = rpEdgeMap();
+  var segs = [], geo = 0, nXf = 0;
+  for (var i = 0; i < result.edges.length; i++) {
+    var ed = em[result.edges[i]] || {};
+    var dd = Number(ed.distance) || 0;
+    geo += dd;
+    segs.push({ d: dd, cum: geo, e: ed });
+    if (ed.crossFloor) nXf++;
+  }
+  var nDoor = 0;
+  result.nodes.forEach(function(id) {
+    var n = PATH_GRAPH.nodes[id];
+    if (n && n.type === 'doorway') nDoor++;
+  });
+  // ---- 摘要 ----
+  var noteHtml = '';
+  if (result.note === 'door_fallback') {
+    noteHtml = '<div class="rp-note">门回退：房间最佳门未接入路网，已放宽为可用任意附属门。</div>';
+  } else if (result.note === 'wall_fallback') {
+    noteHtml = '<div class="rp-note">桥边回退：两端仅靠穿墙走廊边连通，为保证可达而保留（可通行区数据待修复项）。</div>';
+  }
+  var costHtml = '';
+  if (Math.abs(result.distance - geo) > 0.05) {
+    costHtml = '<div class="rp-kv"><span>规划代价(含门型惩罚)</span><b>' + result.distance.toFixed(2) + '</b></div>';
+  }
+  sumEl.className = '';
+  sumEl.innerHTML =
+    '<div class="rp-od">' + rpEsc(sNode.label || startId) + ' → ' + rpEsc(eNode.label || endId) + '</div>' +
+    '<div class="rp-kv"><span>总长度</span><b>' + geo.toFixed(1) + ' m</b></div>' +
+    '<div class="rp-kv"><span>途经节点</span><b>' + result.nodes.length + ' 个</b></div>' +
+    '<div class="rp-kv"><span>经过门</span><b>' + nDoor + ' 扇</b></div>' +
+    (nXf ? '<div class="rp-kv"><span>跨层段</span><b>' + nXf + ' 段</b></div>' : '') +
+    costHtml + noteHtml;
+  // ---- 逐节点清单 ----
+  var last = result.nodes.length - 1;
+  var html = '';
+  result.nodes.forEach(function(id, idx) {
+    var n = PATH_GRAPH.nodes[id] || {};
+    var meta = RP_TYPE_META[n.type] || { name: n.type || '节点', color: '#607D8B' };
+    var color = (idx === 0) ? '#2E7D32' : (idx === last ? '#C62828' : meta.color);
+    var name = n.label || '';
+    if (!name) {
+      if (n.type === 'doorway') name = RP_DOOR_NAME[n.doorType] || '门口';
+      else if (n.facilityType) name = RP_FAC_NAME[n.facilityType] || meta.name;
+      else name = meta.name;
+    }
+    var bits = [];
+    if (n.type === 'doorway' && n.doorType) bits.push(RP_DOOR_NAME[n.doorType] || n.doorType);
+    if (n.facilityType) bits.push(RP_FAC_NAME[n.facilityType] || n.facilityType);
+    bits.push('F' + (n.floor == null ? '?' : n.floor));
+    bits.push(rpEsc(id));
+    var segHtml;
+    if (idx === 0) {
+      segHtml = '<span class="rp-cum">起点</span>';
+    } else {
+      var sg = segs[idx - 1] || { d: 0, cum: 0, e: {} };
+      var xf = '';
+      if (sg.e.crossFloor) {
+        var fname = RP_FAC_NAME[sg.e.type] || '跨层';
+        xf = '<span class="rp-xf">跨层·' + rpEsc(fname) + '</span><br>';
+      }
+      segHtml = xf + '+' + sg.d.toFixed(1) + ' m<span class="rp-cum">Σ ' + sg.cum.toFixed(1) + ' m</span>';
+    }
+    html += '<li data-nid="' + rpEsc(id) + '" title="点击在图上定位该节点">' +
+      '<span class="rp-idx" style="background:' + color + '">' + (idx + 1) + '</span>' +
+      '<span class="rp-body">' +
+        '<span class="rp-name">' + rpEsc(name) + '</span>' +
+        '<span class="rp-meta"><span class="rp-tag" style="background:' + meta.color + '">' +
+          rpEsc(meta.name) + '</span>' + bits.join(' · ') + '</span>' +
+      '</span>' +
+      '<span class="rp-seg">' + segHtml + '</span>' +
+      '</li>';
+  });
+  listEl.innerHTML = html;
+  Array.prototype.forEach.call(listEl.children, function(li) {
+    li.addEventListener('click', function() {
+      Array.prototype.forEach.call(listEl.children, function(x) { x.classList.remove('active'); });
+      li.classList.add('active');
+      focusRouteNode(li.getAttribute('data-nid'));
+    });
+  });
+}
+
 function recomputePathIfReady() {
+  var mode = (document.getElementById('path-mode-select') || {}).value || 'normal';
+  rpSetMode(mode);
   if (pathStart && pathEnd) {
     runPath(pathStart, pathEnd);
   }
@@ -2130,9 +2315,11 @@ function runPath(startId, endId) {
     clearPathVisual();
     markNodeClass(startId, 'path-start');
     markNodeClass(endId, 'path-end');
+    renderRouteList(null, mode, startId, endId);
     return;
   }
   drawPath(result);
+  renderRouteList(result, mode, startId, endId);
   var sn = PATH_GRAPH.nodes[startId] || {};
   var en = PATH_GRAPH.nodes[endId] || {};
   if (out) {
@@ -2168,6 +2355,7 @@ function installPathClick() {
       if (h) h.textContent = '已选起点，请点击终点…';
       var r = document.getElementById('path-result');
       if (r) r.textContent = '';
+      resetRoutePanel();
       return;
     }
     if (d.id === pathStart) return;
