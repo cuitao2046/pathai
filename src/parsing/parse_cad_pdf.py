@@ -218,6 +218,15 @@ _OPEN_ID_KEY = {
     "activity": "activity", "atrium": "atrium",
 }
 
+# 功能房间统一类型（需求⑳+1）：办公室/实验室/教室等封闭功能房间一律 type="room"，
+# 原用途（classroom/office/lab...）落到 roomSubType 子类别；走廊/门厅/楼梯/卫生间/
+# 电梯厅/管井/出入口等公共/设施型保持独立 type 不变。
+FUNCTIONAL_ROOM_TYPES = {
+    "room", "classroom", "lab", "office", "meeting", "storage",
+    "equipment", "library", "medical", "counseling", "activity",
+    "reception",
+}
+
 # 公共空间（指南 4.2：卫生间/楼梯间/电梯间/走廊为公共，大厅/出入口/无障碍出入口也属于公共）
 ROOM_PUBLIC_TYPES = {
     "toilet", "staircase", "elevator_hall", "corridor", "lobby",
@@ -3127,11 +3136,35 @@ def parse_floor(pdf_path, floor_no):
     if n_heban:
         print(f"[F{floor_no}] 合班教室类型纠正(仅自身): {n_heban} 处 → classroom")
 
-    # --- 门洞归属 pass 0：门弧中点（摆动侧）落在房间内部 -> 该房间所有。
-    #     门向内开，弧必然鼓入所服务房间；这是最可靠的归属信号
-    #     （如 MGD1124 弧鼓入乐器存放室而非相邻的音乐教室）
+    # --- 门洞归属 pass 0：普通门（swing/fire）铰链端贴墙房间归属（用户规则）。
+    #     门铰链固定在墙上，铰链端所在/贴附的房间即门所服务房间（如 F2-D-0010
+    #     铰链贴化学教室墙 0.1m，旧 arc_mid 逻辑误把门归到走道）。优先归属
+    #     功能房间（room 类），无 room 类才考虑其他空间（走廊等）；opening 门洞
+    #     无铰链语义，仍用弧中点判定。
+    _HINGE_WALL_TOL = 12.0  # pt ≈ 0.63m，与 pipeline 贴墙补全 _WALL_TOL(0.6m) 同量级
     for dr in doors:
         dr["rooms"] = []
+        kind = dr.get("kind")
+        axis = dr.get("axis")
+        if kind in ("swing", "fire") and axis:
+            hp = Point(axis[0])  # 铰链端（门轴，落在墙线上）
+            near = []
+            for r in rooms:
+                poly = r["polygon_pt"]
+                if poly.contains(hp):
+                    near.append((0.0, r))
+                else:
+                    d = poly.exterior.distance(hp)
+                    if d < _HINGE_WALL_TOL:
+                        near.append((d, r))
+            if near:
+                # 优先功能房间（room 类），同类取最近；无 room 类才取其他（走廊等）
+                func = [x for x in near
+                        if x[1]["roomType"] in FUNCTIONAL_ROOM_TYPES]
+                pool = func or near
+                pool.sort(key=lambda x: x[0])
+                dr["rooms"].append(pool[0][1]["id"])
+                continue
         am = dr.get("arc_mid")
         if not am:
             continue
@@ -3222,6 +3255,11 @@ def parse_floor(pdf_path, floor_no):
     # 多边形未能延伸到门所在的外壳墙体；其门就在 30pt 内。
     # 限定：接收方当前无门（避免误抢邻房的门）、30pt 内最近且
     # 次近候选 >1.5 倍距离（唯一性）；每个房间最多认领一扇。
+    # ⚠️ 跳过开放空间（走廊/门厅/活动/中庭/前室）——其连通由 TI 承担，
+    #    不应参与门归属（否则会把封闭房间的门抢走，见 F2-D-0024 归属被
+    #    CR-0033 走道偷走的历史 bug）。
+    _NO_DOOR_SKIP = ("staircase", "elevator_hall", "infrastructure",
+                     "atrium") + tuple(_OPEN_ID_KEY)
     door_count = {r["id"]: 0 for r in rooms}
     for dr in doors:
         for rid in dr["rooms"]:
@@ -3233,8 +3271,7 @@ def parse_floor(pdf_path, floor_no):
         c = Point(dr["center"])
         cand = []
         for r in rooms:
-            if r["roomType"] in ("staircase", "elevator_hall", "infrastructure",
-                                 "atrium"):
+            if r["roomType"] in _NO_DOOR_SKIP:
                 continue
             if door_count.get(r["id"], 0) > 0:
                 continue
@@ -3249,9 +3286,11 @@ def parse_floor(pdf_path, floor_no):
     # 隔着高窗洞口带/门斗等小空间时（如 MGD1124 与乐器存放室），
     # 门会先被 4pt 规则挂到邻房角点上。零门房间作为封闭空间必须有门，
     # 允许其从仍保留 >=1 扇门的多门房间处偷取 30pt 内最近的门。
+    # ⚠️ 跳过开放空间（走廊/门厅/活动/中庭/前室）——开放空间连通由 TI 承担，
+    #    不需要门归属；否则走廊会把封闭房间的门偷走（如 F2-D-0024 的
+    #    RM-0015 被 CR-0033 走道偷走 → 门归属 CR 空洞）。
     for r in rooms:
-        if r["roomType"] in ("staircase", "elevator_hall", "infrastructure",
-                             "atrium"):
+        if r["roomType"] in _NO_DOOR_SKIP:
             continue
         if door_count.get(r["id"], 0) > 0:
             continue
@@ -3799,11 +3838,18 @@ def build_geojson(f1, f2):
             # 跳过被 T1.5 判定为完全在户外的公共空间（coords_m 已清空）
             if not r.get("coords_m"):
                 continue
+            # 需求⑳+1：功能房间统一 type="room"，用途落到 roomSubType；
+            # 公共/设施型（走廊/楼梯/卫生间/电梯厅/管井等）保持独立 type。
+            _rt = r["roomType"]
+            _is_func = _rt in FUNCTIONAL_ROOM_TYPES
+            _type_out = "room" if _is_func else _rt
             rooms_g.append({
                 "type": "Feature",
                 "id": r["id"],
                 "geometry": {"type": "Polygon", "coordinates": [r["coords_m"]]},
-                "properties": {"type": "room", "roomType": r["roomType"],
+                "properties": {"type": _type_out,
+                               "roomType": _rt,
+                               "roomSubType": _rt,
                                "label": r["label"], "roomId": r["id"],
                                "code": r.get("code", ""),
                                "centroid": r["centroid_m"],
@@ -3815,7 +3861,9 @@ def build_geojson(f1, f2):
                                "floor": int(floor_no)},
             })
             rooms_s.append({
-                "id": r["id"], "type": r["roomType"], "label": r["label"],
+                "id": r["id"], "type": _type_out,
+                "roomSubType": _rt if _is_func else None,
+                "label": r["label"],
                 "centroid": r["centroid_m"], "geometryId": r["id"],
                 "public": r["roomType"] in ROOM_PUBLIC_TYPES,
                 "accessible": r["roomType"] not in NON_ACCESSIBLE_TYPES,
