@@ -88,6 +88,10 @@ def main():
                 rtypes[rid].add(n["doorType"])
     mixed = [rid for rid, t in rtypes.items()
              if "swing" in t and "fire" in t]
+    # 仅保留有 TR 节点的封闭房间（走廊/门厅等开放空间无 TR，须过滤，否则取 mixed[0] 崩溃）
+    tr_rids = {n.get("roomId") for n in g.nodes.values()
+               if n["type"] == "room" and n.get("roomId")}
+    mixed = [rid for rid in mixed if rid in tr_rids]
     check(len(mixed) > 0, f"存在同时含 swing+fire 门的房间（{len(mixed)} 间）")
     if mixed:
         rid = mixed[0]

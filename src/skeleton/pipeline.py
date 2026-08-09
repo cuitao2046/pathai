@@ -530,7 +530,21 @@ def build_skeleton_topology(
 
     nodes = []
     edges = []
-    edge_seq = [0]
+    # 手动骨架优先时，TI-TI 边沿用 JSON 的 F{floor}-TE-xxxx 编号；
+    # 所有后续 add_edge 生成的边必须从 max_manual_seq 之后续号，
+    # 否则与手动边 id 重复（同层 TE 编号冲突 → 前端 doorType 注入错乱）。
+    _manual_max_seq = 0
+    if manual_skeleton is not None:
+        try:
+            for _e in (manual_skeleton.get("edges") or []):
+                _tail = str(_e.get("id") or "").rsplit("-", 1)[-1]
+                try:
+                    _manual_max_seq = max(_manual_max_seq, int(_tail))
+                except (ValueError, TypeError):
+                    pass
+        except Exception:
+            pass
+    edge_seq = [_manual_max_seq]
 
     def add_edge(frm, to, distance, a_level=0, r_level=0.5,
                  wheel=True, blind=True):
