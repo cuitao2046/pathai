@@ -114028,6 +114028,108 @@
             "public": true,
             "accessible": true,
             "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TR-0051",
+            "type": "room",
+            "roomType": "classroom",
+            "roomId": "F1-RM-0016",
+            "label": "音乐教室",
+            "coordinates": [
+              -45.813803,
+              14.483684
+            ],
+            "public": false,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TD-0087",
+            "type": "doorway",
+            "label": "防火门",
+            "doorType": "fire",
+            "width_m": 0.56,
+            "coordinates": [
+              -41.92431,
+              13.931457
+            ],
+            "rooms": [
+              "F1-RM-0016"
+            ],
+            "openDirection": "inward",
+            "hingeSide": "right"
+          },
+          {
+            "id": "F1-TR-0052",
+            "type": "room",
+            "roomType": "office",
+            "roomId": "F1-RM-0022",
+            "label": "领导办公",
+            "coordinates": [
+              -29.087512,
+              -86.418915
+            ],
+            "public": false,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TR-0053",
+            "type": "room",
+            "roomType": "office",
+            "roomId": "F1-RM-0024",
+            "label": "领导办公",
+            "coordinates": [
+              -26.305701,
+              -86.398016
+            ],
+            "public": false,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TD-0088",
+            "type": "doorway",
+            "label": "普通门",
+            "doorType": "swing",
+            "width_m": 1.07,
+            "coordinates": [
+              -25.631572,
+              -83.987212
+            ],
+            "rooms": [
+              "F1-RM-0024"
+            ],
+            "openDirection": "inward",
+            "hingeSide": "right"
+          },
+          {
+            "id": "F1-TR-0054",
+            "type": "room",
+            "roomType": "office",
+            "roomId": "F1-RM-0031",
+            "label": "组织办公",
+            "coordinates": [
+              -20.853883,
+              -86.421278
+            ],
+            "public": false,
+            "accessible": true,
+            "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TR-0055",
+            "type": "room",
+            "roomType": "office",
+            "roomId": "F1-RM-0036",
+            "label": "组织办公",
+            "coordinates": [
+              -18.124637,
+              -86.44263
+            ],
+            "public": false,
+            "accessible": true,
+            "riskLevel": 0.5
           }
         ],
         "edges": [
@@ -117198,6 +117300,90 @@
             "walkable": true,
             "wheelchairAccessible": true,
             "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0001",
+            "from": "F1-TD-0087",
+            "to": "F1-TI-0123",
+            "distance": 2.63,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": null
+          },
+          {
+            "id": "F1-TE-0002",
+            "from": "F1-TR-0051",
+            "to": "F1-TD-0087",
+            "distance": 3.93,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": "room_door"
+          },
+          {
+            "id": "F1-TE-0003",
+            "from": "F1-TR-0052",
+            "to": "F1-TD-0001",
+            "distance": 4.51,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": "room_door_fallback"
+          },
+          {
+            "id": "F1-TE-0004",
+            "from": "F1-TD-0088",
+            "to": "F1-TI-0157",
+            "distance": 6.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": null
+          },
+          {
+            "id": "F1-TE-0005",
+            "from": "F1-TR-0053",
+            "to": "F1-TD-0088",
+            "distance": 2.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": "room_door"
+          },
+          {
+            "id": "F1-TE-0006",
+            "from": "F1-TR-0054",
+            "to": "F1-TD-0088",
+            "distance": 5.36,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": "room_door_fallback"
+          },
+          {
+            "id": "F1-TE-0007",
+            "from": "F1-TR-0055",
+            "to": "F1-TD-0050",
+            "distance": 5.72,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "crossFloor": false,
+            "type": "room_door_fallback"
           }
         ]
       },
