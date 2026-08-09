@@ -4,8 +4,9 @@ import json
 import sys
 import heapq
 from collections import defaultdict
+from pathlib import Path
 
-sys.path.insert(0, r"E:/code/pathai/src")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src" / "tools"))
 import fix_crossing_edges as m
 from shapely.geometry import LineString, Point
 

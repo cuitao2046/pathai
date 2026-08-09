@@ -1,0 +1,9 @@
+# PathAI 运行依赖（Python 3.13+）
+PyMuPDF>=1.28,<2          # CAD PDF 矢量解析（fitz）
+opencv-python>=4.13        # 栅格化 / 形态学 / 分水岭（cv2）
+numpy>=2.3
+scipy>=1.17                # 分水岭 / 距离变换
+networkx>=3.5              # 骨架图论（拓扑）
+scikit-image>=0.26         # 中轴提取（skeleton 模式）
+shapely>=2.1               # 几何运算 / STRtree
+matplotlib>=3.10           # 调试渲染

@@ -9,7 +9,7 @@
     "y": 1154.8,
     "unit": "pt"
   },
-  "generator": "src/parse_cad_pdf.py",
+  "generator": "src/parsing/parse_cad_pdf.py",
   "notes": "仅解析 PDF 默认开启图层；window 已剔除标识矢量笔画；门洞分三类——摆弧门(swing, window 层)、防火门(fire, DOOR_FIRE)、无摆弧开口(opening, 墙缝几何+window 矢量编号块确认)；拓扑图按指南第五章规范构建（room/doorway/intersection/facility）。",
   "idConvention": "统一对象编号：F{floor}-{TYPE_ABBR}-{seq:04d}；楼层 F1/F2，跨层 FX；缩写见 topology.OBJ_TYPE(W墙/RM房间/D门/ST楼梯/EL电梯/C柱/WN窗段/TR拓扑房间节点/TD拓扑门口节点/TI拓扑交叉口节点/TF拓扑设施节点/TEN拓扑出入口节点/TE拓扑边/SR楼梯风险节点/EA无障碍电梯节点/XE跨层边)。",
   "floors": {

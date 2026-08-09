@@ -9,8 +9,8 @@ GEO = "result/school_building_01_map_v9.geojson"
 HTML = "result/floor_layout_v9_interactive.html"
 
 # 1) 后端期望结果
-sys.path.insert(0, "src")
-from route_rules import RouteGraph
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.topology.route_rules import RouteGraph
 g = RouteGraph(json.load(open(GEO, encoding="utf-8")))
 
 # 选代表性查询

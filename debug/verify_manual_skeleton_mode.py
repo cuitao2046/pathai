@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT))
 
-from skeleton.pipeline import build_skeleton_topology  # noqa: E402
+from src.skeleton.pipeline import build_skeleton_topology  # noqa: E402
 
 MANUAL = json.loads(
     (ROOT / "result" / "skeleton_manual_parsed.json").read_text(encoding="utf-8")

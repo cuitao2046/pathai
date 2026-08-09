@@ -31,7 +31,7 @@ from .junction_detector import (
 )
 from .door_projector import project_doors_to_skeleton, project_points_to_skeleton
 try:
-    from topology import bridge_disconnected_components
+    from src.topology import bridge_disconnected_components
 except ImportError:
     bridge_disconnected_components = None  # type: ignore
 

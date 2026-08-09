@@ -3,9 +3,10 @@
 import json
 import sys
 from collections import defaultdict
+from pathlib import Path
 from shapely.geometry import Point, Polygon
 
-sys.path.insert(0, r"E:/code/pathai/src")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 g = json.load(open("result/school_building_01_map_v9.geojson", encoding="utf-8"))
 
 for fk in ["1", "2"]:

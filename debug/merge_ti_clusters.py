@@ -14,9 +14,9 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BASE_DIR / "src"))
+sys.path.insert(0, str(BASE_DIR))
 
-from skeleton.pipeline import _merge_nearby_ti_nodes, TI_MERGE_RADIUS_M
+from src.skeleton.pipeline import _merge_nearby_ti_nodes, TI_MERGE_RADIUS_M
 
 
 def main():

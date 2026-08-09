@@ -30,13 +30,19 @@
 - ⚠️ geojson 字段陷阱：最终 `semantic.rooms` 房间类型在 **`type`** 字段（如 type="elevator_lobby"），**不是** `roomType`；序列化时由中间变量 `roomType` 映射到 `type`。
 
 ## 提交工作流
-仅 master 分支(feature 已删并合入)。阶段性改动直接 commit（fast-forward，禁 --force）。范围 src/代码、debug/脚本、result/产物、.workbuddy/memory/更新；临时脚本先删再提交。
+### ⚠️ 铁律 0：禁止直接在 master 上工作（2026-08-09 起）
+**所有功能开发、优化、bugfix 一律在新分支上完成**，master 只保留已发布/已合并的稳定状态。流程：
+1. 从最新 master 切新分支：`git checkout -b <feature|fix|refactor>/<描述>`（或先 fetch 再切）。
+2. 在分支上完成开发 + 记录当日日志（`.workbuddy/memory/YYYY-MM-DD.md`，append-only）。
+3. 分支 commit（禁 --force），推送到 GitHub 对应分支（`git push origin <分支>`）。
+4. 人工校验通过后合入 master（fast-forward 或 squash，禁 --force），再推 master。
+沙箱 refs 写入受限时（带斜杠分支名常失败），用**无斜杠分支名**（如 `refactor-package-restructure`，单文件 ref 写入稳定），或手动 `mkdir -p .git/refs/heads/<分支>` 再写 ref，或直接更新 master（需用户确认）。
 
 ### ⚠️ 铁律：每次功能/优化完成必做两件事
 1. **记录当天工作日志**：功能开发或优化完成后，必须把成果追加到 `.workbuddy/memory/YYYY-MM-DD.md`（append-only，不覆盖）。
-2. **推送 GitHub**：日志提交后必须 `git push origin master`。沙箱无凭据时，push 由用户终端执行，但**必须明确告知用户"待 push"并列出 commit 清单**，不得静默跳过。
+2. **推送 GitHub**：日志提交后必须 push 到当前分支。沙箱无凭据时，push 由用户终端执行，但**必须明确告知用户"待 push"并列出 commit 清单**，不得静默跳过。
 
-push 由用户终端执行（沙箱无凭据）——沙箱内只 commit，push 需用户执行；若用户期望沙箱推送则需先配置凭据。
+范围 src/代码、debug/脚本、result/产物、.workbuddy/memory/更新；临时脚本先删再提交。阶段性改动直接在分支 commit（禁 --force）。
 
 ## 已知限制
 1. 少量标签未匹配多边形(音乐/书法/美术教室等孤儿门)；卫生间多边形只覆盖盥洗走道区。

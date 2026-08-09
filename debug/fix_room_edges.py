@@ -18,9 +18,8 @@ from shapely.geometry import shape, Point, MultiPolygon
 from shapely.ops import unary_union
 
 BASE = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BASE / "src"))
-sys.path.insert(0, str(BASE / "src" / "skeleton"))
-from skeleton.pipeline import _merge_nearby_ti_nodes, TI_MERGE_RADIUS_M
+sys.path.insert(0, str(BASE))
+from src.skeleton.pipeline import _merge_nearby_ti_nodes, TI_MERGE_RADIUS_M
 
 OPEN = {"corridor", "lobby", "activity", "atrium",
         "elevator_lobby", "stair_lobby"}

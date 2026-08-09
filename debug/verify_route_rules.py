@@ -12,8 +12,8 @@ debug/verify_route_rules.py — 验证导航路线生成三条规则（src/route
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-from route_rules import RouteGraph, load_geojson  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src.topology.route_rules import RouteGraph, load_geojson  # noqa: E402
 
 GEO_DEFAULT = os.path.join(os.path.dirname(__file__), "..",
                            "result", "school_building_01_map_v9.geojson")

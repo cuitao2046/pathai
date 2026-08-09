@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pathai"
+version = "9.0.0"
+description = "初中学部 1# 教学楼室内导航语义地图生成管线（CAD PDF -> GeoJSON -> 交互式 HTML）"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "PyMuPDF>=1.28",
+    "opencv-python>=4.13",
+    "numpy>=2.3",
+    "scipy>=1.17",
+    "networkx>=3.5",
+    "scikit-image>=0.26",
+    "shapely>=2.1",
+    "matplotlib>=3.10",
+]
+
+[project.scripts]
+pathai-parse = "src.parsing.parse_cad_pdf:main"
+pathai-validate = "src.qa.validate_geojson:main"
+pathai-render = "src.rendering.render_interactive:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.setuptools.package-dir]
+src = "src"
