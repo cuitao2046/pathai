@@ -252,6 +252,9 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
             endpoints.append(Point(pts[i]))
             endpoints.append(Point(pts[i + 1]))
 
+    # 既有 TI 坐标表（吸附时直接用既有坐标，避免手绘端点误差引入抖动）
+    exti_coord = {n["id"]: n["coordinates"] for n in existing_ti}
+
     # 候选节点：端点 / 交点；优先吸附到既有 TI
     cand = []  # (Point, snap_id_or_None)
     for ep in endpoints:
@@ -267,9 +270,18 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
             for ip in ips:
                 cand.append((ip, snap_to_existing(ip)))
 
-    # 合并重合候选（<0.3m 视为同一节点；吸附节点优先）
+    # 合并候选为节点：
+    #  - 吸附到同一既有 TI 的候选 → 合并为「唯一」节点（用既有 TI 的精确坐标，
+    #    避免多个手绘端点各自落在 0.5m 容差内却相距 >0.3m 而被保留为重复 id）。
+    #  - 其余候选按空间 <0.3m 合并；吸附节点优先。
     nodes_pts = []  # (Point, snap_id_or_None)
     for cpt, csid in cand:
+        if csid and csid in exti_coord:
+            ec = exti_coord[csid]
+            found = any(nsid == csid for _, nsid in nodes_pts)
+            if not found:
+                nodes_pts.append((Point(ec), csid))
+            continue
         merged = False
         for k, (npt, nsid) in enumerate(nodes_pts):
             if cpt.distance(npt) < 0.3:
