@@ -61609,7 +61609,7 @@
               "type": "room",
               "roomType": "classroom",
               "label": "音乐教室",
-              "roomId": "F1-RM-0016",
+              "roomId": "F1-RM-0015",
               "code": "",
               "centroid": [
                 -45.813802766274755,
@@ -62711,7 +62711,7 @@
               "type": "room",
               "roomType": "office",
               "label": "领导办公",
-              "roomId": "F1-RM-0022",
+              "roomId": "F1-RM-0020",
               "code": "",
               "centroid": [
                 -29.087512353167902,
@@ -62877,7 +62877,7 @@
               "type": "room",
               "roomType": "office",
               "label": "领导办公",
-              "roomId": "F1-RM-0024",
+              "roomId": "F1-RM-0020",
               "code": "",
               "centroid": [
                 -26.305700782909277,
@@ -63606,7 +63606,7 @@
               "type": "room",
               "roomType": "office",
               "label": "组织办公",
-              "roomId": "F1-RM-0031",
+              "roomId": "F1-RM-0027",
               "code": "",
               "centroid": [
                 -20.85388337124352,
@@ -64609,7 +64609,7 @@
               "type": "room",
               "roomType": "office",
               "label": "组织办公",
-              "roomId": "F1-RM-0036",
+              "roomId": "F1-RM-0027",
               "code": "",
               "centroid": [
                 -18.12463707251277,
@@ -94141,7 +94141,7 @@
               "mergedCount": 1,
               "rooms": [
                 "F1-RM-0020",
-                "F1-RM-0022"
+                "F1-RM-0019"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -94176,8 +94176,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0022",
-                "F1-CR-0055"
+                "F1-RM-0020"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -94282,7 +94281,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0056",
                 "F1-RM-0040"
               ],
               "openDirection": "outward",
@@ -94353,7 +94351,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0044",
                 "F1-RM-0014"
               ],
               "openDirection": "outward",
@@ -94389,7 +94386,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0044",
                 "F1-RM-0014"
               ],
               "openDirection": "inward",
@@ -94425,7 +94421,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0051",
                 "F1-RM-0018"
               ],
               "openDirection": "outward",
@@ -94461,7 +94456,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0051",
                 "F1-RM-0018"
               ],
               "openDirection": "outward",
@@ -94497,7 +94491,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0051",
                 "F1-RM-0021"
               ],
               "openDirection": "outward",
@@ -94533,7 +94526,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054",
                 "F1-RM-0021"
               ],
               "openDirection": "outward",
@@ -94569,7 +94561,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054",
                 "F1-RM-0032"
               ],
               "openDirection": "outward",
@@ -94605,7 +94596,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043",
                 "F1-RM-0003"
               ],
               "openDirection": "outward",
@@ -94641,7 +94631,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043",
                 "F1-RM-0008"
               ],
               "openDirection": "outward",
@@ -94677,7 +94666,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043",
                 "F1-RM-0008"
               ],
               "openDirection": "outward",
@@ -94713,7 +94701,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0050",
                 "F1-RM-0015"
               ],
               "openDirection": "outward",
@@ -94749,7 +94736,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0050",
                 "F1-RM-0015"
               ],
               "openDirection": "outward",
@@ -94785,8 +94771,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0050",
-                "F1-RM-0016"
+                "F1-RM-0033",
+                "F1-RM-0035"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -94821,8 +94807,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0050",
-                "F1-RM-0016"
+                "F1-RM-0033"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -94857,8 +94842,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054",
-                "F1-RM-0033"
+                "F1-RM-0005"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -94893,8 +94877,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054",
-                "F1-RM-0033"
+                "F1-RM-0005"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -94929,7 +94912,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0042",
                 "F1-RM-0005"
               ],
               "openDirection": "outward",
@@ -94965,7 +94947,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0042",
                 "F1-RM-0005"
               ],
               "openDirection": "outward",
@@ -95001,7 +94982,6 @@
               "width_m": 0.73,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0053",
                 "F1-RM-0020"
               ],
               "openDirection": "outward",
@@ -95037,7 +95017,6 @@
               "width_m": 0.73,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0053",
                 "F1-RM-0019"
               ],
               "openDirection": "outward",
@@ -95143,7 +95122,7 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0049"
+                "F1-RM-0039"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95320,7 +95299,8 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0057"
+                "F1-RM-0009",
+                "F1-RM-0013"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95425,8 +95405,7 @@
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0059",
-                "F1-LB-0045"
+                "F1-RM-0019"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -95496,7 +95475,7 @@
               "width_m": 0.89,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0058"
+                "F1-RM-0032"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95566,7 +95545,6 @@
               "width_m": 1.22,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0045",
                 "F1-RM-0009"
               ],
               "openDirection": "outward",
@@ -95602,7 +95580,6 @@
               "width_m": 1.22,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0045",
                 "F1-RM-0013"
               ],
               "openDirection": "outward",
@@ -95673,7 +95650,7 @@
               "width_m": 0.89,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0056"
+                "F1-RM-0007"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95778,7 +95755,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0053"
+                "F1-RM-0010"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95813,7 +95790,8 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0053"
+                "F1-RM-0020",
+                "F1-RM-0027"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95848,7 +95826,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054"
+                "F1-RM-0027"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95883,7 +95861,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054"
+                "F1-RM-0027"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95953,7 +95931,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043"
+                "F1-RM-0028"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -95987,7 +95965,9 @@
               "doorSubType": "hinged",
               "width_m": 1.17,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "F1-RM-0009"
+              ],
               "openDirection": null,
               "openDirectionSource": null,
               "hingeSide": "right",
@@ -96089,7 +96069,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-RM-0026"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96194,7 +96174,7 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0052"
+                "F1-RM-0009"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96229,7 +96209,8 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0052"
+                "F1-RM-0013",
+                "F1-RM-0012"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96264,7 +96245,7 @@
               "width_m": 1.27,
               "mergedCount": 1,
               "rooms": [
-                "F1-AC-0047"
+                "F1-RM-0039"
               ],
               "openDirection": "outward",
               "openDirectionSource": "inferred_opposite",
@@ -96335,8 +96316,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0027",
-                "F1-RM-0024"
+                "F1-RM-0027"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -96371,8 +96351,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0031",
-                "F1-CR-0055"
+                "F1-RM-0014"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -96407,8 +96386,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0036",
-                "F1-CR-0056"
+                "F1-RM-0018"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -96442,7 +96420,9 @@
               "doorSubType": "hinged",
               "width_m": 0.78,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "F1-RM-0021"
+              ],
               "openDirection": null,
               "openDirectionSource": null,
               "hingeSide": "right",
@@ -96476,7 +96456,7 @@
               "width_m": 0.78,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0010"
+                "F1-RM-0032"
               ],
               "openDirection": "outward",
               "openDirectionSource": "inferred_opposite",
@@ -96511,7 +96491,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0007"
+                "F1-RM-0003"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -96546,7 +96526,7 @@
               "width_m": 0.88,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0049"
+                "F1-RM-0003"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -96581,7 +96561,7 @@
               "width_m": 0.88,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0049"
+                "F1-RM-0008"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -96616,7 +96596,7 @@
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0035"
+                "F1-RM-0009"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -96651,8 +96631,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0028",
-                "F1-CR-0052"
+                "F1-RM-0013"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -96722,7 +96701,7 @@
               "width_m": 0.78,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043"
+                "F1-RM-0015"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -96756,7 +96735,9 @@
               "doorSubType": "fire_hinged",
               "width_m": 0.64,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "F1-RM-0033"
+              ],
               "openDirection": null,
               "openDirectionSource": null,
               "hingeSide": "left",
@@ -96860,7 +96841,6 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
-                "F1-CR-0055",
                 "F1-RM-0026"
               ],
               "openDirection": "outward",
@@ -96895,7 +96875,9 @@
               "doorSubType": "fire_hinged",
               "width_m": 0.64,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "F1-RM-0029"
+              ],
               "openDirection": null,
               "openDirectionSource": null,
               "hingeSide": "right",
@@ -96929,7 +96911,8 @@
               "width_m": 1.36,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0045"
+                "F1-RM-0050",
+                "F1-RM-0025"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96964,7 +96947,7 @@
               "width_m": 1.36,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0045"
+                "F1-RM-0019"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96999,8 +96982,7 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0045",
-                "F1-RM-0009"
+                "F1-RM-0023"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -97070,8 +97052,7 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048",
-                "F1-RM-0013"
+                "F1-RM-0009"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -97106,8 +97087,7 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048",
-                "F1-RM-0012"
+                "F1-RM-0035"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -97142,8 +97122,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0039",
-                "F1-CR-0056"
+                "F1-RM-0012"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -97458,8 +97437,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0003",
-                "F1-CR-0043"
+                "F1-RM-0003"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -97494,8 +97472,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0008",
-                "F1-CR-0043"
+                "F1-RM-0008"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -97530,7 +97507,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0043",
                 "F1-RM-0009"
               ],
               "openDirection": "outward",
@@ -97566,7 +97542,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048",
                 "F1-RM-0013"
               ],
               "openDirection": "outward",
@@ -97602,8 +97577,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0009",
-                "F1-LB-0045"
+                "F1-RM-0009"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -97778,8 +97752,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0033",
-                "F1-CR-0054"
+                "F1-RM-0033"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -98092,7 +98065,6 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048",
                 "F1-RM-0050"
               ],
               "openDirection": null,
@@ -98128,8 +98100,6 @@
               "width_m": 0.71,
               "mergedCount": 1,
               "rooms": [
-                "F1-LB-0049",
-                "F1-CR-0048",
                 "F1-RM-0025"
               ],
               "openDirection": null,
@@ -98200,7 +98170,6 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0054",
                 "F1-RM-0032"
               ],
               "openDirection": "outward",
@@ -98341,7 +98310,6 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0053",
                 "F1-RM-0019"
               ],
               "openDirection": "outward",
@@ -98412,8 +98380,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0023",
-                "F1-CR-0052"
+                "F1-RM-0023"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -98658,7 +98625,6 @@
               "width_m": 1.9,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048",
                 "F1-RM-0012"
               ],
               "openDirection": null,
@@ -111625,20 +111591,6 @@
             "riskLevel": 0.5
           },
           {
-            "id": "F1-TR-0016",
-            "type": "room",
-            "roomType": "classroom",
-            "roomId": "F1-RM-0016",
-            "label": "音乐教室",
-            "coordinates": [
-              -45.813802766274755,
-              14.48368359735015
-            ],
-            "public": false,
-            "accessible": true,
-            "riskLevel": 0.5
-          },
-          {
             "id": "F1-TR-0017",
             "type": "room",
             "roomType": "staircase",
@@ -111709,20 +111661,6 @@
             "riskLevel": 0.5
           },
           {
-            "id": "F1-TR-0022",
-            "type": "room",
-            "roomType": "office",
-            "roomId": "F1-RM-0022",
-            "label": "领导办公",
-            "coordinates": [
-              -29.087512353167902,
-              -86.41891534305357
-            ],
-            "public": false,
-            "accessible": true,
-            "riskLevel": 0.5
-          },
-          {
             "id": "F1-TR-0023",
             "type": "room",
             "roomType": "storage",
@@ -111731,20 +111669,6 @@
             "coordinates": [
               -28.192461338673684,
               -64.21680058707292
-            ],
-            "public": false,
-            "accessible": true,
-            "riskLevel": 0.5
-          },
-          {
-            "id": "F1-TR-0024",
-            "type": "room",
-            "roomType": "office",
-            "roomId": "F1-RM-0024",
-            "label": "领导办公",
-            "coordinates": [
-              -26.305700782909277,
-              -86.39801599993177
             ],
             "public": false,
             "accessible": true,
@@ -111835,20 +111759,6 @@
             "riskLevel": 0.5
           },
           {
-            "id": "F1-TR-0031",
-            "type": "room",
-            "roomType": "office",
-            "roomId": "F1-RM-0031",
-            "label": "组织办公",
-            "coordinates": [
-              -20.85388337124352,
-              -86.42127826527275
-            ],
-            "public": false,
-            "accessible": true,
-            "riskLevel": 0.5
-          },
-          {
             "id": "F1-TR-0032",
             "type": "room",
             "roomType": "classroom",
@@ -111901,20 +111811,6 @@
               16.537446321274984
             ],
             "public": true,
-            "accessible": true,
-            "riskLevel": 0.5
-          },
-          {
-            "id": "F1-TR-0036",
-            "type": "room",
-            "roomType": "office",
-            "roomId": "F1-RM-0036",
-            "label": "组织办公",
-            "coordinates": [
-              -18.12463707251277,
-              -86.44262962909168
-            ],
-            "public": false,
             "accessible": true,
             "riskLevel": 0.5
           },
@@ -112126,8 +112022,6 @@
             ],
             "rooms": [
               "F1-RM-0020",
-              "F1-RM-0022",
-              "F1-CR-0053",
               "F1-RM-0019"
             ],
             "openDirection": "inward",
@@ -112145,8 +112039,7 @@
               -81.085
             ],
             "rooms": [
-              "F1-RM-0022",
-              "F1-CR-0055"
+              "F1-RM-0020"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112197,7 +112090,6 @@
               -64.178
             ],
             "rooms": [
-              "F1-CR-0056",
               "F1-RM-0040"
             ],
             "openDirection": "outward",
@@ -112215,7 +112107,6 @@
               0.885
             ],
             "rooms": [
-              "F1-CR-0044",
               "F1-RM-0014"
             ],
             "openDirection": "outward",
@@ -112233,7 +112124,6 @@
               -12.532
             ],
             "rooms": [
-              "F1-CR-0044",
               "F1-RM-0014"
             ],
             "openDirection": "inward",
@@ -112251,7 +112141,6 @@
               2.073
             ],
             "rooms": [
-              "F1-CR-0051",
               "F1-RM-0018"
             ],
             "openDirection": "outward",
@@ -112269,7 +112158,6 @@
               2.221
             ],
             "rooms": [
-              "F1-CR-0051",
               "F1-RM-0018"
             ],
             "openDirection": "outward",
@@ -112287,7 +112175,6 @@
               2.1
             ],
             "rooms": [
-              "F1-CR-0051",
               "F1-RM-0021"
             ],
             "openDirection": "outward",
@@ -112305,7 +112192,6 @@
               2.37
             ],
             "rooms": [
-              "F1-CR-0054",
               "F1-RM-0021"
             ],
             "openDirection": "outward",
@@ -112323,7 +112209,6 @@
               2.221
             ],
             "rooms": [
-              "F1-CR-0054",
               "F1-RM-0032"
             ],
             "openDirection": "outward",
@@ -112341,7 +112226,6 @@
               -22.726
             ],
             "rooms": [
-              "F1-CR-0043",
               "F1-RM-0003"
             ],
             "openDirection": "outward",
@@ -112359,7 +112243,6 @@
               -22.874
             ],
             "rooms": [
-              "F1-CR-0043",
               "F1-RM-0008"
             ],
             "openDirection": "outward",
@@ -112377,7 +112260,6 @@
               -22.726
             ],
             "rooms": [
-              "F1-CR-0043",
               "F1-RM-0008"
             ],
             "openDirection": "outward",
@@ -112395,9 +112277,7 @@
               22.714
             ],
             "rooms": [
-              "F1-CR-0050",
-              "F1-RM-0015",
-              "F1-RM-0016"
+              "F1-RM-0015"
             ],
             "openDirection": "outward",
             "hingeSide": "left",
@@ -112414,8 +112294,7 @@
               8.977
             ],
             "rooms": [
-              "F1-CR-0050",
-              "F1-RM-0016"
+              "F1-RM-0015"
             ],
             "openDirection": "outward",
             "hingeSide": "left",
@@ -112432,7 +112311,6 @@
               23.339
             ],
             "rooms": [
-              "F1-CR-0054",
               "F1-RM-0033",
               "F1-RM-0035"
             ],
@@ -112451,7 +112329,6 @@
               26.129
             ],
             "rooms": [
-              "F1-CR-0054",
               "F1-RM-0033"
             ],
             "openDirection": "outward",
@@ -112469,7 +112346,6 @@
               1.033
             ],
             "rooms": [
-              "F1-CR-0042",
               "F1-RM-0005"
             ],
             "openDirection": "outward",
@@ -112487,7 +112363,6 @@
               -12.11
             ],
             "rooms": [
-              "F1-CR-0042",
               "F1-RM-0005"
             ],
             "openDirection": "outward",
@@ -112522,7 +112397,6 @@
               -29.554
             ],
             "rooms": [
-              "F1-LB-0045",
               "F1-RM-0009",
               "F1-RM-0013"
             ],
@@ -112541,7 +112415,6 @@
               -80.194
             ],
             "rooms": [
-              "F1-CR-0053",
               "F1-RM-0019"
             ],
             "openDirection": "inward",
@@ -112559,7 +112432,6 @@
               3.706
             ],
             "rooms": [
-              "F1-CR-0054",
               "F1-RM-0032"
             ],
             "openDirection": "inward",
@@ -112577,7 +112449,6 @@
               -49.752
             ],
             "rooms": [
-              "F1-LB-0049",
               "F1-RM-0007"
             ],
             "openDirection": "inward",
@@ -112595,7 +112466,6 @@
               7.419
             ],
             "rooms": [
-              "F1-AC-0047",
               "F1-RM-0010"
             ],
             "openDirection": "outward",
@@ -112613,8 +112483,7 @@
               -81.085
             ],
             "rooms": [
-              "F1-RM-0024",
-              "F1-CR-0055",
+              "F1-RM-0020",
               "F1-RM-0027"
             ],
             "openDirection": "inward",
@@ -112632,8 +112501,7 @@
               -81.085
             ],
             "rooms": [
-              "F1-RM-0031",
-              "F1-CR-0055"
+              "F1-RM-0027"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -112650,8 +112518,7 @@
               -80.736
             ],
             "rooms": [
-              "F1-RM-0036",
-              "F1-CR-0056"
+              "F1-RM-0027"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -112668,8 +112535,7 @@
               -60.033
             ],
             "rooms": [
-              "F1-RM-0028",
-              "F1-CR-0052"
+              "F1-RM-0028"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -112686,9 +112552,7 @@
               -20.944
             ],
             "rooms": [
-              "F1-CR-0043",
-              "F1-RM-0009",
-              "F1-LB-0045"
+              "F1-RM-0009"
             ],
             "openDirection": "outward",
             "hingeSide": "right",
@@ -112705,7 +112569,6 @@
               -81.085
             ],
             "rooms": [
-              "F1-CR-0055",
               "F1-RM-0026"
             ],
             "openDirection": "outward",
@@ -112723,7 +112586,6 @@
               -20.944
             ],
             "rooms": [
-              "F1-LB-0045",
               "F1-RM-0009"
             ],
             "openDirection": "outward",
@@ -112741,7 +112603,6 @@
               -20.831
             ],
             "rooms": [
-              "F1-CR-0048",
               "F1-RM-0013",
               "F1-RM-0012"
             ],
@@ -112760,8 +112621,7 @@
               -58.474
             ],
             "rooms": [
-              "F1-RM-0039",
-              "F1-CR-0056"
+              "F1-RM-0039"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112795,8 +112655,7 @@
               4.544
             ],
             "rooms": [
-              "F1-RM-0018",
-              "F1-CR-0051"
+              "F1-RM-0018"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112830,8 +112689,7 @@
               4.376
             ],
             "rooms": [
-              "F1-RM-0032",
-              "F1-CR-0054"
+              "F1-RM-0032"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112848,8 +112706,7 @@
               -18.706
             ],
             "rooms": [
-              "F1-RM-0003",
-              "F1-CR-0043"
+              "F1-RM-0003"
             ],
             "openDirection": "outward",
             "hingeSide": "right",
@@ -112866,8 +112723,7 @@
               -19.401
             ],
             "rooms": [
-              "F1-RM-0003",
-              "F1-CR-0043"
+              "F1-RM-0003"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112884,8 +112740,7 @@
               -21.0
             ],
             "rooms": [
-              "F1-RM-0008",
-              "F1-CR-0043"
+              "F1-RM-0008"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -112902,7 +112757,6 @@
               -22.874
             ],
             "rooms": [
-              "F1-CR-0043",
               "F1-RM-0009"
             ],
             "openDirection": "outward",
@@ -112920,7 +112774,6 @@
               -22.577
             ],
             "rooms": [
-              "F1-CR-0048",
               "F1-RM-0013"
             ],
             "openDirection": "outward",
@@ -112938,7 +112791,7 @@
               11.291
             ],
             "rooms": [
-              "F1-RM-0016"
+              "F1-RM-0015"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112955,8 +112808,7 @@
               25.196
             ],
             "rooms": [
-              "F1-RM-0033",
-              "F1-CR-0054"
+              "F1-RM-0033"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -112990,9 +112842,7 @@
               -29.26
             ],
             "rooms": [
-              "F1-CR-0048",
               "F1-RM-0050",
-              "F1-LB-0049",
               "F1-RM-0025"
             ],
             "openDirection": "inward",
@@ -113010,7 +112860,6 @@
               -79.565
             ],
             "rooms": [
-              "F1-CR-0053",
               "F1-RM-0019"
             ],
             "openDirection": "outward",
@@ -113028,8 +112877,7 @@
               -60.076
             ],
             "rooms": [
-              "F1-RM-0023",
-              "F1-CR-0052"
+              "F1-RM-0023"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -113080,7 +112928,6 @@
               -20.849
             ],
             "rooms": [
-              "F1-CR-0048",
               "F1-RM-0012"
             ],
             "openDirection": null,
@@ -114068,18 +113915,6 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0002",
-            "from": "F1-TR-0022",
-            "to": "F1-TD-0001",
-            "distance": 4.51,
-            "estimatedTime": 5.6,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F1-TE-0003",
             "from": "F1-TR-0019",
             "to": "F1-TD-0001",
@@ -114093,7 +113928,7 @@
           },
           {
             "id": "F1-TE-0004",
-            "from": "F1-TR-0022",
+            "from": "F1-TR-0020",
             "to": "F1-TD-0002",
             "distance": 5.38,
             "estimatedTime": 6.7,
@@ -114272,20 +114107,8 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0019",
-            "from": "F1-TR-0016",
-            "to": "F1-TD-0017",
-            "distance": 11.67,
-            "estimatedTime": 14.6,
-            "accessibilityLevel": 2,
-            "riskLevel": 5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
             "id": "F1-TE-0020",
-            "from": "F1-TR-0016",
+            "from": "F1-TR-0015",
             "to": "F1-TD-0018",
             "distance": 9.72,
             "estimatedTime": 12.2,
@@ -114441,7 +114264,7 @@
           },
           {
             "id": "F1-TE-0033",
-            "from": "F1-TR-0024",
+            "from": "F1-TR-0020",
             "to": "F1-TD-0048",
             "distance": 5.36,
             "estimatedTime": 6.7,
@@ -114465,7 +114288,7 @@
           },
           {
             "id": "F1-TE-0035",
-            "from": "F1-TR-0031",
+            "from": "F1-TR-0027",
             "to": "F1-TD-0049",
             "distance": 5.45,
             "estimatedTime": 6.8,
@@ -114477,7 +114300,7 @@
           },
           {
             "id": "F1-TE-0036",
-            "from": "F1-TR-0036",
+            "from": "F1-TR-0027",
             "to": "F1-TD-0050",
             "distance": 5.72,
             "estimatedTime": 7.1,
@@ -114681,7 +114504,7 @@
           },
           {
             "id": "F1-TE-0053",
-            "from": "F1-TR-0016",
+            "from": "F1-TR-0015",
             "to": "F1-TD-0074",
             "distance": 9.71,
             "estimatedTime": 12.1,
@@ -202859,7 +202682,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0040",
                 "F2-RM-0017"
               ],
               "openDirection": "outward",
@@ -202895,7 +202717,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0021"
+                "F2-RM-0021",
+                "F2-RM-0019"
               ],
               "openDirection": "outward",
               "openDirectionSource": "inferred_opposite",
@@ -202930,7 +202753,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0017"
+                "F2-RM-0017",
+                "F2-RM-0019"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -202965,7 +202789,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0041",
                 "F2-RM-0021"
               ],
               "openDirection": null,
@@ -203001,8 +202824,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0019",
-                "F2-RM-0021"
+                "F2-RM-0013"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -203037,8 +202859,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0019",
-                "F2-RM-0017"
+                "F2-RM-0013"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -203073,8 +202894,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0037",
-                "F2-RM-0013"
+                "F2-RM-0005"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203109,8 +202929,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0038",
-                "F2-RM-0013"
+                "F2-RM-0005"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -203145,8 +202964,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0005"
+                "F2-RM-0009"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203181,7 +202999,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0042"
+                "F2-RM-0009"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -203216,8 +203034,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0009"
+                "F2-RM-0010"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203252,8 +203069,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0009"
+                "F2-RM-0010"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203288,8 +203104,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0010"
+                "F2-RM-0012"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203324,8 +203139,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0010"
+                "F2-RM-0012"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203360,8 +203174,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0036",
-                "F2-RM-0012"
+                "F2-RM-0032",
+                "F2-RM-0031"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203396,7 +203210,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0012"
+                "F2-RM-0029"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -203431,7 +203245,7 @@
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0032"
+                "F2-RM-0031"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -203466,7 +203280,7 @@
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0029"
+                "F2-RM-0025"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -203501,7 +203315,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0048",
                 "F2-RM-0031"
               ],
               "openDirection": "outward",
@@ -203537,8 +203350,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0048",
-                "F2-RM-0031"
+                "F2-RM-0015"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203573,7 +203385,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0041",
                 "F2-RM-0025"
               ],
               "openDirection": "outward",
@@ -203609,7 +203420,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0034"
+                "F2-RM-0003"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203644,8 +203455,8 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0039",
-                "F2-RM-0015"
+                "F2-RM-0004",
+                "F2-RM-0008"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203680,7 +203491,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0033"
+                "F2-RM-0018"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203715,8 +203526,7 @@
               "width_m": 1.07,
               "mergedCount": 2,
               "rooms": [
-                "F2-CR-0035",
-                "F2-RM-0003"
+                "F2-RM-0018"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203751,8 +203561,7 @@
               "width_m": 1.07,
               "mergedCount": 2,
               "rooms": [
-                "F2-RM-0004",
-                "F2-RM-0008"
+                "F2-RM-0020"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203787,8 +203596,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0018",
-                "F2-CR-0046"
+                "F2-RM-0018"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -203823,8 +203631,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0047",
-                "F2-RM-0018"
+                "F2-RM-0027"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -203859,7 +203666,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0047",
                 "F2-RM-0020"
               ],
               "openDirection": "outward",
@@ -203930,7 +203736,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0047",
                 "F2-RM-0027"
               ],
               "openDirection": "outward",
@@ -203966,7 +203771,6 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0047",
                 "F2-RM-0020"
               ],
               "openDirection": "outward",
@@ -204037,7 +203841,7 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0038"
+                "F2-RM-0026"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -204177,7 +203981,7 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0046"
+                "F2-RM-0019"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -204212,7 +204016,7 @@
               "width_m": 0.97,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0026"
+                "F2-RM-0017"
               ],
               "openDirection": null,
               "openDirectionSource": null,
@@ -204247,7 +204051,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
-                "F2-CR-0047"
+                "F2-RM-0013"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -204282,7 +204086,7 @@
               "width_m": 0.78,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0047"
+                "F2-RM-0009"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -204317,7 +204121,7 @@
               "width_m": 0.42,
               "mergedCount": 2,
               "rooms": [
-                "F2-CR-0047"
+                "F2-RM-0010"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -204351,7 +204155,9 @@
               "doorSubType": "fire_hinged",
               "width_m": 0.64,
               "mergedCount": 1,
-              "rooms": [],
+              "rooms": [
+                "F2-RM-0031"
+              ],
               "openDirection": null,
               "openDirectionSource": null,
               "hingeSide": "right",
@@ -204385,7 +204191,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0019"
+                "F2-RM-0025"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204420,7 +204226,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0021"
+                "F2-RM-0015"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204455,7 +204261,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0017"
+                "F2-RM-0014"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204490,7 +204296,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0013"
+                "F2-RM-0014"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204525,7 +204331,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0013"
+                "F2-RM-0003"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204560,8 +204366,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0005",
-                "F2-CR-0035"
+                "F2-RM-0020"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204596,8 +204401,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0009",
-                "F2-CR-0036"
+                "F2-RM-0027"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204632,8 +204436,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0010",
-                "F2-CR-0036"
+                "F2-RM-0020"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204668,8 +204471,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0012",
-                "F2-CR-0037"
+                "F2-RM-0012"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204704,8 +204506,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0031",
-                "F2-CR-0048"
+                "F2-RM-0022"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204775,8 +204576,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0015",
-                "F2-CR-0039"
+                "F2-RM-0015"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -204811,8 +204611,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F2-CR-0039",
-                "F2-RM-0014"
+                "F2-RM-0032"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -204847,8 +204646,7 @@
               "width_m": 0.56,
               "mergedCount": 1,
               "rooms": [
-                "F2-RM-0014",
-                "F2-CR-0039"
+                "F2-RM-0014"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -214690,7 +214488,6 @@
               2.23
             ],
             "rooms": [
-              "F2-CR-0040",
               "F2-RM-0017"
             ],
             "openDirection": "outward",
@@ -214727,8 +214524,7 @@
             ],
             "rooms": [
               "F2-RM-0017",
-              "F2-RM-0019",
-              "F2-CR-0040"
+              "F2-RM-0019"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -214745,7 +214541,6 @@
               3.594
             ],
             "rooms": [
-              "F2-CR-0041",
               "F2-RM-0021"
             ],
             "openDirection": null,
@@ -214763,7 +214558,6 @@
               -16.075
             ],
             "rooms": [
-              "F2-CR-0037",
               "F2-RM-0013"
             ],
             "openDirection": "outward",
@@ -214781,7 +214575,6 @@
               -4.601
             ],
             "rooms": [
-              "F2-CR-0038",
               "F2-RM-0013"
             ],
             "openDirection": "inward",
@@ -214799,7 +214592,6 @@
               -22.842
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0005"
             ],
             "openDirection": "outward",
@@ -214817,9 +214609,7 @@
               -21.648
             ],
             "rooms": [
-              "F2-CR-0042",
-              "F2-RM-0005",
-              "F2-CR-0035"
+              "F2-RM-0005"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -214836,7 +214626,6 @@
               -22.927
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0009"
             ],
             "openDirection": "outward",
@@ -214854,7 +214643,6 @@
               -22.842
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0009"
             ],
             "openDirection": "outward",
@@ -214872,7 +214660,6 @@
               -22.842
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0010"
             ],
             "openDirection": "outward",
@@ -214890,7 +214677,6 @@
               -22.842
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0010"
             ],
             "openDirection": "outward",
@@ -214908,7 +214694,6 @@
               -22.842
             ],
             "rooms": [
-              "F2-CR-0036",
               "F2-RM-0012"
             ],
             "openDirection": "outward",
@@ -214926,8 +214711,7 @@
               -21.648
             ],
             "rooms": [
-              "F2-RM-0012",
-              "F2-CR-0037"
+              "F2-RM-0012"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -214945,7 +214729,6 @@
             ],
             "rooms": [
               "F2-RM-0032",
-              "F2-CR-0048",
               "F2-RM-0031"
             ],
             "openDirection": null,
@@ -214980,7 +214763,6 @@
               -57.73
             ],
             "rooms": [
-              "F2-CR-0048",
               "F2-RM-0031"
             ],
             "openDirection": "outward",
@@ -214998,7 +214780,6 @@
               23.557
             ],
             "rooms": [
-              "F2-CR-0041",
               "F2-RM-0025"
             ],
             "openDirection": "outward",
@@ -215016,7 +214797,6 @@
               13.523
             ],
             "rooms": [
-              "F2-CR-0039",
               "F2-RM-0015"
             ],
             "openDirection": "outward",
@@ -215034,7 +214814,6 @@
               1.036
             ],
             "rooms": [
-              "F2-CR-0035",
               "F2-RM-0003"
             ],
             "openDirection": "outward",
@@ -215070,8 +214849,7 @@
               -80.37
             ],
             "rooms": [
-              "F2-RM-0018",
-              "F2-CR-0046"
+              "F2-RM-0018"
             ],
             "openDirection": null,
             "hingeSide": "right",
@@ -215088,7 +214866,6 @@
               -82.05
             ],
             "rooms": [
-              "F2-CR-0047",
               "F2-RM-0018"
             ],
             "openDirection": "outward",
@@ -215106,7 +214883,6 @@
               -81.97
             ],
             "rooms": [
-              "F2-CR-0047",
               "F2-RM-0020"
             ],
             "openDirection": "outward",
@@ -215124,7 +214900,6 @@
               -82.05
             ],
             "rooms": [
-              "F2-CR-0047",
               "F2-RM-0027"
             ],
             "openDirection": "outward",
@@ -215142,7 +214917,6 @@
               -82.05
             ],
             "rooms": [
-              "F2-CR-0047",
               "F2-RM-0020"
             ],
             "openDirection": "outward",
@@ -215194,8 +214968,7 @@
               4.725
             ],
             "rooms": [
-              "F2-RM-0017",
-              "F2-CR-0040"
+              "F2-RM-0017"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -215229,8 +215002,7 @@
               -20.639
             ],
             "rooms": [
-              "F2-RM-0009",
-              "F2-CR-0036"
+              "F2-RM-0009"
             ],
             "openDirection": "inward",
             "hingeSide": "left",
@@ -215247,8 +215019,7 @@
               -20.592
             ],
             "rooms": [
-              "F2-RM-0010",
-              "F2-CR-0036"
+              "F2-RM-0010"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -215265,8 +215036,7 @@
               -58.69
             ],
             "rooms": [
-              "F2-RM-0031",
-              "F2-CR-0048"
+              "F2-RM-0031"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -215300,8 +215070,7 @@
               25.571
             ],
             "rooms": [
-              "F2-RM-0015",
-              "F2-CR-0039"
+              "F2-RM-0015"
             ],
             "openDirection": "inward",
             "hingeSide": "right",
@@ -215318,7 +215087,6 @@
               9.216
             ],
             "rooms": [
-              "F2-CR-0039",
               "F2-RM-0014"
             ],
             "openDirection": "outward",
@@ -215336,8 +215104,7 @@
               11.613
             ],
             "rooms": [
-              "F2-RM-0014",
-              "F2-CR-0039"
+              "F2-RM-0014"
             ],
             "openDirection": "inward",
             "hingeSide": "right",

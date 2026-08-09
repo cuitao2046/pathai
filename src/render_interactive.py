@@ -1200,7 +1200,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             label_n = n.get("label", "")
             nid = n["id"]
             # 详情
-            rows = [("节点ID", nid), ("类型", ntype)]
+            rows = [("节点ID", '<b>' + nid + '</b>'), ("类型", ntype)]
             _rl = n.get("riskLevel")
             if isinstance(_rl, (int, float)):
                 rows.append(("风险等级", f"{_rl:g}"))
@@ -1736,7 +1736,11 @@ function ensureLayer(name, checked) {{
 }}
 function showDetail(d) {{
   var box = document.getElementById('detail');
-  var h = '<h4>' + (d.title || '详情') + '</h4>';
+  var title = d.title || '详情';
+  // 若已知节点ID，在标题右上方追加拓扑节点ID，方便截图核对
+  var titleId = '';
+  if (d.id) titleId = ' <span style="font-size:12px;color:#666;font-weight:400">(' + rpEsc(d.id) + ')</span>';
+  var h = '<h4>' + title + titleId + '</h4>';
   (d.rows || []).forEach(function(r) {{
     h += '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
   }});
