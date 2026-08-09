@@ -9336,6 +9336,8 @@ function dijkstraCore(startId, endId, mode, adj) {
     // 中间节点白名单：房间(room)禁止中转；同层额外禁 facility 中转
     if (u !== startId && u !== endId) {
       var _ut = nodes[u] && nodes[u].type;
+      // 规则 4：卫生间禁止作为中间节点（只能作起终点）
+      if (nodes[u] && nodes[u].roomType === 'toilet') continue;
       if (!MID_TYPES[_ut]) continue;
     }
     var nbrs = adj[u] || [];

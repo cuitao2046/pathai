@@ -14,6 +14,9 @@ src/route_rules.py — 导航路线生成规则（与 render_interactive.py 前�
        门优先级 普通(swing) > 防火(fire) > 门洞(opening)；
        仅当房间完全无门（卫生间例外）才允许路径穿墙，其他场景禁止穿任何墙。
 
+规则 4（卫生间禁中转）：任何两点之间的导航路径，中间节点不得经过卫生间；
+       卫生间只能作为起点或终点（roomType=toilet 显式拦截，见 _dijkstra）。
+
 实现要点：
 - 门节点(TD)不得作为「两个房间之间的直连通道」(room→door→room)，
   必须经过公共空间 (intersection / facility_entrance / facility)。
@@ -315,8 +318,12 @@ class RouteGraph:
             if u == end_id:
                 break
             # 中间节点类型白名单（起终点豁免）
-            if u != start_id and u != end_id and self.nodes[u]["type"] not in mid_types:
-                continue
+            if u != start_id and u != end_id:
+                # 规则 4：卫生间禁止作为中间节点（只能作起终点）
+                if self.nodes[u].get("roomType") == "toilet":
+                    continue
+                if self.nodes[u]["type"] not in mid_types:
+                    continue
             for nb, w, eid in adj[u]:
                 if nb in visited:
                     continue
