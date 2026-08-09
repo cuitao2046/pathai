@@ -2076,11 +2076,14 @@ def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
                 max_td = max(max_td, int(n["id"].split("-")[-1]))
             except ValueError:
                 pass
-    # 电梯 TF：facilityType=elevator，按标签匹配（elevators 顺序即 evtr_boxes 顺序）
-    tf_by_label = {}
-    for n in nodes:
-        if n.get("type") == "facility" and n.get("facilityType") == "elevator":
-            tf_by_label[n.get("label")] = n["id"]
+    # 电梯 TF：facilityType=elevator。按坐标最近匹配（reconcile 重排后 index
+    # 不可靠），并回填 elevatorId（需求⑳：门归属一律用元素 ID）。
+    # TF 自身 label 即电梯编号，但归属字段统一用 ID。
+    tf_nodes = [n for n in nodes
+                if n.get("type") == "facility" and n.get("facilityType") == "elevator"]
+    elev_by_centroid = {}
+    for n in tf_nodes:
+        n.setdefault("elevatorId", None)  # 由调用方按坐标回填
     # 开放空间候选（不含纯管井门——规则 5 已剔除连接，但节点仍可作挂接点）
     cand = [n for n in nodes if n.get("type") in
             ("intersection", "facility_entrance", "doorway")]
@@ -2096,17 +2099,42 @@ def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
         except (ValueError, IndexError):
             pass
     edge_seq = max_te
+    # 电梯门 → 电梯 TF 匹配：优先 elevatorId（Feature 格式，归属用 ID），
+    # 否则坐标最近（兼容 detect 原始 dict，规避 reconcile 重排后的 index 错位）
+    def _match_tf(ed):
+        _ep = ed.get("properties", {}) if "elev_index" not in ed else {}
+        ec = list(ed["geometry"]["coordinates"]) if "elev_index" not in ed \
+            else list(ed["center_m"])
+        if _ep.get("elevatorId"):
+            for n in nodes:
+                if n.get("type") == "facility" \
+                   and n.get("facilityType") == "elevator" \
+                   and n.get("elevatorId") == _ep["elevatorId"]:
+                    return n
+            # TF 未带 elevatorId：按坐标最近回退（并回填）
+        best_n, best_d = None, float("inf")
+        for n in tf_nodes:
+            d = math.hypot(ec[0] - n["coordinates"][0],
+                           ec[1] - n["coordinates"][1])
+            if d < best_d:
+                best_d, best_n = d, n
+        return best_n
+
     for i, ed in enumerate(elevator_doors):
         # 兼容两种格式：detect 原始 dict（elev_index）或 build_geojson Feature
         if "elev_index" in ed:
             ei = ed["elev_index"]
             center = ed["center_m"]
+            el_label = (elevators[ei]["properties"]["label"]
+                        if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
+            el_id = (elevators[ei]["id"]
+                     if 0 <= ei < len(elevators) else None)
         else:
             _ep = ed.get("properties", {})
             ei = _ep.get("elevatorIndex", 0)
             center = list(ed["geometry"]["coordinates"])
-        el_label = (elevators[ei]["properties"]["label"]
-                    if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
+            el_label = _ep.get("elevatorLabel", f"电梯{floor_no}F-{ei + 1}")
+            el_id = _ep.get("elevatorId")  # 归属元素 ID（需求⑳）
         seq += 1
         td_id = obj_id(f"F{floor_no}", OBJ_TYPE["topo_doorway"], seq)
         while td_id in node_id_set:
@@ -2119,18 +2147,23 @@ def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
             "doorType": "elevator",
             "label": f"电梯门（{el_label}）",
             "coordinates": list(center),
-            "rooms": [],
+            "rooms": [el_id] if el_id else [],
+            "elevatorId": el_id,
             "elevatorLabel": el_label,
             "elevatorIndex": ei,
             "blindAccessible": True,
             "wheelchairAccessible": True,
         }
         new_nodes.append(nd)
-        # 连对应电梯 TF
-        tf_id = tf_by_label.get(el_label)
-        if tf_id:
-            d = math.hypot(center[0] - _tf_coord(nodes, tf_id)[0],
-                           center[1] - _tf_coord(nodes, tf_id)[1])
+        # 连对应电梯 TF（需求⑳：用 elevatorId 归属匹配，回退坐标最近）
+        tf_node = _match_tf(ed)
+        if tf_node:
+            tf_id = tf_node["id"]
+            # 回填 TF 的 elevatorId（需求⑳：归属用元素 ID）
+            if el_id and tf_node.get("elevatorId") is None:
+                tf_node["elevatorId"] = el_id
+            d = math.hypot(center[0] - tf_node["coordinates"][0],
+                           center[1] - tf_node["coordinates"][1])
             edge_seq += 1
             eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
             while eid in edge_id_set:
@@ -3856,11 +3889,24 @@ def build_geojson(f1, f2):
                                "centroid": list(cen)},
             })
         # 需求⑱：电梯门元素（电梯井外墙窗户识别，归属对应电梯）
+        # 归属用电梯元素 ID（需求⑳：归属一律用元素 ID，不用 label）。
+        # ⚠️ 不能直接用 detect 阶段的 elev_index——reconcile_facilities 会按
+        # 编号重排 evtr_boxes，index 会错位；改用「电梯门中心 ↔ 电梯质心最近」
+        # 匹配重排后的 elevators，确保归属到正确的电梯 ID。
         elevator_doors = []
         for i, ed in enumerate(data.get("elevator_doors") or []):
-            ei = ed["elev_index"]
-            el_label = (elevators[ei]["properties"]["label"]
-                        if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
+            ec = list(ed["center_m"])
+            best_ei, best_d = None, float("inf")
+            for ei, el in enumerate(elevators):
+                elc = el["properties"]["centroid"]
+                d = math.hypot(ec[0] - elc[0], ec[1] - elc[1])
+                if d < best_d:
+                    best_d, best_ei = d, ei
+            if best_ei is None:
+                continue
+            el_feat = elevators[best_ei]
+            el_id = el_feat["id"]
+            el_label = el_feat["properties"]["label"]
             elevator_doors.append({
                 "type": "Feature",
                 "id": obj_id(f"F{floor_no}", OBJ_TYPE["door"], i + 1),
@@ -3871,9 +3917,11 @@ def build_geojson(f1, f2):
                     "doorType": "elevator",
                     "doorSubType": "elevator",
                     "width_m": ed["width_m"],
-                    "rooms": [],
+                    # 归属元素 ID（需求⑳：不用 label）
+                    "rooms": [el_id],
+                    "elevatorId": el_id,
                     "elevatorLabel": el_label,
-                    "elevatorIndex": ei,
+                    "elevatorIndex": best_ei,
                     "axis": ed["axis_m"],
                     "wheelchairAccessible": True,
                     "surveyRequired": list(DOOR_SURVEY_FIELDS),

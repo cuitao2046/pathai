@@ -26,17 +26,33 @@ for fk in ("1", "2"):
     if not evd:
         print("  ❌ 未识别到电梯门"); ok = False
         continue
-    # 1) 归属校验
+    # 1) 归属校验（需求⑳：归属一律用元素 ID，不用 label）
+    elev_ids = {e["id"] for e in elevs}
     for d in evd:
         p = d["properties"]
-        ei = p.get("elevatorIndex")
+        rid = (p.get("rooms") or [None])[0]
+        eid = p.get("elevatorId")
         lbl = p.get("elevatorLabel")
-        valid = 0 <= ei < len(elevs) and lbl == elevs[ei]["properties"].get("label")
-        if not valid:
-            print(f"  ❌ {d['id']} 电梯归属无效: index={ei} label={lbl}")
+        if rid not in elev_ids or eid not in elev_ids:
+            print(f"  ❌ {d['id']} 电梯归属非 ID: rooms={rid} elevatorId={eid}")
+            ok = False
+            continue
+        # 坐标匹配校验：门应距所属电梯 <3m
+        el_feat = next(e for e in elevs if e["id"] == eid)
+        elc = el_feat["properties"]["centroid"]
+        c = d["geometry"]["coordinates"]
+        dist = ((c[0] - elc[0]) ** 2 + (c[1] - elc[1]) ** 2) ** 0.5
+        if dist > 3.0:
+            print(f"  ❌ {d['id']} -> {eid} 距离 {dist:.2f}m（错位）")
             ok = False
         else:
-            print(f"  ✅ {d['id']} -> {lbl} (宽 {p.get('width_m')}m)")
+            print(f"  ✅ {d['id']} -> {eid} ({lbl}, 距 {dist:.2f}m)")
+    # 1b) 拓扑 TD 归属 ID 校验
+    for n in topo["nodes"]:
+        if n.get("type") == "doorway" and n.get("doorType") == "elevator":
+            if n.get("elevatorId") not in elev_ids:
+                print(f"  ❌ TD {n['id']} elevatorId 无效: {n.get('elevatorId')}")
+                ok = False
     # 2) 拓扑 TD 节点
     td_ev = [n for n in topo["nodes"] if n.get("type") == "doorway"
              and n.get("doorType") == "elevator"]
