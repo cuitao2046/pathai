@@ -192,7 +192,7 @@ ROOM_TYPE_RULES = [
     (" resource", "classroom"), (" resource教室", "classroom"),
     ("办公", "office"), ("会议", "meeting"), ("接待", "meeting"),
     ("设备", "equipment"), ("机房", "equipment"), ("配电", "equipment"),
-    ("水井", "shaft"), ("风井", "shaft"), ("排风井", "shaft"), ("管井", "shaft"), ("井", "shaft"),
+    ("水井", "infrastructure"), ("风井", "infrastructure"), ("排风井", "infrastructure"), ("管井", "infrastructure"), ("井", "infrastructure"),
     ("储藏", "storage"), ("存放", "storage"), ("资料", "storage"), ("档案", "storage"),
     ("广播", "equipment"), ("管控", "equipment"),
     # 饮水处为服务核心内的开敞壁龛（无门，紧贴水井/卫生间模块），
@@ -227,7 +227,7 @@ ACCESSIBLE_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance",
     "elevator_hall", "atrium", "toilet",
 }
-NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
+NON_ACCESSIBLE_TYPES = {"staircase", "infrastructure"}
 
 # 拓扑建模时是否需要从走廊接入（指南 4.2：是否有独立出入口）
 # 走廊/门厅/大厅/出入口/楼梯/电梯厅均视为公共接入点，其他房间通过门接入走廊
@@ -1590,9 +1590,9 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
         OPEN_TYPES = {"corridor", "lobby", "activity", "atrium"}
         ENCLOSED_TYPES = {"room", "classroom", "lab", "office", "meeting",
                           "equipment", "storage", "library", "medical",
-                          "counseling", "reception", "shaft", "toilet",
+                          "counseling", "reception", "infrastructure", "toilet",
                           "elevator_hall", "staircase"}
-        is_shaft_toilet_mix = ("shaft" in distinct_types and
+        is_shaft_toilet_mix = ("infrastructure" in distinct_types and
                                "toilet" in distinct_types)
         has_open = bool(distinct_types & OPEN_TYPES)
         has_enc = bool(distinct_types & ENCLOSED_TYPES)
@@ -1750,7 +1750,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
         # 风井/水井通常小于普通房间 3m²；二次分割后允许最小 0.2m²，
         # 否则正确切出的红框小井道会再次被全局房间面积阈值丢弃。
         min_px_for_label = (0.2 / m2_per_px
-                            if classify_room_type(text) == "shaft"
+                            if classify_room_type(text) == "infrastructure"
                             else area_min_px)
         if not (min_px_for_label <= area <= area_max_px):
             continue
@@ -2105,7 +2105,7 @@ def generate_walkable_polygons(rooms, wall_segs, stair_boxes, evtr_boxes,
         if (x1 - x0) * (y1 - y0) > 0:
             obstacles.append(box(x0, y0, x1, y1).buffer(elev_buffer_m / SCALE))
     # 封闭房间：楼梯间再外扩挖空
-    _stair_like = {"staircase", "shaft"}
+    _stair_like = {"staircase", "infrastructure"}
     for r in rooms:
         if r.get("roomType") not in _open and r.get("polygon_pt") is not None:
             poly = r["polygon_pt"]
@@ -2174,7 +2174,7 @@ def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
       该口袋即真实前室(通常 2~12m²)；原开放空间被口袋吃掉的部分收缩、
       其余仍保留为走廊/门厅。
 
-    只针对电梯(elevator)与楼梯(staircase)井，不处理其它 utility shaft。
+    只针对电梯(elevator)与楼梯(staircase)井，不处理其它 utility infrastructure（风井/管道井）。
     新建房间追加到 rooms 列表，由 build_geojson 自动落到 geometry/semantic。
     返回新建前室数量。
     """
@@ -2401,7 +2401,7 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
             if "合班" in _lab(r):
                 continue
             rt = r.get("roomType") or ""
-            if rt not in OPEN and rt != "shaft":
+            if rt not in OPEN and rt != "infrastructure":
                 # 已属于教室/办公/卫生间等封闭空间 → 不抢
                 return False
         return True
@@ -2820,7 +2820,7 @@ def parse_floor(pdf_path, floor_no):
 
     # 英文编号仅附着到已有中文语义房间，不参与重分类；全局一对一分配，
     # 优先 code 点落在多边形内部，其次才允许距边界 <1m。
-    # II-WR-* 是卫生间编号，只能附着到 toilet，禁止误挂到相邻 shaft。
+    # II-WR-* 是卫生间编号，只能附着到 toilet，禁止误挂到相邻 infrastructure（风井/管道井）。
     code_candidates = []
     for ci, (code, (cx, cy)) in enumerate(room_codes):
         p = Point(cx, cy)
@@ -3012,7 +3012,7 @@ def parse_floor(pdf_path, floor_no):
         c = Point(dr["center"])
         cand = []
         for r in rooms:
-            if r["roomType"] in ("staircase", "elevator_hall", "shaft",
+            if r["roomType"] in ("staircase", "elevator_hall", "infrastructure",
                                  "atrium"):
                 continue
             if door_count.get(r["id"], 0) > 0:
@@ -3029,7 +3029,7 @@ def parse_floor(pdf_path, floor_no):
     # 门会先被 4pt 规则挂到邻房角点上。零门房间作为封闭空间必须有门，
     # 允许其从仍保留 >=1 扇门的多门房间处偷取 30pt 内最近的门。
     for r in rooms:
-        if r["roomType"] in ("staircase", "elevator_hall", "shaft",
+        if r["roomType"] in ("staircase", "elevator_hall", "infrastructure",
                              "atrium"):
             continue
         if door_count.get(r["id"], 0) > 0:
@@ -3116,7 +3116,7 @@ def parse_floor(pdf_path, floor_no):
     # 规则（用户 2026-08-05 简化）：封闭空间内部的门洞要保留（DK → 开门是
     # 单一判据）。仅当门是真正可推拉/开合的摆弧门(swing/fire)且两侧皆属服务
     # 核心时删除，避免男↔女卫生间内部对男卫生间密闭；门洞两侧皆通行，不算隔断门。
-    _CORE = {"toilet", "staircase", "equipment", "shaft"}
+    _CORE = {"toilet", "staircase", "equipment", "infrastructure"}
     _CIRC = {"corridor", "lobby", "atrium", "entrance",
              "accessible_entrance", "elevator_hall"}
 
@@ -3159,7 +3159,7 @@ def parse_floor(pdf_path, floor_no):
     # --- QA：封闭空间必须识别出所有门洞（走廊/门厅/出入口/楼梯/电梯厅/管井/中庭为公共过渡空间）
     zero_door = [r["label"] for r in rooms
                  if not any(r["id"] in dr["rooms"] for dr in doors)
-                 and r["roomType"] not in ("staircase", "elevator_hall", "shaft",
+                 and r["roomType"] not in ("staircase", "elevator_hall", "infrastructure",
                                            "atrium", "corridor", "lobby",
                                            "entrance", "accessible_entrance")]
     orphan_doors = [dr for dr in doors if not dr["rooms"]]

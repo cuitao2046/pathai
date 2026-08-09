@@ -43,7 +43,7 @@ OPEN_TYPES = {
 }
 CLOSED_TYPES = {
     "classroom", "lab", "office", "meeting", "toilet", "storage",
-    "equipment", "library", "medical", "shaft", "staircase",
+    "equipment", "library", "medical", "infrastructure", "staircase",
     "elevator_hall", "room", "reception", "counseling",
 }
 

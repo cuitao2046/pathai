@@ -35,7 +35,7 @@ ROOM_COLORS = {
     "toilet": "#B2DFDB", "corridor": "#F5F5F5", "lobby": "#FFF3E0",
     "staircase": "none", "elevator_hall": "#F8BBD0", "storage": "#CFD8DC",
     "equipment": "#B0BEC5", "medical": "#FFEBEE", "lab": "#B3E5FC",
-    "reception": "#FCE4EC", "shaft": "#ECEFF1", "atrium": "#FAFAFA",
+    "reception": "#FCE4EC", "infrastructure": "#ECEFF1", "atrium": "#FAFAFA",
     "library": "#DCEDC8", "activity": "#E1F5FE", "entrance": "#C8E6C9",
     "accessible_entrance": "#BBDEFB", "room": "#FAFAFA", "other": "#FAFAFA",
     "elevator_lobby": "#FFE0B2", "stair_lobby": "#D7CCC8",
@@ -345,6 +345,22 @@ def info_attr(d):
     return "data-info='" + s + "'"
 
 
+def link_obj(tid, text=None):
+    """构造「可点击 ID 链接对象」：JS 端 renderCell 识别 _l 字段，
+    渲染为点击后居中定位到对应 SVG 元素的超链接。tid 为目标要素/节点 ID。"""
+    return {"_l": tid, "t": text if text is not None else tid}
+
+
+def _centroid_ring(ring):
+    """多边形外环质心（CAD 坐标）。ring 首尾可能重合，需去重计数。"""
+    n = len(ring) - 1 if ring and ring[0] == ring[-1] else len(ring)
+    if n <= 0:
+        return 0.0, 0.0
+    xs = [p[0] for p in ring[:n]]
+    ys = [p[1] for p in ring[:n]]
+    return sum(xs) / len(xs), sum(ys) / len(ys)
+
+
 def build_node_lookup(geo_json):
     lookup = {}
     for fk, fd in geo_json["floors"].items():
@@ -485,7 +501,7 @@ var ANNO_OVERRIDES = [];
 
 var ANNO_ROOM_COLORS = {
   "classroom":"#FFF9C4","office":"#D7CCC8","meeting":"#F8BBD0","reception":"#FFE0B2",
-  "medical":"#C8E6C9","storage":"#D7CCC8","equipment":"#CFD8DC","shaft":"#B0BEC5",
+  "medical":"#C8E6C9","storage":"#D7CCC8","equipment":"#CFD8DC","infrastructure":"#B0BEC5",
   "toilet":"#BBDEFB","staircase":"#FFCDD2","corridor":"#FAFAFA","lobby":"#FFF59D",
   "activity":"#F8BBD0","atrium":"#F3E5F5","elevator_lobby":"#FFCCBC","stair_lobby":"#FFE0B2",
   "room":"#FAFAFA","other":"#FAFAFA","entrance":"#BBDEFB","accessible_entrance":"#BBDEFB"
@@ -645,6 +661,8 @@ def main():
     cf_codes = {e.get("code") for e in cf if e.get("code")}
 
     parts = []
+    # 地图要素中心表：要素ID -> [svg像素中心x, y]，供详情面板点击ID后居中定位
+    map_centers = {}
     parts.append(f'''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -796,6 +814,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 <div class="layer-controls" id="layerControls">
   <b>图层:</b>
   <label><input type="checkbox" checked onchange="toggleLayer('room', this.checked)"> 房间</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('infrastructure', this.checked)"> 基础设施（风井/管道井）</label>
   <label><input type="checkbox" checked onchange="toggleLayer('corridor', this.checked)"> 走道</label>
   <label><input type="checkbox" checked onchange="toggleLayer('lobby', this.checked)"> 门厅</label>
   <label><input type="checkbox" checked onchange="toggleLayer('activity', this.checked)"> 活动区</label>
@@ -999,6 +1018,78 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             _td_by_key.setdefault(
                 (n.get("doorType"), frozenset(n.get("rooms") or [])), []).append(n)
 
+        # ---- 反向对照表：拓扑节点 → 对应地图要素ID（用于详情展示，需求①）----
+        _geom_rooms = geom.get("rooms", [])
+        _room_by_id = {r["id"]: r for r in _geom_rooms}
+        # 门要素按 (doorType, 房间集合) 建键 → 门要素ID列表
+        _door_by_key = {}
+        _door_by_id = {}
+        for dr in geom.get("doors", []):
+            p = dr.get("properties", {})
+            _door_by_key.setdefault(
+                (p.get("doorType"), frozenset(p.get("rooms") or [])), []).append(dr["id"])
+            _door_by_id[dr["id"]] = dr
+        # 设施（楼梯/电梯）按 编号code/标签 建键 → 要素ID
+        _fac_by_code = {}
+        for st in geom.get("stairs", []):
+            _fac_by_code[st["properties"].get("code")] = st["id"]
+            _fac_by_code[st["properties"].get("label")] = st["id"]
+        for ev in geom.get("elevators", []):
+            _fac_by_code[ev["properties"].get("code")] = ev["id"]
+            _fac_by_code[ev["properties"].get("label")] = ev["id"]
+
+        def _nearest_door_for_td(nd):
+            """给拓扑门节点(TD)匹配几何门要素ID：优先 (门型,房间) 完全一致，
+            其次 房间重叠 + 门型一致，最后 坐标最近兜底。"""
+            dt = nd.get("doorType")
+            rooms = frozenset(nd.get("rooms") or [])
+            cands = _door_by_key.get((dt, rooms))
+            if not cands:
+                cands = [d["id"] for d in _door_by_id.values()
+                         if d["properties"].get("doorType") == dt
+                         and (set(d["properties"].get("rooms") or []) & rooms)]
+            if not cands:
+                cands = list(_door_by_id.keys())
+            if not cands:
+                return None
+            nc = nd["coordinates"]
+            def _d(did):
+                c = _door_by_id[did]["geometry"]["coordinates"]
+                return ((c[0] - nc[0]) ** 2 + (c[1] - nc[1]) ** 2) ** 0.5
+            return min(cands, key=_d)
+
+        # ---- 地图要素中心表（需求②：点击ID居中定位）----
+        for r in _geom_rooms:
+            _rid = r.get("id")
+            if not _rid or _rid in map_centers:
+                continue
+            cx, cy = _centroid_ring(r["geometry"]["coordinates"][0])
+            sx, sy = tosvg(cx, cy)
+            map_centers[_rid] = [float(sx), float(sy)]
+        for dr in geom.get("doors", []):
+            _did = dr.get("id")
+            if not _did or _did in map_centers:
+                continue
+            c = dr["geometry"]["coordinates"]
+            sx, sy = tosvg(c[0], c[1])
+            map_centers[_did] = [float(sx), float(sy)]
+        for st in geom.get("stairs", []):
+            _sid = st.get("id")
+            if not _sid:
+                continue
+            cent = st["properties"].get("centroid")
+            sx, sy = (tosvg(cent[0], cent[1]) if cent
+                      else tosvg(*_centroid_ring(st["geometry"]["coordinates"][0])))
+            map_centers[_sid] = [float(sx), float(sy)]
+        for ev in geom.get("elevators", []):
+            _eid = ev.get("id")
+            if not _eid:
+                continue
+            cent = ev["properties"].get("centroid")
+            sx, sy = (tosvg(cent[0], cent[1]) if cent
+                      else tosvg(*_centroid_ring(ev["geometry"]["coordinates"][0])))
+            map_centers[_eid] = [float(sx), float(sy)]
+
         def _nearest_topo(point, allow=("facility", "facility_entrance",
                                         "intersection", "room", "doorway"),
                           max_dist=15.0):
@@ -1032,7 +1123,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             _rid = r.get("id")  # 几何房间唯一标识，用作房间编号与拓扑节点匹配（properties.roomId 在部分房间有误）
             tip = f"房间：{label or '—'}\\n类型：{rtype}\\n编号：{_rid or '—'}"
             det = {"title": label or "房间", "rows": [
-                ("房间编号", _rid or "—"),
+                ("房间编号", link_obj(_rid) if _rid else "—"),
                 ("类型", rtype),
                 ("楼层", p.get("floor", floor)),
                 ("公共空间", "是" if p.get("public") else "否"),
@@ -1066,12 +1157,15 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 layer_cls = "layer_lobby_elevator"
             elif rtype == "stair_lobby":
                 layer_cls = "layer_lobby_stair"
+            elif rtype == "infrastructure":
+                # 风井/管道井等基础设施封闭空间：独立图层，不归入「房间」
+                layer_cls = "layer_infrastructure"
             elif rtype in ("corridor", "lobby", "activity", "atrium"):
                 layer_cls = "layer_" + rtype
             else:
                 layer_cls = "layer_room"
             parts.append(
-                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" data-mid="{_rid or ''}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1126,6 +1220,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             linked = code_s in cf_codes if code_s else False
             tip = f"楼梯：{label_s}" + ("（跨层连通 1F↔2F）" if linked else "（本层独有）")
             det = {"title": label_s or "楼梯", "rows": [
+                ("设施编号", link_obj(st["id"])),
                 ("类型", "楼梯间"),
                 ("井道编号", code_s or "（图纸未标注）"),
                 ("跨层连通", "是 · 1F↔2F" if linked else "否 · 仅本层"),
@@ -1136,7 +1231,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if _stid:
                 det["topoId"] = _stid
             parts.append(
-                f'<g class="layer_stairs" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="layer_stairs" data-mid="{st["id"]}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="#FFCCBC" stroke="#E64A19" stroke-width="0.8"/></g>\n'
             )
             if label_s and cent:
@@ -1156,6 +1251,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             linked = code_e in cf_codes if code_e else False
             tip = f"电梯：{label_e}" + ("（跨层连通 1F↔2F）" if linked else "（本层独有）")
             det = {"title": label_e or "电梯", "rows": [
+                ("设施编号", link_obj(ev["id"])),
                 ("类型", "电梯间"),
                 ("井道编号", code_e or "（图纸未标注）"),
                 ("跨层连通", "是 · 1F↔2F" if linked else "否 · 仅本层"),
@@ -1166,7 +1262,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if _eid:
                 det["topoId"] = _eid
             parts.append(
-                f'<g class="layer_elevator" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="layer_elevator" data-mid="{ev["id"]}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="#F8BBD0" stroke="#C2185B" stroke-width="0.8"/></g>\n'
             )
             if label_e and cent:
@@ -1212,14 +1308,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             tip = f"{dname}\\n宽度：{w:.2f}m\\n开启：{od_full}"
             det = {"title": dname,
                    "rows": [
-                       ("门编号", dr.get("id") or p.get("id") or "—"),
+                       ("门编号", link_obj(dr.get("id") or p.get("id") or "—")),
                        ("类型", f"{dname}（{dtype}）"),
                        ("子类", sub),
                        ("开启方向", od_full),
-                       ("摆向房间", swing_room),
+                       ("摆向房间", link_obj(swing_room) if swing_room and swing_room != "—" else "—"),
                        ("宽度", f"{w:.2f} m"),
                        ("轮椅可达", wa_disp),
-                       ("归属房间", "、".join(p.get("rooms", [])) or "—"),
+                       ("归属房间", [link_obj(rid) for rid in p.get("rooms", [])] if p.get("rooms") else "—"),
                        ("来源图层", p.get("sourceLayer", "—")),
                        ("待现场核实", surv_disp),
                    ]}
@@ -1262,7 +1358,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if dtype == "fire":
                 s = max(3.0, w * SCALE * 0.22)
                 parts.append(
-                    f'<g class="{dcls}" {attr}>'
+                    f'<g class="{dcls}" data-mid="{dr["id"]}" {attr}>'
                     f'<rect x="{float(sx)-s/2:.1f}" y="{float(sy)-s/2:.1f}" width="{s:.1f}" height="{s:.1f}" '
                     f'fill="#FF5722" opacity="0.9"/></g>\n'
                 )
@@ -1271,13 +1367,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 diamond = (f"{float(sx)},{float(sy)-s:.1f} {float(sx)+s:.1f},{float(sy)} "
                            f"{float(sx)},{float(sy)+s:.1f} {float(sx)-s:.1f},{float(sy)}")
                 parts.append(
-                    f'<g class="{dcls}" {attr}>'
+                    f'<g class="{dcls}" data-mid="{dr["id"]}" {attr}>'
                     f'<polygon points="{diamond}" fill="#1E8449" opacity="0.9"/></g>\n'
                 )
             else:
                 r = max(2.2, w * SCALE * 0.16)
                 parts.append(
-                    f'<g class="{dcls}" {attr}>'
+                    f'<g class="{dcls}" data-mid="{dr["id"]}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r:.1f}" fill="#2196F3" opacity="0.85"/></g>\n'
                 )
 
@@ -1290,23 +1386,33 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             label_n = n.get("label", "")
             nid = n["id"]
             # 详情
-            rows = [("节点ID", '<b>' + nid + '</b>'), ("类型", ntype)]
+            rows = [("节点ID", link_obj(nid)), ("类型", ntype)]
             _rl = n.get("riskLevel")
             if isinstance(_rl, (int, float)):
                 rows.append(("风险等级", f"{_rl:g}"))
-            if ntype == "facility":
+            # 反向关联：拓扑节点 → 对应地图要素ID（需求①：选中拓扑节点展示其地图元素）
+            if ntype == "room":
+                rows.append(("房间", n.get("label", "—")))
+                _mrid = n.get("roomId")
+                rows.append(("对应房间", link_obj(_mrid) if (_mrid and _mrid in _room_by_id) else "—"))
+            elif ntype == "doorway":
+                _mdid = _nearest_door_for_td(n)
+                rows.append(("对应门", link_obj(_mdid) if _mdid else "—"))
+            elif ntype == "facility":
                 rows.append(("设施类型", n.get("facilityType", "—")))
                 rows.append(("视障可达", "是" if n.get("blindAccessible") else "否"))
                 rows.append(("轮椅可达", "是" if n.get("wheelchairAccessible") else "否"))
-            if ntype == "facility_entrance":
+                _mfid = _fac_by_code.get(n.get("label"))
+                rows.append(("对应设施", link_obj(_mfid) if _mfid else "—"))
+            elif ntype == "facility_entrance":
                 rows.append(("设施类型", n.get("facilityType", "—")))
-            if ntype == "room":
-                rows.append(("房间", n.get("label", "—")))
-            if ntype == "intersection":
+                rows.append(("对应要素", "—"))
+            elif ntype == "intersection":
                 _rt = n.get("roomType", "")
                 _rt_cn = {"corridor": "走道/走廊", "lobby": "门厅/大厅",
                           "activity": "活动空间", "atrium": "中庭"}.get(_rt, _rt or "开放空间")
                 rows.append(("空间类型", _rt_cn))
+                rows.append(("对应要素", "—"))
             if label_n:
                 rows.append(("标签", label_n))
             det = {"title": label_n or ntype, "rows": rows}
@@ -1654,6 +1760,11 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     parts.append(
         f'<script type="application/json" id="path-graph-data">{path_graph_js}</script>\n'
     )
+    # 地图要素中心表：要素ID -> [svg像素中心x, y]，供详情面板点击ID后居中定位（需求②）
+    map_centers_js = json.dumps(map_centers, ensure_ascii=False, separators=(",", ":"))
+    parts.append(
+        f'<script type="application/json" id="map-centers-data">{map_centers_js}</script>\n'
+    )
     # 完整 GeoJSON 数据：供「拓扑边编辑」在浏览器内增删边后整体写回文件
     full_geojson_js = json.dumps(geo, ensure_ascii=False, separators=(",", ":"))
     parts.append(
@@ -1671,10 +1782,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 // （applyTransform / showDetail / ensureLayer / clearHighlight / toggleLayer /
 // rpEsc / allLayers 以及 svg / wrapper / scale / translateX / translateY）
 // 均为全局定义，运行时（用户点击）均已就绪。
-var SEARCH_LAYERS = ['room', 'corridor', 'lobby', 'activity', 'atrium', 'lobby_elevator', 'lobby_stair',
+var SEARCH_LAYERS = ['room', 'infrastructure', 'corridor', 'lobby', 'activity', 'atrium', 'lobby_elevator', 'lobby_stair',
   'door_swing', 'door_fire', 'door_opening', 'topo_node', 'stairs', 'elevator', 'risk', 'ramp', 'tactile', 'material', 'crossfloor'];
 var SEARCH_TYPE_CN = {{
-  room: '房间', corridor: '走道', lobby: '门厅', activity: '活动区', atrium: '中庭',
+  room: '房间', infrastructure: '基础设施', corridor: '走道', lobby: '门厅', activity: '活动区', atrium: '中庭',
   lobby_elevator: '电梯前室', lobby_stair: '楼梯前室',
   door_swing: '普通门', door_fire: '防火门', door_opening: '门洞',
   topo_node: '拓扑节点', stairs: '楼梯', elevator: '电梯', risk: '风险点', ramp: '坡道',
@@ -2023,6 +2134,17 @@ function ensureLayer(name, checked) {{
   var cb = document.querySelector('#layerControls input[onchange*="' + name + '"]');
   if (cb) cb.checked = checked;
 }}
+function renderCell(v) {{
+  // 可点击 ID 链接对象 {{_l: id, t: text}} → 点击后居中定位到对应元素
+  if (v && typeof v === 'object') {{
+    if (v._l) {{
+      return '<a href="javascript:void(0)" class="id-link" data-mid="' + rpEsc(v._l) + '">'
+           + rpEsc(v.t != null ? v.t : v._l) + '</a>';
+    }}
+    if (Array.isArray(v)) {{ return v.map(renderCell).join('、'); }}
+  }}
+  return rpEsc(String(v));
+}}
 function showDetail(d) {{
   var box = document.getElementById('detail');
   var title = d.title || '详情';
@@ -2030,16 +2152,14 @@ function showDetail(d) {{
   var titleId = '';
   if (d.id) titleId = ' <span style="font-size:12px;color:#666;font-weight:400">(' + rpEsc(d.id) + ')</span>';
   var h = '<h4>' + title + titleId + '</h4>';
-    (d.rows || []).forEach(function(r) {{
-      h += '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
-    }});
-    // 拓扑节点关联行：点击可居中定位到该拓扑节点
-    if (d.topoId) {{
-      h += '<div class="row topo-link"><span>拓扑节点</span>'
-         + '<span><a href="javascript:void(0)" data-topoid="' + rpEsc(d.topoId) + '" '
-         + 'style="color:#1565C0;text-decoration:underline">' + rpEsc(d.topoId) + '</a></span></div>';
-    }}
-    box.innerHTML = h;
+  (d.rows || []).forEach(function(r) {{
+    h += '<div class="row"><span>' + rpEsc(String(r[0])) + '</span><span>' + renderCell(r[1]) + '</span></div>';
+  }});
+  // 拓扑节点关联行：点击可居中定位到对应拓扑节点（统一走 data-mid → centerById）
+  if (d.topoId) {{
+    h += '<div class="row"><span>拓扑节点</span><span>' + renderCell({{_l: d.topoId, t: d.topoId}}) + '</span></div>';
+  }}
+  box.innerHTML = h;
 }}
 // 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁；
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
@@ -2205,6 +2325,12 @@ var PATH_GRAPH = null;
 (function(){
   var el = document.getElementById('path-graph-data');
   if (el) { try { PATH_GRAPH = JSON.parse(el.textContent); } catch(e) { console.warn(e); } }
+})();
+// 地图要素中心表（要素ID -> [svg像素中心x, y]），供详情面板点击ID居中定位
+var MAP_CENTERS = {};
+(function(){
+  var el = document.getElementById('map-centers-data');
+  if (el) { try { MAP_CENTERS = JSON.parse(el.textContent); } catch(e) { console.warn(e); } }
 })();
 
 function togglePathMode() {
@@ -2511,10 +2637,41 @@ function focusTopoNode(id) {
     try { if (JSON.parse(f).id === id) g.classList.add('selected'); } catch (e) {}
   });
 }
+// 点击详情面板中任一 ID 链接（data-mid）→ 居中定位到对应元素：
+// 拓扑节点走 PATH_GRAPH，地图要素走 MAP_CENTERS（svg 像素中心）。
+function centerById(id) {
+  var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
+  if (n) { focusTopoNode(id); return; }
+  var c = (typeof MAP_CENTERS !== 'undefined') && MAP_CENTERS[id];
+  if (!c) { alert('未找到要素 ' + id); return; }
+  if (scale < 2.5) scale = 2.5;
+  var rect = wrapper.getBoundingClientRect();
+  translateX = rect.width / 2 - c[0] * scale;
+  translateY = rect.height / 2 - c[1] * scale;
+  applyTransform(); setZoomInfo();
+  highlightById(id);
+}
+function highlightById(id) {
+  clearHighlight();
+  var els = document.querySelectorAll('[data-mid="' + rpEsc(id) + '"]');
+  if (!els.length) els = document.querySelectorAll('[data-roomid="' + rpEsc(id) + '"]');
+  els.forEach(function(g) {
+    g.classList.add('selected');
+    var cls = (g.getAttribute('class') || '');
+    var m = cls.match(/layer_([A-Za-z0-9_]+)/);
+    if (m) ensureLayer(m[1], true);
+  });
+  var old = document.getElementById('detail-located');
+  if (old) old.remove();
+  var stat = document.createElement('div');
+  stat.id = 'detail-located'; stat.className = 'row';
+  stat.innerHTML = '<span>已居中定位</span><span>' + rpEsc(id) + '</span>';
+  document.getElementById('detail').appendChild(stat);
+}
 document.getElementById('detail').addEventListener('click', function(e) {
-  var a = e.target.closest('[data-topoid]');
+  var a = e.target.closest('[data-mid]');
   if (!a) return;
-  focusTopoNode(a.getAttribute('data-topoid'));
+  centerById(a.getAttribute('data-mid'));
 });
 
 function renderRouteList(result, mode, startId, endId) {
@@ -2726,7 +2883,7 @@ function drawEdgeElement(edge){{
   var a = PATH_GRAPH.nodes[edge.from], b = PATH_GRAPH.nodes[edge.to];
   if (!a || !b) return null;
   var det = {{title: '导航边 ' + edge.id, rows: [
-    ['起始', edge.from], ['终点', edge.to],
+    ['起始', {{_l: edge.from, t: edge.from}}], ['终点', {{_l: edge.to, t: edge.to}}],
     ['距离', edge.distance.toFixed(2) + ' m'],
     ['预估时间', (edge.estimatedTime || 0).toFixed(1) + ' s'],
     ['可达等级', edge.accessibilityLevel], ['风险等级', edge.riskLevel],

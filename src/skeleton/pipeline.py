@@ -11,7 +11,7 @@ import math
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import networkx as nx
-from shapely.geometry import LineString, Point, mapping, shape
+from shapely.geometry import LineString, Point, Polygon, mapping, shape
 from shapely.ops import unary_union
 
 from .medial_axis import (
@@ -142,6 +142,105 @@ def _contract_nearby_graph_nodes(G: nx.Graph, radius_m: float = 1.0) -> nx.Graph
 
 def _obj_id(floor, abbr, seq):
     return f"F{floor}-{abbr}-{seq:04d}"
+
+
+# 拓扑层合并聚集交叉口(TI)节点的距离阈值。
+# 手绘骨架/栅格中轴在 doorway 附近、走廊转折处常产生 0.5~1.5m 的冗余微节点，
+# 合并后可显著减少无意义拓扑节点，同时不影响真实长走廊交叉口。
+TI_MERGE_RADIUS_M = 1.5
+
+
+def _merge_nearby_ti_nodes(nodes: list, edges: list,
+                           radius_m: float = TI_MERGE_RADIUS_M) -> tuple:
+    """合并距离 < radius_m 的 intersection(TI) 拓扑节点。
+
+    使用并查集按欧氏距离聚类；每个簇以 id 最小节点为代表，坐标取质心；
+    所有与这些 TI 相连的边改接到代表节点，去除自环与重复边，并按新坐标
+    重新计算距离/预估时间。返回 (new_nodes, new_edges, merge_cluster_count)。
+    """
+    ti_nodes = [n for n in nodes if n.get("type") == "intersection"]
+    if len(ti_nodes) <= 1:
+        return nodes, edges, 0
+
+    parent = {n["id"]: n["id"] for n in ti_nodes}
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    r2 = radius_m * radius_m
+    for i in range(len(ti_nodes)):
+        ax, ay = ti_nodes[i]["coordinates"]
+        for j in range(i + 1, len(ti_nodes)):
+            bx, by = ti_nodes[j]["coordinates"]
+            if (ax - bx) ** 2 + (ay - by) ** 2 <= r2:
+                union(ti_nodes[i]["id"], ti_nodes[j]["id"])
+
+    clusters: Dict[str, List[dict]] = {}
+    for n in ti_nodes:
+        r = find(n["id"])
+        clusters.setdefault(r, []).append(n)
+
+    rep_of: Dict[str, str] = {}
+    new_ti_nodes: List[dict] = []
+    for rep_id, members in clusters.items():
+        if len(members) == 1:
+            new_ti_nodes.append(dict(members[0]))
+            rep_of[members[0]["id"]] = members[0]["id"]
+            continue
+        mx = sum(m["coordinates"][0] for m in members) / len(members)
+        my = sum(m["coordinates"][1] for m in members) / len(members)
+        rep = min(members, key=lambda x: x["id"])
+        new_n = dict(rep)
+        new_n["coordinates"] = [round(mx, 3), round(my, 3)]
+        new_ti_nodes.append(new_n)
+        for m in members:
+            rep_of[m["id"]] = rep["id"]
+
+    # 重新编号 label，保持顺序
+    new_ti_nodes.sort(key=lambda n: n["id"])
+    for i, n in enumerate(new_ti_nodes):
+        n["label"] = f"交叉口{i + 1}"
+
+    non_ti = [dict(n) for n in nodes if n.get("type") != "intersection"]
+    all_nodes = non_ti + new_ti_nodes
+    coord_map = {n["id"]: n["coordinates"] for n in all_nodes}
+
+    new_edges: List[dict] = []
+    seen = set()
+
+    def rewire(nid):
+        return rep_of.get(nid, nid)
+
+    for e in edges:
+        a = rewire(e["from"])
+        b = rewire(e["to"])
+        if a == b:
+            continue
+        key = tuple(sorted((a, b)))
+        if key in seen:
+            continue
+        seen.add(key)
+        new_e = dict(e)
+        new_e["from"] = a
+        new_e["to"] = b
+        ca, cb = coord_map[a], coord_map[b]
+        new_dist = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
+        new_e["distance"] = round(float(new_dist), 2)
+        new_e["estimatedTime"] = round(float(new_dist) / BLIND_WALK_SPEED, 1)
+        new_edges.append(new_e)
+
+    merge_count = sum(1 for c in clusters.values() if len(c) > 1)
+    print(f"    [skeleton] 合并近邻 TI: 簇 {merge_count} 个, "
+          f"TI {len(ti_nodes)} -> {len(new_ti_nodes)}")
+    return all_nodes, new_edges, merge_count
 
 
 def build_skeleton_for_walkables(
@@ -379,7 +478,7 @@ def build_skeleton_topology(
             "elevator_lobby", "stair_lobby"}
     PUBLIC = {"toilet", "staircase", "elevator_hall", "corridor", "lobby",
               "entrance", "accessible_entrance", "atrium"}
-    NON_ACC = {"staircase", "shaft"}
+    NON_ACC = {"staircase", "infrastructure"}
 
     # --- 收集 walkable ---
     walkables = []
@@ -519,20 +618,70 @@ def build_skeleton_topology(
                 })
         skel_lines = sk["lines"]
 
-    # ---------- TD: 门投影到骨架 + 二次合并（投影重合的门） ----------
-    door_projs = project_doors_to_skeleton(
-        door_centers, skel_lines, max_dist_m=10.0
-    ) if skel_lines else []
-    # 二次合并：以投影后最终坐标为依据（阈值 1.0m），吸收「不同门但投影到同一
-    # 骨架点」造成的重叠 TD 节点（如同一房间多个邻近入口）。合并时 center_m
-    # 被改写为最终投影坐标，下方直接采用。
-    _final = []
-    for i, dr in enumerate(td_doors):
-        c = list(dr.get("center_m") or [0, 0])
-        if i < len(door_projs) and door_projs[i].get("projected"):
-            c = list(door_projs[i]["projected"])
-        _final.append(tuple(c))
-    td_doors = _merge_nearby_doors(td_doors, 1.0, coords=_final)
+    # ---------- TD: 门节点坐标保持在「真实门开口」处（不投影到走廊骨架） ----------
+    # 说明：此前把门投影到走廊骨架线、使 TD 节点落在走廊里，会导致 room↔door
+    # (TR↔TD) 拓扑边从房间质心直接连到走廊里的投影点、从而「穿墙」。
+    # 现改为 TD 节点直接取原始门坐标（房间开口处），room↔door 边自然落在房间内；
+    # 门→走廊边(TD↔TI) 仍按真实门位置就近接入最近走廊 TI（穿墙段落在门口开口，合法）。
+    # 门合并仍以原始门坐标(center_m)为依据，保证 TD 节点留在房间开口处。
+    td_doors = _merge_nearby_doors(td_doors, 1.0)
+
+    # 门贴墙补全归属（需求⑥：房间必须与「所有」swing/fire 门都有边）
+    # 门 rooms 字段来自 CAD 标签归属，偶有缺漏（一扇门漏标某房间）。
+    # 以门坐标贴房间墙(<0.6m)为准补全：物理上开在该房间墙上的门，必为该房间的门。
+    # 仅补封闭房间（roomType 非开放/非卫生间），且仅对 swing/fire 门补全。
+    _WALL_TOL = 0.6
+    _room_polys = {}
+    for r in rooms:
+        poly_pts = r.get("coords_m") or r.get("polygon_m")
+        if poly_pts:
+            try:
+                _room_polys[r["id"]] = Polygon(poly_pts)
+            except Exception:
+                pass
+    if _room_polys:
+        _closed_ids = {rid for rid, r in room_by_id.items()
+                       if r.get("roomType") not in OPEN and r.get("roomType") != "toilet"}
+        for dr in td_doors:
+            if dr.get("kind") not in ("swing", "fire"):
+                continue
+            dc = dr.get("center_m")
+            if not dc:
+                continue
+            dpt = Point(dc)
+            owned = set(dr.get("rooms") or [])
+            for rid in _closed_ids:
+                if rid in owned or rid not in _room_polys:
+                    continue
+                if _room_polys[rid].boundary.distance(dpt) < _WALL_TOL:
+                    owned.add(rid)
+            if len(owned) > len(dr.get("rooms") or []):
+                dr["rooms"] = sorted(owned)
+
+    # 门洞(opening)重定向：封闭房间(非卫生间)若不以 swing/fire 作为出入口，
+    # 将其仅有的 opening 提拔为普通门(swing)。这样既能满足「房间质心节点只连
+    # 普通门/防火门」的规则，又不至于让房间因无 swing/fire 门而失联。
+    room_type_by_id = {r["id"]: r.get("roomType") for r in rooms}
+    _room_has_sf = set()
+    for dr in td_doors:
+        if dr.get("kind") in ("swing", "fire"):
+            for rid in dr.get("rooms", []):
+                _room_has_sf.add(rid)
+
+    def _is_closed_room(rid):
+        rt = room_type_by_id.get(rid)
+        return rt is not None and rt not in OPEN and rt != "toilet"
+
+    for dr in td_doors:
+        if dr.get("kind") != "opening":
+            continue
+        rms = dr.get("rooms", [])
+        if not rms:
+            continue
+        # 仅当所有归属房间都是非卫生间封闭房间、且该门是其唯一出入口时提拔
+        if all(_is_closed_room(rid) for rid in rms) and \
+           all(rid not in _room_has_sf for rid in rms):
+            dr["kind"] = "swing"
 
     door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None
     for i, dr in enumerate(td_doors):
@@ -612,18 +761,23 @@ def build_skeleton_topology(
         if dnid is None:
             continue
         dcoord = next(n["coordinates"] for n in nodes if n["id"] == dnid)
+        kind = dr.get("kind", "swing")
         for rid in dr.get("rooms", []):
             rnid = room_index.get(rid)
             if rnid is None:
                 continue
             r = room_by_id[rid]
+            # 规则：非卫生间封闭房间，质心节点只连普通门/防火门；
+            # 门洞(opening)不与该房间质心节点直连（其归属房间若为卫生间则允许）。
+            if r.get("roomType") != "toilet" and kind == "opening":
+                continue
             dist = math.hypot(
                 dcoord[0] - r["centroid_m"][0],
                 dcoord[1] - r["centroid_m"][1],
             )
             add_edge(rnid, dnid, dist,
-                     a_level=2 if dr.get("kind") == "fire" else 0,
-                     r_level=5 if dr.get("kind") == "fire" else 0.5)
+                     a_level=2 if kind == "fire" else 0,
+                     r_level=5 if kind == "fire" else 0.5)
 
     # 2) TD ↔ 最近 TI（优先：最近图节点对应的 TI；否则欧氏最近 TI）
     for i, dnid in enumerate(door_node_ids):
@@ -772,6 +926,9 @@ def build_skeleton_topology(
                 best_d, best_dn = d, dnid
         if best_dn is not None:
             add_edge(en["id"], best_dn, best_d, a_level=0, r_level=5)
+
+    # 6) 全局合并聚集的 TI 节点（手绘/栅格骨架在 doorway、转折处产生的冗余微交叉口）
+    nodes, edges, _ = _merge_nearby_ti_nodes(nodes, edges, radius_m=TI_MERGE_RADIUS_M)
 
     # skeleton GeoJSON features
     if manual_skeleton is not None:

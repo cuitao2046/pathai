@@ -57,7 +57,7 @@ ROOM_COLORS = {
     "medical": "#FFD6D6",        # 医务 浅红
     "lab": "#D9F2D9",            # 实验室 浅绿
     "reception": "#FFE8F0",      # 接待 浅粉
-    "shaft": "#D8D8D8",          # 管井 深灰
+    "infrastructure": "#D8D8D8",          # 管井/风井 深灰
     "atrium": "#F7F7F7",         # 中庭 近白
     "room": "#F5F5DC",           # 通用房间 米色
 }

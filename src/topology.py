@@ -32,7 +32,7 @@ ACCESSIBLE_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance",
     "elevator_hall", "atrium", "toilet",
 }
-NON_ACCESSIBLE_TYPES = {"staircase", "shaft"}
+NON_ACCESSIBLE_TYPES = {"staircase", "infrastructure"}
 # 开放流通空间：走道/门厅/大厅/活动空间/中庭/电梯前室/楼梯前室 —— 与封闭空间
 # （房间/管井/电梯/楼梯间）属不同类型，建模为 circulation 节点（intersection），
 # 不建为 enclosed-room 节点。

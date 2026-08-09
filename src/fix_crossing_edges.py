@@ -36,7 +36,7 @@ OPEN = {
 }
 CLOSED = {
     "classroom", "lab", "office", "meeting", "toilet", "storage",
-    "equipment", "library", "medical", "shaft", "staircase",
+    "equipment", "library", "medical", "infrastructure", "staircase",
     "elevator_hall", "room", "reception", "counseling",
 }
 WALK_SPEED_M_S = 0.8
