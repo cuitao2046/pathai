@@ -2160,6 +2160,8 @@ var DETAIL_PLACEHOLDER = '<h4>点击任意要素查看详情</h4><div style="col
 function clearHighlight() {{
   document.querySelectorAll('.selected').forEach(function(el){{ el.classList.remove('selected'); }});
   document.querySelectorAll('.neighbor').forEach(function(el){{ el.classList.remove('neighbor'); }});
+  var ring = document.getElementById('path-flash-ring');
+  if (ring) ring.innerHTML = '';
 }}
 function resetDetail() {{ document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
@@ -2717,7 +2719,7 @@ function focusPathNode(id) {
   ring.appendChild(c2);
   // 若节点已加载但其坐标与 PATH_GRAPH 一致，ring 与其自然重合
 }
-// 详情面板点击「拓扑节点」链接 → 居中定位并高亮该拓扑节点
+// 详情面板点击「拓扑节点」链接 → 居中定位 + 醒目高亮该拓扑节点（需求⑮）
 function focusTopoNode(id) {
   var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
   if (!n) { alert('未找到拓扑节点 ' + id); return; }
@@ -2731,9 +2733,12 @@ function focusTopoNode(id) {
     var f = g.getAttribute('data-info'); if (!f) return;
     try { if (JSON.parse(f).id === id) g.classList.add('selected'); } catch (e) {}
   });
+  // 叠加脉冲圆环标记，确保醒目
+  flashAt(n.x, n.y, id);
 }
-// 点击详情面板中任一 ID 链接（data-mid）→ 居中定位到对应元素：
+// 点击详情面板中任一 ID 链接（data-mid）→ 居中定位 + 醒目高亮对应元素：
 // 拓扑节点走 PATH_GRAPH，地图要素走 MAP_CENTERS（svg 像素中心）。
+// 高亮 = selected 描边 + 脉冲圆环标记（与路径节点点击一致，需求⑬/⑮）。
 function centerById(id) {
   var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
   if (n) { focusTopoNode(id); return; }
@@ -2745,6 +2750,26 @@ function centerById(id) {
   translateY = rect.height / 2 - c[1] * scale;
   applyTransform(); setZoomInfo();
   highlightById(id);
+  flashAt(c[0], c[1], id);
+}
+// 在 svg 坐标 (x,y) 叠加脉冲圆环标记（醒目高亮辅助）
+function flashAt(x, y, id) {
+  var svg = document.getElementById('main-svg');
+  var ring = document.getElementById('path-flash-ring');
+  if (!ring) {
+    ring = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    ring.setAttribute('id', 'path-flash-ring');
+    svg.appendChild(ring);
+  }
+  ring.innerHTML = '';
+  var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 6);
+  c.setAttribute('class', 'pulse');
+  ring.appendChild(c);
+  var c2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c2.setAttribute('cx', x); c2.setAttribute('cy', y); c2.setAttribute('r', 7);
+  c2.setAttribute('fill', 'rgba(255,87,34,0.28)');
+  ring.appendChild(c2);
 }
 function highlightById(id) {
   clearHighlight();
