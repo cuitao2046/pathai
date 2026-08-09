@@ -17,6 +17,10 @@ src/route_rules.py — 导航路线生成规则（与 render_interactive.py 前�
 规则 4（卫生间禁中转）：任何两点之间的导航路径，中间节点不得经过卫生间；
        卫生间只能作为起点或终点（roomType=toilet 显式拦截，见 _dijkstra）。
 
+规则 5（管井门禁路径）：归属全部为 infrastructure 的房间门（纯管井门，如
+       风井/水井/排风井的门）不得出现在导航路径中——管井为设备空间，非导航
+       目标；共享 TD（同时归属普通房间）不在此列（数据缺陷，另行处理）。
+
 实现要点：
 - 门节点(TD)不得作为「两个房间之间的直连通道」(room→door→room)，
   必须经过公共空间 (intersection / facility_entrance / facility)。
@@ -123,6 +127,22 @@ class RouteGraph:
         # 规则 3 例外：无门卫生间（门洞例外）需经穿墙连接到公共空间，
         # 否则在拓扑中孤立、规则无法生效。为其补一条「穿墙」虚拟边到最近公共节点。
         self._add_doorless_toilet_links()
+        # 规则 5：归属全为 infrastructure 的门（纯管井门，如风井/水井/排风井的门）
+        # 不得出现在导航路径中——管井为设备空间非导航目标，路径不应经过其门。
+        # 共享 TD（同时归属普通房间/卫生间等）不在此列，属数据缺陷另行处理。
+        room_id_to_type = {}
+        for nid, n in self.nodes.items():
+            if n["type"] == "room":
+                room_id_to_type[n.get("roomId") or nid] = n.get("roomType")
+        self.infra_doorway_ids = set()
+        for nid, n in self.nodes.items():
+            if n["type"] != "doorway":
+                continue
+            rids = n.get("rooms") or []
+            if not rids:
+                continue
+            if all(room_id_to_type.get(r) == "infrastructure" for r in rids):
+                self.infra_doorway_ids.add(nid)
 
     def _add_doorless_toilet_links(self, radius=20.0):
         import math as _m
@@ -261,6 +281,9 @@ class RouteGraph:
                 continue
             a, b = e["from"], e["to"]
             if a not in self.nodes or b not in self.nodes:
+                continue
+            # 规则 5：剔除连接「纯管井门」的边（导航路径不经过风井/水井门）
+            if a in self.infra_doorway_ids or b in self.infra_doorway_ids:
                 continue
             # 规则 3：房间只可使用优先级不低于自身最佳门的门
             if door_filter:
