@@ -491,13 +491,23 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                     add_edge(cor_node_ids[best_cor_id], dnid, best_d)
 
     # 3) facility <-> 最近的 doorway（设施接入：楼梯/电梯口连最近的门）
-    all_doorways = [(door_node_ids[i], _to_xy(td_doors[i].get("center_m")))
+    #    需求⑲：电梯节点(TF)不得连防火门(fire)拓扑节点——电梯井道门已由
+    #    电梯门(elevator door)元素承载，防火门属前室/房间隔断，不接入电梯。
+    all_doorways = [(door_node_ids[i], _to_xy(td_doors[i].get("center_m")),
+                     td_doors[i].get("kind"))
                     for i in range(len(td_doors)) if door_node_ids[i] is not None]
     facility_nodes = [n for n in nodes if n["type"] == "facility"]
     for fn in facility_nodes:
         if not all_doorways:
             break
-        best = min(all_doorways,
+        if fn["facilityType"] == "elevator":
+            # 电梯：只允许连非 fire 门（需求⑲）；无候选则跳过（电梯门由后续步骤接入）
+            _cands = [kv for kv in all_doorways if kv[2] != "fire"]
+            if not _cands:
+                continue
+        else:
+            _cands = all_doorways
+        best = min(_cands,
                    key=lambda kv: _dist(kv[1], fn["coordinates"]))
         best_dnid, best_d = best[0], _dist(best[1], fn["coordinates"])
         a_level = 999 if fn["facilityType"] == "staircase" else 0

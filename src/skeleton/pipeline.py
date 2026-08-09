@@ -935,6 +935,8 @@ def build_skeleton_topology(
     print(f"    [skeleton] TI-TI 邻接边 {n_adj} 条 (TI={len(ti_ids)})")
 
     # 4) TF ↔ 最近 TD
+    #    需求⑲：电梯节点(TF)不得连防火门(fire) TD——电梯井道门已由电梯门
+    #    (elevator door)元素承载，防火门属前室/房间隔断，不接入电梯。
     for fn in [n for n in nodes if n["type"] == "facility"]:
         if not door_node_ids:
             break
@@ -942,7 +944,14 @@ def build_skeleton_topology(
         for dnid in door_node_ids:
             if dnid is None:
                 continue
-            dc = next(n["coordinates"] for n in nodes if n["id"] == dnid)
+            dn_node = next((n for n in nodes if n["id"] == dnid), None)
+            if dn_node is None:
+                continue
+            # 电梯不连防火门（需求⑲）
+            if fn["facilityType"] == "elevator" and \
+               dn_node.get("doorType") == "fire":
+                continue
+            dc = dn_node["coordinates"]
             d = math.hypot(fn["coordinates"][0] - dc[0],
                            fn["coordinates"][1] - dc[1])
             if d < best_d:
