@@ -494,9 +494,10 @@ def build_skeleton_topology(
                 if wp is not None and not getattr(wp, "is_empty", True):
                     walkables.append(wp)
 
-    # 合并同开口门（同一物理开口的摆弧/防火/门洞），避免拓扑层重叠 TD 节点
-    MERGE_DIST_M = 0.8
-    td_doors = _merge_nearby_doors(doors, MERGE_DIST_M)
+    # 门不做合并（用户明确约定）：每扇门独立成 TD，禁止 _merge_nearby_doors 合并。
+    # 原合并会把 0.8m 内的多扇门并为单个 TD 且 rooms 取并集，
+    # 导致归属混叠（如 F2-TD-0010 出现 ['F2-CR-0042','F2-RM-0005']）——已禁用。
+    td_doors = list(doors)
 
     door_centers = []
     for dr in td_doors:

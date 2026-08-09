@@ -22,7 +22,8 @@
 - 目录：正式脚本仅 src/(12个)；调试脚本 debug/；根目录不留.py。探索性副本(src/optimize*/src/adjcent/src/fix/src/pathai_src/debug/conn/debug/heban)已 .gitignore 取消跟踪。
 - 路径基于 `__file__` 推导，不 hardcode 绝对路径。
 - 骨架模式依赖 scikit-image + networkx；networkx 3.6 在 Py3.14 有 dataclasses bug，需给 configs.py 的 Config 补显式 `__init__`。
-- 门洞(opening)=window层带 DK 矢量笔画。DK 旋转无关4方向。几何优先级：① DK距window组<13pt用真实轴/宽并移除该window；② 复用50pt内最近墙缝；③ 吸附最近墙(宽≈1.6m)。`dedupe_doorways` 合并中心距<13pt同洞口。
+- 门洞(opening)=window层带 DK 矢量笔画。DK 旋转无关4方向。几何优先级：① DK距window组<13pt用真实轴/宽并移除该window；② 复用50pt内最近墙缝；③ 吸附最近墙(宽≈1.6m)。
+- ⚠️ **门不做合并（用户明确，2026-08-09）**：同一物理开口只允许一扇门，禁止 `dedupe_doorways` 合并(13pt)、`_merge_nearby_doors` 合并(0.8m/1.0m)等任何形式门合并——合并会混叠 rooms 归属（如 F2-TD-0010 出现 ['F2-CR-0042','F2-RM-0005']）导致门归属错误。三处合并逻辑待禁用：`parse_cad_pdf.py:dedupe_doorways`(2984调用)、`skeleton/pipeline.py:_merge_nearby_doors`(499调用)、`topology.py:_merge_nearby_doors`(345调用)。
 - 卫生间防火门直接丢弃；卫生间/楼梯间摆弧门(kind∈swing/fire 且有DK<14pt)重分类为 opening(F1=4/F2=4)。
 - ⚠️ 合班 `_heban_real_polygon` 陷阱：`cv2.floodFill` 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
 - git：仅 `.workbuddy/memory/` 随仓库同步。⚠️ 编辑 .gitignore 后务必 `git add` 再 commit，否则 merge 中静默丢失。

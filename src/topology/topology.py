@@ -341,8 +341,9 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         })
 
     # ---------- 门口节点（doorway） ----------
-    # 合并同开口门（避免重叠 TD 节点），并跳过无房间归属的门（避免悬空 corridor-only 节点）
-    td_doors = _merge_nearby_doors(doors, 0.8)
+    # 门不做合并（用户明确约定）：每扇门独立成 TD，禁止 _merge_nearby_doors 合并；
+    # 跳过无房间归属的门（避免悬空 corridor-only 节点）
+    td_doors = list(doors)
     door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None
     for i, dr in enumerate(td_doors):
         has_room = any(rid in room_index for rid in dr.get("rooms", []))

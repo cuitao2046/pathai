@@ -2978,11 +2978,12 @@ def parse_floor(pdf_path, floor_no):
         })
     print(f"[F{floor_no}] 无摆弧门洞(DK约束): {len(wall_openings)}")
 
-    # --- 全局门去重：仅合并"真正同一洞口"的门（DK 门洞可能与摆弧门重合），
-    #     避免相邻不同门洞被误删；合并后每个洞口只保留一扇（优先摆弧门）。
+    # --- 门不做合并（用户明确约定）：同一物理开口只保留检测出的门，禁止去重合并。
+    #     原 dedupe_doorways 会把同类型中心距<13pt 的门合并为一扇，
+    #     导致拓扑 TD rooms 归属混叠（如 F2-TD-0010 出现双归属）——已禁用。
     before = len(doors)
-    doors = dedupe_doorways(doors)
-    print(f"[F{floor_no}] 门去重: {before} -> {len(doors)}")
+    doors = list(doors)
+    print(f"[F{floor_no}] 门（不做合并）: {before} -> {len(doors)}")
 
     # --- 提前计算楼梯间 bbox（要在 build_rooms 之前得到位置，便于稍后作为 staircase room 加入
     #     rooms 列表，让门归属能找到楼梯间）。统一 detect_stair_boxes：
@@ -3331,6 +3332,21 @@ def parse_floor(pdf_path, floor_no):
             n_reclass += 1
     if n_reclass:
         print(f"[F{floor_no}] 卫生间/楼梯间 DK 摆弧门重分类为门洞: {n_reclass}")
+
+    # --- 需求⑳：清理门归属中的无效房间 ID ---
+    # 部分门在归属 pass 中引用到后续被过滤/合并掉的房间（如 F2-CR 编号空洞：
+    # CR-0033/34/42/45 在语义房间中不存在），导致门归属悬空。统一剔除
+    # 不存在的房间 ID，保证门归属一律为合法元素 ID。
+    _valid_room_ids = {r["id"] for r in rooms}
+    _cleaned = 0
+    for dr in doors:
+        rms = dr.get("rooms") or []
+        kept = [rid for rid in rms if rid in _valid_room_ids]
+        if len(kept) != len(rms):
+            dr["rooms"] = kept
+            _cleaned += 1
+    if _cleaned:
+        print(f"[F{floor_no}] 清理门归属无效房间 ID: {_cleaned} 扇")
 
     # --- 服务核心内部门：仅过滤普通门/防火门(swing/fire)，门洞(opening)豁免 ---
     # 规则（用户 2026-08-05 简化）：封闭空间内部的门洞要保留（DK → 开门是
