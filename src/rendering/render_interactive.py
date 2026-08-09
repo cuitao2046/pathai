@@ -1339,10 +1339,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             axis = p.get("axis") or [c, c]
             ax0, ay0 = tosvg(axis[0][0], axis[0][1])
             ax1, ay1 = tosvg(axis[1][0], axis[1][1])
-            det = {"title": p.get("elevatorLabel") or "电梯门", "rows": [
+            # 需求⑳：归属一律用元素 ID（elevatorId / rooms），label 仅作展示辅助
+            _elev_id = p.get("elevatorId") or (p.get("rooms") or [None])[0]
+            _elev_lbl = p.get("elevatorLabel") or _elev_id
+            det = {"title": f"电梯门（{_elev_id or '?'}）", "rows": [
                 ("门编号", link_obj(evd["id"])),
                 ("类型", "电梯门"),
-                ("所属电梯", p.get("elevatorLabel") or "—"),
+                ("所属电梯", link_obj(_elev_id) if _elev_id else "—"),
+                ("电梯编号", _elev_lbl or "—"),
                 ("门宽", f'{p.get("width_m", 0):.2f} m'),
                 ("无障碍", "是"),
             ]}
@@ -1352,7 +1356,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 det["topoId"] = _eid
             parts.append(
                 f'<g class="layer_elevator_door" data-mid="{evd["id"]}" '
-                f'{info_attr({"tip": f"电梯门（{p.get("elevatorLabel", "")}）", "detail": det})}>'
+                f'{info_attr({"tip": f"电梯门（{_elev_id or "?"}）", "detail": det})}>'
                 f'<line x1="{ax0}" y1="{ay0}" x2="{ax1}" y2="{ay1}" '
                 f'stroke="#AD1457" stroke-width="1.6" stroke-dasharray="2.5,1.5"/>'
                 f'<circle cx="{sx}" cy="{sy}" r="1.8" fill="#F8BBD0" '
@@ -1809,6 +1813,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "roomId": n.get("roomId"),
                 "doorType": n.get("doorType"),
                 "rooms": n.get("rooms") or [],
+                # 需求⑳：电梯门归属用元素 ID（elevatorId），不用 label
+                "elevatorId": n.get("elevatorId"),
             }
             if n.get("type") == "room" and n["id"] in _room_best_door:
                 nd["bestDoorType"] = _room_best_door[n["id"]]
