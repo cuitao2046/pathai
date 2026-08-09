@@ -1998,6 +1998,188 @@ def detect_elevator_boxes(items_by_layer):
     return out
 
 
+def detect_elevator_doors(window_groups, evtr_boxes, floor_no,
+                          gap_m=1.5, max_width_m=3.0):
+    """把「电梯井外墙上的窗户」识别为电梯门元素（需求⑱）。
+
+    现实建筑中电梯井道外墙的采光/检修窗即电梯门所在位置；此处将
+    电梯 bbox buffer 范围内的 window 组识别为电梯门，归属对应电梯。
+
+    参数：
+      window_groups: parse_floor 的 window_groups（pt 坐标系，含 axis/center/length_pt）
+      evtr_boxes:   电梯井 bbox 列表（pt：(x0,y0,x1,y1)）
+      floor_no:     楼层号
+      gap_m:        窗户距电梯墙的最大距离（米）
+      max_width_m:  电梯门最大宽度（米，超出视为建筑窗不识别）
+
+    返回: [{index, elev_index, center_m, axis_m, width_m}]（米制坐标）
+    """
+    if not window_groups or not evtr_boxes:
+        return []
+    gap_pt = gap_m / SCALE
+    max_w_pt = max_width_m / SCALE
+    elev_polys = []
+    for bxd in evtr_boxes:
+        x0, y0, x1, y1 = bxd
+        elev_polys.append((x0, y0, x1, y1))
+    out = []
+    for i, wg in enumerate(window_groups):
+        a, b = wg["axis"]
+        # 窗组中心（pt）
+        mx = (a[0] + b[0]) / 2.0
+        my = (a[1] + b[1]) / 2.0
+        # 窗宽（pt）
+        w_pt = wg["length_pt"]
+        if w_pt > max_w_pt:
+            continue
+        # 找最近的电梯 bbox：中心到 bbox 矩形的最短距离
+        best_d, best_bi = float("inf"), None
+        for bi, (x0, y0, x1, y1) in enumerate(elev_polys):
+            dx = max(0.0, max(x0 - mx, mx - x1))
+            dy = max(0.0, max(y0 - my, my - y1))
+            d = math.hypot(dx, dy)
+            if d < best_d:
+                best_d, best_bi = d, bi
+        if best_bi is None or best_d > gap_pt:
+            continue
+        _mid_pt = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        _c = pt2m(_mid_pt)
+        out.append({
+            "index": len(out),
+            "elev_index": best_bi,
+            "center_m": [round(_c[0], 3), round(_c[1], 3)],
+            "axis_m": [[round(pt2m(a)[0], 3), round(pt2m(a)[1], 3)],
+                       [round(pt2m(b)[0], 3), round(pt2m(b)[1], 3)]],
+            "width_m": round(w_pt * SCALE, 3),
+        })
+    return out
+
+
+def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
+                               floor_no, link_radius_m=15.0):
+    """把电梯门元素接入拓扑：生成 TD 节点，连对应电梯 TF 与最近公共节点。
+
+    规则：
+      - 每个电梯门生成独立 doorway 节点（doorType="elevator"，label=所属电梯）；
+      - 连到对应电梯的 facility(TF) 节点（按 elev_index 匹配）；
+      - 连到距门 ≤link_radius_m 的开放空间（intersection / facility_entrance /
+        facility / doorway 均可，取最近者，保证门可达）；
+      - 编号从当前最大 TD 序号之后续号（不与既有门冲突）。
+    """
+    if not elevator_doors:
+        return nodes, edges
+    # 当前最大 TD 序号
+    max_td = 0
+    for n in nodes:
+        if n.get("type") == "doorway":
+            try:
+                max_td = max(max_td, int(n["id"].split("-")[-1]))
+            except ValueError:
+                pass
+    # 电梯 TF：facilityType=elevator，按标签匹配（elevators 顺序即 evtr_boxes 顺序）
+    tf_by_label = {}
+    for n in nodes:
+        if n.get("type") == "facility" and n.get("facilityType") == "elevator":
+            tf_by_label[n.get("label")] = n["id"]
+    # 开放空间候选（不含纯管井门——规则 5 已剔除连接，但节点仍可作挂接点）
+    cand = [n for n in nodes if n.get("type") in
+            ("intersection", "facility_entrance", "doorway")]
+    new_nodes, new_edges = [], []
+    node_id_set = {n["id"] for n in nodes}
+    edge_id_set = {e["id"] for e in edges}
+    seq = max_td
+    # 边序号：从既有最大 TE 序号 +1 起，单调递增（避免死循环）
+    max_te = 0
+    for e in edges:
+        try:
+            max_te = max(max_te, int(e["id"].split("-")[-1]))
+        except (ValueError, IndexError):
+            pass
+    edge_seq = max_te
+    for i, ed in enumerate(elevator_doors):
+        # 兼容两种格式：detect 原始 dict（elev_index）或 build_geojson Feature
+        if "elev_index" in ed:
+            ei = ed["elev_index"]
+            center = ed["center_m"]
+        else:
+            _ep = ed.get("properties", {})
+            ei = _ep.get("elevatorIndex", 0)
+            center = list(ed["geometry"]["coordinates"])
+        el_label = (elevators[ei]["properties"]["label"]
+                    if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
+        seq += 1
+        td_id = obj_id(f"F{floor_no}", OBJ_TYPE["topo_doorway"], seq)
+        while td_id in node_id_set:
+            seq += 1
+            td_id = obj_id(f"F{floor_no}", OBJ_TYPE["topo_doorway"], seq)
+        node_id_set.add(td_id)
+        nd = {
+            "id": td_id,
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": f"电梯门（{el_label}）",
+            "coordinates": list(center),
+            "rooms": [],
+            "elevatorLabel": el_label,
+            "elevatorIndex": ei,
+            "blindAccessible": True,
+            "wheelchairAccessible": True,
+        }
+        new_nodes.append(nd)
+        # 连对应电梯 TF
+        tf_id = tf_by_label.get(el_label)
+        if tf_id:
+            d = math.hypot(center[0] - _tf_coord(nodes, tf_id)[0],
+                           center[1] - _tf_coord(nodes, tf_id)[1])
+            edge_seq += 1
+            eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
+            while eid in edge_id_set:
+                edge_seq += 1
+                eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
+            edge_id_set.add(eid)
+            new_edges.append({
+                "id": eid, "from": tf_id, "to": td_id,
+                "distance": round(d, 2),
+                "estimatedTime": round(d / 0.8, 1),
+                "accessibilityLevel": 0, "riskLevel": 1,
+                "walkable": True, "wheelchairAccessible": True,
+                "blindAccessible": True,
+                "type": "elevator_door",
+            })
+        # 连最近公共节点
+        best = None
+        best_d = link_radius_m
+        for c in cand:
+            d = math.hypot(center[0] - c["coordinates"][0],
+                           center[1] - c["coordinates"][1])
+            if d < best_d:
+                best_d, best = d, c
+        if best is not None:
+            edge_seq += 1
+            eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
+            while eid in edge_id_set:
+                edge_seq += 1
+                eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
+            edge_id_set.add(eid)
+            new_edges.append({
+                "id": eid, "from": td_id, "to": best["id"],
+                "distance": round(best_d, 2),
+                "estimatedTime": round(best_d / 0.8, 1),
+                "accessibilityLevel": 0, "riskLevel": 1,
+                "walkable": True, "wheelchairAccessible": True,
+                "blindAccessible": True,
+                "type": "elevator_door",
+            })
+    return nodes + new_nodes, edges + new_edges
+
+
+def _tf_coord(nodes, nid):
+    for n in nodes:
+        if n["id"] == nid:
+            return n["coordinates"]
+    return [0.0, 0.0]
+
+
 def _keep_walkable_pieces(geom, min_piece_m2):
     """过滤差集后的微小碎片，返回 Polygon 或 MultiPolygon（pt 坐标）。"""
     if geom is None or geom.is_empty:
@@ -3178,6 +3360,9 @@ def parse_floor(pdf_path, floor_no):
 
     evtr_boxes = detect_elevator_boxes(items)
 
+    # 需求⑱：电梯井外墙上的窗户 → 电梯门元素（归属对应电梯）
+    elevator_doors = detect_elevator_doors(window_groups, evtr_boxes, floor_no)
+
     col_boxes = []
     for lname in LAYER_COLUMNS:
         ci = items.get(lname)
@@ -3204,6 +3389,7 @@ def parse_floor(pdf_path, floor_no):
         "wall_segs": all_segs,
         "stair_boxes": stair_boxes,
         "evtr_boxes": evtr_boxes,
+        "elevator_doors": elevator_doors,
         "col_boxes": col_boxes,
         "labels_unmatched": [t for i, e in enumerate(room_names) if i not in used_labels for t in [e[0]]],
         "labels_all": [e[0] for e in room_names],
@@ -3669,6 +3855,31 @@ def build_geojson(f1, f2):
                                "label": code or f"电梯{floor_no}F-{i + 1}",
                                "centroid": list(cen)},
             })
+        # 需求⑱：电梯门元素（电梯井外墙窗户识别，归属对应电梯）
+        elevator_doors = []
+        for i, ed in enumerate(data.get("elevator_doors") or []):
+            ei = ed["elev_index"]
+            el_label = (elevators[ei]["properties"]["label"]
+                        if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
+            elevator_doors.append({
+                "type": "Feature",
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["door"], i + 1),
+                "geometry": {"type": "Point",
+                             "coordinates": list(ed["center_m"])},
+                "properties": {
+                    "type": "elevator_door",
+                    "doorType": "elevator",
+                    "doorSubType": "elevator",
+                    "width_m": ed["width_m"],
+                    "rooms": [],
+                    "elevatorLabel": el_label,
+                    "elevatorIndex": ei,
+                    "axis": ed["axis_m"],
+                    "wheelchairAccessible": True,
+                    "surveyRequired": list(DOOR_SURVEY_FIELDS),
+                    "sourceLayer": "window+elevator",
+                },
+            })
         columns = []
         for i, bxd in enumerate(data["col_boxes"]):
             x0, y0, x1, y1 = bxd
@@ -3827,6 +4038,10 @@ def build_geojson(f1, f2):
                 stairs, elevators, extra_nodes=extra_nodes)
             nodes, edges = topo["nodes"], topo["edges"]
 
+        # 需求⑱：电梯门 TD 节点（电梯井外墙窗户识别）接入拓扑
+        nodes, edges = attach_elevator_door_nodes(
+            nodes, edges, elevator_doors, elevators, int(floor_no))
+
         # 节点级风险等级（指南 §6.3）——骨架/质心两条拓扑路径统一施加
         assign_node_risk_levels(nodes, data["rooms"])
 
@@ -3835,6 +4050,7 @@ def build_geojson(f1, f2):
                 "walls": walls, "rooms": rooms_g, "doors": doors,
                 "stairs": stairs, "elevators": elevators, "columns": columns,
                 "windowSegments": windows,
+                "elevatorDoors": elevator_doors,
             },
             "semantic": {"rooms": rooms_s},
             "topology": {"nodes": nodes, "edges": edges},

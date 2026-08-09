@@ -110272,6 +110272,119 @@
               "length_m": 2.4
             }
           }
+        ],
+        "elevatorDoors": [
+          {
+            "type": "Feature",
+            "id": "F1-D-0001",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -62.034,
+                -16.273
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-01#EL",
+              "elevatorIndex": 0,
+              "axis": [
+                [
+                  -62.034,
+                  -15.686
+                ],
+                [
+                  -62.034,
+                  -16.86
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "F1-D-0002",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -29.866,
+                -75.049
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-02#EL",
+              "elevatorIndex": 1,
+              "axis": [
+                [
+                  -29.866,
+                  -74.462
+                ],
+                [
+                  -29.866,
+                  -75.636
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "F1-D-0003",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -38.265,
+                8.922
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-03#EL",
+              "elevatorIndex": 2,
+              "axis": [
+                [
+                  -38.265,
+                  9.509
+                ],
+                [
+                  -38.265,
+                  8.335
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          }
         ]
       },
       "semantic": {
@@ -115610,6 +115723,54 @@
             "accessible": true,
             "riskLevel": 0.5,
             "label": "交叉口52"
+          },
+          {
+            "id": "F1-TD-0130",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-01#EL）",
+            "coordinates": [
+              -62.034,
+              -16.273
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-01#EL",
+            "elevatorIndex": 0,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
+          },
+          {
+            "id": "F1-TD-0131",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-02#EL）",
+            "coordinates": [
+              -29.866,
+              -75.049
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-02#EL",
+            "elevatorIndex": 1,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
+          },
+          {
+            "id": "F1-TD-0132",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-03#EL）",
+            "coordinates": [
+              -38.265,
+              8.922
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-03#EL",
+            "elevatorIndex": 2,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
           }
         ],
         "edges": [
@@ -119272,6 +119433,84 @@
             "walkable": true,
             "wheelchairAccessible": true,
             "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0327",
+            "from": "F1-TF-0011",
+            "to": "F1-TD-0130",
+            "distance": 67.3,
+            "estimatedTime": 84.1,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F1-TE-0328",
+            "from": "F1-TD-0130",
+            "to": "F1-TD-0080",
+            "distance": 1.85,
+            "estimatedTime": 2.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F1-TE-0329",
+            "from": "F1-TF-0012",
+            "to": "F1-TD-0131",
+            "distance": 67.59,
+            "estimatedTime": 84.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F1-TE-0330",
+            "from": "F1-TD-0131",
+            "to": "F1-TD-0076",
+            "distance": 3.84,
+            "estimatedTime": 4.8,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F1-TE-0331",
+            "from": "F1-TF-0013",
+            "to": "F1-TD-0132",
+            "distance": 0.93,
+            "estimatedTime": 1.2,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F1-TE-0332",
+            "from": "F1-TD-0132",
+            "to": "F1-TD-0108",
+            "distance": 3.84,
+            "estimatedTime": 4.8,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
           }
         ]
       },
@@ -215805,6 +216044,119 @@
               "length_m": 1.098
             }
           }
+        ],
+        "elevatorDoors": [
+          {
+            "type": "Feature",
+            "id": "F2-D-0001",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -29.866,
+                -75.049
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-01#EL",
+              "elevatorIndex": 0,
+              "axis": [
+                [
+                  -29.866,
+                  -74.462
+                ],
+                [
+                  -29.866,
+                  -75.636
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "F2-D-0002",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -38.265,
+                8.922
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-02#EL",
+              "elevatorIndex": 1,
+              "axis": [
+                [
+                  -38.265,
+                  9.509
+                ],
+                [
+                  -38.265,
+                  8.335
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          },
+          {
+            "type": "Feature",
+            "id": "F2-D-0003",
+            "geometry": {
+              "type": "Point",
+              "coordinates": [
+                -62.034,
+                -16.273
+              ]
+            },
+            "properties": {
+              "type": "elevator_door",
+              "doorType": "elevator",
+              "doorSubType": "elevator",
+              "width_m": 1.174,
+              "rooms": [],
+              "elevatorLabel": "II-03#EL",
+              "elevatorIndex": 2,
+              "axis": [
+                [
+                  -62.034,
+                  -15.686
+                ],
+                [
+                  -62.034,
+                  -16.86
+                ]
+              ],
+              "wheelchairAccessible": true,
+              "surveyRequired": [
+                "hasThreshold",
+                "isGlass",
+                "isAutomatic"
+              ],
+              "sourceLayer": "window+elevator"
+            }
+          }
         ]
       },
       "semantic": {
@@ -219356,6 +219708,54 @@
             "accessible": true,
             "riskLevel": 0.5,
             "label": "交叉口46"
+          },
+          {
+            "id": "F2-TD-0076",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-01#EL）",
+            "coordinates": [
+              -29.866,
+              -75.049
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-01#EL",
+            "elevatorIndex": 0,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
+          },
+          {
+            "id": "F2-TD-0077",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-02#EL）",
+            "coordinates": [
+              -38.265,
+              8.922
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-02#EL",
+            "elevatorIndex": 1,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
+          },
+          {
+            "id": "F2-TD-0078",
+            "type": "doorway",
+            "doorType": "elevator",
+            "label": "电梯门（II-03#EL）",
+            "coordinates": [
+              -62.034,
+              -16.273
+            ],
+            "rooms": [],
+            "elevatorLabel": "II-03#EL",
+            "elevatorIndex": 2,
+            "blindAccessible": true,
+            "wheelchairAccessible": true,
+            "riskLevel": 1.0
           }
         ],
         "edges": [
@@ -222118,6 +222518,84 @@
             "walkable": true,
             "wheelchairAccessible": true,
             "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-0263",
+            "from": "F2-TF-0008",
+            "to": "F2-TD-0076",
+            "distance": 0.92,
+            "estimatedTime": 1.2,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F2-TE-0264",
+            "from": "F2-TD-0076",
+            "to": "F2-TD-0040",
+            "distance": 3.84,
+            "estimatedTime": 4.8,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F2-TE-0265",
+            "from": "F2-TF-0009",
+            "to": "F2-TD-0077",
+            "distance": 35.15,
+            "estimatedTime": 43.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F2-TE-0266",
+            "from": "F2-TD-0077",
+            "to": "F2-TI-0063",
+            "distance": 3.35,
+            "estimatedTime": 4.2,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F2-TE-0267",
+            "from": "F2-TF-0010",
+            "to": "F2-TD-0078",
+            "distance": 35.39,
+            "estimatedTime": 44.2,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
+          },
+          {
+            "id": "F2-TE-0268",
+            "from": "F2-TD-0078",
+            "to": "F2-TI-0078",
+            "distance": 3.38,
+            "estimatedTime": 4.2,
+            "accessibilityLevel": 0,
+            "riskLevel": 1,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true,
+            "type": "elevator_door"
           }
         ]
       },

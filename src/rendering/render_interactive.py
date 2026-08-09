@@ -703,6 +703,7 @@ svg {{ display: block; background: #fff; }}
 .layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; }}
 .layer_stairs polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
+.layer_elevator_door * {{ cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
 .layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; pointer-events: none; }}
 .layer_skeleton path, .layer_skeleton polyline {{ stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }}
@@ -850,6 +851,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
   <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
   <label><input type="checkbox" checked onchange="toggleLayer('elevator', this.checked)"> 电梯</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('elevator_door', this.checked)"> 电梯门</label>
   <label><input type="checkbox" checked onchange="toggleLayer('column', this.checked)"> 柱子</label>
   <label><input type="checkbox" checked onchange="toggleLayer('building_outline', this.checked)"> 建筑外轮廓</label>
   <label><input type="checkbox" checked onchange="toggleLayer('door_swing', this.checked)"> 普通门</label>
@@ -1328,6 +1330,34 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     f'<g class="layer_elevator"><text x="{sx_s}" y="{sy_s}" '
                     f'font-size="5" text-anchor="middle" fill="#880E4F">{label_e}</text></g>\n'
                 )
+
+        # 5b. 电梯门（需求⑱：电梯井外墙窗户识别为电梯门）
+        for evd in geom.get("elevatorDoors", []):
+            c = evd["geometry"]["coordinates"]
+            sx, sy = tosvg(c[0], c[1])
+            p = evd["properties"]
+            axis = p.get("axis") or [c, c]
+            ax0, ay0 = tosvg(axis[0][0], axis[0][1])
+            ax1, ay1 = tosvg(axis[1][0], axis[1][1])
+            det = {"title": p.get("elevatorLabel") or "电梯门", "rows": [
+                ("门编号", link_obj(evd["id"])),
+                ("类型", "电梯门"),
+                ("所属电梯", p.get("elevatorLabel") or "—"),
+                ("门宽", f'{p.get("width_m", 0):.2f} m'),
+                ("无障碍", "是"),
+            ]}
+            _ec = c
+            _eid = _nearest_topo(_ec)
+            if _eid:
+                det["topoId"] = _eid
+            parts.append(
+                f'<g class="layer_elevator_door" data-mid="{evd["id"]}" '
+                f'{info_attr({"tip": f"电梯门（{p.get("elevatorLabel", "")}）", "detail": det})}>'
+                f'<line x1="{ax0}" y1="{ay0}" x2="{ax1}" y2="{ay1}" '
+                f'stroke="#AD1457" stroke-width="1.6" stroke-dasharray="2.5,1.5"/>'
+                f'<circle cx="{sx}" cy="{sy}" r="1.8" fill="#F8BBD0" '
+                f'stroke="#AD1457" stroke-width="0.6"/></g>\n'
+            )
 
         # 6. 柱
         for col in geom.get("columns", []):
