@@ -989,6 +989,33 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         if n_skel:
             print(f"  [F{fk}] 走廊骨架: {n_skel} 段, 交叉口标记 {n_junc} 个")
 
+        # ---- 拓扑节点对照表：用于详情面板关联「选中元素 → 拓扑节点」----
+        _tnodes = topo.get("nodes", [])
+        _roomid_to_trid = {n["roomId"]: n["id"] for n in _tnodes
+                           if n.get("type") == "room" and n.get("roomId")}
+        _td_nodes = [n for n in _tnodes if n.get("type") == "doorway"]
+        _td_by_key = {}
+        for n in _td_nodes:
+            _td_by_key.setdefault(
+                (n.get("doorType"), frozenset(n.get("rooms") or [])), []).append(n)
+
+        def _nearest_topo(point, allow=("facility", "facility_entrance",
+                                        "intersection", "room", "doorway"),
+                          max_dist=15.0):
+            """几何元素（楼梯/电梯等无直接 id 关联）→ 最近拓扑节点。超过阈值不关联。"""
+            best, bd = None, 1e18
+            for n in _tnodes:
+                if n.get("type") not in allow:
+                    continue
+                dx = n["coordinates"][0] - point[0]
+                dy = n["coordinates"][1] - point[1]
+                d = (dx * dx + dy * dy) ** 0.5
+                if d > max_dist:
+                    continue
+                if d < bd:
+                    bd, best = d, n["id"]
+            return best
+
         # 2. 房间
         n_skip_bbox = 0
         for r in geom.get("rooms", []):
@@ -1002,15 +1029,20 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             rtype = p.get("roomType", "room")
             color = ROOM_COLORS.get(rtype, "#FAFAFA")
             label = p.get("label", "")
-            tip = f"房间：{label or '—'}\\n类型：{rtype}\\n编号：{p.get('roomId','')}"
+            _rid = r.get("id")  # 几何房间唯一标识，用作房间编号与拓扑节点匹配（properties.roomId 在部分房间有误）
+            tip = f"房间：{label or '—'}\\n类型：{rtype}\\n编号：{_rid or '—'}"
             det = {"title": label or "房间", "rows": [
-                ("房间编号", p.get("roomId", "—")),
+                ("房间编号", _rid or "—"),
                 ("类型", rtype),
                 ("楼层", p.get("floor", floor)),
                 ("公共空间", "是" if p.get("public") else "否"),
                 ("无障碍可达", "是" if p.get("accessible") else "否"),
                 ("独立出入口", "是" if p.get("hasIndependentEntrance") else "否"),
             ]}
+            # 关联对应的拓扑房间节点（TR）
+            trid = _roomid_to_trid.get(_rid)
+            if trid:
+                det["topoId"] = trid
             # corridor 类型常因文字标签/多区域合并产生，渲染时只画虚线轮廓（不填色），
             # 避免覆盖下方真房间图层。保留轮廓便于核实位置。
             if rtype == "corridor":
@@ -1039,7 +1071,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             else:
                 layer_cls = "layer_room"
             parts.append(
-                f'<g class="{layer_cls}" data-roomid="{p.get("roomId","")}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1099,6 +1131,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ("跨层连通", "是 · 1F↔2F" if linked else "否 · 仅本层"),
                 ("无障碍", "否（视障禁用）"),
             ]}
+            _sc = st["properties"].get("centroid") or [0, 0]
+            _stid = _nearest_topo(_sc)
+            if _stid:
+                det["topoId"] = _stid
             parts.append(
                 f'<g class="layer_stairs" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="#FFCCBC" stroke="#E64A19" stroke-width="0.8"/></g>\n'
@@ -1125,6 +1161,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ("跨层连通", "是 · 1F↔2F" if linked else "否 · 仅本层"),
                 ("无障碍", "是"),
             ]}
+            _ec = ev["properties"].get("centroid") or [0, 0]
+            _eid = _nearest_topo(_ec)
+            if _eid:
+                det["topoId"] = _eid
             parts.append(
                 f'<g class="layer_elevator" {info_attr({"tip": tip, "detail": det})}>'
                 f'<polygon points="{pts}" fill="#F8BBD0" stroke="#C2185B" stroke-width="0.8"/></g>\n'
@@ -1183,6 +1223,40 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                        ("来源图层", p.get("sourceLayer", "—")),
                        ("待现场核实", surv_disp),
                    ]}
+            # 关联拓扑门节点（TD）：房间匹配优先（语义最稳），坐标最近兜底；
+            # 超过阈值(8/15m) 不关联，避免把门错配到不相关的远距拓扑门（数据层几何门/拓扑门关联缺失）。
+            _dt = p.get("doorType")
+            _drooms = set(p.get("rooms") or [])
+            _dc = dr["geometry"]["coordinates"]
+            def _td_dist(n):
+                return ((n["coordinates"][0] - _dc[0]) ** 2 +
+                        (n["coordinates"][1] - _dc[1]) ** 2) ** 0.5
+            _tdid = None
+            # 1) 门型 + 房间完全一致
+            _c1 = [n for n in _td_nodes
+                   if n.get("doorType") == _dt and set(n.get("rooms") or []) == _drooms]
+            if _c1:
+                _tdid = min(_c1, key=_td_dist)["id"]
+            else:
+                # 2) 房间完全一致（门型可不同，距离<15m）—— 处理门型标注不一致
+                _c2 = [n for n in _td_nodes
+                       if set(n.get("rooms") or []) == _drooms and _td_dist(n) < 15]
+                if _c2:
+                    _tdid = min(_c2, key=_td_dist)["id"]
+                else:
+                    # 3) 门型一致 + 房间重叠（<8m）
+                    _c3 = [n for n in _td_nodes
+                           if n.get("doorType") == _dt and
+                           (set(n.get("rooms") or []) & _drooms) and _td_dist(n) < 8]
+                    if _c3:
+                        _tdid = min(_c3, key=_td_dist)["id"]
+                    else:
+                        # 4) 坐标最近兜底（<8m）
+                        _c4 = [n for n in _td_nodes if _td_dist(n) < 8]
+                        if _c4:
+                            _tdid = min(_c4, key=_td_dist)["id"]
+            if _tdid:
+                det["topoId"] = _tdid
             attr = info_attr({"tip": tip, "detail": det, "id": dr.get("id", p.get("id", "")), "kind": "door"})
             dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
             if dtype == "fire":
@@ -1956,10 +2030,16 @@ function showDetail(d) {{
   var titleId = '';
   if (d.id) titleId = ' <span style="font-size:12px;color:#666;font-weight:400">(' + rpEsc(d.id) + ')</span>';
   var h = '<h4>' + title + titleId + '</h4>';
-  (d.rows || []).forEach(function(r) {{
-    h += '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
-  }});
-  box.innerHTML = h;
+    (d.rows || []).forEach(function(r) {{
+      h += '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>';
+    }});
+    // 拓扑节点关联行：点击可居中定位到该拓扑节点
+    if (d.topoId) {{
+      h += '<div class="row topo-link"><span>拓扑节点</span>'
+         + '<span><a href="javascript:void(0)" data-topoid="' + rpEsc(d.topoId) + '" '
+         + 'style="color:#1565C0;text-decoration:underline">' + rpEsc(d.topoId) + '</a></span></div>';
+    }}
+    box.innerHTML = h;
 }}
 // 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁；
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
@@ -2416,6 +2496,26 @@ function focusRouteNode(id) {
   translateY = rect.height / 2 - n.y * scale;
   applyTransform();
 }
+// 详情面板点击「拓扑节点」链接 → 居中定位并高亮该拓扑节点
+function focusTopoNode(id) {
+  var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
+  if (!n) { alert('未找到拓扑节点 ' + id); return; }
+  if (scale < 2.5) scale = 2.5;
+  var rect = wrapper.getBoundingClientRect();
+  translateX = rect.width / 2 - n.x * scale;
+  translateY = rect.height / 2 - n.y * scale;
+  applyTransform(); setZoomInfo();
+  ensureLayer('topo_node', true); ensureLayer('topo_edge', true);
+  document.querySelectorAll('.layer_topo_node').forEach(function(g) {
+    var f = g.getAttribute('data-info'); if (!f) return;
+    try { if (JSON.parse(f).id === id) g.classList.add('selected'); } catch (e) {}
+  });
+}
+document.getElementById('detail').addEventListener('click', function(e) {
+  var a = e.target.closest('[data-topoid]');
+  if (!a) return;
+  focusTopoNode(a.getAttribute('data-topoid'));
+});
 
 function renderRouteList(result, mode, startId, endId) {
   rpSetMode(mode);
