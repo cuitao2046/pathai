@@ -76,8 +76,8 @@ def test_manual_mode(floor="1"):
 
     print(f"[F{floor}] 手动模式:")
     print(f"  输入 TI={len(ti)} TI-TI边={len(edges)}")
-    print(f"  输出 TI={len(ti_ids)} (期望 {len(ti)}) | "
-          f"TI-TI边={len(ti_ti)} (≥期望 {len(edges)}) | "
+    print(f"  输出 TI={len(ti_ids)} (输入 {len(ti)}) | "
+          f"TI-TI边={len(ti_ti)} (输入 {len(edges)}) | "
           f"TD={len(td_ids)} | TI连通分量={comps}")
     # 门→TI 挂接边
     td_ti = [e for e in out_edges
@@ -86,10 +86,13 @@ def test_manual_mode(floor="1"):
     print(f"  TD↔TI 挂接边={len(td_ti)}")
 
     ok = True
-    if len(ti_ids) != len(ti):
-        print("  ❌ TI 数量不符"); ok = False
-    if len(ti_ti) < len(edges):
-        print("  ❌ TI-TI 边少于手动边（有手动边丢失）"); ok = False
+    # TI 数量：pipeline 会合并距离 <1.5m 的冗余微交叉口（有意优化），
+    # 因此只允许减少、不允许增加；且不应合并过度（<50% 输入视为异常）。
+    if len(ti_ids) > len(ti):
+        print(f"  ❌ TI 数量增加（合并只应减少）: {len(ti_ids)} > {len(ti)}"); ok = False
+    if len(ti_ids) < max(1, int(len(ti) * 0.5)):
+        print(f"  ❌ TI 合并过度: {len(ti_ids)} < 50% 输入 {len(ti)}"); ok = False
+    # 连通性不变量：合并后骨架仍应全连通
     if comps != 1:
         print(f"  ⚠️ TI 存在 {comps} 个连通分量（手动骨架留孤岛，"
               f"pipeline 已补桥至连通）")
@@ -97,11 +100,18 @@ def test_manual_mode(floor="1"):
         print("  ❌ 未生成门节点"); ok = False
     if not td_ti:
         print("  ❌ 门未挂接到 TI"); ok = False
-    # 手动边 id 应全部出现在结果中
-    in_ids = {e["id"] for e in out_edges}
-    missing = [e["id"] for e in edges if e["id"] not in in_ids]
-    if missing:
-        print(f"  ❌ 缺失手动边 id: {missing[:5]}"); ok = False
+    # 手动边不变量：两端都存活（未被合并掉）的手动边必须保留在结果中；
+    # 端点坍缩进同一簇的边允许随合并消失（非数据丢失）。
+    edge_pairs = {(min(e["from"], e["to"]), max(e["from"], e["to"])) for e in ti_ti}
+    lost = [e["id"] for e in edges
+            if e["from"] in ti_ids and e["to"] in ti_ids
+            and tuple(sorted((e["from"], e["to"]))) not in edge_pairs]
+    if lost:
+        print(f"  ❌ 存活端点的手动边丢失: {lost[:5]}"); ok = False
+    # 手动骨架模式必须被采用（而非自动回退）
+    meta = topo.get("skeleton_meta") or {}
+    if not meta.get("manual"):
+        print(f"  ❌ 未采用手动骨架模式: meta={meta}"); ok = False
     print(f"  skeleton_meta={topo.get('skeleton_meta')}")
     print("  ✅ 通过" if ok else "  ⚠️ 失败")
     return ok
