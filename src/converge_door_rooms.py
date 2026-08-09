@@ -8,6 +8,12 @@
 2. merge_split_rooms.py 合并同标签房间时，只更新了 topology 门节点的 rooms，未同步
    geometry.doors；且被合并消失的 roomId 仍残留在 door.rooms 中形成悬空引用。
 
+门归属规则（普通门 / 普通摆弧门）
+-------------------------------
+- 若普通门两侧都是封闭房间，该门归属两个房间（两房间共用的门）；
+- 仅当普通门连接「封闭房间 + 公共空间」时，普通门只归属该封闭房间（剔除公共空间）。
+本脚本对全部 doorway 节点统一执行该原则：剔除开放空间类型、保留封闭房间（可多个）。
+
 清洗规则（幂等）
 --------------
 对每个 geometry.door 与 topology doorway 节点的 rooms：
@@ -73,10 +79,16 @@ def clean_rooms(rooms: List[str], valid_room_ids: Set[str], rtype: Dict[str, str
 
 
 def converge_floor(fd: dict) -> Dict[str, Tuple[int, int, int]]:
-    rtype = {s.get("roomId"): s.get("type") for s in fd.get("semantic", {}).get("rooms", [])}
-    # 有效 roomId 取自 semantic.rooms（含走廊/门厅等开放空间），而非仅拓扑 room 节点，
-    # 否则走廊门会被误判为悬空。被合并消失的 roomId 不在 semantic.rooms 中，仍会被剔除。
-    valid_room_ids = {s.get("roomId") for s in fd.get("semantic", {}).get("rooms", [])}
+    # 用 roomId 与 id 双键建索引：部分房间（楼梯/设备用房等）的 semantic 条目
+    # 可能没有 roomId 或二者不一致，而门节点 rooms 引用的是 id；只按 roomId 索引会
+    # 漏判这些门，使其既没被清洗、也没被识别为开放空间（如楼梯间的普通门）。
+    rtype: Dict[str, str] = {}
+    valid_room_ids: Set[str] = set()
+    for s in fd.get("semantic", {}).get("rooms", []):
+        for key in (s.get("roomId"), s.get("id")):
+            if key:
+                rtype.setdefault(key, s.get("type"))
+                valid_room_ids.add(key)
     stats: Dict[str, Tuple[int, int, int]] = {}
 
     # ---- 1) 先清洗 topology doorway 节点（权威来源） ----

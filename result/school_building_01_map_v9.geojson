@@ -96209,8 +96209,7 @@
               "width_m": 1.15,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0013",
-                "F1-RM-0012"
+                "F1-RM-0013"
               ],
               "openDirection": "inward",
               "openDirectionSource": "inferred_opposite",
@@ -96280,8 +96279,7 @@
               "width_m": 1.07,
               "mergedCount": 1,
               "rooms": [
-                "F1-RM-0024",
-                "F1-CR-0055"
+                "F1-RM-0024"
               ],
               "openDirection": "inward",
               "openDirectionSource": "polygon",
@@ -112603,8 +112601,7 @@
               -20.831
             ],
             "rooms": [
-              "F1-RM-0013",
-              "F1-RM-0012"
+              "F1-RM-0013"
             ],
             "openDirection": "outward",
             "hingeSide": "left",
