@@ -3714,10 +3714,11 @@ def build_geojson(f1, f2):
 
         # --- 拓扑层（指南 第五章）：节点三类（room/intersection/doorway/facility）+ 边
         doors_for_topo = []
-        for dr in data["doors"]:
+        for i, dr in enumerate(data["doors"]):
             cx, cy = pt2m(dr["center"])
             sw = dr.get("swing_attrs") or {}
             doors_for_topo.append({
+                "id": obj_id(f"F{floor_no}", OBJ_TYPE["door"], i + 1),
                 "center_m": [cx, cy],
                 "kind": dr["kind"],
                 "width_pt": dr["width_pt"],

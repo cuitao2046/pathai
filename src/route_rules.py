@@ -25,7 +25,7 @@ import json
 import math
 from collections import defaultdict
 
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
 # 门类型边权惩罚（米），越小越优先
@@ -450,19 +450,10 @@ class RouteGraph:
             if a["coords"] is None or b["coords"] is None:
                 continue
             # 仅「真正穿墙」(两端在墙线异侧且交点在线段内)才算，沿墙并行排除。
-            ax_, ay_ = a["coords"]
-            bx_, by_ = b["coords"]
-            minx, miny = min(ax_, bx_), min(ay_, by_)
-            maxx, maxy = max(ax_, bx_), max(ay_, by_)
-            hit = False
-            for wl, wb in zip(self.wall_lines, self.wall_bounds):
-                # bounding box 预筛
-                if wb[0] > maxx or wb[2] < minx or wb[1] > maxy or wb[3] < miny:
-                    continue
-                if self._segment_crosses_wall(a["coords"], b["coords"],
-                                              wl.coords[0], wl.coords[-1]):
-                    hit = True
-                    break
+            if self._seg_crosses_any_wall(a["coords"], b["coords"]):
+                hit = True
+            else:
+                hit = False
             if hit:
                 crossings.append({
                     "from": path[i], "to": path[i + 1],

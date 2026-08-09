@@ -618,13 +618,13 @@ def build_skeleton_topology(
                 })
         skel_lines = sk["lines"]
 
-    # ---------- TD: 门节点坐标保持在「真实门开口」处（不投影到走廊骨架） ----------
-    # 说明：此前把门投影到走廊骨架线、使 TD 节点落在走廊里，会导致 room↔door
-    # (TR↔TD) 拓扑边从房间质心直接连到走廊里的投影点、从而「穿墙」。
-    # 现改为 TD 节点直接取原始门坐标（房间开口处），room↔door 边自然落在房间内；
-    # 门→走廊边(TD↔TI) 仍按真实门位置就近接入最近走廊 TI（穿墙段落在门口开口，合法）。
-    # 门合并仍以原始门坐标(center_m)为依据，保证 TD 节点留在房间开口处。
-    td_doors = _merge_nearby_doors(td_doors, 1.0)
+    # ---------- TD: 门节点严格 1:1 对应每扇 door（需求⑧） ----------
+    # 说明：每扇 geometry.door（含纯走廊门/门洞）都生成一个专属 TD 节点，
+    # TD id 序号与 door id 序号一致（F1-D-0018 → F1-TD-0018），不合并、不投影。
+    # TD 坐标 = 门坐标（真实开口处）；房间↔门边按贴墙/标注归属生成；
+    # 走廊连通性由 TI↔TI 承担，TD 连最近 TI 接入路网。
+    # （多房间共享门 room↔door 直连可能穿墙——已知限制，后续单独处理）
+    td_doors = list(td_doors)
 
     # 门贴墙补全归属（需求⑥：房间必须与「所有」swing/fire 门都有边）
     # 门 rooms 字段来自 CAD 标签归属，偶有缺漏（一扇门漏标某房间）。
@@ -683,18 +683,15 @@ def build_skeleton_topology(
            all(rid not in _room_has_sf for rid in rms):
             dr["kind"] = "swing"
 
-    door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None
+    door_node_ids = []  # 与 td_doors 对齐（1:1，每扇门都建 TD）
     for i, dr in enumerate(td_doors):
-        # 该门是否连到至少一个封闭房间（TR）；无房间归属则跳过，
-        # 避免生成悬空 corridor-only 门节点（走廊连通性由 TI↔TI 边承担）。
-        has_room = any(rid in room_index for rid in dr.get("rooms", []))
-        if not has_room:
-            door_node_ids.append(None)
-            continue
-        nid = _obj_id(floor_no, obj_type["topo_doorway"], len(door_node_ids) + 1)
+        # TD id 序号 = door id 序号（F1-D-0018 → F1-TD-0018）
+        door_id = dr.get("id") or ""
+        seq = door_id.split("-")[-1] if "-" in door_id else str(i + 1)
+        nid = f"F{floor_no}-TD-{seq}"
         door_node_ids.append(nid)
         kind = dr.get("kind", "swing")
-        coords = list(dr.get("center_m") or [0, 0])  # 已为最终（投影）坐标
+        coords = list(dr.get("center_m") or [0, 0])
         nodes.append({
             "id": nid,
             "type": "doorway",
@@ -704,6 +701,7 @@ def build_skeleton_topology(
             "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
             "coordinates": [round(coords[0], 3), round(coords[1], 3)],
             "rooms": dr.get("rooms", []),
+            "sourceDoorIds": [door_id] if door_id else None,
             # 指南 §3.2 开向：外开门门扇扫入走廊，视障风险更高
             "openDirection": dr.get("openDirection"),
             "hingeSide": dr.get("hingeSide"),
@@ -756,6 +754,7 @@ def build_skeleton_topology(
 
     # ---------- 边 ----------
     # 1) TR ↔ TD
+    tr_connected = {}  # room node id -> True
     for i, dr in enumerate(td_doors):
         dnid = door_node_ids[i]
         if dnid is None:
@@ -778,6 +777,36 @@ def build_skeleton_topology(
             add_edge(rnid, dnid, dist,
                      a_level=2 if kind == "fire" else 0,
                      r_level=5 if kind == "fire" else 0.5)
+            tr_connected[rnid] = True
+
+    # 1b) 兜底：无任何门边的封闭房间（管井/无门楼梯间/无门卫生间等）
+    #     连最近 TD 保连通（validate 要求每个 TR 有 TD 边；楼梯间是跨层枢纽须可达）。
+    if door_node_ids:
+        td_coords = {}
+        for i, dnid in enumerate(door_node_ids):
+            if dnid is None:
+                continue
+            td_coords[dnid] = next(
+                n["coordinates"] for n in nodes if n["id"] == dnid)
+        for r in rooms:
+            rnid = room_index.get(r["id"])
+            if rnid is None or rnid in tr_connected:
+                continue
+            if r.get("roomType") in OPEN:
+                continue
+            c = r["centroid_m"]
+            best_td, best_d = None, float("inf")
+            for dnid, dc in td_coords.items():
+                d = math.hypot(c[0] - dc[0], c[1] - dc[1])
+                if d < best_d:
+                    best_d, best_td = d, dnid
+            if best_td is not None:
+                add_edge(rnid, best_td, best_d)
+                tr_connected[rnid] = True
+                # 同步：兜底房间加入 TD.rooms（route_rules 用 rooms 判定无门卫生间）
+                td_node = next(n for n in nodes if n["id"] == best_td)
+                if r["id"] not in (td_node.get("rooms") or []):
+                    td_node["rooms"] = list(td_node.get("rooms") or []) + [r["id"]]
 
     # 2) TD ↔ 最近 TI（优先：最近图节点对应的 TI；否则欧氏最近 TI）
     for i, dnid in enumerate(door_node_ids):

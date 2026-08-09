@@ -427,7 +427,8 @@ def compute_route_rule_extras(geo):
     edge_door_type_map = {}
     for fk, fd in geo["floors"].items():
         for e in (fd.get("topology", {}) or {}).get("edges", []):
-            edge_door_type_map[e["id"]] = edge_door_type(e)
+            # 楼层限定键：F1/F2 各自独立边编号（E000005 在两层都有）
+            edge_door_type_map[f"{fk}:{e['id']}"] = edge_door_type(e)
 
     # 房间最佳门类型（每间房取优先级最高的门）
     best_door = {}
@@ -467,7 +468,7 @@ def compute_route_rule_extras(geo):
                 continue
             for (A, B) in wall_lines:
                 if _seg_crosses_wall(ca, cb, A, B):
-                    wall_crossing_titi.add(e["id"])
+                    wall_crossing_titi.add(f"{fk}:{e['id']}")
                     break
 
     return {
@@ -709,6 +710,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 .layer_topo_node.path-start circle, .layer_topo_node.path-start rect, .layer_topo_node.path-start polygon {{ stroke: #4CAF50 !important; stroke-width: 3 !important; }}
 .layer_topo_node.path-end circle, .layer_topo_node.path-end rect, .layer_topo_node.path-end polygon {{ stroke: #E91E63 !important; stroke-width: 3 !important; }}
 .layer_topo_node.path-via circle, .layer_topo_node.path-via rect, .layer_topo_node.path-via polygon {{ stroke: #FF9800 !important; stroke-width: 2.2 !important; }}
+/* 路径列表中点击节点 → 图上醒目高亮：节点放大 + 橙色粗描边 + 外圈脉冲环（需求⑬） */
+.layer_topo_node.path-node-flash circle, .layer_topo_node.path-node-flash rect, .layer_topo_node.path-node-flash polygon {{ stroke: #FF5722 !important; stroke-width: 4 !important; filter: drop-shadow(0 0 6px rgba(255,87,34,0.95)); }}
+#path-flash-ring {{ pointer-events: none; }}
+#path-flash-ring circle {{ fill: none; stroke: #FF5722; stroke-width: 3.5; }}
+@keyframes pathFlashPulse {{ 0% {{ r: 6; opacity: 1; }} 100% {{ r: 26; opacity: 0; }} }}
+#path-flash-ring circle.pulse {{ animation: pathFlashPulse 0.9s ease-out infinite; }}
 #path-bar {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #FFF3E0; border: 1px solid #FFCC80; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }}
 #path-bar button {{ border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }}
 #path-bar button.active {{ background: #E91E63; color: #fff; border-color: #C2185B; }}
@@ -1130,6 +1137,41 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ("无障碍可达", "是" if p.get("accessible") else "否"),
                 ("独立出入口", "是" if p.get("hasIndependentEntrance") else "否"),
             ]}
+            # 归属本房间的门（全类型：swing/fire/opening）——按 rooms 字段匹配，
+            # 每个门一行「编号 + 类型」可点击居中定位。数量多时折叠为「N 扇」。
+            _room_doors = []
+            for _did, _dr in _door_by_id.items():
+                if _rid and _rid in (_dr.get("properties", {}).get("rooms") or []):
+                    _room_doors.append(_dr)
+            if _room_doors:
+                _room_doors.sort(key=lambda d: d.get("id", ""))
+                if len(_room_doors) <= 6:
+                    _door_cells = []
+                    for _dr in _room_doors:
+                        _dtype = _dr.get("properties", {}).get("doorType", "swing")
+                        _dname = DOOR_TYPE_CN.get(_dtype, _dtype)
+                        # link_obj 返回 dict，直接放入 rows（renderCell 识别 _l 渲染为
+                        # 可点击链接）；文本拼接「编号（类型）」，不能 f-string 格式化 dict
+                        _door_cells.append(link_obj(
+                            _dr["id"], f'{_dr["id"]}（{_dname}）'))
+                    det["rows"].append(("门", _door_cells))
+                else:
+                    # 门多时折叠：按类型分组计数 + 详情行逐扇展开
+                    _type_cnt = {}
+                    for _dr in _room_doors:
+                        _dtype = _dr.get("properties", {}).get("doorType", "swing")
+                        _type_cnt[_dtype] = _type_cnt.get(_dtype, 0) + 1
+                    _summary = "、".join(
+                        f"{DOOR_TYPE_CN.get(t, t)}×{c}" for t, c in
+                        sorted(_type_cnt.items(), key=lambda kv: -kv[1]))
+                    det["rows"].append(("门（{0} 扇）".format(len(_room_doors)), _summary))
+                    for _dr in _room_doors:
+                        _dtype = _dr.get("properties", {}).get("doorType", "swing")
+                        _dname = DOOR_TYPE_CN.get(_dtype, _dtype)
+                        det["rows"].append(
+                            (f"　{_dname}", link_obj(_dr["id"], f'{_dr["id"]}（{_dname}）')))
+            else:
+                det["rows"].append(("门", "—（无归属门）"))
             # 关联对应的拓扑房间节点（TR）
             trid = _roomid_to_trid.get(_rid)
             if trid:
@@ -1726,7 +1768,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 nd["bestDoorType"] = _room_best_door[n["id"]]
             path_nodes[n["id"]] = nd
         for e in (fd.get("topology") or {}).get("edges") or []:
-            edt = _edge_door_type_map.get(e.get("id"))
+            edt = _edge_door_type_map.get(f"{fk}:{e.get('id')}")
             path_edges.append({
                 "id": e.get("id"),
                 "from": e.get("from"),
@@ -1738,7 +1780,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "crossFloor": False,
                 "type": e.get("type"),
                 "doorType": edt,
-                "wallCrossing": e.get("id") in _wall_crossing_titi,
+                "wallCrossing": f"{fk}:{e.get('id')}" in _wall_crossing_titi,
             })
     for e in geo.get("crossFloorEdges") or []:
         path_edges.append({
@@ -2351,9 +2393,12 @@ function togglePathMode() {
 }
 
 function clearPathVisual() {
-  document.querySelectorAll('.path-start,.path-end,.path-via').forEach(function(el){
-    el.classList.remove('path-start','path-end','path-via');
+  document.querySelectorAll('.path-start,.path-end,.path-via,.path-node-flash').forEach(function(el){
+    el.classList.remove('path-start','path-end','path-via','path-node-flash');
   });
+  _pathFlashNodeId = null;
+  var ring = document.getElementById('path-flash-ring');
+  if (ring) ring.innerHTML = '';
   var g = document.getElementById('path-route-layer');
   if (g) g.innerHTML = '';
 }
@@ -2622,6 +2667,56 @@ function focusRouteNode(id) {
   translateY = rect.height / 2 - n.y * scale;
   applyTransform();
 }
+// 路径列表中点击节点 → 平移到该节点 + 图上醒目高亮（需求⑬）：
+// 清除上一次的闪烁标记，节点本身加 path-node-flash（放大+橙色描边+光晕），
+// 并在其位置叠加一个脉冲圆环动画标记，确保视觉上非常明显。
+var _pathFlashNodeId = null;
+function focusPathNode(id) {
+  var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
+  if (!n) return;
+  // 清除上一次高亮
+  if (_pathFlashNodeId) {
+    document.querySelectorAll('.layer_topo_node.path-node-flash').forEach(function(g) {
+      g.classList.remove('path-node-flash');
+    });
+    _pathFlashNodeId = null;
+  }
+  // 平移到节点
+  var rect = wrapper.getBoundingClientRect();
+  translateX = rect.width / 2 - n.x * scale;
+  translateY = rect.height / 2 - n.y * scale;
+  applyTransform();
+  // 节点本身高亮（确保拓扑节点图层可见）
+  ensureLayer('topo_node', true);
+  var found = false;
+  document.querySelectorAll('.layer_topo_node').forEach(function(g) {
+    var f = g.getAttribute('data-info');
+    if (!f) return;
+    try {
+      var nd = JSON.parse(f);
+      if (nd.id === id) { g.classList.add('path-node-flash'); found = true; }
+    } catch(e) {}
+  });
+  _pathFlashNodeId = id;
+  // 叠加脉冲圆环标记（独立于节点 SVG，避免样式冲突）
+  var svg = document.getElementById('main-svg');
+  var ring = document.getElementById('path-flash-ring');
+  if (!ring) {
+    ring = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    ring.setAttribute('id', 'path-flash-ring');
+    svg.appendChild(ring);
+  }
+  ring.innerHTML = '';
+  var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', n.x); c.setAttribute('cy', n.y); c.setAttribute('r', 6);
+  c.setAttribute('class', 'pulse');
+  ring.appendChild(c);
+  var c2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c2.setAttribute('cx', n.x); c2.setAttribute('cy', n.y); c2.setAttribute('r', 7);
+  c2.setAttribute('fill', 'rgba(255,87,34,0.28)');
+  ring.appendChild(c2);
+  // 若节点已加载但其坐标与 PATH_GRAPH 一致，ring 与其自然重合
+}
 // 详情面板点击「拓扑节点」链接 → 居中定位并高亮该拓扑节点
 function focusTopoNode(id) {
   var n = PATH_GRAPH && PATH_GRAPH.nodes[id];
@@ -2768,7 +2863,7 @@ function renderRouteList(result, mode, startId, endId) {
     li.addEventListener('click', function() {
       Array.prototype.forEach.call(listEl.children, function(x) { x.classList.remove('active'); });
       li.classList.add('active');
-      focusRouteNode(li.getAttribute('data-nid'));
+      focusPathNode(li.getAttribute('data-nid'));
     });
   });
 }
