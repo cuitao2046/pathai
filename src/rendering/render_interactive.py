@@ -49,6 +49,14 @@ NODE_COLORS = {
     "facility_entrance": "#2980B9",
 }
 FACILITY_COLORS = {"staircase": "#8E44AD", "elevator": "#16A085"}
+# 信标部署点配色（与图例一致）：交叉口/门口/楼梯/电梯/出入口
+BEACON_COLORS = {
+    "intersection": "#FB8C00",
+    "door": "#8E24AA",
+    "stair": "#E53935",
+    "elevator": "#1E88E5",
+    "entrance": "#43A047",
+}
 
 # 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
 OUTLINE_MIN_AREA = 100.0
@@ -662,6 +670,21 @@ def main():
     else:
         print("  [hint] 未找到 fingerprint_grid.json，可先运行 generate_fingerprint_grid.py")
 
+    # 信标部署方案（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
+    bc_path = Path(GEO_IN).parent / "beacon_deployment_plan.json"
+    beacon_floors = {}
+    if bc_path.exists():
+        try:
+            bc_data = json.load(open(bc_path, encoding="utf-8"))
+            for b in bc_data.get("beacons", []):
+                beacon_floors.setdefault(str(b.get("floor")), []).append(b)
+            print(f"  [info] 读取信标部署方案 {bc_path.name}: "
+                  f"{len(bc_data.get('beacons', []))} 个信标")
+        except Exception as e:
+            print("  [warn] 读取 beacon_deployment_plan.json 失败：", e)
+    else:
+        print("  [hint] 未找到 beacon_deployment_plan.json，可先运行 gen_beacon_plan.py")
+
     # ---- 全局范围（所有楼层共用变换，便于跨层对齐） ----
     min_x, min_y = float("inf"), float("inf")
     max_x, max_y = float("-inf"), float("-inf")
@@ -770,6 +793,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .layer_fingerprint circle {{ cursor: pointer; }}
+.layer_beacon circle {{ cursor: pointer; }}
+.layer_beacon text {{ font-weight: bold; pointer-events: none; }}
+.layer_beacon:hover circle {{ stroke: #FFC107; stroke-width: 1.4; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
 .zoom-btn {{ width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 .zoom-btn:hover {{ background: #f0f0f0; }}
@@ -884,6 +910,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" onchange="toggleLayer('tactile', this.checked)"> 盲道</label>
   <label><input type="checkbox" onchange="toggleLayer('material', this.checked)"> 地面材质</label>
   <label><input type="checkbox" onchange="toggleLayer('fingerprint', this.checked)"> 指纹网格</label>
+  <label><input type="checkbox" onchange="toggleLayer('beacon', this.checked)"> 信标部署点</label>
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
   <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
@@ -1793,6 +1820,44 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if n_fp:
                 print(f"  [F{fk}] 指纹网格图层: {n_fp} 个点")
 
+        # 12. 信标部署点（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
+        bc_list = beacon_floors.get(str(fk))
+        if bc_list:
+            n_bc = 0
+            for b in bc_list:
+                cx, cy = b["coordinates"][0], b["coordinates"][1]
+                sx, sy = tosvg(cx, cy)
+                sem = b.get("semanticTag", "")
+                col = BEACON_COLORS.get(sem, "#555555")
+                r = 3.2
+                bid = b.get("beaconId", "")
+                tip = f"信标 {bid}\\n语义：{sem} · {b.get('floor')}F"
+                det = {"title": f"信标 {bid}", "rows": [
+                    ("信标 ID", bid),
+                    ("语义标签", sem),
+                    ("UUID", b.get("uuid", "")),
+                    ("Major", b.get("major", "")),
+                    ("Minor", b.get("minor", "")),
+                    ("楼层", f"{b.get('floor')}F"),
+                    ("坐标(米)", f"({cx:.2f}, {cy:.2f})"),
+                    ("安装位置", b.get("locationDesc", "")),
+                    ("发射功率", f"{b.get('txPower')} dBm"),
+                    ("广播间隔", f"{b.get('broadcastInterval')} ms"),
+                    ("安装高度", f"{b.get('installHeight')} m"),
+                    ("来源节点", b.get("sourceNodeId", "")),
+                ]}
+                attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid})
+                parts.append(
+                    f'<g class="layer_beacon" data-floor="{fk}" {attr}>'
+                    f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
+                    f'fill-opacity="0.9" stroke="#ffffff" stroke-width="0.5"/>'
+                    f'<text x="{fmt(float(sx) + 4)}" y="{fmt(float(sy) + 1.5)}" '
+                    f'font-size="4.5" fill="{col}" opacity="0.95">{bid}</text></g>\n'
+                )
+                n_bc += 1
+            if n_bc:
+                print(f"  [F{fk}] 信标部署点图层: {n_bc} 个信标")
+
         # 楼层分隔线
         if i < len(sorted_floors) - 1:
             sep_y = (i + 1) * svh_per_floor
@@ -2195,6 +2260,13 @@ function srLocate(el) {{
   <div class="lg-sec"><div class="lg-title">风险</div>
     <div class="lg-item"><div class="lg-sw" style="background:#F44336;border-radius:50%"></div>风险点</div>
   </div>
+  <div class="lg-sec"><div class="lg-title">信标部署点</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>交叉口/转角</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#8E24AA;border-radius:50%;width:11px;height:11px"></div>门口</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>楼梯（密集）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#1E88E5;border-radius:50%;width:11px;height:11px"></div>电梯（密集）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>出入口</div>
+  </div>
   </div><!-- /lg-grid -->
 </div><!-- /legend-panel -->
 </div><!-- /left -->
@@ -2410,7 +2482,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint'];
+  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
