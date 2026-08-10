@@ -26,8 +26,9 @@
 - ⚠️ **门不做合并（用户明确，2026-08-09）**：同一物理开口只允许一扇门，禁止 `dedupe_doorways` 合并(13pt)、`_merge_nearby_doors` 合并(0.8m/1.0m)等任何形式门合并——合并会混叠 rooms 归属（如 F2-TD-0010 出现 ['F2-CR-0042','F2-RM-0005']）导致门归属错误。三处合并逻辑待禁用：`parse_cad_pdf.py:dedupe_doorways`(2984调用)、`skeleton/pipeline.py:_merge_nearby_doors`(499调用)、`topology.py:_merge_nearby_doors`(345调用)。
 - 卫生间防火门直接丢弃；卫生间/楼梯间摆弧门(kind∈swing/fire 且有DK<14pt)重分类为 opening(F1=4/F2=4)。
 - ⚠️ 合班 `_heban_real_polygon` 陷阱：`cv2.floodFill` 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
-- git：仅 `.workbuddy/memory/` 随仓库同步。⚠️ 编辑 .gitignore 后务必 `git add` 再 commit，否则 merge 中静默丢失。
+- git：`.workbuddy/memory/` 与 `result/skeleton_manual_parsed.json`(手绘骨架，属代码) 随仓库同步；`result/` 其余产物(geojson/html) 为可复现渲染输出，按铁律纳入提交。⚠️ 编辑 .gitignore 后务必 `git add` 再 commit，否则 merge 中静默丢失。
 - ⚠️ **手动骨架优先**：`result/skeleton_manual_parsed.json` 存在时 `build_skeleton_topology(manual_skeleton=...)` 用其 TI/TI-TI/骨架线 替代中轴提取(跳过 medial-axis)，TR/TD/TF/TEN 仍自动挂到手动 TI；F2 孤岛由 pipeline 软桥补边保 100% 连通。`parse_cad_pdf.py` 自动检测，`--no-manual-skeleton` 强制自动。
+- ⚠️ **骨架数据必须入库（用户明确，2026-08-10）**：`result/skeleton_manual_parsed.json` 是代码的一部分（含手绘红线 + 红色无填充矩形标注，矩形在 JSON 里以闭合折线线段形式存入骨架 edges，无独立 `rect` 实体），**每次重新生成必须 `git add`+`commit` 到分支，不得只留工作区**；**严禁用 `git checkout <旧提交> -- result/skeleton_manual_parsed.json` 把它回退成旧版**（曾因此导致渲染缺矩形，而 git HEAD 实际含矩形）；其正确性以仓库 HEAD 为准，渲染缺矩形先查工作区是否被本地回退覆盖。重生成命令：`python src/tools/import_manual_skeleton.py --input "C:/Users/Administrator/Downloads/cr_skeleton.svg"`（注意用 `C:/` Windows 路径，非 `/c/`）。
 - ⚠️ geojson 字段陷阱：最终 `semantic.rooms` 房间类型在 **`type`** 字段（如 type="elevator_lobby"），**不是** `roomType`；序列化时由中间变量 `roomType` 映射到 `type`。
 
 ## 提交工作流
