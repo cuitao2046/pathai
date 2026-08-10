@@ -39,6 +39,12 @@
 4. 人工校验通过后合入 master（fast-forward 或 squash，禁 --force），再推 master。
 沙箱 refs 写入受限时（带斜杠分支名常失败），用**无斜杠分支名**（如 `refactor-package-restructure`，单文件 ref 写入稳定），或手动 `mkdir -p .git/refs/heads/<分支>` 再写 ref，或直接更新 master（需用户确认）。
 
+### ⚠️ 铁律 0b：一个分支只包含一个需求的改动（2026-08-10 起，用户明确）
+**需求/改动与当前分支正在进行的工作不相关时，必须从最新 master 单独创建新分支实现**，不得在现有 feature 分支上堆叠无关提交。
+- 判定标准：该需求是否属于当前分支的主题（如 wall-fallback-visualization 分支只应包含穿墙回退可视化相关改动；"点击任意节点展示详情"这类独立需求必须另开分支）。
+- 同一条 feature 分支内的多笔提交必须同主题、同需求；混入无关改动属于违规。
+- 若已误堆叠：用 `git reset --hard <本分支最后相关提交>` 摘除无关提交，再从 master 切新分支 `git cherry-pick` 迁走（涉及远端需 force push 时先经用户确认）。
+
 ### ⚠️ 铁律：每次功能/优化完成必做两件事
 1. **记录当天工作日志**：功能开发或优化完成后，必须把成果追加到 `.workbuddy/memory/YYYY-MM-DD.md`（append-only，不覆盖）。
 2. **推送 GitHub**：日志提交后必须 push 到当前分支。沙箱无凭据时，push 由用户终端执行，但**必须明确告知用户"待 push"并列出 commit 清单**，不得静默跳过。
