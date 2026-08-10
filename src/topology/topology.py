@@ -364,6 +364,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             # 指南 §3.2 开向：外开门（门扇扫入走廊）对视障用户风险更高
             "openDirection": dr.get("openDirection"),
             "hingeSide": dr.get("hingeSide"),
+            "isNormallyOpen": dr.get("isNormallyOpen"),
         })
 
     # ---------- 开放空间节点（circulation / intersection） ----------

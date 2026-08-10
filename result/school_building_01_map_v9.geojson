@@ -70858,68 +70858,12 @@
                     -27.338072385053668
                   ],
                   [
-                    -41.50249976765951,
-                    -27.28517238505367
+                    -41.688955808105476,
+                    -27.316248391794666
                   ],
                   [
-                    -41.39669976765951,
-                    -27.408605718386987
-                  ],
-                  [
-                    -33.40879976765951,
-                    -27.408605718386987
-                  ],
-                  [
-                    -33.30299976765951,
-                    -27.28517238505367
-                  ],
-                  [
-                    -33.00323310099283,
-                    -27.408605718386987
-                  ],
-                  [
-                    -28.118799767659496,
-                    -27.408605718386987
-                  ],
-                  [
-                    -28.08266362585599,
-                    -27.366446886282898
-                  ],
-                  [
-                    -28.13797967632368,
-                    -27.395290255455336
-                  ],
-                  [
-                    -40.349621100890516,
-                    -26.81378352095215
-                  ],
-                  [
-                    -41.562224871003004,
-                    -24.634611528286232
-                  ],
-                  [
-                    -41.53046686537124,
-                    -23.9930998145246
-                  ],
-                  [
-                    -41.66119976765951,
-                    -24.040639051720326
-                  ],
-                  [
-                    -41.66119976765951,
-                    -25.557105718386985
-                  ],
-                  [
-                    -41.449599767659514,
-                    -25.64527238505367
-                  ],
-                  [
-                    -41.64356643432617,
-                    -25.69817238505367
-                  ],
-                  [
-                    -41.66119976765951,
-                    -25.96267238505367
+                    -41.688955808105476,
+                    -25.96559407352166
                   ],
                   [
                     -41.996233100992825,
@@ -71204,8 +71148,8 @@
               "roomId": "F1-CR-0048",
               "code": "",
               "centroid": [
-                -46.214890962622064,
-                -19.815788069023352
+                -46.47734180750103,
+                -19.586251882238052
               ],
               "public": true,
               "accessible": true,
@@ -71780,100 +71724,12 @@
                         -27.316059357663008
                       ],
                       [
-                        -41.68782160331554,
+                        -41.69895580810548,
                         -27.316059357663008
                       ],
                       [
-                        -41.50249976765951,
-                        -27.28517238505367
-                      ],
-                      [
-                        -41.47602521970865,
-                        -27.316059357663008
-                      ],
-                      [
-                        -33.32947431561037,
-                        -27.316059357663008
-                      ],
-                      [
-                        -33.30299976765951,
-                        -27.28517238505367
-                      ],
-                      [
-                        -33.22798854846538,
-                        -27.316059357663008
-                      ],
-                      [
-                        -30.012066490379027,
-                        -27.316059357663008
-                      ],
-                      [
-                        -40.35565408284505,
-                        -26.82350756754558
-                      ],
-                      [
-                        -41.572354082845045,
-                        -24.636974234212236
-                      ],
-                      [
-                        -41.54066265412521,
-                        -23.996807374071498
-                      ],
-                      [
-                        -41.57895580822199,
-                        -24.01073215737941
-                      ],
-                      [
-                        -41.57895580822199,
-                        -25.591374034819285
-                      ],
-                      [
-                        -41.449599767659514,
-                        -25.64527238505367
-                      ],
-                      [
-                        -41.58711866448135,
-                        -25.682777538732356
-                      ],
-                      [
-                        -41.588090264409,
-                        -25.685492978646998
-                      ],
-                      [
-                        -41.593125256255995,
-                        -25.69613857517601
-                      ],
-                      [
-                        -41.59917945441699,
-                        -25.706239394809003
-                      ],
-                      [
-                        -41.60619455356999,
-                        -25.715698160794005
-                      ],
-                      [
-                        -41.614102994596,
-                        -25.724423780389
-                      ],
-                      [
-                        -41.62282861419099,
-                        -25.73233222141501
-                      ],
-                      [
-                        -41.632287380175995,
-                        -25.739347320039002
-                      ],
-                      [
-                        -41.64238819980899,
-                        -25.745401518729008
-                      ],
-                      [
-                        -41.64685591467947,
-                        -25.74751459035316
-                      ],
-                      [
-                        -41.66119976765951,
-                        -25.96267238505367
+                        -41.69895580810548,
+                        -25.96664670510061
                       ],
                       [
                         -41.996233100992825,
@@ -91558,40 +91414,24 @@
               "coordinates": [
                 [
                   [
-                    -41.572354082845045,
-                    -24.636974234212236
+                    -41.69895580810548,
+                    -27.43605935791016
                   ],
                   [
-                    -40.35565408284505,
-                    -26.82350756754558
+                    -25.0100648413086,
+                    -27.43605935791016
                   ],
                   [
-                    -28.135754082845047,
-                    -27.405407567545577
+                    -25.0100648413086,
+                    -14.740059357910159
                   ],
                   [
-                    -25.66708741617839,
-                    -26.118174234212237
+                    -41.69895580810548,
+                    -14.740059357910159
                   ],
                   [
-                    -25.049920749511717,
-                    -17.671807567545578
-                  ],
-                  [
-                    -26.266620749511716,
-                    -15.485274234212236
-                  ],
-                  [
-                    -38.662854082845044,
-                    -14.444907567545577
-                  ],
-                  [
-                    -41.131520749511715,
-                    -15.732140900878907
-                  ],
-                  [
-                    -41.572354082845045,
-                    -24.636974234212236
+                    -41.69895580810548,
+                    -27.43605935791016
                   ]
                 ]
               ]
@@ -94237,7 +94077,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94273,7 +94114,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94308,7 +94150,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94343,7 +94186,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94378,7 +94222,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94413,7 +94258,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94448,7 +94294,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94483,7 +94330,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94519,7 +94367,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94555,7 +94404,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94591,7 +94441,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94627,7 +94478,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94663,7 +94515,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94699,7 +94552,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94735,7 +94589,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94771,7 +94626,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94806,7 +94662,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94841,7 +94698,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94876,7 +94734,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94911,7 +94770,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94946,7 +94806,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -94981,7 +94842,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95016,7 +94878,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95051,7 +94914,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95088,7 +94952,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95124,7 +94989,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95159,7 +95025,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95194,7 +95061,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95229,7 +95097,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95264,7 +95133,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95301,7 +95171,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95337,7 +95208,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95372,7 +95244,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95407,7 +95280,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95442,7 +95316,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95477,7 +95352,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95513,7 +95389,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95548,7 +95425,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95583,7 +95461,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95618,7 +95497,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95654,7 +95534,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95690,7 +95571,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95725,7 +95607,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95760,7 +95643,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95795,7 +95679,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95830,7 +95715,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95866,7 +95752,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95901,7 +95788,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95936,7 +95824,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -95971,7 +95860,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96006,7 +95896,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96041,7 +95932,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96074,7 +95966,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96109,7 +96002,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96129,10 +96023,11 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-CR-0048",
+                "F1-RM-0050"
               ],
-              "openDirection": "inward",
-              "openDirectionSource": "inferred_opposite",
+              "openDirection": null,
+              "openDirectionSource": null,
               "hingeSide": "left",
               "swingIntoRoom": null,
               "wheelchairAccessible": true,
@@ -96144,7 +96039,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96164,10 +96060,11 @@
               "width_m": 1.13,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-CR-0048",
+                "F1-RM-0050"
               ],
-              "openDirection": "inward",
-              "openDirectionSource": "inferred_opposite",
+              "openDirection": null,
+              "openDirectionSource": null,
               "hingeSide": "right",
               "swingIntoRoom": null,
               "wheelchairAccessible": true,
@@ -96179,7 +96076,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96214,7 +96112,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96249,7 +96148,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96284,7 +96184,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96319,7 +96220,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96355,7 +96257,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96391,7 +96294,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96427,7 +96331,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96463,7 +96368,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96499,7 +96405,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96532,7 +96439,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96567,7 +96475,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96602,7 +96511,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96637,7 +96547,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96672,7 +96583,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96707,7 +96619,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96743,7 +96656,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -96778,7 +96692,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96813,7 +96728,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96846,7 +96762,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96881,7 +96798,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96917,7 +96835,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96952,7 +96871,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -96988,7 +96908,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97021,7 +96942,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97056,7 +96978,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97091,7 +97014,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97127,7 +97051,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97163,7 +97088,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97199,7 +97125,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97235,7 +97162,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97271,7 +97199,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97307,7 +97236,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97327,7 +97257,8 @@
               "width_m": 0.88,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-CR-0048",
+                "F1-RM-0050"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -97342,7 +97273,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97362,7 +97294,8 @@
               "width_m": 0.88,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-CR-0048",
+                "F1-RM-0050"
               ],
               "openDirection": "outward",
               "openDirectionSource": "polygon",
@@ -97377,7 +97310,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97412,7 +97346,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97447,7 +97382,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97482,7 +97418,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97517,7 +97454,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97552,7 +97490,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97587,7 +97526,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97623,7 +97563,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97659,7 +97600,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97695,7 +97637,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97731,7 +97674,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97767,7 +97711,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97802,7 +97747,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97837,7 +97783,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97872,7 +97819,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97907,7 +97855,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -97943,7 +97892,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -97978,7 +97928,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98013,7 +97964,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98048,7 +98000,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98083,7 +98036,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98118,7 +98072,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98153,7 +98108,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98186,7 +98142,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98221,7 +98178,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98241,10 +98199,11 @@
               "width_m": 1.17,
               "mergedCount": 1,
               "rooms": [
-                "F1-CR-0048"
+                "F1-CR-0048",
+                "F1-RM-0050"
               ],
-              "openDirection": "inward",
-              "openDirectionSource": "inferred_opposite",
+              "openDirection": null,
+              "openDirectionSource": null,
               "hingeSide": "left",
               "swingIntoRoom": null,
               "wheelchairAccessible": true,
@@ -98256,7 +98215,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98292,7 +98252,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98328,7 +98289,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98363,7 +98325,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98399,7 +98362,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98434,7 +98398,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98470,7 +98435,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98505,7 +98471,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98541,7 +98508,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98576,7 +98544,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98612,7 +98581,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -98647,7 +98617,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -98682,7 +98653,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -98717,7 +98689,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -98752,7 +98725,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -98787,7 +98761,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -98822,7 +98797,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -98858,7 +98834,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           }
         ],
@@ -111293,8 +111270,8 @@
             "roomSubType": null,
             "label": "走道",
             "centroid": [
-              -46.214890962622064,
-              -19.815788069023352
+              -46.47734180750103,
+              -19.586251882238052
             ],
             "geometryId": "F1-CR-0048",
             "public": true,
@@ -113621,12 +113598,13 @@
               -14.642
             ],
             "rooms": [
-              "F1-CR-0048"
+              "F1-CR-0048",
+              "F1-RM-0050"
             ],
             "sourceDoorIds": [
               "F1-D-0055"
             ],
-            "openDirection": "inward",
+            "openDirection": null,
             "hingeSide": "left",
             "riskLevel": 1.0
           },
@@ -113641,12 +113619,13 @@
               -14.642
             ],
             "rooms": [
-              "F1-CR-0048"
+              "F1-CR-0048",
+              "F1-RM-0050"
             ],
             "sourceDoorIds": [
               "F1-D-0056"
             ],
-            "openDirection": "inward",
+            "openDirection": null,
             "hingeSide": "right",
             "riskLevel": 1.0
           },
@@ -114313,7 +114292,8 @@
               -27.391
             ],
             "rooms": [
-              "F1-CR-0048"
+              "F1-CR-0048",
+              "F1-RM-0050"
             ],
             "sourceDoorIds": [
               "F1-D-0089"
@@ -114333,7 +114313,8 @@
               -25.678
             ],
             "rooms": [
-              "F1-CR-0048"
+              "F1-CR-0048",
+              "F1-RM-0050"
             ],
             "sourceDoorIds": [
               "F1-D-0090"
@@ -114837,12 +114818,13 @@
               -15.3
             ],
             "rooms": [
-              "F1-CR-0048"
+              "F1-CR-0048",
+              "F1-RM-0050"
             ],
             "sourceDoorIds": [
               "F1-D-0115"
             ],
-            "openDirection": "inward",
+            "openDirection": null,
             "hingeSide": "left",
             "riskLevel": 1.0
           },
@@ -116853,6 +116835,30 @@
           },
           {
             "id": "F1-TE-0139",
+            "from": "F1-TR-0050",
+            "to": "F1-TD-0055",
+            "distance": 9.25,
+            "estimatedTime": 11.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0140",
+            "from": "F1-TR-0050",
+            "to": "F1-TD-0056",
+            "distance": 8.51,
+            "estimatedTime": 10.6,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0141",
             "from": "F1-TR-0024",
             "to": "F1-TD-0062",
             "distance": 2.5,
@@ -116864,7 +116870,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0140",
+            "id": "F1-TE-0142",
             "from": "F1-TR-0027",
             "to": "F1-TD-0063",
             "distance": 2.23,
@@ -116876,7 +116882,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0141",
+            "id": "F1-TE-0143",
             "from": "F1-TR-0024",
             "to": "F1-TD-0063",
             "distance": 2.4,
@@ -116888,7 +116894,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0142",
+            "id": "F1-TE-0144",
             "from": "F1-TR-0031",
             "to": "F1-TD-0064",
             "distance": 2.53,
@@ -116900,7 +116906,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0143",
+            "id": "F1-TE-0145",
             "from": "F1-TR-0036",
             "to": "F1-TD-0065",
             "distance": 2.54,
@@ -116912,7 +116918,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0144",
+            "id": "F1-TE-0146",
             "from": "F1-TR-0010",
             "to": "F1-TD-0067",
             "distance": 2.69,
@@ -116924,7 +116930,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0145",
+            "id": "F1-TE-0147",
             "from": "F1-TR-0007",
             "to": "F1-TD-0068",
             "distance": 4.1,
@@ -116936,7 +116942,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0146",
+            "id": "F1-TE-0148",
             "from": "F1-TR-0035",
             "to": "F1-TD-0071",
             "distance": 2.43,
@@ -116948,7 +116954,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0147",
+            "id": "F1-TE-0149",
             "from": "F1-TR-0028",
             "to": "F1-TD-0072",
             "distance": 1.7,
@@ -116960,7 +116966,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0148",
+            "id": "F1-TE-0150",
             "from": "F1-TR-0026",
             "to": "F1-TD-0079",
             "distance": 1.0,
@@ -116972,7 +116978,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0149",
+            "id": "F1-TE-0151",
             "from": "F1-TR-0046",
             "to": "F1-TD-0083",
             "distance": 3.4,
@@ -116984,7 +116990,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0150",
+            "id": "F1-TE-0152",
             "from": "F1-TR-0009",
             "to": "F1-TD-0084",
             "distance": 5.73,
@@ -116996,7 +117002,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0151",
+            "id": "F1-TE-0153",
             "from": "F1-TR-0013",
             "to": "F1-TD-0086",
             "distance": 6.57,
@@ -117008,7 +117014,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0152",
+            "id": "F1-TE-0154",
             "from": "F1-TR-0012",
             "to": "F1-TD-0087",
             "distance": 2.51,
@@ -117020,7 +117026,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0153",
+            "id": "F1-TE-0155",
             "from": "F1-TR-0039",
             "to": "F1-TD-0088",
             "distance": 4.15,
@@ -117032,7 +117038,31 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0154",
+            "id": "F1-TE-0156",
+            "from": "F1-TR-0050",
+            "to": "F1-TD-0089",
+            "distance": 10.91,
+            "estimatedTime": 13.6,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0157",
+            "from": "F1-TR-0050",
+            "to": "F1-TD-0090",
+            "distance": 10.03,
+            "estimatedTime": 12.5,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0158",
             "from": "F1-TR-0014",
             "to": "F1-TD-0091",
             "distance": 4.68,
@@ -117044,7 +117074,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0155",
+            "id": "F1-TE-0159",
             "from": "F1-TR-0018",
             "to": "F1-TD-0092",
             "distance": 4.75,
@@ -117056,7 +117086,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0156",
+            "id": "F1-TE-0160",
             "from": "F1-TR-0021",
             "to": "F1-TD-0093",
             "distance": 4.72,
@@ -117068,7 +117098,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0157",
+            "id": "F1-TE-0161",
             "from": "F1-TR-0032",
             "to": "F1-TD-0094",
             "distance": 5.16,
@@ -117080,7 +117110,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0158",
+            "id": "F1-TE-0162",
             "from": "F1-TR-0032",
             "to": "F1-TD-0095",
             "distance": 4.75,
@@ -117092,7 +117122,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0159",
+            "id": "F1-TE-0163",
             "from": "F1-TR-0003",
             "to": "F1-TD-0096",
             "distance": 5.16,
@@ -117104,7 +117134,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0160",
+            "id": "F1-TE-0164",
             "from": "F1-TR-0003",
             "to": "F1-TD-0097",
             "distance": 4.86,
@@ -117116,7 +117146,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0161",
+            "id": "F1-TE-0165",
             "from": "F1-TR-0008",
             "to": "F1-TD-0098",
             "distance": 4.83,
@@ -117128,7 +117158,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0162",
+            "id": "F1-TE-0166",
             "from": "F1-TR-0009",
             "to": "F1-TD-0099",
             "distance": 4.27,
@@ -117140,7 +117170,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0163",
+            "id": "F1-TE-0167",
             "from": "F1-TR-0013",
             "to": "F1-TD-0100",
             "distance": 6.31,
@@ -117152,7 +117182,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0164",
+            "id": "F1-TE-0168",
             "from": "F1-TR-0009",
             "to": "F1-TD-0101",
             "distance": 4.76,
@@ -117164,7 +117194,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0165",
+            "id": "F1-TE-0169",
             "from": "F1-TR-0015",
             "to": "F1-TD-0104",
             "distance": 4.16,
@@ -117176,7 +117206,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0166",
+            "id": "F1-TE-0170",
             "from": "F1-TR-0016",
             "to": "F1-TD-0105",
             "distance": 3.93,
@@ -117188,7 +117218,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0167",
+            "id": "F1-TE-0171",
             "from": "F1-TR-0033",
             "to": "F1-TD-0106",
             "distance": 4.04,
@@ -117200,7 +117230,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0168",
+            "id": "F1-TE-0172",
             "from": "F1-TR-0005",
             "to": "F1-TD-0107",
             "distance": 4.93,
@@ -117212,7 +117242,19 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0169",
+            "id": "F1-TE-0173",
+            "from": "F1-TR-0050",
+            "to": "F1-TD-0115",
+            "distance": 10.88,
+            "estimatedTime": 13.6,
+            "accessibilityLevel": 2,
+            "riskLevel": 5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0174",
             "from": "F1-TR-0050",
             "to": "F1-TD-0116",
             "distance": 9.84,
@@ -117224,7 +117266,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0170",
+            "id": "F1-TE-0175",
             "from": "F1-TR-0025",
             "to": "F1-TD-0117",
             "distance": 1.54,
@@ -117236,7 +117278,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0171",
+            "id": "F1-TE-0176",
             "from": "F1-TR-0048",
             "to": "F1-TD-0118",
             "distance": 2.84,
@@ -117248,7 +117290,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0172",
+            "id": "F1-TE-0177",
             "from": "F1-TR-0032",
             "to": "F1-TD-0119",
             "distance": 5.47,
@@ -117260,7 +117302,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0173",
+            "id": "F1-TE-0178",
             "from": "F1-TR-0044",
             "to": "F1-TD-0120",
             "distance": 3.16,
@@ -117272,7 +117314,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0174",
+            "id": "F1-TE-0179",
             "from": "F1-TR-0003",
             "to": "F1-TD-0121",
             "distance": 5.47,
@@ -117284,7 +117326,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0175",
+            "id": "F1-TE-0180",
             "from": "F1-TR-0043",
             "to": "F1-TD-0122",
             "distance": 3.48,
@@ -117296,7 +117338,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0176",
+            "id": "F1-TE-0181",
             "from": "F1-TR-0019",
             "to": "F1-TD-0123",
             "distance": 6.36,
@@ -117308,7 +117350,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0177",
+            "id": "F1-TE-0182",
             "from": "F1-TR-0019",
             "to": "F1-TD-0124",
             "distance": 4.99,
@@ -117320,7 +117362,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0178",
+            "id": "F1-TE-0183",
             "from": "F1-TR-0023",
             "to": "F1-TD-0125",
             "distance": 2.3,
@@ -117332,7 +117374,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0179",
+            "id": "F1-TE-0184",
             "from": "F1-TR-0041",
             "to": "F1-TD-0127",
             "distance": 3.74,
@@ -117344,7 +117386,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0180",
+            "id": "F1-TE-0185",
             "from": "F1-TR-0035",
             "to": "F1-TD-0129",
             "distance": 4.03,
@@ -117356,7 +117398,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0181",
+            "id": "F1-TE-0186",
             "from": "F1-TR-0038",
             "to": "F1-TD-0130",
             "distance": 3.5,
@@ -117368,7 +117410,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0182",
+            "id": "F1-TE-0187",
             "from": "F1-TR-0029",
             "to": "F1-TD-0131",
             "distance": 1.71,
@@ -117380,7 +117422,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0183",
+            "id": "F1-TE-0188",
             "from": "F1-TR-0001",
             "to": "F1-TD-0053",
             "distance": 4.87,
@@ -117392,7 +117434,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0184",
+            "id": "F1-TE-0189",
             "from": "F1-TR-0002",
             "to": "F1-TD-0053",
             "distance": 3.61,
@@ -117404,7 +117446,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0185",
+            "id": "F1-TE-0190",
             "from": "F1-TR-0004",
             "to": "F1-TD-0024",
             "distance": 5.03,
@@ -117416,7 +117458,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0186",
+            "id": "F1-TE-0191",
             "from": "F1-TR-0006",
             "to": "F1-TD-0024",
             "distance": 3.21,
@@ -117428,7 +117470,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0187",
+            "id": "F1-TE-0192",
             "from": "F1-TR-0011",
             "to": "F1-TD-0038",
             "distance": 2.35,
@@ -117440,7 +117482,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0188",
+            "id": "F1-TE-0193",
             "from": "F1-TR-0017",
             "to": "F1-TD-0020",
             "distance": 4.36,
@@ -117452,7 +117494,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0189",
+            "id": "F1-TE-0194",
             "from": "F1-TR-0030",
             "to": "F1-TD-0040",
             "distance": 3.69,
@@ -117464,7 +117506,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0190",
+            "id": "F1-TE-0195",
             "from": "F1-TR-0034",
             "to": "F1-TD-0006",
             "distance": 7.24,
@@ -117476,7 +117518,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0191",
+            "id": "F1-TE-0196",
             "from": "F1-TR-0037",
             "to": "F1-TD-0004",
             "distance": 3.58,
@@ -117488,7 +117530,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0192",
+            "id": "F1-TE-0197",
             "from": "F1-TR-0042",
             "to": "F1-TD-0070",
             "distance": 4.8,
@@ -117500,7 +117542,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0193",
+            "id": "F1-TE-0198",
             "from": "F1-TR-0045",
             "to": "F1-TD-0061",
             "distance": 4.33,
@@ -117512,7 +117554,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0194",
+            "id": "F1-TE-0199",
             "from": "F1-TR-0047",
             "to": "F1-TD-0004",
             "distance": 4.42,
@@ -117524,7 +117566,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0195",
+            "id": "F1-TE-0200",
             "from": "F1-TR-0049",
             "to": "F1-TD-0066",
             "distance": 4.38,
@@ -117536,7 +117578,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0196",
+            "id": "F1-TE-0201",
             "from": "F1-TD-0001",
             "to": "F1-TI-0274",
             "distance": 3.62,
@@ -117548,7 +117590,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0197",
+            "id": "F1-TE-0202",
             "from": "F1-TD-0002",
             "to": "F1-TI-0274",
             "distance": 2.84,
@@ -117560,7 +117602,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0198",
+            "id": "F1-TE-0203",
             "from": "F1-TD-0003",
             "to": "F1-TI-0156",
             "distance": 3.85,
@@ -117572,7 +117614,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0199",
+            "id": "F1-TE-0204",
             "from": "F1-TD-0004",
             "to": "F1-TI-0156",
             "distance": 4.48,
@@ -117584,7 +117626,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0200",
+            "id": "F1-TE-0205",
             "from": "F1-TD-0005",
             "to": "F1-TI-0156",
             "distance": 4.45,
@@ -117596,7 +117638,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0201",
+            "id": "F1-TE-0206",
             "from": "F1-TD-0006",
             "to": "F1-TI-0022",
             "distance": 2.3,
@@ -117608,7 +117650,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0202",
+            "id": "F1-TE-0207",
             "from": "F1-TD-0007",
             "to": "F1-TI-0127",
             "distance": 2.17,
@@ -117620,7 +117662,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0203",
+            "id": "F1-TE-0208",
             "from": "F1-TD-0008",
             "to": "F1-TI-0237",
             "distance": 3.59,
@@ -117632,7 +117674,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0204",
+            "id": "F1-TE-0209",
             "from": "F1-TD-0009",
             "to": "F1-TI-0099",
             "distance": 2.86,
@@ -117644,7 +117686,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0205",
+            "id": "F1-TE-0210",
             "from": "F1-TD-0010",
             "to": "F1-TI-0229",
             "distance": 2.52,
@@ -117656,7 +117698,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0206",
+            "id": "F1-TE-0211",
             "from": "F1-TD-0011",
             "to": "F1-TI-0229",
             "distance": 2.59,
@@ -117668,7 +117710,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0207",
+            "id": "F1-TE-0212",
             "from": "F1-TD-0012",
             "to": "F1-TI-0231",
             "distance": 2.43,
@@ -117680,7 +117722,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0208",
+            "id": "F1-TE-0213",
             "from": "F1-TD-0013",
             "to": "F1-TI-0231",
             "distance": 2.54,
@@ -117692,7 +117734,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0209",
+            "id": "F1-TE-0214",
             "from": "F1-TD-0014",
             "to": "F1-TI-0307",
             "distance": 2.45,
@@ -117704,7 +117746,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0210",
+            "id": "F1-TE-0215",
             "from": "F1-TD-0015",
             "to": "F1-TI-0307",
             "distance": 2.44,
@@ -117716,7 +117758,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0211",
+            "id": "F1-TE-0216",
             "from": "F1-TD-0016",
             "to": "F1-TI-0254",
             "distance": 1.61,
@@ -117728,7 +117770,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0212",
+            "id": "F1-TE-0217",
             "from": "F1-TD-0017",
             "to": "F1-TI-0121",
             "distance": 2.06,
@@ -117740,7 +117782,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0213",
+            "id": "F1-TE-0218",
             "from": "F1-TD-0018",
             "to": "F1-TI-0117",
             "distance": 2.13,
@@ -117752,7 +117794,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0214",
+            "id": "F1-TE-0219",
             "from": "F1-TD-0019",
             "to": "F1-TI-0121",
             "distance": 1.99,
@@ -117764,7 +117806,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0215",
+            "id": "F1-TE-0220",
             "from": "F1-TD-0020",
             "to": "F1-TI-0221",
             "distance": 2.34,
@@ -117776,7 +117818,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0216",
+            "id": "F1-TE-0221",
             "from": "F1-TD-0021",
             "to": "F1-TI-0223",
             "distance": 2.24,
@@ -117788,7 +117830,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0217",
+            "id": "F1-TE-0222",
             "from": "F1-TD-0022",
             "to": "F1-TI-0222",
             "distance": 2.3,
@@ -117800,7 +117842,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0218",
+            "id": "F1-TE-0223",
             "from": "F1-TD-0023",
             "to": "F1-TI-0244",
             "distance": 2.37,
@@ -117812,7 +117854,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0219",
+            "id": "F1-TE-0224",
             "from": "F1-TD-0024",
             "to": "F1-TI-0239",
             "distance": 3.54,
@@ -117824,7 +117866,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0220",
+            "id": "F1-TE-0225",
             "from": "F1-TD-0025",
             "to": "F1-TI-0309",
             "distance": 3.24,
@@ -117836,7 +117878,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0221",
+            "id": "F1-TE-0226",
             "from": "F1-TD-0026",
             "to": "F1-TI-0309",
             "distance": 2.58,
@@ -117848,7 +117890,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0222",
+            "id": "F1-TE-0227",
             "from": "F1-TD-0027",
             "to": "F1-TI-0259",
             "distance": 1.7,
@@ -117860,7 +117902,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0223",
+            "id": "F1-TE-0228",
             "from": "F1-TD-0028",
             "to": "F1-TI-0259",
             "distance": 1.69,
@@ -117872,7 +117914,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0224",
+            "id": "F1-TE-0229",
             "from": "F1-TD-0029",
             "to": "F1-TI-0258",
             "distance": 4.49,
@@ -117884,7 +117926,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0225",
+            "id": "F1-TE-0230",
             "from": "F1-TD-0030",
             "to": "F1-TI-0258",
             "distance": 3.34,
@@ -117896,7 +117938,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0226",
+            "id": "F1-TE-0231",
             "from": "F1-TD-0031",
             "to": "F1-TI-0294",
             "distance": 3.4,
@@ -117908,7 +117950,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0227",
+            "id": "F1-TE-0232",
             "from": "F1-TD-0032",
             "to": "F1-TI-0294",
             "distance": 3.03,
@@ -117920,7 +117962,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0228",
+            "id": "F1-TE-0233",
             "from": "F1-TD-0033",
             "to": "F1-TI-0294",
             "distance": 3.59,
@@ -117932,7 +117974,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0229",
+            "id": "F1-TE-0234",
             "from": "F1-TD-0034",
             "to": "F1-TI-0281",
             "distance": 1.62,
@@ -117944,7 +117986,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0230",
+            "id": "F1-TE-0235",
             "from": "F1-TD-0035",
             "to": "F1-TI-0281",
             "distance": 1.54,
@@ -117956,7 +117998,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0231",
+            "id": "F1-TE-0236",
             "from": "F1-TD-0036",
             "to": "F1-TI-0022",
             "distance": 10.35,
@@ -117968,7 +118010,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0232",
+            "id": "F1-TE-0237",
             "from": "F1-TD-0037",
             "to": "F1-TI-0241",
             "distance": 2.67,
@@ -117980,7 +118022,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0233",
+            "id": "F1-TE-0238",
             "from": "F1-TD-0038",
             "to": "F1-TI-0241",
             "distance": 4.45,
@@ -117992,7 +118034,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0234",
+            "id": "F1-TE-0239",
             "from": "F1-TD-0039",
             "to": "F1-TI-0228",
             "distance": 3.63,
@@ -118004,7 +118046,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0235",
+            "id": "F1-TE-0240",
             "from": "F1-TD-0040",
             "to": "F1-TI-0228",
             "distance": 5.33,
@@ -118016,7 +118058,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0236",
+            "id": "F1-TE-0241",
             "from": "F1-TD-0041",
             "to": "F1-TI-0241",
             "distance": 2.29,
@@ -118028,7 +118070,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0237",
+            "id": "F1-TE-0242",
             "from": "F1-TD-0042",
             "to": "F1-TI-0241",
             "distance": 2.47,
@@ -118040,7 +118082,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0238",
+            "id": "F1-TE-0243",
             "from": "F1-TD-0043",
             "to": "F1-TI-0272",
             "distance": 2.67,
@@ -118052,7 +118094,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0239",
+            "id": "F1-TE-0244",
             "from": "F1-TD-0044",
             "to": "F1-TI-0272",
             "distance": 4.11,
@@ -118064,7 +118106,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0240",
+            "id": "F1-TE-0245",
             "from": "F1-TD-0045",
             "to": "F1-TI-0238",
             "distance": 1.83,
@@ -118076,7 +118118,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0241",
+            "id": "F1-TE-0246",
             "from": "F1-TD-0046",
             "to": "F1-TI-0238",
             "distance": 1.77,
@@ -118088,7 +118130,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0242",
+            "id": "F1-TE-0247",
             "from": "F1-TD-0047",
             "to": "F1-TI-0270",
             "distance": 1.73,
@@ -118100,7 +118142,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0243",
+            "id": "F1-TE-0248",
             "from": "F1-TD-0048",
             "to": "F1-TI-0207",
             "distance": 1.65,
@@ -118112,7 +118154,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0244",
+            "id": "F1-TE-0249",
             "from": "F1-TD-0049",
             "to": "F1-TI-0228",
             "distance": 1.42,
@@ -118124,7 +118166,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0245",
+            "id": "F1-TE-0250",
             "from": "F1-TD-0050",
             "to": "F1-TI-0228",
             "distance": 1.47,
@@ -118136,7 +118178,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0246",
+            "id": "F1-TE-0251",
             "from": "F1-TD-0051",
             "to": "F1-TI-0302",
             "distance": 2.62,
@@ -118148,7 +118190,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0247",
+            "id": "F1-TE-0252",
             "from": "F1-TD-0052",
             "to": "F1-TI-0302",
             "distance": 1.85,
@@ -118160,7 +118202,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0248",
+            "id": "F1-TE-0253",
             "from": "F1-TD-0053",
             "to": "F1-TI-0302",
             "distance": 3.6,
@@ -118172,7 +118214,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0249",
+            "id": "F1-TE-0254",
             "from": "F1-TD-0054",
             "to": "F1-TI-0207",
             "distance": 2.82,
@@ -118184,7 +118226,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0250",
+            "id": "F1-TE-0255",
             "from": "F1-TD-0055",
             "to": "F1-TI-0238",
             "distance": 15.57,
@@ -118196,7 +118238,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0251",
+            "id": "F1-TE-0256",
             "from": "F1-TD-0056",
             "to": "F1-TI-0238",
             "distance": 14.48,
@@ -118208,7 +118250,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0252",
+            "id": "F1-TE-0257",
             "from": "F1-TD-0057",
             "to": "F1-TI-0264",
             "distance": 1.52,
@@ -118220,7 +118262,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0253",
+            "id": "F1-TE-0258",
             "from": "F1-TD-0058",
             "to": "F1-TI-0264",
             "distance": 1.81,
@@ -118232,7 +118274,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0254",
+            "id": "F1-TE-0259",
             "from": "F1-TD-0059",
             "to": "F1-TI-0155",
             "distance": 2.37,
@@ -118244,7 +118286,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0255",
+            "id": "F1-TE-0260",
             "from": "F1-TD-0060",
             "to": "F1-TI-0150",
             "distance": 2.69,
@@ -118256,7 +118298,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0256",
+            "id": "F1-TE-0261",
             "from": "F1-TD-0061",
             "to": "F1-TI-0295",
             "distance": 3.88,
@@ -118268,7 +118310,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0257",
+            "id": "F1-TE-0262",
             "from": "F1-TD-0062",
             "to": "F1-TI-0276",
             "distance": 2.9,
@@ -118280,7 +118322,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0258",
+            "id": "F1-TE-0263",
             "from": "F1-TD-0063",
             "to": "F1-TI-0278",
             "distance": 3.52,
@@ -118292,7 +118334,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0259",
+            "id": "F1-TE-0264",
             "from": "F1-TD-0064",
             "to": "F1-TI-0280",
             "distance": 2.69,
@@ -118304,7 +118346,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0260",
+            "id": "F1-TE-0265",
             "from": "F1-TD-0065",
             "to": "F1-TI-0149",
             "distance": 2.71,
@@ -118316,7 +118358,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0261",
+            "id": "F1-TE-0266",
             "from": "F1-TD-0066",
             "to": "F1-TI-0127",
             "distance": 11.28,
@@ -118328,7 +118370,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0262",
+            "id": "F1-TE-0267",
             "from": "F1-TD-0067",
             "to": "F1-TI-0127",
             "distance": 11.37,
@@ -118340,7 +118382,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0263",
+            "id": "F1-TE-0268",
             "from": "F1-TD-0068",
             "to": "F1-TI-0264",
             "distance": 16.13,
@@ -118352,7 +118394,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0264",
+            "id": "F1-TE-0269",
             "from": "F1-TD-0069",
             "to": "F1-TI-0262",
             "distance": 2.56,
@@ -118364,7 +118406,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0265",
+            "id": "F1-TE-0270",
             "from": "F1-TD-0070",
             "to": "F1-TI-0262",
             "distance": 2.48,
@@ -118376,7 +118418,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0266",
+            "id": "F1-TE-0271",
             "from": "F1-TD-0071",
             "to": "F1-TI-0223",
             "distance": 4.37,
@@ -118388,7 +118430,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0267",
+            "id": "F1-TE-0272",
             "from": "F1-TD-0072",
             "to": "F1-TI-0022",
             "distance": 6.69,
@@ -118400,7 +118442,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0268",
+            "id": "F1-TE-0273",
             "from": "F1-TD-0073",
             "to": "F1-TI-0253",
             "distance": 2.69,
@@ -118412,7 +118454,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0269",
+            "id": "F1-TE-0274",
             "from": "F1-TD-0074",
             "to": "F1-TI-0253",
             "distance": 1.62,
@@ -118424,7 +118466,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0270",
+            "id": "F1-TE-0275",
             "from": "F1-TD-0075",
             "to": "F1-TI-0239",
             "distance": 4.46,
@@ -118436,7 +118478,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0271",
+            "id": "F1-TE-0276",
             "from": "F1-TD-0076",
             "to": "F1-TI-0239",
             "distance": 4.16,
@@ -118448,7 +118490,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0272",
+            "id": "F1-TE-0277",
             "from": "F1-TD-0077",
             "to": "F1-TI-0275",
             "distance": 1.66,
@@ -118460,7 +118502,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0273",
+            "id": "F1-TE-0278",
             "from": "F1-TD-0078",
             "to": "F1-TI-0275",
             "distance": 1.35,
@@ -118472,7 +118514,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0274",
+            "id": "F1-TE-0279",
             "from": "F1-TD-0079",
             "to": "F1-TI-0277",
             "distance": 1.33,
@@ -118484,7 +118526,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0275",
+            "id": "F1-TE-0280",
             "from": "F1-TD-0080",
             "to": "F1-TI-0279",
             "distance": 4.53,
@@ -118496,7 +118538,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0276",
+            "id": "F1-TE-0281",
             "from": "F1-TD-0081",
             "to": "F1-TI-0279",
             "distance": 4.52,
@@ -118508,7 +118550,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0277",
+            "id": "F1-TE-0282",
             "from": "F1-TD-0082",
             "to": "F1-TI-0202",
             "distance": 2.37,
@@ -118520,7 +118562,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0278",
+            "id": "F1-TE-0283",
             "from": "F1-TD-0083",
             "to": "F1-TI-0202",
             "distance": 2.25,
@@ -118532,7 +118574,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0279",
+            "id": "F1-TE-0284",
             "from": "F1-TD-0084",
             "to": "F1-TI-0289",
             "distance": 2.32,
@@ -118544,7 +118586,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0280",
+            "id": "F1-TE-0285",
             "from": "F1-TD-0085",
             "to": "F1-TI-0289",
             "distance": 2.17,
@@ -118556,7 +118598,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0281",
+            "id": "F1-TE-0286",
             "from": "F1-TD-0086",
             "to": "F1-TI-0204",
             "distance": 2.43,
@@ -118568,7 +118610,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0282",
+            "id": "F1-TE-0287",
             "from": "F1-TD-0087",
             "to": "F1-TI-0204",
             "distance": 1.71,
@@ -118580,7 +118622,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0283",
+            "id": "F1-TE-0288",
             "from": "F1-TD-0088",
             "to": "F1-TI-0022",
             "distance": 2.8,
@@ -118592,7 +118634,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0284",
+            "id": "F1-TE-0289",
             "from": "F1-TD-0089",
             "to": "F1-TI-0256",
             "distance": 0.88,
@@ -118604,7 +118646,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0285",
+            "id": "F1-TE-0290",
             "from": "F1-TD-0090",
             "to": "F1-TI-0256",
             "distance": 0.99,
@@ -118616,7 +118658,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0286",
+            "id": "F1-TE-0291",
             "from": "F1-TD-0091",
             "to": "F1-TI-0127",
             "distance": 2.69,
@@ -118628,7 +118670,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0287",
+            "id": "F1-TE-0292",
             "from": "F1-TD-0092",
             "to": "F1-TI-0099",
             "distance": 3.16,
@@ -118640,7 +118682,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0288",
+            "id": "F1-TE-0293",
             "from": "F1-TD-0093",
             "to": "F1-TI-0226",
             "distance": 3.13,
@@ -118652,7 +118694,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0289",
+            "id": "F1-TE-0294",
             "from": "F1-TD-0094",
             "to": "F1-TI-0228",
             "distance": 2.65,
@@ -118664,7 +118706,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0290",
+            "id": "F1-TE-0295",
             "from": "F1-TD-0095",
             "to": "F1-TI-0228",
             "distance": 3.83,
@@ -118676,7 +118718,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0291",
+            "id": "F1-TE-0296",
             "from": "F1-TD-0096",
             "to": "F1-TI-0302",
             "distance": 3.41,
@@ -118688,7 +118730,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0292",
+            "id": "F1-TE-0297",
             "from": "F1-TD-0097",
             "to": "F1-TI-0302",
             "distance": 3.24,
@@ -118700,7 +118742,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0293",
+            "id": "F1-TE-0298",
             "from": "F1-TD-0098",
             "to": "F1-TI-0254",
             "distance": 3.27,
@@ -118712,7 +118754,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0294",
+            "id": "F1-TE-0299",
             "from": "F1-TD-0099",
             "to": "F1-TI-0254",
             "distance": 1.55,
@@ -118724,7 +118766,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0295",
+            "id": "F1-TE-0300",
             "from": "F1-TD-0100",
             "to": "F1-TI-0204",
             "distance": 3.48,
@@ -118736,7 +118778,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0296",
+            "id": "F1-TE-0301",
             "from": "F1-TD-0101",
             "to": "F1-TI-0254",
             "distance": 3.15,
@@ -118748,7 +118790,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0297",
+            "id": "F1-TE-0302",
             "from": "F1-TD-0102",
             "to": "F1-TI-0257",
             "distance": 1.94,
@@ -118760,7 +118802,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0298",
+            "id": "F1-TE-0303",
             "from": "F1-TD-0103",
             "to": "F1-TI-0257",
             "distance": 2.22,
@@ -118772,7 +118814,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0299",
+            "id": "F1-TE-0304",
             "from": "F1-TD-0104",
             "to": "F1-TI-0117",
             "distance": 2.62,
@@ -118784,7 +118826,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0300",
+            "id": "F1-TE-0305",
             "from": "F1-TD-0105",
             "to": "F1-TI-0221",
             "distance": 2.85,
@@ -118796,7 +118838,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0301",
+            "id": "F1-TE-0306",
             "from": "F1-TD-0106",
             "to": "F1-TI-0222",
             "distance": 3.27,
@@ -118808,7 +118850,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0302",
+            "id": "F1-TE-0307",
             "from": "F1-TD-0107",
             "to": "F1-TI-0244",
             "distance": 2.75,
@@ -118820,7 +118862,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0303",
+            "id": "F1-TE-0308",
             "from": "F1-TD-0108",
             "to": "F1-TI-0257",
             "distance": 5.06,
@@ -118832,7 +118874,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0304",
+            "id": "F1-TE-0309",
             "from": "F1-TD-0109",
             "to": "F1-TI-0236",
             "distance": 4.91,
@@ -118844,7 +118886,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0305",
+            "id": "F1-TE-0310",
             "from": "F1-TD-0110",
             "to": "F1-TI-0229",
             "distance": 2.88,
@@ -118856,7 +118898,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0306",
+            "id": "F1-TE-0311",
             "from": "F1-TD-0111",
             "to": "F1-TI-0229",
             "distance": 1.94,
@@ -118868,7 +118910,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0307",
+            "id": "F1-TE-0312",
             "from": "F1-TD-0112",
             "to": "F1-TI-0229",
             "distance": 2.3,
@@ -118880,7 +118922,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0308",
+            "id": "F1-TE-0313",
             "from": "F1-TD-0113",
             "to": "F1-TI-0220",
             "distance": 3.86,
@@ -118892,7 +118934,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0309",
+            "id": "F1-TE-0314",
             "from": "F1-TD-0114",
             "to": "F1-TI-0220",
             "distance": 3.53,
@@ -118904,7 +118946,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0310",
+            "id": "F1-TE-0315",
             "from": "F1-TD-0115",
             "to": "F1-TI-0259",
             "distance": 13.65,
@@ -118916,7 +118958,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0311",
+            "id": "F1-TE-0316",
             "from": "F1-TD-0116",
             "to": "F1-TI-0259",
             "distance": 13.83,
@@ -118928,7 +118970,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0312",
+            "id": "F1-TE-0317",
             "from": "F1-TD-0117",
             "to": "F1-TI-0260",
             "distance": 4.9,
@@ -118940,7 +118982,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0313",
+            "id": "F1-TE-0318",
             "from": "F1-TD-0118",
             "to": "F1-TI-0228",
             "distance": 3.37,
@@ -118952,7 +118994,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0314",
+            "id": "F1-TE-0319",
             "from": "F1-TD-0119",
             "to": "F1-TI-0228",
             "distance": 3.32,
@@ -118964,7 +119006,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0315",
+            "id": "F1-TE-0320",
             "from": "F1-TD-0120",
             "to": "F1-TI-0302",
             "distance": 2.29,
@@ -118976,7 +119018,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0316",
+            "id": "F1-TE-0321",
             "from": "F1-TD-0121",
             "to": "F1-TI-0302",
             "distance": 2.95,
@@ -118988,7 +119030,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0317",
+            "id": "F1-TE-0322",
             "from": "F1-TD-0122",
             "to": "F1-TI-0311",
             "distance": 2.43,
@@ -119000,7 +119042,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0318",
+            "id": "F1-TE-0323",
             "from": "F1-TD-0123",
             "to": "F1-TI-0309",
             "distance": 2.18,
@@ -119012,7 +119054,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0319",
+            "id": "F1-TE-0324",
             "from": "F1-TD-0124",
             "to": "F1-TI-0270",
             "distance": 2.63,
@@ -119024,7 +119066,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0320",
+            "id": "F1-TE-0325",
             "from": "F1-TD-0125",
             "to": "F1-TI-0195",
             "distance": 7.45,
@@ -119036,7 +119078,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0321",
+            "id": "F1-TE-0326",
             "from": "F1-TD-0126",
             "to": "F1-TI-0267",
             "distance": 2.69,
@@ -119048,7 +119090,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0322",
+            "id": "F1-TE-0327",
             "from": "F1-TD-0127",
             "to": "F1-TI-0156",
             "distance": 2.53,
@@ -119060,7 +119102,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0323",
+            "id": "F1-TE-0328",
             "from": "F1-TD-0128",
             "to": "F1-TI-0241",
             "distance": 3.98,
@@ -119072,7 +119114,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0324",
+            "id": "F1-TE-0329",
             "from": "F1-TD-0129",
             "to": "F1-TI-0223",
             "distance": 2.98,
@@ -119084,7 +119126,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0325",
+            "id": "F1-TE-0330",
             "from": "F1-TD-0130",
             "to": "F1-TI-0156",
             "distance": 3.5,
@@ -119096,7 +119138,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0326",
+            "id": "F1-TE-0331",
             "from": "F1-TD-0131",
             "to": "F1-TI-0220",
             "distance": 2.58,
@@ -119108,7 +119150,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0327",
+            "id": "F1-TE-0332",
             "from": "F1-TD-0132",
             "to": "F1-TI-0204",
             "distance": 0.74,
@@ -120200,7 +120242,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0328",
+            "id": "F1-TE-0333",
             "from": "F1-TF-0001",
             "to": "F1-TD-0122",
             "distance": 3.48,
@@ -120212,7 +120254,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0329",
+            "id": "F1-TE-0334",
             "from": "F1-TF-0002",
             "to": "F1-TD-0004",
             "distance": 4.42,
@@ -120224,7 +120266,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0330",
+            "id": "F1-TE-0335",
             "from": "F1-TF-0003",
             "to": "F1-TD-0059",
             "distance": 5.42,
@@ -120236,7 +120278,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0331",
+            "id": "F1-TE-0336",
             "from": "F1-TF-0004",
             "to": "F1-TD-0120",
             "distance": 3.16,
@@ -120248,7 +120290,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0332",
+            "id": "F1-TE-0337",
             "from": "F1-TF-0005",
             "to": "F1-TD-0083",
             "distance": 3.4,
@@ -120260,7 +120302,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0333",
+            "id": "F1-TE-0338",
             "from": "F1-TF-0006",
             "to": "F1-TD-0061",
             "distance": 4.33,
@@ -120272,7 +120314,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0334",
+            "id": "F1-TE-0339",
             "from": "F1-TF-0007",
             "to": "F1-TD-0118",
             "distance": 2.84,
@@ -120284,7 +120326,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0335",
+            "id": "F1-TE-0340",
             "from": "F1-TF-0008",
             "to": "F1-TD-0066",
             "distance": 4.38,
@@ -120296,7 +120338,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0336",
+            "id": "F1-TE-0341",
             "from": "F1-TF-0009",
             "to": "F1-TD-0070",
             "distance": 4.8,
@@ -120308,7 +120350,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0337",
+            "id": "F1-TE-0342",
             "from": "F1-TF-0010",
             "to": "F1-TD-0006",
             "distance": 7.22,
@@ -120320,7 +120362,7 @@
             "blindAccessible": false
           },
           {
-            "id": "F1-TE-0338",
+            "id": "F1-TE-0343",
             "from": "F1-TF-0011",
             "to": "F1-TD-0026",
             "distance": 9.04,
@@ -120332,7 +120374,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0339",
+            "id": "F1-TE-0344",
             "from": "F1-TF-0012",
             "to": "F1-TD-0008",
             "distance": 7.81,
@@ -120344,7 +120386,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0340",
+            "id": "F1-TE-0345",
             "from": "F1-TF-0013",
             "to": "F1-TD-0020",
             "distance": 4.95,
@@ -120356,7 +120398,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0341",
+            "id": "F1-TE-0346",
             "from": "F1-TEN-0001",
             "to": "F1-TD-0066",
             "distance": 6.68,
@@ -120368,7 +120410,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0342",
+            "id": "F1-TE-0347",
             "from": "F1-TEN-0002",
             "to": "F1-TD-0038",
             "distance": 3.32,
@@ -120380,7 +120422,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0343",
+            "id": "F1-TE-0348",
             "from": "F1-TEN-0003",
             "to": "F1-TD-0057",
             "distance": 4.01,
@@ -120392,7 +120434,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0344",
+            "id": "F1-TE-0349",
             "from": "F1-TEN-0004",
             "to": "F1-TD-0045",
             "distance": 3.11,
@@ -120404,7 +120446,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0345",
+            "id": "F1-TE-0350",
             "from": "F1-TEN-0005",
             "to": "F1-TD-0117",
             "distance": 2.7,
@@ -120416,7 +120458,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0346",
+            "id": "F1-TE-0351",
             "from": "F1-TEN-0006",
             "to": "F1-TD-0028",
             "distance": 1.41,
@@ -120428,7 +120470,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0347",
+            "id": "F1-TE-0352",
             "from": "F1-TEN-0007",
             "to": "F1-TD-0039",
             "distance": 8.65,
@@ -120440,7 +120482,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0348",
+            "id": "F1-TE-0353",
             "from": "F1-TEN-0008",
             "to": "F1-TD-0022",
             "distance": 40.17,
@@ -120452,7 +120494,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0349",
+            "id": "F1-TE-0354",
             "from": "F1-TI-0208",
             "to": "F1-TI-0023",
             "distance": 16.45,
@@ -120464,31 +120506,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0350",
-            "from": "F1-TI-0150",
-            "to": "F1-TI-0208",
-            "distance": 5.24,
-            "estimatedTime": 6.6,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0351",
-            "from": "F1-TI-0156",
-            "to": "F1-TI-0022",
-            "distance": 9.87,
-            "estimatedTime": 12.3,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0352",
+            "id": "F1-TE-0355",
             "from": "F1-TI-0202",
             "to": "F1-TI-0237",
             "distance": 3.55,
@@ -120500,19 +120518,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0353",
-            "from": "F1-TI-0155",
-            "to": "F1-TI-0150",
-            "distance": 2.66,
-            "estimatedTime": 3.3,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0354",
+            "id": "F1-TE-0356",
             "from": "F1-TI-0149",
             "to": "F1-TI-0168",
             "distance": 2.13,
@@ -120524,11 +120530,11 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0355",
-            "from": "F1-TI-0195",
-            "to": "F1-TI-0155",
-            "distance": 4.4,
-            "estimatedTime": 5.5,
+            "id": "F1-TE-0357",
+            "from": "F1-TI-0156",
+            "to": "F1-TI-0022",
+            "distance": 9.87,
+            "estimatedTime": 12.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -120536,7 +120542,43 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0356",
+            "id": "F1-TE-0358",
+            "from": "F1-TI-0195",
+            "to": "F1-TI-0208",
+            "distance": 6.65,
+            "estimatedTime": 8.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0359",
+            "from": "F1-TI-0150",
+            "to": "F1-TI-0195",
+            "distance": 5.1,
+            "estimatedTime": 6.4,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0360",
+            "from": "F1-TI-0155",
+            "to": "F1-TI-0150",
+            "distance": 2.66,
+            "estimatedTime": 3.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0361",
             "from": "F1-TF-0012",
             "to": "F1-TD-0133",
             "distance": 0.93,
@@ -120549,7 +120591,7 @@
             "type": "elevator_door"
           },
           {
-            "id": "F1-TE-0357",
+            "id": "F1-TE-0362",
             "from": "F1-TD-0133",
             "to": "F1-TI-0202",
             "distance": 1.74,
@@ -120562,7 +120604,7 @@
             "type": "elevator_door"
           },
           {
-            "id": "F1-TE-0358",
+            "id": "F1-TE-0363",
             "from": "F1-TF-0011",
             "to": "F1-TD-0134",
             "distance": 0.92,
@@ -120575,7 +120617,7 @@
             "type": "elevator_door"
           },
           {
-            "id": "F1-TE-0359",
+            "id": "F1-TE-0364",
             "from": "F1-TD-0134",
             "to": "F1-TI-0208",
             "distance": 1.41,
@@ -120588,7 +120630,7 @@
             "type": "elevator_door"
           },
           {
-            "id": "F1-TE-0360",
+            "id": "F1-TE-0365",
             "from": "F1-TF-0013",
             "to": "F1-TD-0135",
             "distance": 0.93,
@@ -120601,7 +120643,7 @@
             "type": "elevator_door"
           },
           {
-            "id": "F1-TE-0361",
+            "id": "F1-TE-0366",
             "from": "F1-TD-0135",
             "to": "F1-TI-0199",
             "distance": 1.09,
@@ -125456,100 +125498,12 @@
                     -27.316059357663008
                   ],
                   [
-                    -41.68782160331554,
+                    -41.69895580810548,
                     -27.316059357663008
                   ],
                   [
-                    -41.50249976765951,
-                    -27.28517238505367
-                  ],
-                  [
-                    -41.47602521970865,
-                    -27.316059357663008
-                  ],
-                  [
-                    -33.32947431561037,
-                    -27.316059357663008
-                  ],
-                  [
-                    -33.30299976765951,
-                    -27.28517238505367
-                  ],
-                  [
-                    -33.22798854846538,
-                    -27.316059357663008
-                  ],
-                  [
-                    -30.012066490379027,
-                    -27.316059357663008
-                  ],
-                  [
-                    -40.35565408284505,
-                    -26.82350756754558
-                  ],
-                  [
-                    -41.572354082845045,
-                    -24.636974234212236
-                  ],
-                  [
-                    -41.54066265412521,
-                    -23.996807374071498
-                  ],
-                  [
-                    -41.57895580822199,
-                    -24.01073215737941
-                  ],
-                  [
-                    -41.57895580822199,
-                    -25.591374034819285
-                  ],
-                  [
-                    -41.449599767659514,
-                    -25.64527238505367
-                  ],
-                  [
-                    -41.58711866448135,
-                    -25.682777538732356
-                  ],
-                  [
-                    -41.588090264409,
-                    -25.685492978646998
-                  ],
-                  [
-                    -41.593125256255995,
-                    -25.69613857517601
-                  ],
-                  [
-                    -41.59917945441699,
-                    -25.706239394809003
-                  ],
-                  [
-                    -41.60619455356999,
-                    -25.715698160794005
-                  ],
-                  [
-                    -41.614102994596,
-                    -25.724423780389
-                  ],
-                  [
-                    -41.62282861419099,
-                    -25.73233222141501
-                  ],
-                  [
-                    -41.632287380175995,
-                    -25.739347320039002
-                  ],
-                  [
-                    -41.64238819980899,
-                    -25.745401518729008
-                  ],
-                  [
-                    -41.64685591467947,
-                    -25.74751459035316
-                  ],
-                  [
-                    -41.66119976765951,
-                    -25.96267238505367
+                    -41.69895580810548,
+                    -25.96664670510061
                   ],
                   [
                     -41.996233100992825,
@@ -207297,7 +207251,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207332,7 +207287,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207367,7 +207323,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207403,7 +207360,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207439,7 +207397,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207475,7 +207434,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207510,7 +207470,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207545,7 +207506,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207581,7 +207543,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207617,7 +207580,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207653,7 +207617,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207689,7 +207654,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207725,7 +207691,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207761,7 +207728,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207797,7 +207765,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207832,7 +207801,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207867,7 +207837,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207902,7 +207873,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207937,7 +207909,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -207972,7 +207945,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208007,7 +207981,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208042,7 +208017,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208077,7 +208053,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208112,7 +208089,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208147,7 +208125,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208182,7 +208161,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208218,7 +208198,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208254,7 +208235,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208290,7 +208272,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208326,7 +208309,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208362,7 +208346,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208398,7 +208383,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208433,7 +208419,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208468,7 +208455,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208504,7 +208492,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208539,7 +208528,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208574,7 +208564,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window"
+              "sourceLayer": "window",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208609,7 +208600,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -208644,7 +208636,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208679,7 +208672,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208714,7 +208708,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208747,7 +208742,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208782,7 +208778,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208817,7 +208814,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208852,7 +208850,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208887,7 +208886,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208922,7 +208922,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208957,7 +208958,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -208993,7 +208995,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209029,7 +209032,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209065,7 +209069,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209101,7 +209106,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209137,7 +209143,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209172,7 +209179,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209208,7 +209216,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209243,7 +209252,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209279,7 +209289,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": true
             }
           },
           {
@@ -209314,7 +209325,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209349,7 +209361,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209384,7 +209397,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209419,7 +209433,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209454,7 +209469,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209489,7 +209505,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209524,7 +209541,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209559,7 +209577,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209592,7 +209611,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209627,7 +209647,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209662,7 +209683,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209697,7 +209719,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209730,7 +209753,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "DOOR_FIRE"
+              "sourceLayer": "DOOR_FIRE",
+              "isNormallyOpen": false
             }
           },
           {
@@ -209765,7 +209789,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -209800,7 +209825,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -209835,7 +209861,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -209870,7 +209897,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -209905,7 +209933,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           },
           {
@@ -209940,7 +209969,8 @@
                 "isGlass",
                 "isAutomatic"
               ],
-              "sourceLayer": "window+geometry"
+              "sourceLayer": "window+geometry",
+              "isNormallyOpen": null
             }
           }
         ],
@@ -224442,10 +224472,10 @@
           },
           {
             "id": "F2-TE-0246",
-            "from": "F2-TI-0079",
-            "to": "F2-TI-0224",
-            "distance": 7.46,
-            "estimatedTime": 9.3,
+            "from": "F2-TI-0074",
+            "to": "F2-TI-0187",
+            "distance": 6.34,
+            "estimatedTime": 7.9,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -224454,10 +224484,10 @@
           },
           {
             "id": "F2-TE-0247",
-            "from": "F2-TI-0074",
-            "to": "F2-TI-0187",
-            "distance": 6.34,
-            "estimatedTime": 7.9,
+            "from": "F2-TI-0166",
+            "to": "F2-TI-0188",
+            "distance": 3.53,
+            "estimatedTime": 4.4,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -224502,10 +224532,10 @@
           },
           {
             "id": "F2-TE-0251",
-            "from": "F2-TI-0166",
-            "to": "F2-TI-0188",
-            "distance": 3.53,
-            "estimatedTime": 4.4,
+            "from": "F2-TI-0079",
+            "to": "F2-TI-0224",
+            "distance": 7.46,
+            "estimatedTime": 9.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,

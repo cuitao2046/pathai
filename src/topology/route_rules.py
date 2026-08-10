@@ -77,6 +77,7 @@ class RouteGraph:
                     "rooms": n.get("rooms") or [],
                     "blindAccessible": n.get("blindAccessible", True),
                     "coords": n.get("coordinates"),
+                    "isNormallyOpen": n.get("isNormallyOpen"),
                 }
             for e in topo.get("edges", []):
                 self.edges.append(self._norm_edge(e, fk))
@@ -120,9 +121,14 @@ class RouteGraph:
             if n["type"] == "doorway":
                 for rid in n["rooms"]:
                     t = n["doorType"]
-                    if rid not in best_door or \
-                       DOOR_PENALTY.get(t, 9) < DOOR_PENALTY.get(best_door[rid], 9):
+                    # 常开防火门与普通门平等对待（penalty=0）
+                    p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, 9)
+                    if rid not in best_door:
                         best_door[rid] = t
+                    else:
+                        cur_p = DOOR_PENALTY.get(best_door[rid], 9)
+                        if p < cur_p:
+                            best_door[rid] = t
         for n in self.nodes.values():
             if n["type"] == "room":
                 n["best_door_type"] = best_door.get(n["roomId"])
@@ -244,6 +250,15 @@ class RouteGraph:
             return b.get("doorType")
         return None
 
+    def _edge_is_closed_fire_door(self, e: dict):
+        """常闭防火门：isNormallyOpen == False 的 fire 门不可通行。"""
+        for nid in (e["from"], e["to"]):
+            n = self.nodes.get(nid)
+            if n and n["type"] == "doorway" and n.get("doorType") == "fire":
+                if n.get("isNormallyOpen") is False:
+                    return True
+        return False
+
     def _edge_weight(self, e: dict) -> float:
         w = e["distance"]
         dt = self._edge_door_type(e)
@@ -252,6 +267,13 @@ class RouteGraph:
             b = self.nodes.get(e["to"])
             # 仅在 room↔door 边施加门类型惩罚（每扇门只惩罚一次）
             if (a and a["type"] == "room") or (b and b["type"] == "room"):
+                # 常开防火门与普通门平等对待，无惩罚
+                if dt == "fire":
+                    is_open = (a.get("isNormallyOpen") if a and a["type"] == "doorway"
+                               else b.get("isNormallyOpen") if b and b["type"] == "doorway"
+                               else None)
+                    if is_open:
+                        return w  # 常开防火门无惩罚
                 w += DOOR_PENALTY.get(dt, 0.0)
         return w
 
@@ -293,19 +315,29 @@ class RouteGraph:
             # 规则 5：剔除连接「纯管井门」的边（导航路径不经过风井/水井门）
             if a in self.infra_doorway_ids or b in self.infra_doorway_ids:
                 continue
+            # 常闭防火门不可通行（isNormallyOpen == False）
+            if self._edge_is_closed_fire_door(e):
+                continue
             # 规则 3：房间只可使用优先级不低于自身最佳门的门
+            # 常开防火门与普通门平等对待（penalty=0）
             if door_filter:
                 ta, tb = self.nodes[a]["type"], self.nodes[b]["type"]
                 e_dt = self._edge_door_type(e)
+                # 常开防火门 → 实际 penalty=0
+                _door_node = None
                 if ta == "room" and tb == "doorway":
+                    _door_node = self.nodes[b]
                     best = self.nodes[a].get("best_door_type")
-                    if best is not None and \
-                       DOOR_PENALTY.get(e_dt, 9) > DOOR_PENALTY.get(best, 9):
-                        continue
-                if tb == "room" and ta == "doorway":
+                elif tb == "room" and ta == "doorway":
+                    _door_node = self.nodes[a]
                     best = self.nodes[b].get("best_door_type")
-                    if best is not None and \
-                       DOOR_PENALTY.get(e_dt, 9) > DOOR_PENALTY.get(best, 9):
+                else:
+                    _door_node = None
+                    best = None
+                if best is not None and _door_node is not None:
+                    edge_p = 0.0 if (e_dt == "fire" and _door_node.get("isNormallyOpen")) \
+                        else DOOR_PENALTY.get(e_dt, 9)
+                    if edge_p > DOOR_PENALTY.get(best, 9):
                         continue
             w = self._edge_weight(e)
             adj[a].append((b, w, e["id"]))

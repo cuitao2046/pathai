@@ -40,7 +40,8 @@ ROOM_COLORS = {
     "accessible_entrance": "#BBDEFB", "room": "#FAFAFA", "other": "#FAFAFA",
     "elevator_lobby": "#FFE0B2", "stair_lobby": "#D7CCC8",
 }
-DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449"}
+DOOR_COLORS = {"swing": "#2196F3", "fire": "#FF5722", "opening": "#1E8449",
+               "fire_closed": "#8B0000"}  # 常闭防火门：暗红
 # 门类型中文名（与 topology.py 的 doorway 节点 label 保持一致）
 DOOR_TYPE_CN = {"swing": "普通门", "fire": "防火门", "opening": "门洞"}
 NODE_COLORS = {
@@ -445,13 +446,17 @@ def compute_route_rule_extras(geo):
             infra_doorway_ids.add(n["id"])
 
     # 房间最佳门类型（每间房取优先级最高的门）
+    # 常开防火门与普通门平等对待（penalty=0）
     best_door = {}
     for n in node_by_id.values():
         if n.get("type") == "doorway":
             for rid in (n.get("rooms") or []):
                 t = n.get("doorType")
+                # 常开防火门：视为 swing 同级（penalty=0）
+                p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, 9)
                 cur = best_door.get(rid)
-                if cur is None or DOOR_PENALTY.get(t, 9) < DOOR_PENALTY.get(cur, 9):
+                cur_p = DOOR_PENALTY.get(cur, 9) if cur else None
+                if cur is None or p < cur_p:
                     best_door[rid] = t
     room_best_door = {}
     for n in node_by_id.values():
@@ -1459,11 +1464,19 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             swing_room = p.get("swingIntoRoom") or "—"
             surv = p.get("surveyRequired") or []
             surv_disp = "、".join(surv) if surv else "无"
+            # 防火门常开/常闭
+            fire_open = p.get("isNormallyOpen")
+            fire_label = "常开" if fire_open else ("常闭" if fire_open is False else "")
             tip = f"{dname}\\n宽度：{w:.2f}m\\n开启：{od_full}"
-            det = {"title": dname,
-                   "rows": [
+            if fire_label:
+                tip = f"{dname}（{fire_label}）\\n宽度：{w:.2f}m\\n开启：{od_full}"
+            _rows = [
                        ("门编号", link_obj(dr.get("id") or p.get("id") or "—")),
                        ("类型", f"{dname}（{dtype}）"),
+                   ]
+            if fire_label:
+                _rows.append(("常开/常闭", fire_label))
+            _rows += [
                        ("子类", sub),
                        ("开启方向", od_full),
                        ("摆向房间", link_obj(swing_room) if swing_room and swing_room != "—" else "—"),
@@ -1472,7 +1485,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                        ("归属房间", [link_obj(rid) for rid in p.get("rooms", [])] if p.get("rooms") else "—"),
                        ("来源图层", p.get("sourceLayer", "—")),
                        ("待现场核实", surv_disp),
-                   ]}
+                   ]
+            det = {"title": dname, "rows": _rows}
             # 关联拓扑门节点（TD）：房间匹配优先（语义最稳），坐标最近兜底；
             # 超过阈值(8/15m) 不关联，避免把门错配到不相关的远距拓扑门（数据层几何门/拓扑门关联缺失）。
             _dt = p.get("doorType")
@@ -1511,10 +1525,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
             if dtype == "fire":
                 s = max(3.0, w * SCALE * 0.22)
+                is_open = p.get("isNormallyOpen")
+                fire_color = "#FF5722" if is_open else "#8B0000"  # 常开橙红 / 常闭暗红
                 parts.append(
                     f'<g class="{dcls}" data-mid="{dr["id"]}" {attr}>'
                     f'<rect x="{float(sx)-s/2:.1f}" y="{float(sy)-s/2:.1f}" width="{s:.1f}" height="{s:.1f}" '
-                    f'fill="#FF5722" opacity="0.9"/></g>\n'
+                    f'fill="{fire_color}" opacity="0.9"/></g>\n'
                 )
             elif dtype == "opening":
                 s = max(3.2, w * SCALE * 0.24)
@@ -1885,6 +1901,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 "roomId": n.get("roomId"),
                 "doorType": n.get("doorType"),
                 "rooms": n.get("rooms") or [],
+                "isNormallyOpen": n.get("isNormallyOpen"),
                 # 需求⑳：电梯门归属用元素 ID（elevatorId），不用 label
                 "elevatorId": n.get("elevatorId"),
             }
@@ -2157,8 +2174,9 @@ function srLocate(el) {{
   <div class="lg-sec"><div class="lg-title">门</div>
     <div class="lg-item"><div class="lg-sw" style="background:#2196F3;border-radius:50%;width:11px;height:11px;margin-left:1px"></div>普通门（window 摆弧）</div>
     <div class="lg-item"><div class="lg-sw" style="background:#1E8449;width:12px;height:12px;transform:rotate(45deg);margin-left:1px"></div>门洞（DK 标注墙缝）</div>
-    <div class="lg-item"><div class="lg-sw" style="background:#FF5722;width:11px;height:11px;margin-left:1px"></div>防火门（DOOR_FIRE）</div>
-  </div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FF5722;width:11px;height:11px;margin-left:1px"></div>防火门·常开</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#8B0000;width:11px;height:11px;margin-left:1px"></div>防火门·常闭</div>
+</div>
   <div class="lg-sec"><div class="lg-title">拓扑节点 (v9)</div>
     <div class="lg-item"><div class="lg-sw" style="background:#E67E22;border-radius:50%;width:11px;height:11px"></div>房间节点</div>
     <div class="lg-item"><div class="lg-sw" style="background:#C0392B;border-radius:50%;width:10px;height:10px"></div>门口节点</div>
@@ -2561,18 +2579,29 @@ function doorPenalty(dt) {
   return (dt in P) ? P[dt] : 9;
 }
 
+// 常闭防火门判定：isNormallyOpen === false 的 fire 门
+function isClosedFireDoor(node) {
+  return node && node.type === 'doorway' && node.doorType === 'fire' && node.isNormallyOpen === false;
+}
+
 function isSameFloor(s, e) {
   var ns = PATH_GRAPH.nodes[s], ne = PATH_GRAPH.nodes[e];
   return !!(ns && ne && ns.floor === ne.floor);
 }
 
 // 门类型边权（仅在 room<->door 边施加，避免每扇门重复惩罚）
+// 常开防火门无惩罚（与 swing 平等）
 function edgeWeight(e, nodes) {
   var w = Number(e.distance) || 0;
   var dt = e.doorType;
   if (dt) {
     var a = nodes[e.from], b = nodes[e.to];
     if ((a && a.type === 'room') || (b && b.type === 'room')) {
+      // 常开防火门：无惩罚（与普通门平等对待）
+      if (dt === 'fire') {
+        var dn = (a && a.type === 'doorway') ? a : ((b && b.type === 'doorway') ? b : null);
+        if (dn && dn.isNormallyOpen) return w;
+      }
       w += doorPenalty(dt);
     }
   }
@@ -2600,20 +2629,29 @@ function buildPathAdj(mode, doorFilter, allowWall) {
     if (!edgeAllowed(e, mode)) return;
     // 规则 5：剔除连接「纯管井门」的边（导航路径不经过风井/水井门）
     if (infraTdSet[e.from] || infraTdSet[e.to]) return;
+    // 常闭防火门不可通行
+    if (isClosedFireDoor(nodes[e.from]) || isClosedFireDoor(nodes[e.to])) return;
     // 规则 3：剔除穿墙 TI<->TI 边（默认不穿墙；桥边回退时 allowWall=true 重新纳入）
     if (!allowWall && e.wallCrossing) return;
     var a = e.from, b = e.to;
     if (!nodes[a] || !nodes[b]) return;
     // 规则 3：房间只可使用优先级不低于自身最佳门的门
+    // 常开防火门与普通门平等对待（penalty=0）
     if (doorFilter) {
       var ta = nodes[a].type, tb = nodes[b].type;
       if (ta === 'room' && tb === 'doorway') {
         var best = nodes[a].bestDoorType;
-        if (best != null && doorPenalty(e.doorType) > doorPenalty(best)) return;
+        if (best != null) {
+          var edgeP = (nodes[b].doorType === 'fire' && nodes[b].isNormallyOpen) ? 0 : doorPenalty(e.doorType);
+          if (edgeP > doorPenalty(best)) return;
+        }
       }
       if (tb === 'room' && ta === 'doorway') {
         var best2 = nodes[b].bestDoorType;
-        if (best2 != null && doorPenalty(e.doorType) > doorPenalty(best2)) return;
+        if (best2 != null) {
+          var edgeP2 = (nodes[a].doorType === 'fire' && nodes[a].isNormallyOpen) ? 0 : doorPenalty(e.doorType);
+          if (edgeP2 > doorPenalty(best2)) return;
+        }
       }
     }
     var w = edgeWeight(e, nodes);

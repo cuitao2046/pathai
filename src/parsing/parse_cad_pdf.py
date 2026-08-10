@@ -2600,6 +2600,136 @@ def _heban_real_polygon(label_pt_pt, all_segs, furn_segs, closures):
     return best_poly
 
 
+# ── 射线投票参数 ──
+_HEBAN_AXIS_TOL = 2.0          # pt：轴向判定容差
+_HEBAN_MIN_SEG_LEN = 5.0       # pt：最小有效墙段长度
+_HEBAN_H_SPAN = 180.0          # pt：水平射线跨度
+_HEBAN_V_SPAN = 140.0          # pt：垂直射线跨度
+_HEBAN_RAY_SAMPLES = 401       # 射线采样数
+_HEBAN_RAY_BIN = 3.0           # pt：投票分箱大小
+_HEBAN_MIN_SUPPORT = 0.50      # 最低支持率
+
+
+def _heban_real_polygon_v2(label_pt_pt, all_segs, furn_segs, closures):
+    """
+    合班教室真实闭合墙体识别 v2 —— 语义种子 + 多方向射线投票。
+
+    替代 v1 的多尺度形态学闭运算方案。核心思路：
+      1) 从标签点（语义种子）向四个方向发射大量射线；
+      2) 每条射线碰撞最近墙体，统计碰撞坐标的众数；
+      3) 门洞缺口仅影响少数射线，不改变众数；
+      4) 四个方向的众数坐标构成房间矩形边界。
+
+    参数同 _heban_real_polygon，返回 shapely Polygon 或 None。
+    """
+    from collections import Counter
+
+    seed_x, seed_y = label_pt_pt
+
+    # 合并所有墙体来源（结构墙 + 家具线 + 封口线）
+    all_lines = list(all_segs) + list(furn_segs) + list(closures)
+    if not all_lines:
+        return None
+
+    tol = _HEBAN_AXIS_TOL
+    min_len = _HEBAN_MIN_SEG_LEN
+    vert = []   # [(x, y_min, y_max), ...]
+    horz = []   # [(y, x_min, x_max), ...]
+
+    for (x1, y1), (x2, y2) in all_lines:
+        if abs(x1 - x2) <= tol and abs(y1 - y2) > min_len:
+            x = (x1 + x2) / 2.0
+            vert.append((x, min(y1, y2), max(y1, y2)))
+        elif abs(y1 - y2) <= tol and abs(x1 - x2) > min_len:
+            y = (y1 + y2) / 2.0
+            horz.append((y, min(x1, x2), max(x1, x2)))
+
+    if len(vert) < 5 or len(horz) < 5:
+        return None
+
+    # ── 射线投票辅助函数 ──
+
+    def _cluster_mode(values):
+        """对射线碰撞坐标做分箱投票，返回 (均值坐标, 支持数)。"""
+        if not values:
+            return None, 0
+        hist = Counter(int(round(v / _HEBAN_RAY_BIN)) for v in values)
+        best_bin, support = hist.most_common(1)[0]
+        center = best_bin * _HEBAN_RAY_BIN
+        in_cluster = [v for v in values
+                      if abs(v - center) <= _HEBAN_RAY_BIN * 0.60]
+        return sum(in_cluster) / len(in_cluster), support
+
+    def _vote_vertical(side):
+        """向水平方向发射射线，投票找左/右墙。"""
+        values = []
+        for i in range(_HEBAN_RAY_SAMPLES):
+            y = seed_y - _HEBAN_V_SPAN + 2.0 * _HEBAN_V_SPAN * i / (_HEBAN_RAY_SAMPLES - 1)
+            candidates = [
+                x for x, y0, y1 in vert
+                if y0 - tol <= y <= y1 + tol
+                and ((side == "left" and x < seed_x - tol)
+                     or (side == "right" and x > seed_x + tol))
+            ]
+            if candidates:
+                values.append(max(candidates) if side == "left" else min(candidates))
+        coord, support = _cluster_mode(values)
+        if coord is None:
+            return None
+        ratio = support / len(values) if values else 0
+        if ratio < _HEBAN_MIN_SUPPORT:
+            return None
+        return coord
+
+    def _vote_horizontal(side):
+        """向垂直方向发射射线，投票找上/下墙。"""
+        values = []
+        for i in range(_HEBAN_RAY_SAMPLES):
+            x = seed_x - _HEBAN_H_SPAN + 2.0 * _HEBAN_H_SPAN * i / (_HEBAN_RAY_SAMPLES - 1)
+            candidates = [
+                y for y, x0, x1 in horz
+                if x0 - tol <= x <= x1 + tol
+                and ((side == "top" and y < seed_y - tol)
+                     or (side == "bottom" and y > seed_y + tol))
+            ]
+            if candidates:
+                values.append(max(candidates) if side == "top" else min(candidates))
+        coord, support = _cluster_mode(values)
+        if coord is None:
+            return None
+        ratio = support / len(values) if values else 0
+        if ratio < _HEBAN_MIN_SUPPORT:
+            return None
+        return coord
+
+    # ── 四方向投票 ──
+    left = _vote_vertical("left")
+    right = _vote_vertical("right")
+    top = _vote_horizontal("top")
+    bottom = _vote_horizontal("bottom")
+
+    if any(v is None for v in (left, right, top, bottom)):
+        return None
+
+    if not (left < right and top < bottom):
+        return None
+
+    poly = Polygon([
+        (left, top), (right, top),
+        (right, bottom), (left, bottom),
+    ])
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    if poly.is_empty:
+        return None
+
+    area_m2 = float(poly.area) * (SCALE ** 2)
+    if not (30.0 <= area_m2 <= 300.0):
+        return None
+
+    return poly
+
+
 def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
                                   all_segs=(), furn_segs=(), closures=()):
     """
@@ -2666,7 +2796,7 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
                 return (xm / SCALE + ORIGIN_X, ORIGIN_Y - ym / SCALE)
 
             # 优先识别真实闭合墙体多边形；失败才回退 3m 占位方块
-            real_poly = _heban_real_polygon(pt_pt, all_segs, furn_segs, closures)
+            real_poly = _heban_real_polygon_v2(pt_pt, all_segs, furn_segs, closures)
             if real_poly is not None:
                 poly = real_poly
                 source = "heban_inject_real"
@@ -2734,7 +2864,7 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
         return 0
 
     for room in targets:
-        cx, cy = room["centroid_m"][0], room["centroid_m"][1]
+        poly_pt = room.get("polygon_pt")
         cand = []
         for dr in doors:
             if not _door_free_for_heban(dr):
@@ -2742,28 +2872,33 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
             dpt = dr.get("center")
             if not dpt:
                 continue
-            dm = pt2m(dpt)
-            dist = math.hypot(dm[0] - cx, dm[1] - cy)
-            if dist > 10.0:  # 收紧，减少误挂
+            # 用门到房间多边形边界的距离（米），替代质心距离。
+            # 门应落在房间墙面上，边界距离天然区分"墙上门"与"隔壁走廊门"。
+            if poly_pt is not None and not poly_pt.is_empty:
+                bdist_pt = poly_pt.exterior.distance(Point(dpt[0], dpt[1]))
+                bdist_m = bdist_pt * SCALE
+            else:
+                dm = pt2m(dpt)
+                bdist_m = math.hypot(dm[0] - room["centroid_m"][0],
+                                     dm[1] - room["centroid_m"][1])
+            if bdist_m > 1.0:  # 门中心距墙面超过 1m → 不是该房间的门
                 continue
             pri = 0 if dr.get("kind") == "fire" else (
                 1 if dr.get("kind") == "opening" else 2)
-            cand.append((pri, dist, dr))
-        cand.sort()
+            cand.append((pri, bdist_m, dr))
+        cand.sort(key=lambda x: (x[0], x[1]))  # 按 (优先级, 边界距离) 排序，不比较 dict
         picked = []
-        for pri, dist, dr in cand:
-            if len(picked) >= 2:  # 最多 2 扇，避免吸走走廊门
+        for pri, d, dr in cand:
+            if len(picked) >= 6:  # 上限放宽到 6，边界距离判据足以防误挂
                 break
-            if len(picked) >= 1 and dist > 8.0:
-                break
-            picked.append((dist, dr))
-        for dist, dr in picked:
+            picked.append((d, dr))
+        for d, dr in picked:
             rooms_list = dr.setdefault("rooms", [])
             if room["id"] not in rooms_list:
                 rooms_list.append(room["id"])  # 只追加，不删原有
         if not picked:
             print(f"[F{floor_no}] 警告: 合班 {room['id']} 无可用门"
-                  f"（近门均已属其它封闭房间或过远）")
+                  f"（近门均已属其它封闭房间或不在墙上）")
         else:
             print(f"[F{floor_no}] 合班 {room['id']} 关联门 {len(picked)} 扇"
                   f"（只追加, 最近 {picked[0][0]:.1f}m）")
@@ -3580,6 +3715,27 @@ def reconcile_facilities(f1, f2):
     return report
 
 
+# 防火门常开判定用：功能房间类型 + 公共/开放空间类型
+_FIRE_OPEN_FUNC = FUNCTIONAL_ROOM_TYPES | {"room"}
+_FIRE_OPEN_PUBLIC = ROOM_PUBLIC_TYPES | {"elevator_lobby", "stair_lobby",
+                                          "entrance", "accessible_entrance"}
+
+
+def _compute_fire_door_normally_open(dr, rooms_by_id):
+    """防火门常开判定：连接功能房间(教室/办公室等)与开放空间(走廊/门厅等)→常开；其余→常闭"""
+    func = False
+    public = False
+    for rid in dr.get("rooms") or []:
+        r = rooms_by_id.get(rid)
+        if r is None:
+            continue
+        rt = r.get("roomType", "")
+        if rt in _FIRE_OPEN_FUNC:
+            func = True
+        if rt in _FIRE_OPEN_PUBLIC:
+            public = True
+    return func and public
+
 def build_geojson(f1, f2):
     facility_report = reconcile_facilities(f1, f2)
     for kind, info in facility_report.items():
@@ -3905,6 +4061,9 @@ def build_geojson(f1, f2):
                     "sourceLayer": ("window" if kind == "swing"
                                     else "DOOR_FIRE" if kind == "fire"
                                     else "window+geometry"),
+                    # 防火门常开/常闭：教室/办公室↔开放空间(走廊/门厅等)=常开，其余=常闭
+                    "isNormallyOpen": (_compute_fire_door_normally_open(
+                        dr, rooms_by_id) if kind == "fire" else None),
                 },
             })
         windows = []
@@ -4042,6 +4201,7 @@ def build_geojson(f1, f2):
 
         # --- 拓扑层（指南 第五章）：节点三类（room/intersection/doorway/facility）+ 边
         doors_for_topo = []
+        rooms_by_id_for_topo = {r["id"]: r for r in data["rooms"]}
         for i, dr in enumerate(data["doors"]):
             cx, cy = pt2m(dr["center"])
             sw = dr.get("swing_attrs") or {}
@@ -4053,6 +4213,9 @@ def build_geojson(f1, f2):
                 "rooms": dr["rooms"],
                 "openDirection": sw.get("openDirection"),
                 "hingeSide": sw.get("hingeSide"),
+                "isNormallyOpen": (_compute_fire_door_normally_open(
+                    dr, rooms_by_id_for_topo)
+                    if dr["kind"] == "fire" else None),
             })
         # 额外 facility_entrance 节点：仅真正公共出入口/门厅等。
         # 合班教室是封闭大教室，不进 extra_nodes（避免当公共入口）。

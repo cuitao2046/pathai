@@ -15,8 +15,8 @@
 - `fix_crossing_edges.py`：仅处理穿封闭房间多边形/管井的边绕行；重路由段仍可能切墙。
 - `merge_manual_edges.py` / `generate_fingerprint_grid.py` / `export_skeleton_template.py` / `import_manual_skeleton.py` / `apply_manual_skeleton.py` / `apply_room_overrides.py`：手动边/指纹网格/手工骨架标注闭环/房间属性覆盖。
 
-## 当前进展(v9, 2026-08-09)
-房间 F1 72/F2 55；门 F1 129(swing68/fire53/opening8)/F2 75(swing36/fire32/opening7)；门属性覆盖率 85%/81%；墙 4442 段；跨层边10(楼梯7+电梯3)；DK F1 26/F2 31；合班 F1-RM-0050 真实多边形 190.4m²(由 `_heban_real_polygon` 重建)；骨架 TI F1 63/F2 64；walkable F1 31/F2 16；指纹点 F1 975/F2 467。QA PASS(无门封闭房间=0；连通覆盖 100%)。
+## 当前进展(v9, 2026-08-10)
+房间 F1 81/F2 55；门 F1 132/F2 76；墙 4442 段；跨层边10(楼梯7+电梯3)；合班 F1-RM-0050 真实多边形 211.9m²（v2 射线投票，图纸标注 214.17m²，准确率 98.9%）；骨架 TI F1 63/F2 64；walkable F1 31/F2 16；指纹点 F1 975/F2 467。QA PASS。
 
 ## 关键约定
 - 目录：正式脚本仅 src/(12个)；调试脚本 debug/；根目录不留.py。探索性副本(src/optimize*/src/adjcent/src/fix/src/pathai_src/debug/conn/debug/heban)已 .gitignore 取消跟踪。
@@ -71,6 +71,7 @@
 | 2026-08-08 | 骨架手动标注闭环+导航绕行 | export/import/apply 骨架；fix_crossing_edges 绕行；门编号 TD-xxxx；src 扩至 12 |
 | 2026-08-09 | 手动骨架 JSON 入库+pipeline优先 | `build_skeleton_topology(manual_skeleton=)` 有 JSON 用 JSON 无则自动；确定性可复现 |
 | 2026-08-09 | 路由规则三层落地 | 新建 `route_rules.py`(三条规则+三层回退)；前端 Dijkstra 对齐；栅格 A* 清洗工具 `fix_wall_crossing.py`；验证全绿 |
+| 2026-08-10 | 合班教室射线投票 v2 | `_heban_real_polygon_v2` 替换 v1 形态学闭运算；语义种子+射线投票→211.9m²(98.9%准确率)；零重叠、正确门关联 |
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层；宽可见图 O(n²) shapely 在大数据段错误→改 numpy 栅格 A*。
