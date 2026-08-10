@@ -37,6 +37,7 @@
 2. 在分支上完成开发 + 记录当日日志（`.workbuddy/memory/YYYY-MM-DD.md`，append-only）。
 3. 分支 commit（禁 --force），推送到 GitHub 对应分支（`git push origin <分支>`）。
 4. 人工校验通过后合入 master（fast-forward 或 squash，禁 --force），再推 master。
+5. **合入的分支默认删除，无需再确认（2026-08-10 起）**：合入 master 后立即删除已合入分支（本地 `git branch -d` + 远端 `git push origin --delete` + `git fetch --prune`），保持仓库整洁。
 沙箱 refs 写入受限时（带斜杠分支名常失败），用**无斜杠分支名**（如 `refactor-package-restructure`，单文件 ref 写入稳定），或手动 `mkdir -p .git/refs/heads/<分支>` 再写 ref，或直接更新 master（需用户确认）。
 
 ### ⚠️ 铁律 0b：一个分支只包含一个需求的改动（2026-08-10 起，用户明确）
