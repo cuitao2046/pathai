@@ -54,6 +54,7 @@ class RouteGraph:
         self.walls = []          # buffered wall geometries
         self.wall_lines = []     # zero-width wall centerlines (穿墙判定用)
         self.wall_bounds = []    # 墙 bounding box，用于快速预筛
+        self.wall_floors = []    # 每根墙线所在楼层（int），穿墙判定须按楼层隔离
         self.rooms_with_doors = set()  # semantic roomId with >=1 affiliated door
         self._build()
 
@@ -90,6 +91,7 @@ class RouteGraph:
                     self.walls.append(ls.buffer(t / 2.0 + 0.02))
                     self.wall_lines.append(ls)
                     self.wall_bounds.append(ls.bounds)
+                    self.wall_floors.append(int(fk))
         # 跨层边
         for e in self.geo.get("crossFloorEdges", []):
             self.edges.append(self._norm_edge(e, None, cross=True))
@@ -104,7 +106,7 @@ class RouteGraph:
             if not a or not b:
                 continue
             if a["type"] == "intersection" and b["type"] == "intersection":
-                if self._seg_crosses_any_wall(a["coords"], b["coords"]):
+                if self._seg_crosses_any_wall(a["coords"], b["coords"], a["floor"]):
                     self.wall_crossing_titi.add(e["id"])
         # 收集有门的房间（语义 roomId）
         for nid, n in self.nodes.items():
@@ -215,11 +217,17 @@ class RouteGraph:
                 return False
         return True
 
-    def _seg_crosses_any_wall(self, p1, p2):
-        """p1->p2 是否真正穿墙（遍历 bbox 内所有墙线段，与 validate_wall_crossing 同源）。"""
+    def _seg_crosses_any_wall(self, p1, p2, floor):
+        """p1->p2 是否真正穿墙（遍历【同楼层】bbox 内所有墙线段，与 validate_wall_crossing 同源）。
+
+        floor 为 int（节点楼层）：F1/F2 投影坐标重叠，若不过滤楼层会把本层走廊骨架
+        误判为穿过另一层楼的墙，必须按楼层隔离。
+        """
         minx, miny = min(p1[0], p2[0]), min(p1[1], p2[1])
         maxx, maxy = max(p1[0], p2[0]), max(p1[1], p2[1])
-        for wl, wb in zip(self.wall_lines, self.wall_bounds):
+        for wl, wb, wf in zip(self.wall_lines, self.wall_bounds, self.wall_floors):
+            if wf != floor:
+                continue
             if wb[0] > maxx or wb[2] < minx or wb[1] > maxy or wb[3] < miny:
                 continue
             if self._segment_crosses_wall(p1, p2, wl.coords[0], wl.coords[-1]):
@@ -480,7 +488,7 @@ class RouteGraph:
             if a["coords"] is None or b["coords"] is None:
                 continue
             # 仅「真正穿墙」(两端在墙线异侧且交点在线段内)才算，沿墙并行排除。
-            if self._seg_crosses_any_wall(a["coords"], b["coords"]):
+            if self._seg_crosses_any_wall(a["coords"], b["coords"], a["floor"]):
                 hit = True
             else:
                 hit = False

@@ -460,14 +460,14 @@ def compute_route_rule_extras(geo):
             if rid in best_door:
                 room_best_door[n["id"]] = best_door[rid]
 
-    # 穿墙 TI<->TI 边集合
+    # 穿墙 TI<->TI 边集合（按楼层隔离：F1/F2 投影坐标重叠，跨层墙不得参与判定）
     wall_lines = []
     for fk, fd in geo["floors"].items():
         for w in (fd.get("geometry", {}) or {}).get("walls", []):
             g = w.get("geometry", {})
             if g.get("type") == "LineString" and len(g.get("coordinates", [])) >= 2:
                 cs = g["coordinates"]
-                wall_lines.append((tuple(cs[0]), tuple(cs[-1])))
+                wall_lines.append((fk, tuple(cs[0]), tuple(cs[-1])))
     wall_crossing_titi = set()
     for fk, fd in geo["floors"].items():
         for e in (fd.get("topology", {}) or {}).get("edges", []):
@@ -480,7 +480,9 @@ def compute_route_rule_extras(geo):
             ca, cb = a.get("coordinates"), b.get("coordinates")
             if not ca or not cb:
                 continue
-            for (A, B) in wall_lines:
+            for (wf, A, B) in wall_lines:
+                if wf != fk:
+                    continue  # 跨层墙不参与本层穿墙判定
                 if _seg_crosses_wall(ca, cb, A, B):
                     wall_crossing_titi.add(f"{fk}:{e['id']}")
                     break
@@ -2739,6 +2741,37 @@ function drawPath(result) {
     pathEl.setAttribute('opacity', '0.95');
     layer.appendChild(pathEl);
   }
+  // 桥边回退：把路径中「穿墙走廊边」（wallCrossing）以红色虚线 + 标签叠加标出，
+  // 让回退保连通的路段在图上直观可见（仅在 wall_fallback 时出现）
+  if (result.note === 'wall_fallback') {
+    var wcEmap = rpEdgeMap();
+    result.edges.forEach(function(eid) {
+      var we = wcEmap[eid];
+      if (!we || !we.wallCrossing) return;
+      var wa = PATH_GRAPH.nodes[we.from], wb = PATH_GRAPH.nodes[we.to];
+      if (!wa || !wb) return;
+      var seg = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      seg.setAttribute('x1', wa.x); seg.setAttribute('y1', wa.y);
+      seg.setAttribute('x2', wb.x); seg.setAttribute('y2', wb.y);
+      seg.setAttribute('stroke', '#FF5722');
+      seg.setAttribute('stroke-width', '5.5');
+      seg.setAttribute('stroke-dasharray', '11 7');
+      seg.setAttribute('stroke-linecap', 'round');
+      seg.setAttribute('opacity', '0.95');
+      seg.setAttribute('class', 'path-wall-cross');
+      layer.appendChild(seg);
+      var wmidX = (wa.x + wb.x) / 2, wmidY = (wa.y + wb.y) / 2;
+      var lab = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      lab.setAttribute('x', wmidX); lab.setAttribute('y', wmidY - 6);
+      lab.setAttribute('text-anchor', 'middle');
+      lab.setAttribute('font-size', '9');
+      lab.setAttribute('font-weight', 'bold');
+      lab.setAttribute('fill', '#D32F2F');
+      lab.setAttribute('class', 'path-wall-cross');
+      lab.textContent = '穿墙边';
+      layer.appendChild(lab);
+    });
+  }
   // 高亮对应拓扑边
   document.querySelectorAll('.layer_topo_edge, .layer_topo_edge_titi').forEach(function(g) {
     var f = g.getAttribute('data-info');
@@ -3057,7 +3090,11 @@ function runPath(startId, endId) {
       result.distance.toFixed(1) + ' m · ' +
       (sn.label || startId) + ' → ' + (en.label || endId) + noteTxt;
   }
-  if (hint) hint.textContent = '可继续点选新的起点，或点「清除路径」';
+  if (hint) {
+    hint.textContent = result.note === 'wall_fallback'
+      ? '红色虚线为「桥边回退」保留的穿墙走廊边（可通行区数据待修复）'
+      : '可继续点选新的起点，或点「清除路径」';
+  }
 }
 
 // 挂到原有节点点击逻辑：pathMode 下优先选点
