@@ -70,7 +70,13 @@ def floor_layout_params(geo):
 
 
 def parse_svg_red_lines(svg_path):
-    """提取所有红色 stroke 的折线（SVG 坐标，list of [(x,y),...]）。"""
+    """提取所有红色 stroke 的折线（SVG 坐标，list of [(x,y),...]）。
+
+    支持三类标注元素：
+    - <line>/<polyline>/<path>：红色描边线（stroke-width≥2）
+    - <rect>：红色边框、无填充矩形（fill-opacity≈0 或 fill:none/空），
+      按其四条边框转成闭合折线参与骨架构建（矩形可标注走廊交汇等区域）。
+    """
     tree = ET.parse(svg_path)
     root = tree.getroot()
     lines = []
@@ -79,13 +85,29 @@ def parse_svg_red_lines(svg_path):
         style = (elem.get("style") or "") + " " + (elem.get("stroke") or "")
         if not RED_RE.search(style):
             continue
+        fill = elem.get("fill") or ""
+        if tag == "rect":
+            # 只解析「红色边框、无填充」矩形（实心红填充矩形视为非骨架标注）
+            fop = re.search(r"fill-opacity:?\s*([\d.]+)", style)
+            fo_attr = elem.get("fill-opacity")
+            nofill = (fill in ("none", "")) or \
+                (fop and float(fop.group(1)) <= 0.01) or \
+                (fo_attr is not None and float(fo_attr) <= 0.01)
+            if not nofill:
+                continue
+            x = float(elem.get("x") or 0)
+            y = float(elem.get("y") or 0)
+            w = float(elem.get("width") or 0)
+            h = float(elem.get("height") or 0)
+            if w < 2 or h < 2:
+                continue
+            # 矩形边框 → 闭合折线（4 条边），与红线同流程参与骨架构建
+            lines.append([(x, y), (x + w, y), (x + w, y + h), (x, y + h), (x, y)])
+            continue
         # 只认明显的描边线（stroke-width≥2 或有描边色）；忽略填充色
         sw = re.search(r"stroke-width:?\s*([\d.]+)", style)
         if sw and float(sw.group(1)) < 2:
             continue
-        fill = elem.get("fill") or ""
-        if fill in ("none", "") or RED_RE.search(fill):
-            pass
         if tag == "line":
             lines.append([(float(elem.get("x1")), float(elem.get("y1"))),
                           (float(elem.get("x2")), float(elem.get("y2")))])
