@@ -699,15 +699,22 @@ svg {{ display: block; background: #fff; }}
 .layer_lobby_elevator polygon, .layer_lobby_stair polygon {{ opacity: 0.85; cursor: pointer; }}
 .layer_corridor polygon, .layer_lobby polygon, .layer_activity polygon, .layer_atrium polygon {{ opacity: 0.55; cursor: pointer; }}
 .layer_wall path {{ stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }}
-.layer_building_outline polygon {{ fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; }}
-.layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; }}
+.layer_building_outline polygon {{ fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }}
+.layer_building_outline polygon:hover {{ stroke-width: 2.6; }}
+.layer_window path {{ stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; cursor: pointer; }}
+.layer_window path:hover {{ stroke-width: 3; }}
 .layer_stairs polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator polygon {{ opacity: 0.6; cursor: pointer; }}
 .layer_elevator_door * {{ cursor: pointer; }}
 .layer_column polygon {{ fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }}
-.layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; pointer-events: none; }}
-.layer_skeleton path, .layer_skeleton polyline {{ stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }}
-.layer_skeleton_node circle {{ fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }}
+.layer_walkable polygon {{ fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; cursor: pointer; }}
+.layer_walkable polygon:hover {{ stroke-width: 1.4; }}
+/* 骨架段：可见线不拦截事件，透明命中线捕获点击（点击任意位置都有详情） */
+.layer_skeleton polyline.vis {{ stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }}
+.layer_skeleton polyline.hit {{ stroke: transparent; stroke-width: 8; fill: none; pointer-events: stroke; cursor: pointer; }}
+/* 骨架交叉口：可见红点不拦截事件，透明命中圆捕获点击（关联 TI 节点详情） */
+.layer_skeleton_node circle.vis {{ fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }}
+.layer_skeleton_node circle.hit {{ fill: transparent; pointer-events: visiblePainted; cursor: pointer; }}
 .layer_door circle, .layer_door polygon, .layer_door rect {{ cursor: pointer; }}
 .layer_door_swing *, .layer_door_opening *, .layer_door_fire * {{ cursor: pointer; }}
 .layer_topo_node *, .layer_topo_edge path, .layer_topo_edge_titi path {{ cursor: pointer; }}
@@ -719,6 +726,10 @@ svg {{ display: block; background: #fff; }}
 .layer_ramp *, .layer_tactile *, .layer_material * {{ cursor: pointer; }}
 .layer_crossfloor path {{ stroke-width: 1.6; fill: none; stroke-dasharray: 6,4; opacity: 0.65; cursor: pointer; }}
 text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events: none; }}
+/* 带 data-info 的图元文字标签允许接收点击（命中父 <g> 的 data-info 展示详情） */
+.layer_room text, .layer_corridor text, .layer_lobby text, .layer_activity text, .layer_atrium text,
+.layer_lobby_elevator text, .layer_lobby_stair text, .layer_infrastructure text,
+.layer_stairs text, .layer_elevator text, .layer_topo_node text, .layer_crossfloor text {{ pointer-events: auto; cursor: pointer; }}
 .selected {{ stroke: #FFC107 !important; stroke-width: 2.4 !important; }}
 /* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
 .layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon {{ stroke: #FFC107 !important; stroke-width: 2.6 !important; }}
@@ -979,6 +990,17 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if not wp:
                 continue
             n_walk += 1
+            _rid_w = r.get("id", "")
+            _rlab_w = r["properties"].get("label", "")
+            _rtype_w = r["properties"].get("roomType") or r["properties"].get("type", "")
+            _wtitle = f"{_rid_w}（{_rlab_w or _rtype_w or '可通行区'}）"
+            _wtip = f"可通行区域\\n所属：{_wtitle}"
+            _wdet = {"title": "可通行区域", "rows": [
+                ("所属房间", link_obj(_rid_w, _wtitle)),
+                ("区域类型", _rtype_w or "—"),
+                ("楼层", f"{fk}F"),
+            ]}
+            _wattr = info_attr({"tip": _wtip, "detail": _wdet, "kind": "walkable"})
             for rings in wp["coordinates"]:
                 for ri, ring in enumerate(rings):
                     pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}"
@@ -986,7 +1008,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     # 外环浅绿填充；内环（柱洞）仅描边不填充
                     fill = "none" if ri > 0 else "#A5D6A7"
                     parts.append(
-                        f'<g class="layer_walkable"><polygon points="{pts}" '
+                        f'<g class="layer_walkable" {_wattr}><polygon points="{pts}" '
                         f'fill="{fill}" stroke="#43A047" stroke-width="0.4"/></g>\n'
                     )
         if n_walk:
@@ -1004,12 +1026,19 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if len(coords) < 2:
                 continue
             pts = " ".join(f"{tosvg(x, y)[0]},{tosvg(x, y)[1]}" for x, y in coords)
-            L = (feat.get("properties") or {}).get("length_m", "")
-            tip = f"骨架段 {feat.get('id','')}\n长度: {L}m"
+            _fid = feat.get("id", "")
+            _flen = (feat.get("properties") or {}).get("length_m", "")
+            tip = f"骨架段 {_fid}\\n长度：{_flen} m"
+            det = {"title": f"骨架段 {_fid}", "rows": [
+                ("类型", "走廊中轴骨架"),
+                ("长度", f"{_flen} m"),
+                ("楼层", f"{fk}F"),
+            ]}
+            attr = info_attr({"tip": tip, "detail": det, "kind": "skeleton", "id": _fid})
             parts.append(
-                f'<g class="layer_skeleton"><polyline points="{pts}" '
-                f'fill="none" stroke="#00ACC1" stroke-width="1.4" '
-                f'opacity="0.85"><title>{tip}</title></polyline></g>\n'
+                f'<g class="layer_skeleton" {attr}>'
+                f'<polyline class="vis" points="{pts}"/>'
+                f'<polyline class="hit" points="{pts}"/></g>\n'
             )
             n_skel += 1
         # 骨架交叉口（TI 中 type=intersection 且来自骨架）
@@ -1022,11 +1051,23 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 break
             cx, cy = n.get("coordinates") or [0, 0]
             sx, sy = tosvg(cx, cy)
+            _nid = n.get("id", "")
+            _rt = n.get("roomType", "")
+            _rt_cn = {"corridor": "走道/走廊", "lobby": "门厅/大厅",
+                      "activity": "活动空间", "atrium": "中庭"}.get(_rt, _rt or "开放空间")
+            _rows = [("节点ID", link_obj(_nid)), ("类型", "交叉口（骨架）"), ("空间类型", _rt_cn)]
+            _rl = n.get("riskLevel")
+            if isinstance(_rl, (int, float)):
+                _rows.append(("风险等级", f"{_rl:g}"))
+            if n.get("label"):
+                _rows.append(("标签", n["label"]))
+            det = {"title": n.get("label") or "骨架交叉口", "rows": _rows}
+            tip = f"骨架交叉口 {_nid}\\n类型：{_rt_cn}"
+            attr = info_attr({"tip": tip, "detail": det, "id": _nid, "kind": "node"})
             parts.append(
-                f'<g class="layer_skeleton_node">'
-                f'<circle cx="{sx}" cy="{sy}" r="2.2" '
-                f'fill="#E53935" stroke="#B71C1C" stroke-width="0.5"/>'
-                f'</g>\n'
+                f'<g class="layer_skeleton_node" {attr}>'
+                f'<circle class="vis" cx="{sx}" cy="{sy}" r="2.2"/>'
+                f'<circle class="hit" cx="{sx}" cy="{sy}" r="6"/></g>\n'
             )
             n_junc += 1
         if n_skel:
@@ -1232,7 +1273,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 cy_s = sum(p_[1] for p_ in ring[:-1]) / max(len(ring) - 1, 1)
                 sx_s, sy_s = tosvg(cx_s, cy_s)
                 parts.append(
-                    f'<g class="{layer_cls}">{info_attr({"tip": tip, "detail": det}) if False else ""}'
+                    f'<g class="{layer_cls}" {info_attr({"tip": tip, "detail": det})}>'
                     f'<text x="{sx_s}" y="{sy_s}" font-size="6" text-anchor="middle" '
                     f'fill="#333">{label}</text></g>\n'
                 )
@@ -1267,7 +1308,17 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             c = wn["geometry"]["coordinates"]
             x1, y1 = tosvg(c[0][0], c[0][1])
             x2, y2 = tosvg(c[1][0], c[1][1])
-            parts.append(f'<g class="layer_window"><path d="M {x1} {y1} L {x2} {y2}"/></g>\n')
+            _wnid = wn.get("id", "")
+            _wnlen = (wn.get("properties") or {}).get("length_m", "")
+            _wntip = f"窗户段 {_wnid}\\n长度：{_wnlen} m"
+            _wndet = {"title": f"窗户段 {_wnid}", "rows": [
+                ("类型", "窗"),
+                ("长度", f"{_wnlen} m"),
+                ("楼层", f"{fk}F"),
+            ]}
+            _wnattr = info_attr({"tip": _wntip, "detail": _wndet, "kind": "window"})
+            parts.append(f'<g class="layer_window" {_wnattr}>'
+                         f'<path d="M {x1} {y1} L {x2} {y2}"/></g>\n')
 
         # 4. 楼梯
         for st in geom.get("stairs", []):
@@ -1296,7 +1347,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if label_s and cent:
                 sx_s, sy_s = tosvg(cent[0], cent[1])
                 parts.append(
-                    f'<g class="layer_stairs"><text x="{sx_s}" y="{sy_s}" '
+                    f'<g class="layer_stairs" {info_attr({"tip": tip, "detail": det})}>'
+                    f'<text x="{sx_s}" y="{sy_s}" '
                     f'font-size="5" text-anchor="middle" fill="#BF360C">{label_s}</text></g>\n'
                 )
 
@@ -1327,7 +1379,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if label_e and cent:
                 sx_s, sy_s = tosvg(cent[0], cent[1])
                 parts.append(
-                    f'<g class="layer_elevator"><text x="{sx_s}" y="{sy_s}" '
+                    f'<g class="layer_elevator" {info_attr({"tip": tip, "detail": det})}>'
+                    f'<text x="{sx_s}" y="{sy_s}" '
                     f'font-size="5" text-anchor="middle" fill="#880E4F">{label_e}</text></g>\n'
                 )
 
@@ -1367,7 +1420,15 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         for col in geom.get("columns", []):
             ring = col["geometry"]["coordinates"][0]
             pts = " ".join(f"{tosvg(p[0], p[1])[0]},{tosvg(p[0], p[1])[1]}" for p in ring)
-            parts.append(f'<g class="layer_column"><polygon points="{pts}"/></g>\n')
+            _colid = col.get("id", "")
+            _coltip = f"柱 {_colid}"
+            _coldet = {"title": f"柱 {_colid}", "rows": [
+                ("类型", "结构柱"),
+                ("楼层", f"{fk}F"),
+            ]}
+            _colattr = info_attr({"tip": _coltip, "detail": _coldet, "kind": "column"})
+            parts.append(f'<g class="layer_column" {_colattr}>'
+                         f'<polygon points="{pts}"/></g>\n')
 
         # 7. 门（swing=普通门 / opening=门洞 / fire=防火门）
         # 每类门单独一个图层类名（layer_door_swing / _opening / _fire），
@@ -1544,7 +1605,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
                 if label_n:
                     parts.append(
-                        f'<g class="layer_topo_node"><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
+                        f'<g class="layer_topo_node" {attr}><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
                         f'font-size="5" fill="{color}">{label_n}</text></g>\n'
                     )
             elif ntype == "facility_entrance":
@@ -1557,7 +1618,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
                 if label_n:
                     parts.append(
-                        f'<g class="layer_topo_node"><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
+                        f'<g class="layer_topo_node" {attr}><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
                         f'font-size="5" fill="{NODE_COLORS["facility_entrance"]}">{label_n}</text></g>\n'
                     )
             else:
@@ -1665,10 +1726,19 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         if outline_polys:
             total_oa = sum(_area(p) for p in outline_polys)
             print(f"  [F{fk}] 建筑外轮廓: {len(outline_polys)} 块, 总面积 ~{total_oa:.0f} m²")
+        _boa = sum(_area(p) for p in outline_polys) if outline_polys else 0.0
+        _botip = f"建筑外轮廓\\n总面积约 {_boa:.0f} m² · {len(outline_polys)} 块"
+        _bodet = {"title": "建筑外轮廓", "rows": [
+            ("类型", "建筑外轮廓（含门洞弥合）"),
+            ("轮廓块数", f"{len(outline_polys)}"),
+            ("总面积", f"{_boa:.0f} m²"),
+            ("楼层", f"{fk}F"),
+        ]}
+        _boattr = info_attr({"tip": _botip, "detail": _bodet, "kind": "outline"})
         for poly in outline_polys:
             pts = " ".join(f"{tosvg(px, py)[0]},{tosvg(px, py)[1]}" for px, py in poly)
             parts.append(
-                f'<g class="layer_building_outline" pointer-events="none">'
+                f'<g class="layer_building_outline" {_boattr}>'
                 f'<polygon points="{pts}" fill="none" stroke="#222" '
                 f'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></g>\n'
             )
@@ -2194,6 +2264,7 @@ document.addEventListener('mouseup', function() {{ isDragging = false; wrapper.c
 // ---- 悬停提示 ----
 wrapper.addEventListener('mousemove', function(e) {{
   var t = e.target;
+  if (t && t.closest) t = t.closest('[data-info]');   // 命中层(.hit)/子元素向上找 data-info
   var info = t.getAttribute && t.getAttribute('data-info');
   if (!info) {{ tip.style.display = 'none'; return; }}
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ tip.style.display = 'none'; return; }}
