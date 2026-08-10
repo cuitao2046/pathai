@@ -72,6 +72,10 @@ NODE_TYPE_TO_SEMANTIC = {
 # 基础设施房间类型（管道井/水井/风井等）：纯基础设施门口不部署信标
 INFRASTRUCTURE_ROOM_TYPES = {"infrastructure"}
 
+# 户外/建筑出入口类节点（facility_entrance）：属室内外交界设施，按需求不部署信标；
+# 文档 §室外预警信标 列为后续独立扩展方向。
+OUTDOOR_EXCLUDED_NODE_TYPES = {"facility_entrance"}
+
 
 def node_semantic(n: dict) -> str | None:
     """把拓扑节点映射为信标语义标签；room 中心节点返回 None（不部署）。"""
@@ -123,6 +127,9 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
         for n in nodes:
             sem = node_semantic(n)
             if sem is None:
+                continue
+            # 户外/建筑出入口类节点（室内外交界设施）按需求不部署信标
+            if n.get("type") in OUTDOOR_EXCLUDED_NODE_TYPES:
                 continue
             # 纯基础设施门口（管道井/水井/风井等）不部署信标：
             # 门口连接的房间若全部为基础设施类型，则跳过。
@@ -231,10 +238,11 @@ def main():
     }
     plan["strategy"] = {
         "principle": "决策节点优先（非均匀覆盖）；覆盖安全节点与导航决策点",
-        "sources": "topology.nodes 中 intersection/doorway/facility/facility_entrance；room 中心节点不部署",
+        "sources": "topology.nodes 中 intersection/doorway/facility；room 中心节点不部署",
         "simplifications": [
             "每个交叉口/门口/设施节点布 1 个信标（文档 §3.3 四向、§3.1 楼梯两端为后续加密方向）",
-            "建筑出入口取 facility_entrance 节点（室内起点），室外预警信标为后续扩展",
+            "建筑出入口（facility_entrance）属室内外交界户外设施，按需求不部署信标；室外预警信标为后续独立扩展",
+            "室外楼梯（室外疏散楼梯/室外楼梯）为 room 中心节点，本就不部署信标",
             "纯基础设施门口（管道井/水井/风井等，连接的房间全部为 infrastructure 类型）不部署信标",
         ],
     }
