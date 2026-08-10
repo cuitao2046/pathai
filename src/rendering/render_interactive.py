@@ -354,8 +354,29 @@ def _is_label_bbox(ring):
     return aspect >= LABEL_BBOX_MIN_ASPECT
 
 
-def info_attr(d):
-    """把任意可序列化 dict 编码为 data-info 属性（JS 端 JSON.parse）。"""
+def info_attr(d, floor=None, coll=None, pid=None, store=None, key=None):
+    """把任意可序列化 dict 编码为 data-info 属性（JS 端 JSON.parse）。
+    floor/coll/pid/store/key 用于前端「详情编辑」定位 GeoJSON 元素（排除 id）。
+      floor: 楼层整数；coll: 集合名(rooms/doors/nodes/edges/stairs/elevators/columns/crossFloorEdges)
+      pid:   元素 id 值；store: 数组所在容器(geometry/topology/root)；key: 定位字段名(默认 id)
+    """
+    if isinstance(d, dict) and isinstance(d.get("detail"), dict):
+        meta = {}
+        if floor is not None:
+            meta["_edit_floor"] = floor
+        if coll is not None:
+            meta["_edit_coll"] = coll
+        if pid is not None:
+            meta["_edit_pid"] = pid
+        if store is not None:
+            meta["_edit_store"] = store
+        if key is not None:
+            meta["_edit_key"] = key
+        if meta:
+            nd = dict(d["detail"])
+            nd.update(meta)
+            d = dict(d)
+            d["detail"] = nd
     s = json.dumps(d, ensure_ascii=False).replace("'", "\\'")
     return "data-info='" + s + "'"
 
@@ -997,6 +1018,15 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 .rp-seg {{ flex: 0 0 auto; text-align: right; color: #AD1457; font-size: 11px; white-space: nowrap; }}
 .rp-seg .rp-cum {{ display: block; color: #aaa; font-size: 10px; }}
 .rp-xf {{ color: #E53935; font-weight: bold; }}
+#detail .edit-bar {{ margin-top: 8px; display: flex; gap: 8px; align-items: center; }}
+#detail .edit-bar button {{ padding: 3px 10px; font-size: 12px; cursor: pointer; border: 1px solid #888; background: #f5f5f5; border-radius: 3px; }}
+#detail .edit-bar button:hover {{ background: #e0e0e0; }}
+#detail .edit-hint {{ font-size: 11px; color: #999; }}
+#detail .edit-note {{ font-size: 12px; color: #c0392b; margin: 6px 0; }}
+#detail .edit-row {{ display: flex; flex-direction: column; margin: 6px 0; }}
+#detail .edit-row label {{ font-size: 12px; color: #555; margin-bottom: 2px; }}
+#detail .edit-row input[type=text], #detail .edit-row input[type=number], #detail .edit-row textarea {{ width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px; }}
+#detail .edit-row textarea {{ font-family: monospace; }}
 </style></head><body>
 <div class="header">
   <h2>初中学部1#教学楼 · 交互式楼层图 <span class="tag">v9</span></h2>
@@ -1441,7 +1471,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             else:
                 layer_cls = "layer_room"
             parts.append(
-                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" data-mid="{_rid or ''}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" data-mid="{_rid or ''}" {info_attr({"tip": tip, "detail": det}, floor=floor, coll="rooms", pid=_rid, store="geometry", key="id")}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1517,7 +1547,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if _stid:
                 det["topoId"] = _stid
             parts.append(
-                f'<g class="layer_stairs" data-mid="{st["id"]}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="layer_stairs" data-mid="{st["id"]}" {info_attr({"tip": tip, "detail": det}, floor=floor, coll="stairs", pid=st["id"], store="geometry", key="id")}>'
                 f'<polygon points="{pts}" fill="#FFCCBC" stroke="#E64A19" stroke-width="0.8"/></g>\n'
             )
             if label_s and cent:
@@ -1549,7 +1579,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if _eid:
                 det["topoId"] = _eid
             parts.append(
-                f'<g class="layer_elevator" data-mid="{ev["id"]}" {info_attr({"tip": tip, "detail": det})}>'
+                f'<g class="layer_elevator" data-mid="{ev["id"]}" {info_attr({"tip": tip, "detail": det}, floor=floor, coll="elevators", pid=ev["id"], store="geometry", key="id")}>'
                 f'<polygon points="{pts}" fill="#F8BBD0" stroke="#C2185B" stroke-width="0.8"/></g>\n'
             )
             if label_e and cent:
@@ -1602,7 +1632,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ("类型", "结构柱"),
                 ("楼层", f"{fk}F"),
             ]}
-            _colattr = info_attr({"tip": _coltip, "detail": _coldet, "kind": "column"})
+            _colattr = info_attr({"tip": _coltip, "detail": _coldet, "kind": "column"},
+                                 floor=floor, coll="columns", pid=_colid, store="geometry", key="id")
             parts.append(f'<g class="layer_column" {_colattr}>'
                          f'<polygon points="{pts}"/></g>\n')
 
@@ -1690,7 +1721,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                             _tdid = min(_c4, key=_td_dist)["id"]
             if _tdid:
                 det["topoId"] = _tdid
-            attr = info_attr({"tip": tip, "detail": det, "id": dr.get("id", p.get("id", "")), "kind": "door"})
+            attr = info_attr({"tip": tip, "detail": det, "id": dr.get("id", p.get("id", "")), "kind": "door"},
+                             floor=floor, coll="doors", pid=dr.get("id", p.get("id", "")), store="geometry", key="id")
             dcls = f'layer_door layer_door_{dtype if dtype in ("swing", "fire", "opening") else "swing"}'
             if dtype == "fire":
                 s = max(3.0, w * SCALE * 0.22)
@@ -1761,7 +1793,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 _type_disp = {"corridor": "走道/走廊", "lobby": "门厅/大厅",
                               "activity": "活动空间", "atrium": "中庭"}.get(_rt, "开放空间")
             tip = f"拓扑节点：{label_n or ntype}\\n类型：{_type_disp}"
-            attr = info_attr({"tip": tip, "detail": det, "id": nid, "kind": "node"})
+            attr = info_attr({"tip": tip, "detail": det, "id": nid, "kind": "node"},
+                             floor=floor, coll="nodes", pid=nid, store="topology", key="id")
 
             if ntype == "room":
                 parts.append(
@@ -1843,7 +1876,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             tip = f"导航边\\n距离 {e.get('distance',0):.1f}m · 视障 {('是' if e.get('blindAccessible') else '否')}"
             attr = info_attr({"tip": tip, "detail": det, "from": e.get("from", ""),
                               "to": e.get("to", ""), "id": e.get("id", ""),
-                              "kind": "edge"})
+                              "kind": "edge"},
+                             floor=floor, coll="edges", pid=e.get("id", ""), store="topology", key="id")
             cls = "layer_topo_edge_titi" if is_titi else "layer_topo_edge"
             parts.append(
                 f'<g class="{cls}" {attr}><path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
@@ -2154,7 +2188,8 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             ("轮椅可达", "是" if e.get("wheelchairAccessible") else "否"),
         ]}
         tip = f"跨层：{code or eid} · {etype_label} {f1}F↔{f2}F"
-        attr = info_attr({"tip": tip, "detail": det, "kind": "crossfloor"})
+        attr = info_attr({"tip": tip, "detail": det, "kind": "crossfloor"},
+                         floor=floor, coll="crossFloorEdges", pid=eid, store="root", key="id")
         # 端点处也标注井道编号：缩放到单层时依然能直接读出是哪个楼梯/电梯井
         endpoint_tags = "".join(
             f'<text x="{fmt(sx + 5)}" y="{fmt(sy - 4)}" font-size="4.5" '
@@ -2639,7 +2674,7 @@ function clearHighlight() {{
   clearBeaconContrib();
   clearCoverageBeacons();
 }}
-function resetDetail() {{ document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
+function resetDetail() {{ currentDetail = null; document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
 function markNode(id, cls) {{
   document.querySelectorAll('.layer_topo_node').forEach(function(g) {{
@@ -2665,7 +2700,9 @@ function renderCell(v) {{
   }}
   return rpEsc(String(v));
 }}
+var currentDetail = null;
 function showDetail(d) {{
+  currentDetail = d;
   var box = document.getElementById('detail');
   var title = d.title || '详情';
   // 若已知节点ID，在标题右上方追加拓扑节点ID，方便截图核对
@@ -2679,8 +2716,117 @@ function showDetail(d) {{
   if (d.topoId) {{
     h += '<div class="row"><span>拓扑节点</span><span>' + renderCell({{_l: d.topoId, t: d.topoId}}) + '</span></div>';
   }}
+  // 编辑入口：仅当该元素携带编辑定位元数据
+  var meta = getEditMeta(d);
+  if (meta) {{
+    h += '<div class="edit-bar"><button onclick="enterEditMode()">[编辑]</button>'
+       + '<span class="edit-hint">保存将写回 GeoJSON</span></div>';
+  }}
   box.innerHTML = h;
 }}
+
+// ---- 详情编辑：可编辑除 ID 外的所有字段并写回 GeoJSON ----
+function getEditMeta(d) {{
+  if (!d) return null;
+  var m = {{}};
+  ['_edit_floor','_edit_coll','_edit_pid','_edit_store','_edit_key'].forEach(function(k){{
+    if (d[k] !== undefined) m[k.replace('_edit_','')] = d[k];
+  }});
+  return Object.keys(m).length ? m : null;
+}}
+function findEditTarget(meta) {{
+  var floor = String(meta.floor);
+  var arr = (meta.store === 'root') ? FULL_DATA[meta.coll]
+                                   : FULL_DATA.floors[floor][meta.store][meta.coll];
+  if (!arr) return null;
+  for (var i=0;i<arr.length;i++) {{
+    if (String(arr[i][meta.key]) === String(meta.pid)) return arr[i];
+  }}
+  return null;
+}}
+function collectEditable(obj, store) {{
+  var keys = [];
+  if (store === 'geometry' && obj.properties) {{
+    Object.keys(obj).forEach(function(k){{
+      if (['id','geometry','properties','type'].indexOf(k) >= 0) return;
+      keys.push({{label:k, where:'obj'}});
+    }});
+    Object.keys(obj.properties).forEach(function(k){{
+      if (k === 'id') return;
+      keys.push({{label:k, where:'prop'}});
+    }});
+  }} else {{
+    Object.keys(obj).forEach(function(k){{ if (k === 'id') return; keys.push({{label:k, where:'obj'}}); }});
+  }}
+  return keys;
+}}
+function valToInput(id, raw, where) {{
+  var safeId = 'edit_' + String(id).replace(/[^a-zA-Z0-9_]/g,'_');
+  var label = rpEsc(String(id));
+  if (typeof raw === 'boolean') {{
+    return '<div class="edit-row" data-key="'+rpEsc(String(id))+'" data-where="'+where+'"><label>'+label+'</label>'
+      + '<input type="checkbox" id="'+safeId+'" '+(raw?'checked':'')+' data-type="bool"></div>';
+  }}
+  if (typeof raw === 'number') {{
+    return '<div class="edit-row" data-key="'+rpEsc(String(id))+'" data-where="'+where+'"><label>'+label+'</label>'
+      + '<input type="number" id="'+safeId+'" value="'+rpEsc(String(raw))+'" data-type="number"></div>';
+  }}
+  if (Array.isArray(raw) || (raw !== null && typeof raw === 'object')) {{
+    return '<div class="edit-row" data-key="'+rpEsc(String(id))+'" data-where="'+where+'"><label>'+label+'</label>'
+      + '<textarea id="'+safeId+'" data-type="json" rows="2">'+rpEsc(JSON.stringify(raw))+'</textarea></div>';
+  }}
+  return '<div class="edit-row" data-key="'+rpEsc(String(id))+'" data-where="'+where+'"><label>'+label+'</label>'
+    + '<input type="text" id="'+safeId+'" value="'+rpEsc(raw==null?'':String(raw))+'" data-type="string"></div>';
+}}
+function enterEditMode() {{
+  var meta = getEditMeta(currentDetail);
+  if (!meta) return;
+  var obj = findEditTarget(meta);
+  if (!obj) {{ alert('未找到可编辑目标元素'); return; }}
+  var keys = collectEditable(obj, meta.store);
+  var h = '<h4>编辑：' + rpEsc(currentDetail.title || '元素')
+        + ' <span style="font-size:12px;color:#666">(' + rpEsc(String(meta.pid)) + ')</span></h4>';
+  h += '<div class="edit-note">ID 不可编辑，其余字段均可修改</div>';
+  if (!keys.length) h += '<div class="edit-note">该元素无可编辑字段</div>';
+  keys.forEach(function(k){{
+    var raw = (k.where === 'prop') ? obj.properties[k.label] : obj[k.label];
+    h += valToInput(k.label, raw, k.where);
+  }});
+  h += '<div class="edit-bar"><button onclick="saveEdit()">[保存]</button>'
+     + '<button onclick="cancelEdit()">[取消]</button></div>';
+  document.getElementById('detail').innerHTML = h;
+}}
+function applyEdit(obj, meta) {{
+  var ok = true, errs = [];
+  document.querySelectorAll('#detail .edit-row').forEach(function(row){{
+    var key = row.getAttribute('data-key');
+    var where = row.getAttribute('data-where');
+    var input = row.querySelector('input,textarea');
+    if (!input) return;
+    var t = input.getAttribute('data-type');
+    var val;
+    try {{
+      if (t === 'bool') val = input.checked;
+      else if (t === 'number') {{ val = parseFloat(input.value); if (isNaN(val)) val = input.value; }}
+      else if (t === 'json') val = JSON.parse(input.value);
+      else val = input.value;
+      if (where === 'prop') obj.properties[key] = val; else obj[key] = val;
+    }} catch(e) {{ ok = false; errs.push(key); }}
+  }});
+  return {{ok: ok, errs: errs}};
+}}
+function saveEdit() {{
+  var meta = getEditMeta(currentDetail);
+  if (!meta) return;
+  var obj = findEditTarget(meta);
+  if (!obj) {{ alert('未找到可编辑目标元素'); return; }}
+  var res = applyEdit(obj, meta);
+  if (!res.ok) {{ alert('以下字段解析失败，未保存：' + res.errs.join(', ')); return; }}
+  saveGeojson();
+  showDetail(currentDetail);
+  alert('已保存并写回 GeoJSON：' + meta.store + '/' + meta.coll + ' #' + meta.pid);
+}}
+function cancelEdit() {{ showDetail(currentDetail); }}
 // 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁；
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
 var clickTimer = null;
