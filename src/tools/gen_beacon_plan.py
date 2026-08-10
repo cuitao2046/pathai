@@ -69,6 +69,9 @@ NODE_TYPE_TO_SEMANTIC = {
     "facility": "stair",   # facilityType 可能为 staircase / elevator，下方再细分
 }
 
+# 基础设施房间类型（管道井/水井/风井等）：纯基础设施门口不部署信标
+INFRASTRUCTURE_ROOM_TYPES = {"infrastructure"}
+
 
 def node_semantic(n: dict) -> str | None:
     """把拓扑节点映射为信标语义标签；room 中心节点返回 None（不部署）。"""
@@ -104,6 +107,12 @@ def build_location_desc(floor: int, sem: str, n: dict) -> str:
 def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
              install_date: str) -> dict:
     beacons = []
+    # 收集所有房间类型（room id 含楼层前缀，全局唯一），用于判定基础设施门口
+    room_type = {}
+    for _fk in geo["floors"].values():
+        for r in _fk.get("geometry", {}).get("rooms", []):
+            room_type[r.get("id")] = (r.get("properties", {}) or {}).get("type")
+
     # 逐楼层处理，保证 beacon_id / minor 在楼层内有序且可复现
     for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
         floor = int(fk)
@@ -115,6 +124,13 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
             sem = node_semantic(n)
             if sem is None:
                 continue
+            # 纯基础设施门口（管道井/水井/风井等）不部署信标：
+            # 门口连接的房间若全部为基础设施类型，则跳过。
+            if n.get("type") == "doorway":
+                _rooms = n.get("rooms") or []
+                if _rooms and all(room_type.get(_rid) in INFRASTRUCTURE_ROOM_TYPES
+                                   for _rid in _rooms):
+                    continue
             coord = n.get("coordinates")
             if not coord or len(coord) < 2:
                 continue
@@ -219,6 +235,7 @@ def main():
         "simplifications": [
             "每个交叉口/门口/设施节点布 1 个信标（文档 §3.3 四向、§3.1 楼梯两端为后续加密方向）",
             "建筑出入口取 facility_entrance 节点（室内起点），室外预警信标为后续扩展",
+            "纯基础设施门口（管道井/水井/风井等，连接的房间全部为 infrastructure 类型）不部署信标",
         ],
     }
     plan["beacons"] = beacons
