@@ -32,7 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, defaultdict
 from datetime import date
 from pathlib import Path
 
@@ -75,6 +75,19 @@ INFRASTRUCTURE_ROOM_TYPES = {"infrastructure"}
 # 户外/建筑出入口类节点（facility_entrance）：属室内外交界设施，按需求不部署信标；
 # 文档 §室外预警信标 列为后续独立扩展方向。
 OUTDOOR_EXCLUDED_NODE_TYPES = {"facility_entrance"}
+
+
+def _is_pure_infra_doorway(n: dict, room_type: dict) -> bool:
+    """门口连接的房间是否全部为基础设施类型（纯管道井/水井/风井门口）。"""
+    rs = n.get("rooms") or []
+    return bool(rs) and all(room_type.get(r) in INFRASTRUCTURE_ROOM_TYPES for r in rs)
+
+
+def _doorway_open_key(coord, q: float = 1.0):
+    """门口坐标量化到 q 米网格，用于识别「同一物理开口」的多个门口节点。"""
+    if not coord or len(coord) < 2:
+        return None
+    return (round(coord[0] / q), round(coord[1] / q))
 
 
 def node_semantic(n: dict) -> str | None:
@@ -121,6 +134,26 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
     for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
         floor = int(fk)
         nodes = geo["floors"][fk].get("topology", {}).get("nodes", [])
+        # 同门口(同一物理开口)只布 1 个信标：按坐标量化分组，每组选代表节点部署，
+        # 其余重复门口节点跳过（避免一个开口生成多个信标）。
+        doorway_groups = defaultdict(list)
+        for n in nodes:
+            if n.get("type") == "doorway":
+                k = _doorway_open_key(n.get("coordinates"))
+                if k is not None:
+                    doorway_groups[k].append(n)
+        kept_doorway = set()
+        for grp in doorway_groups.values():
+            if len(grp) == 1:
+                kept_doorway.add(grp[0]["id"])
+                continue
+            # 多节点同开口：优先非纯基础设施节点、房间数多、id 最小
+            rep = sorted(grp, key=lambda n: (
+                1 if _is_pure_infra_doorway(n, room_type) else 0,
+                -len(n.get("rooms") or []),
+                n["id"],
+            ))[0]
+            kept_doorway.add(rep["id"])
         # 楼层内按语义分组，便于 minor 的类别内序号递增
         cat_seq = Counter()           # semantic -> 楼层内序号
         floor_seq = 0                 # 楼层内信标总序号（beacon_id 用）
@@ -131,9 +164,10 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
             # 户外/建筑出入口类节点（室内外交界设施）按需求不部署信标
             if n.get("type") in OUTDOOR_EXCLUDED_NODE_TYPES:
                 continue
-            # 纯基础设施门口（管道井/水井/风井等）不部署信标：
-            # 门口连接的房间若全部为基础设施类型，则跳过。
+            # 门口：同一物理开口只保留代表节点；纯基础设施门口不部署信标
             if n.get("type") == "doorway":
+                if n["id"] not in kept_doorway:
+                    continue
                 _rooms = n.get("rooms") or []
                 if _rooms and all(room_type.get(_rid) in INFRASTRUCTURE_ROOM_TYPES
                                    for _rid in _rooms):
@@ -244,6 +278,7 @@ def main():
             "建筑出入口（facility_entrance）属室内外交界户外设施，按需求不部署信标；室外预警信标为后续独立扩展",
             "室外楼梯（室外疏散楼梯/室外楼梯）为 room 中心节点，本就不部署信标",
             "纯基础设施门口（管道井/水井/风井等，连接的房间全部为 infrastructure 类型）不部署信标",
+            "同一物理门口（坐标量化同开口的多个门口节点）只布 1 个信标，取代表节点",
         ],
     }
     plan["beacons"] = beacons
