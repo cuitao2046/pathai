@@ -27,6 +27,7 @@
 - 卫生间防火门直接丢弃；卫生间/楼梯间摆弧门(kind∈swing/fire 且有DK<14pt)重分类为 opening(F1=4/F2=4)。
 - ⚠️ 合班 `_heban_real_polygon` 陷阱：`cv2.floodFill` 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
 - git：`.workbuddy/memory/` 与 `result/skeleton_manual_parsed.json`(手绘骨架，属代码) 随仓库同步；`result/` 其余产物(geojson/html) 为可复现渲染输出，按铁律纳入提交。⚠️ 编辑 .gitignore 后务必 `git add` 再 commit，否则 merge 中静默丢失。
+- ⚠️ **push 凭据已通（2026-08-10）**：本地 SSH 公钥(`C:/Users/Administrator/.ssh/id_ed25519.pub`，OpenSSH 格式)已注册到 GitHub，remote 已切 `git@github.com:cuitao2046/pathai.git`，本机直接 `git push` 即可；无需再发 PAT，也不要因"沙箱无凭据"误以为不能推。
 - ⚠️ **手动骨架优先**：`result/skeleton_manual_parsed.json` 存在时 `build_skeleton_topology(manual_skeleton=...)` 用其 TI/TI-TI/骨架线 替代中轴提取(跳过 medial-axis)，TR/TD/TF/TEN 仍自动挂到手动 TI；F2 孤岛由 pipeline 软桥补边保 100% 连通。`parse_cad_pdf.py` 自动检测，`--no-manual-skeleton` 强制自动。
 - ⚠️ **骨架数据必须入库（用户明确，2026-08-10）**：`result/skeleton_manual_parsed.json` 是代码的一部分（含手绘红线 + 红色无填充矩形标注，矩形在 JSON 里以闭合折线线段形式存入骨架 edges，无独立 `rect` 实体），**每次重新生成必须 `git add`+`commit` 到分支，不得只留工作区**；**严禁用 `git checkout <旧提交> -- result/skeleton_manual_parsed.json` 把它回退成旧版**（曾因此导致渲染缺矩形，而 git HEAD 实际含矩形）；其正确性以仓库 HEAD 为准，渲染缺矩形先查工作区是否被本地回退覆盖。重生成命令：`python src/tools/import_manual_skeleton.py --input "C:/Users/Administrator/Downloads/cr_skeleton.svg"`（注意用 `C:/` Windows 路径，非 `/c/`）。
 - ⚠️ geojson 字段陷阱：最终 `semantic.rooms` 房间类型在 **`type`** 字段（如 type="elevator_lobby"），**不是** `roomType`；序列化时由中间变量 `roomType` 映射到 `type`。
@@ -34,12 +35,12 @@
 ## 提交工作流
 ### ⚠️ 铁律 0：禁止直接在 master 上工作（2026-08-09 起）
 **所有功能开发、优化、bugfix 一律在新分支上完成**，master 只保留已发布/已合并的稳定状态。流程：
-1. 从最新 master 切新分支：`git checkout -b <feature|fix|refactor>/<描述>`（或先 fetch 再切）。
+1. 从最新 master 切新分支：`git checkout -b <feature|fix|refactor>-<描述>`（**分支名用连字符 `-`，禁止斜杠 `/` 和反斜杠 `\`**；或先 fetch 再切）。
 2. 在分支上完成开发 + 记录当日日志（`.workbuddy/memory/YYYY-MM-DD.md`，append-only）。
 3. 分支 commit（禁 --force），推送到 GitHub 对应分支（`git push origin <分支>`）。
 4. 人工校验通过后合入 master（fast-forward 或 squash，禁 --force），再推 master。
 5. **合入的分支默认删除，无需再确认（2026-08-10 起）**：合入 master 后立即删除已合入分支（本地 `git branch -d` + 远端 `git push origin --delete` + `git fetch --prune`），保持仓库整洁。
-沙箱 refs 写入受限时（带斜杠分支名常失败），用**无斜杠分支名**（如 `refactor-package-restructure`，单文件 ref 写入稳定），或手动 `mkdir -p .git/refs/heads/<分支>` 再写 ref，或直接更新 master（需用户确认）。
+⚠️ **分支名禁止含斜杠 `/` 和反斜杠 `\`（铁律，无条件！）**：沙箱 `.git/refs/heads/` 写入带斜杠/反斜杠的分支名会**静默失败**，导致分支变成「无父提交的 unborn 分支」、`git add` 误把整棵工作区全暂存，极其危险。一律用连字符 `-` 代替斜杠：`feature/xxx`→`feature-xxx`、`fix/xxx`→`fix-xxx`、`refactor/xxx`→`refactor-xxx`。**不要用 `mkdir -p .git/refs/heads/<分支>` 这类 hack**，直接取无斜杠名最稳。本规则已因此前多次踩坑确立，任何情况下都不得用带斜杠分支名。
 
 ### ⚠️ 铁律 0b：一个分支只包含一个需求的改动（2026-08-10 起，用户明确）
 **需求/改动与当前分支正在进行的工作不相关时，必须从最新 master 单独创建新分支实现**，不得在现有 feature 分支上堆叠无关提交。
