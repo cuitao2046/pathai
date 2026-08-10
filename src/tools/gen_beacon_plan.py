@@ -130,6 +130,19 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
         for r in _fk.get("geometry", {}).get("rooms", []):
             room_type[r.get("id")] = (r.get("properties", {}) or {}).get("type")
 
+    # 门对象属性查表（isNormallyOpen / swingIntoRoom / doorType），用于防火门排除判定
+    door_info = {}
+    for _fk in geo["floors"].values():
+        for d in _fk.get("geometry", {}).get("doors", []):
+            pid = d.get("id")
+            if pid:
+                p = d.get("properties", {}) or {}
+                door_info[pid] = {
+                    "isNormallyOpen": p.get("isNormallyOpen"),
+                    "swingIntoRoom": p.get("swingIntoRoom"),
+                    "doorType": p.get("doorType"),
+                }
+
     # 逐楼层处理，保证 beacon_id / minor 在楼层内有序且可复现
     for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
         floor = int(fk)
@@ -172,6 +185,24 @@ def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
                 if _rooms and all(room_type.get(_rid) in INFRASTRUCTURE_ROOM_TYPES
                                    for _rid in _rooms):
                     continue
+                # 防火门排除：
+                #  - 常闭防火门（isNormallyOpen != True，默认常闭）不部署；
+                #  - 内开且归属房间（swingIntoRoom 为 room 类型）的防火门不部署。
+                if n.get("doorType") == "fire":
+                    _dis = [door_info[s] for s in (n.get("sourceDoorIds") or [])
+                            if s in door_info]
+                    _normally_open = any((d or {}).get("isNormallyOpen") is True
+                                         for d in _dis)
+                    _normally_closed = not _normally_open
+                    _belongs_room = False
+                    if n.get("openDirection") == "inward":
+                        for d in _dis:
+                            _sir = (d or {}).get("swingIntoRoom")
+                            if _sir and room_type.get(_sir) == "room":
+                                _belongs_room = True
+                                break
+                    if _normally_closed or _belongs_room:
+                        continue
             coord = n.get("coordinates")
             if not coord or len(coord) < 2:
                 continue
@@ -279,6 +310,7 @@ def main():
             "室外楼梯（室外疏散楼梯/室外楼梯）为 room 中心节点，本就不部署信标",
             "纯基础设施门口（管道井/水井/风井等，连接的房间全部为 infrastructure 类型）不部署信标",
             "同一物理门口（坐标量化同开口的多个门口节点）只布 1 个信标，取代表节点",
+            "防火门排除：常闭防火门（isNormallyOpen!=True）与内开且归属房间的防火门不部署信标",
         ],
     }
     plan["beacons"] = beacons
