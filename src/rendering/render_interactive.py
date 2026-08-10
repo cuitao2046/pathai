@@ -460,14 +460,14 @@ def compute_route_rule_extras(geo):
             if rid in best_door:
                 room_best_door[n["id"]] = best_door[rid]
 
-    # 穿墙 TI<->TI 边集合
+    # 穿墙 TI<->TI 边集合（按楼层隔离：F1/F2 投影坐标重叠，跨层墙不得参与判定）
     wall_lines = []
     for fk, fd in geo["floors"].items():
         for w in (fd.get("geometry", {}) or {}).get("walls", []):
             g = w.get("geometry", {})
             if g.get("type") == "LineString" and len(g.get("coordinates", [])) >= 2:
                 cs = g["coordinates"]
-                wall_lines.append((tuple(cs[0]), tuple(cs[-1])))
+                wall_lines.append((fk, tuple(cs[0]), tuple(cs[-1])))
     wall_crossing_titi = set()
     for fk, fd in geo["floors"].items():
         for e in (fd.get("topology", {}) or {}).get("edges", []):
@@ -480,7 +480,9 @@ def compute_route_rule_extras(geo):
             ca, cb = a.get("coordinates"), b.get("coordinates")
             if not ca or not cb:
                 continue
-            for (A, B) in wall_lines:
+            for (wf, A, B) in wall_lines:
+                if wf != fk:
+                    continue  # 跨层墙不参与本层穿墙判定
                 if _seg_crosses_wall(ca, cb, A, B):
                     wall_crossing_titi.add(f"{fk}:{e['id']}")
                     break
