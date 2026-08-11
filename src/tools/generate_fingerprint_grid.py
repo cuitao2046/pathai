@@ -31,7 +31,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shapely.geometry import Point, shape
+from shapely.geometry import Point, shape, LineString
 from shapely.ops import unary_union
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -248,6 +248,7 @@ def generate_floor(geo_floor, floor_no):
 ROUTE_FP_SPACING_M = 2.0        # 路线走廊指纹间距（与指南普通区一致）
 ROUTE_FP_SAFE_SPACING_M = 1.0   # 路线楼梯/电梯口加密间距
 ROUTE_FP_SAFE_RADIUS_M = 3.0    # 路线楼梯/电梯口加密半径
+ROUTE_CORRIDOR_HALF_M = 3.0     # 路线走廊半宽：从中心线向两侧各扩 3m 覆盖走廊全截面
 
 
 def _load_route_graph(geo):
@@ -267,11 +268,15 @@ def generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M,
     routes: list of {start, end, mode?, label?}，复用 RouteGraph.generate_route 还原路径。
     对每条路线：同层相邻节点段按 spacing 重采样（仅保留可通行区内点，房间内部段自然排除）；
     路线上的楼梯/电梯节点周边 safe_radius 内、与可通行区相交部分按 safe_spacing 加密。
+    区别于全楼模式：仅沿路线线段向两侧缓冲 corridor_half 宽度、与可通行区求交后做面积网格填充，
+    而非只沿中心线 1D 采样——保证覆盖整个走廊截面，视障用户偏离中线时仍能正确定位。
     """
     graph = _load_route_graph(geo)
     walk_by_floor = {int(fk): build_walkable(fl) for fk, fl in (geo.get("floors") or {}).items()}
 
-    candidates = []  # (x, y, floor, regionType, priority)
+    # 收集路线几何线段（按楼层）与楼梯/电梯节点
+    route_lines = {}     # floor -> list of LineString
+    stair_elev_nodes = []  # (x, y, floor)
     route_meta = []
     for rt in routes:
         start, end = rt["start"], rt["end"]
@@ -299,29 +304,45 @@ def generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M,
                 continue
             sub = (n.get("roomType") or n.get("facilityType") or "")
             seq.append((c[0], c[1], n.get("type"), sub, n.get("floor")))
-        # 重采样同层相邻段（房间内部段因不可通行自然被剔除）
+        # 收集同层线段（用于走廊缓冲面填充）
         for (x0, y0, t0, s0, f0), (x1, y1, t1, s1, f1) in zip(seq, seq[1:]):
             if f0 != f1:
                 continue
-            d = math.hypot(x1 - x0, y1 - y0)
-            n = max(1, int(round(d / spacing)))
-            for i in range(0, n + 1):
-                tt = i / n
-                px = x0 + (x1 - x0) * tt
-                py = y0 + (y1 - y0) * tt
-                candidates.append((px, py, f0, "normal", 3))
-        # 楼梯 / 电梯口加密（节点在房间内，取走廊侧可站立部分）
+            route_lines.setdefault(f0, []).append(LineString([(x0, y0), (x1, y1)]))
+        # 收集楼梯 / 电梯节点
         for (x, y, nt, sub, f) in seq:
             if nt in ("facility", "room") and sub in ("staircase", "elevator"):
-                walk = walk_by_floor.get(int(f))
-                if walk is None:
-                    continue
-                disk = Point(x, y).buffer(safe_radius)
-                sub_poly = disk.intersection(walk)
-                if sub_poly.is_empty:
-                    continue
-                for (gx, gy) in grid_points_in_polygon(sub_poly, safe_spacing):
-                    candidates.append((gx, gy, int(f), "safe", 1))
+                stair_elev_nodes.append((x, y, int(f)))
+
+    # ---- 走廊：以路线线段为中心向两侧缓冲，与可通行区求交后做面积填充 ----
+    # 视障用户实际走路会偏离中心线，若只沿中线采集 1D 指纹，
+    # 偏到墙边时 RSSI 指纹匹配不上，定位精度差。缓冲填满走廊全截面
+    # 才能正确区分走廊左侧/中间/右侧。
+    corridor_half = ROUTE_CORRIDOR_HALF_M
+    candidates = []  # (x, y, floor, regionType, priority)
+    for fk, lines in route_lines.items():
+        walk = walk_by_floor.get(int(fk))
+        if walk is None:
+            continue
+        merged = unary_union(lines)
+        buffered = merged.buffer(corridor_half)
+        route_walkable = buffered.intersection(walk)
+        if route_walkable.is_empty:
+            continue
+        for (gx, gy) in grid_points_in_polygon(route_walkable, spacing):
+            candidates.append((gx, gy, int(fk), "normal", 3))
+
+    # ---- 楼梯 / 电梯口加密（取走廊侧可站立部分） ----
+    for (x, y, f) in stair_elev_nodes:
+        walk = walk_by_floor.get(int(f))
+        if walk is None:
+            continue
+        disk = Point(x, y).buffer(safe_radius)
+        sub_poly = disk.intersection(walk)
+        if sub_poly.is_empty:
+            continue
+        for (gx, gy) in grid_points_in_polygon(sub_poly, safe_spacing):
+            candidates.append((gx, gy, int(f), "safe", 1))
 
     # 去重（按楼层，保留高优先级；同优先级近邻只留其一）
     candidates.sort(key=lambda c: c[4])
