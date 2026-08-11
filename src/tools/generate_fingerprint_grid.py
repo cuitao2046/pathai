@@ -245,7 +245,7 @@ def generate_floor(geo_floor, floor_no):
 # 与 gen_beacon_plan.py --mode route 对称：仅在两条测试导航路径上布指纹采集点，
 # 与「只沿路线部署信标」的稀疏方案自洽——全楼 2m 网格里大量点远离任何信标、
 # 收不到信号，属无效采集；路线模式把采集范围收敛到路线走廊+楼梯/电梯口。
-ROUTE_FP_SPACING_M = 2.0        # 路线走廊指纹间距（与指南普通区一致）
+ROUTE_FP_SPACING_M = 1.0        # 路线走廊指纹间距（视障导航：1-2步内感知偏离并纠正）
 ROUTE_FP_SAFE_SPACING_M = 1.0   # 路线楼梯/电梯口加密间距
 ROUTE_FP_SAFE_RADIUS_M = 3.0    # 路线楼梯/电梯口加密半径
 ROUTE_CORRIDOR_HALF_M = 3.0     # 路线走廊半宽：从中心线向两侧各扩 3m 覆盖走廊全截面
