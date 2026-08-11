@@ -6,9 +6,13 @@ gen_beacon_plan.py — 依据 docs/07-信标部署方案.md，从 v9 楼层 GeoJ
 
 设计原则（面向视障室内导航，兼顾施工可行性与运维成本）：
   - 决策节点优先 + 安全点加密：门口(重要房间) / 度≥3 交叉口 / 楼梯 / 电梯。
-  - 可施工：信标坐标不要求钉死在拓扑点，而是在 ≤2.5m 内吸附到「可附着安装面」
-    （结构柱 column / 门套 door_frame / 侧墙 wall）；无法吸附才用短吊杆天花
-    （ceiling_pendant，有效高度≈3m）并标记为运维重点。
+  - 可施工 + 贴墙优先：信标坐标不要求钉死在拓扑点，而是在 ≤2.5m 内吸附到「点状可附着面」
+    （结构柱 column / 门套 door_frame / 墙端点 wall）；若附近无点状附着物，则投影到最近
+    墙线段（≤8.0m，覆盖走廊/房间/楼梯间/电梯厅侧墙乃至大厅/中庭等开敞空间的周边墙），
+    确保绝大多数为墙装/柱装/门套；
+    仅当完全远离任何墙时才退化为短吊杆天花（ceiling_pendant，有效高度≈3m）并标记为运维重点。
+  - 视障导航（按路线模式）：走廊填充间距加密至 6m，保证连续定位、及时识别并纠正路线偏离；
+    关键转向处加方向标，门口/交叉口/楼梯/电梯均优先贴墙安装。
   - 可运维：安装高度墙装 2.2m / 天花 3.0m；楼梯·电梯强制墙装或门套；
     每台信标带 mountType + snapDist_m，电池可换（CR2477），年度抽检。
   - 防过密：交叉口方向标≤2 条且边≥4m 才加；2m 内不同语义合并；压缩纯天花阵列。
@@ -49,7 +53,7 @@ DEFAULT_PARAMS = {
     "batteryModel": "CR2477",
     "expectedLifespanYears": 5,
     "txPowerBySemantic": {"door": -8, "intersection": -10, "stair": -12, "elevator": -12},
-    "offsets": {"stairWarning": 3.5, "snapMax": 2.5},
+    "offsets": {"stairWarning": 3.5, "snapMax": 2.5, "wallSnapMax": 8.0},
     "consolidateDist": 2.0,
     "minJunctionDegree": 3,
 }
@@ -61,7 +65,7 @@ IMPORTANT_ROOM_TYPES = {
 INFRA_ROOM_TYPES = {"infrastructure", "shaft", "pipe", "well", "duct"}
 OPEN_TYPES = {"corridor", "lobby", "activity", "atrium", "elevator_lobby", "stair_lobby", "entrance", "accessible_entrance"}
 _SEM_RANK = {"stair": 4, "elevator": 3, "door": 2, "intersection": 1, "corridor": 0}
-ROUTE_SPACING_DEFAULT = 10.0   # 走廊填充间距（米），保证测试路线连续覆盖
+ROUTE_SPACING_DEFAULT = 6.0   # 走廊填充间距（米）；按视障导航加密，保证路线连续且可识别偏离
 
 def _dist(a, b):
     return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
@@ -88,7 +92,12 @@ def _poly_centroid(coords):
     return [sum(xs)/len(xs), sum(ys)/len(ys)] if xs else None
 
 def _build_mount_index(fl):
-    pts = []
+    """返回 (pts, segs)：
+      pts  = 点状可附着物（柱心 / 门中点 / 墙段端点 / 楼梯采样点），用于 ≤snapMax 内精确吸附；
+      segs = 墙线段 / 楼梯段（整条 LineString 拆成相邻顶点段），用于「投影到最近墙壁」，
+             使走廊/房间/楼梯间/电梯厅的中段节点也能吸附到侧墙，避免退化为天花吊杆。
+    """
+    pts, segs = [], []
     geom = fl.get("geometry") or {}
     for c in geom.get("columns") or []:
         g = c.get("geometry") or {}
@@ -106,6 +115,7 @@ def _build_mount_index(fl):
             coords = g.get("coordinates") or []
             if len(coords) >= 2:
                 pts.append(((coords[0][0]+coords[-1][0])/2, (coords[0][1]+coords[-1][1])/2, "door"))
+                segs.append((coords[0][0], coords[0][1], coords[-1][0], coords[-1][1], "door"))
         elif g.get("type") == "Polygon":
             cen = _poly_centroid(g.get("coordinates"))
             if cen: pts.append((cen[0], cen[1], "door"))
@@ -114,6 +124,8 @@ def _build_mount_index(fl):
         if len(coords) >= 2:
             pts.append((float(coords[0][0]), float(coords[0][1]), "wall"))
             pts.append((float(coords[-1][0]), float(coords[-1][1]), "wall"))
+            for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
+                segs.append((float(x1), float(y1), float(x2), float(y2), "wall"))
     for s in geom.get("stairs") or []:
         g = s.get("geometry") or {}
         if g.get("type") == "Polygon":
@@ -121,25 +133,69 @@ def _build_mount_index(fl):
             step = max(1, len(ring)//8) if ring else 1
             for i in range(0, len(ring), step):
                 pts.append((float(ring[i][0]), float(ring[i][1]), "stair_wall"))
+            for i in range(0, len(ring) - step, step):
+                a, b = ring[i], ring[i + step]
+                segs.append((float(a[0]), float(a[1]), float(b[0]), float(b[1]), "stair_wall"))
         elif g.get("type") == "LineString":
             for p in g.get("coordinates") or []:
                 pts.append((float(p[0]), float(p[1]), "stair_wall"))
-    return pts
+            coords = g.get("coordinates") or []
+            for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
+                segs.append((float(x1), float(y1), float(x2), float(y2), "stair_wall"))
+    return pts, segs
 
-def _snap_to_mount(x, y, mounts, max_d, prefer=None):
+def _proj_on_seg(px, py, x1, y1, x2, y2):
+    """点 (px,py) 到线段 (x1,y1)-(x2,y2) 的投影点与距离。"""
+    dx, dy = x2 - x1, y2 - y1
+    L2 = dx * dx + dy * dy
+    if L2 < 1e-12:
+        return x1, y1, math.hypot(px - x1, py - y1)
+    t = ((px - x1) * dx + (py - y1) * dy) / L2
+    t = max(0.0, min(1.0, t))
+    cx, cy = x1 + t * dx, y1 + t * dy
+    return cx, cy, math.hypot(px - cx, py - cy)
+
+def _snap_to_mount(x, y, pts, segs, max_d, max_wall=3.0, prefer=None):
+    """优先吸附到墙/柱/门（≤max_d），否则投影到最近墙线段（≤max_wall），
+    仅当两者都失败时退化为天花吊杆 ceiling_pendant。
+
+    决策顺序（面向视障导航：尽量贴墙，避免天花）：
+      1) 点状吸附（柱/门优先于墙端点）→ 2) 墙线段投影（走廊/房间/楼梯间侧墙）
+      → 3) 极端空旷处才用短吊杆（必须可换电池、登记巡检）。
+    """
     prefer_set = set(prefer or [])
-    best = None
-    for mx, my, kind in mounts:
+    # 1) 点状可附着物
+    best_pt = None
+    for mx, my, kind in pts:
         d = math.hypot(mx - x, my - y)
         if d > max_d: continue
-        score = d - (0.35 if kind in prefer_set else 0.0)
-        if best is None or score < best[0]:
-            best = (score, d, mx, my, kind)
-    if best is None:
-        return x, y, "ceiling_pendant", 0.0
-    _, d, mx, my, kind = best
-    mount = {"column": "column", "door": "door_frame", "wall": "wall", "stair_wall": "wall"}.get(kind, "wall")
-    return mx, my, mount, d
+        score = d - (0.6 if kind in prefer_set else 0.0)
+        if best_pt is None or score < best_pt[0]:
+            best_pt = (score, d, mx, my, kind)
+    # 2) 墙/楼梯线段投影
+    best_seg = None
+    for x1, y1, x2, y2, kind in segs:
+        cx, cy, d = _proj_on_seg(x, y, x1, y1, x2, y2)
+        if d > max_wall: continue
+        score = d - (0.3 if kind in prefer_set else 0.0)
+        if best_seg is None or score < best_seg[0]:
+            best_seg = (score, d, cx, cy, kind)
+    # 选更近者（柱/门带 prefer 加分，会优先胜出）
+    if best_pt is not None and best_seg is not None:
+        if best_pt[0] <= best_seg[0]:
+            _, d, mx, my, kind = best_pt
+            return mx, my, {"column": "column", "door": "door_frame",
+                            "wall": "wall", "stair_wall": "wall"}.get(kind, "wall"), d
+        _, d, cx, cy, kind = best_seg
+        return cx, cy, "wall", d
+    if best_pt is not None:
+        _, d, mx, my, kind = best_pt
+        return mx, my, {"column": "column", "door": "door_frame",
+                        "wall": "wall", "stair_wall": "wall"}.get(kind, "wall"), d
+    if best_seg is not None:
+        _, d, cx, cy, _kind = best_seg
+        return cx, cy, "wall", d
+    return x, y, "ceiling_pendant", 0.0
 
 def _index_floor(fl):
     rooms = fl.get("geometry", {}).get("rooms") or []
@@ -162,9 +218,11 @@ def _index_floor(fl):
         if d <= 0 and a in node_by_id and b in node_by_id:
             d = _dist(node_by_id[a]["coordinates"], node_by_id[b]["coordinates"])
         adj[a].append((b, d)); adj[b].append((a, d))
+    mount_pts, mount_segs = _build_mount_index(fl)
     return {"rooms": rooms, "doors": doors, "nodes": nodes, "edges": edges, "risk": risk,
             "elevators": elevs, "room_by_id": room_by_id, "door_by_id": door_by_id,
-            "node_by_id": node_by_id, "adj": adj, "mounts": _build_mount_index(fl)}
+            "node_by_id": node_by_id, "adj": adj,
+            "mount_pts": mount_pts, "mount_segs": mount_segs}
 
 def _room_type(room_by_id, rid):
     r = room_by_id.get(rid)
@@ -221,6 +279,7 @@ def collect_door_candidates(floor_no, idx, params):
 
 def collect_intersection_candidates(floor_no, idx, params, require_degree=True):
     snap_max = float(params["offsets"]["snapMax"])
+    wall_max = float(params["offsets"]["wallSnapMax"])
     min_deg = int(params["minJunctionDegree"])
     cands = []
     for n in idx["nodes"]:
@@ -234,7 +293,7 @@ def collect_intersection_candidates(floor_no, idx, params, require_degree=True):
         # 全楼模式要求度≥3；按路线模式(require_degree=False)放行路径上所有交叉口
         if require_degree and len(useful) < min_deg: continue
         c0 = n["coordinates"]
-        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mounts"], snap_max, prefer=("column", "wall", "door"))
+        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mount_pts"], idx["mount_segs"], snap_max, wall_max, prefer=("column", "wall", "door"))
         label = n.get("label") or cid
         cands.append({
             "semanticTag": "intersection", "subType": "base",
@@ -256,7 +315,7 @@ def collect_intersection_candidates(floor_no, idx, params, require_degree=True):
             used_dirs.add(dlab)
             step = min(2.0, max(1.0, ed * 0.35))
             px, py = c0[0] + ux * step, c0[1] + uy * step
-            sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mounts"], snap_max, prefer=("column", "wall", "door"))
+            sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mount_pts"], idx["mount_segs"], snap_max, wall_max, prefer=("column", "wall", "door"))
             if mount2 == "ceiling_pendant" and mount != "ceiling_pendant":
                 continue
             cands.append({
@@ -272,11 +331,12 @@ def collect_intersection_candidates(floor_no, idx, params, require_degree=True):
 
 def collect_stair_candidates(floor_no, idx, params):
     warn = float(params["offsets"]["stairWarning"]); snap_max = float(params["offsets"]["snapMax"])
+    wall_max = float(params["offsets"]["wallSnapMax"])
     cands = []
     for n in idx["nodes"]:
         if not (n.get("type") == "facility" and n.get("facilityType") == "staircase"): continue
         c0 = n["coordinates"]; label = n.get("label") or n["id"]
-        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mounts"], snap_max, prefer=("stair_wall", "wall", "column", "door"))
+        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mount_pts"], idx["mount_segs"], snap_max, wall_max, prefer=("stair_wall", "wall", "column", "door"))
         if mount == "ceiling_pendant": mount = "wall"
         cands.append({
             "semanticTag": "stair", "subType": "base",
@@ -298,7 +358,7 @@ def collect_stair_candidates(floor_no, idx, params):
             ux, uy = _unit(other["coordinates"][0]-c0[0], other["coordinates"][1]-c0[1])
             if ux or uy:
                 px, py = c0[0]+ux*warn, c0[1]+uy*warn
-                sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mounts"], snap_max, prefer=("wall", "column", "door", "stair_wall"))
+                sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mount_pts"], idx["mount_segs"], snap_max, wall_max, prefer=("wall", "column", "door", "stair_wall"))
                 cands.append({
                     "semanticTag": "stair", "subType": "warning",
                     "plannedCoordinates": [px, py], "coordinates": [sx2, sy2],
@@ -310,7 +370,7 @@ def collect_stair_candidates(floor_no, idx, params):
     return cands
 
 def collect_elevator_candidates(floor_no, idx, params):
-    snap_max = float(params["offsets"]["snapMax"]); cands = []
+    snap_max = float(params["offsets"]["snapMax"]); wall_max = float(params["offsets"]["wallSnapMax"]); cands = []
     elev_nodes = [n for n in idx["nodes"] if n.get("type")=="facility" and n.get("facilityType")=="elevator"]
     for n in elev_nodes:
         c0 = n["coordinates"]; label = n.get("label") or n["id"]
@@ -339,7 +399,7 @@ def collect_elevator_candidates(floor_no, idx, params):
             lobbies.append([sum(x["coordinates"][0] for x in cluster)/len(cluster),
                             sum(x["coordinates"][1] for x in cluster)/len(cluster)])
     for cen in lobbies:
-        sx, sy, mount, sd = _snap_to_mount(cen[0], cen[1], idx["mounts"], snap_max, prefer=("column", "wall"))
+        sx, sy, mount, sd = _snap_to_mount(cen[0], cen[1], idx["mount_pts"], idx["mount_segs"], snap_max, wall_max, prefer=("column", "wall"))
         cands.append({
             "semanticTag": "elevator", "subType": "hall_center",
             "plannedCoordinates": list(cen), "coordinates": [sx, sy],
@@ -417,10 +477,10 @@ PROCUREMENT = {
          "why": "续航与可编程性好，支持 iBeacon，国内供货稳定",
          "battery": "CR2477，约 5–8 年", "ip": "IP67", "mount": "壁挂/磁吸底座",
          "unitPriceCNY": "40–90", "qtyHint": "与 Minew 二选一统一型号"},
-        {"role": "天花短吊杆（少量）", "vendor": "Minew / Feasycom", "model": "同系列 + 吊装支架/吸顶盒",
-         "why": "仅无法靠柱靠墙的交叉口；有效高度约 3 m", "battery": "同壁挂，必须可换电",
+        {"role": "天花短吊杆（极少量/兜底）", "vendor": "Minew / Feasycom", "model": "同系列 + 吊装支架/吸顶盒",
+         "why": "仅在 3 m 内无任何可附着墙面时兜底；优先靠墙靠柱可基本不用", "battery": "同壁挂，必须可换电",
          "ip": "IP65+", "mount": "短吊杆 0.5–1.0 m 或灯盘共杆", "unitPriceCNY": "信标+支架 60–120",
-         "qtyHint": "summary.byMount.ceiling_pendant"},
+         "qtyHint": "summary.byMount.ceiling_pendant（路线方案应≈0）"},
         {"role": "楼梯高风险点（可选加固）", "vendor": "Minew", "model": "MBM01 / 工业外壳版",
          "why": "抗磕碰、IP67，适合楼梯间与学生活动密集区", "battery": "长续航可换电",
          "ip": "IP67", "mount": "侧墙螺钉固定", "unitPriceCNY": "80–150", "qtyHint": "stair 语义点"},
@@ -434,17 +494,20 @@ PROCUREMENT = {
 }
 CONSTRUCTION = {
     "principles": [
-        "语义坐标可在 2.5 m 内平移到柱、门套、侧墙；以 mountType 与 coordinates 为施工依据",
-        "安装高度：墙/门套/柱 2.0–2.2 m；天花吊装有效高度约 3.0 m（非贴 4 m+ 板底）",
+        "吸附优先墙/柱/门套：先在点状可附着面 2.5 m 内平移，否则投影到最近墙线段 8.0 m 内"
+        "（覆盖走廊侧墙及大厅/中庭周边墙）；以 mountType 与 coordinates 为施工依据，尽量贴墙安装",
+        "安装高度：墙/门套/柱 2.0–2.2 m；天花吊装有效高度约 3.0 m（非贴 4 m+ 板底），仅作最后手段",
         "禁止占用消防栓、疏散指示灯、弱电箱正面；可借侧缘",
-        "楼梯、电梯口必须墙装或门套装，不得只靠走廊天花",
+        "楼梯、电梯口必须墙装或门套装，不得只靠走廊天花；房间/楼梯间/电梯厅侧墙优先利用",
         "同一柱/门套多点合并后只装 1 台高优先级语义",
+        "视障导航路线：走廊覆盖点间距≤6 m，确保连续定位与偏离识别；尽量贴走廊侧墙",
     ],
     "byMountType": {
         "door_frame": "门套侧或门楣下，避开闭门器；胶+螺钉，高度 2.0–2.2 m",
         "column": "结构柱朝向走廊一侧，避免被广告牌完全遮挡",
-        "wall": "走廊侧墙、楼梯前室墙、电梯厅侧墙；距阴角 ≥0.3 m",
-        "ceiling_pendant": "短吊杆或与灯具共杆，有效高度≈3 m；必须可换电池并登记检修周期",
+        "wall": "走廊侧墙、楼梯前室墙、电梯厅侧墙、房间外墙、大厅/中庭周边墙；距阴角 ≥0.3 m（首选）",
+        "ceiling_pendant": "最后手段：仅当 8 m 内无任何可附着墙面时使用；短吊杆或与灯具共杆，"
+                           "有效高度≈3 m；必须可换电池并登记检修周期（路线方案中应=0）",
     },
     "ops": [
         "每年抽检 20% 点位电量与广播；天花点优先巡检",
@@ -491,8 +554,8 @@ def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, requir
                 "门口仅重要房间；防火门默认不布（常闭/内开归属房间不布）；同开口只 1 个",
                 "交叉口仅度≥3；中心优先吸附结构柱；方向标最多 2 条且尽量靠墙",
                 "楼梯入口+预警必须可墙装；电梯口门套装",
-                "2 m 内不同语义合并；平移≤2.5 m 到可附着点",
-                "无法吸附则 ceiling_pendant（短吊杆≈3 m），并计入运维重点",
+                "2 m 内不同语义合并；≤2.5 m 吸附点状面，否则投影最近墙线段(≤8 m)",
+                "完全远离墙面才 ceiling_pendant（短吊杆≈3 m），并计入运维重点",
             ],
             "stats": {"candidatesBeforeMerge": n_before, "afterMerge": len(beacons)},
         },
@@ -528,6 +591,7 @@ def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
     graph = _load_route_graph(geo)
     idx_by_floor = {int(fk): _index_floor(fl) for fk, fl in (geo.get("floors") or {}).items()}
     snap_max = float(params["offsets"]["snapMax"])
+    wall_max = float(params["offsets"]["wallSnapMax"])
 
     allowed = set()
     route_meta = []
@@ -568,8 +632,8 @@ def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
                 t = i / (k + 1)
                 px = c0[0] + (c1[0] - c0[0]) * t
                 py = c0[1] + (c1[1] - c0[1]) * t
-                sx, sy, mount, sd = _snap_to_mount(px, py, idx["mounts"], snap_max,
-                                                   prefer=("column", "wall", "door"))
+                sx, sy, mount, sd = _snap_to_mount(px, py, idx["mount_pts"], idx["mount_segs"],
+                                                   snap_max, wall_max, prefer=("column", "wall", "door"))
                 fill_cands.append({
                     "semanticTag": "corridor", "subType": "fill",
                     "plannedCoordinates": [px, py], "coordinates": [sx, sy],
@@ -582,14 +646,26 @@ def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
 
     plan = build_plan(geo, params, allowed_ids=allowed, extra_candidates=fill_cands,
                       require_degree=False)
-    plan["schemaVersion"] = "1.2-route-based"
+    plan["schemaVersion"] = "1.3-vi-nav"
     plan["mode"] = "route"
     plan["routeSpacing_m"] = spacing
     plan["routes"] = route_meta
-    plan["strategy"]["principle"] = ("按路线优先：仅在测试导航路径的节点(门口/交叉口/楼梯/电梯)"
-                                     f"与走廊填充段(间距≤{spacing:.0f}m)布点，覆盖测试路线即可，大幅压缩总数")
+    plan["strategy"]["principle"] = ("按路线优先（面向视障导航）：仅在测试导航路径的节点(门口/交叉口/楼梯/电梯)"
+                                     f"与走廊填充段(间距≤{spacing:.0f}m)布点；尽量吸附柱/门套/侧墙，避免天花吊杆，"
+                                     "以较密间距保证视障用户连续定位、及时识别并纠正路线偏离")
     plan["strategy"]["simplifications"].append(
-        "按路线模式：路径上所有交叉口均布点（不限度≥3）；走廊段按间距补充覆盖点保证连续导航")
+        "按路线模式：路径上所有交叉口均布点（不限度≥3）；走廊段按 6m 间距补充覆盖点，"
+        "密度足以让视障用户识别偏离；吸附逻辑优先墙/柱/门，仅极个别无法靠墙时退化为短吊杆")
+    plan["viNavOptimization"] = {
+        "goal": "面向视障室内导航：高密度连续覆盖 + 尽量贴墙安装，提升定位稳定性与偏离识别能力",
+        "routeSpacing_m": spacing,
+        "wallPriority": ("吸附优先顺序：柱/门(≤snapMax=2.5m) → 投影到最近墙线段(≤wallSnapMax=8.0m，"
+                         "含大厅/中庭周边墙) → 仅完全远离任何墙时退化为天花短吊杆(需可换电池、登记巡检)"),
+        "ceilingPendantExpected": ("路线节点均处走廊/房间/楼梯间/电梯厅及大厅中庭周边墙 8m 内，理论天花点=0；"
+                                   "若个别点仍为天花，说明该处 8m 内无任何墙面，需现场补装壁装支架或就近借墙"),
+        "deviationDetection": "6m 间距使相邻信标 RSSI 重叠度高，手机可实时三角定位并提示偏离；"
+                              "门口/交叉口方向标辅助关键转向确认",
+    }
     return plan
 
 def main():
@@ -601,7 +677,7 @@ def main():
     ap.add_argument("--routes", default=None,
                     help="route 模式：路线清单 JSON（[{start,end,mode?,label?}, ...]）")
     ap.add_argument("--route-spacing", type=float, default=ROUTE_SPACING_DEFAULT,
-                    help="route 模式：走廊填充间距(米)，默认 10")
+                    help="route 模式：走廊填充间距(米)，默认 6（视障导航加密）")
     args = ap.parse_args()
     geo = json.loads(Path(args.geo).read_text(encoding="utf-8"))
 
