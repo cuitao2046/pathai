@@ -22,6 +22,7 @@ gen_beacon_at_commands.py
 """
 import json
 import os
+import argparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SRC = os.path.join(ROOT, "result", "beacon_deployment_plan_routes.json")
@@ -44,7 +45,12 @@ def hex4(z: int) -> str:
 
 
 def main():
-    with open(SRC, encoding="utf-8") as f:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--src", default=SRC, help="部署计划 JSON")
+    ap.add_argument("--out", default=OUT, help="输出 markdown")
+    ap.add_argument("--title-tag", default="路线部署 · 48 个", help="标题标注")
+    args = ap.parse_args()
+    with open(args.src, encoding="utf-8") as f:
         d = json.load(f)
     beacons = d["beacons"]
     uuid32 = d["uuid"].replace("-", "").upper()
@@ -52,8 +58,8 @@ def main():
     rssi_h = rssi_hex(DEFAULT_RSSI_1M)
 
     L = []
-    L.append("# RF-B-SR1 信标 AT 配置命令清单（路线部署 · 48 个）\n")
-    L.append(f"> 生成依据：`result/beacon_deployment_plan_routes.json`（schemaVersion {d.get('schemaVersion')}）  ")
+    L.append(f"# RF-B-SR1 信标 AT 配置命令清单（{args.title_tag}）\n")
+    L.append(f"> 生成依据：`{os.path.relpath(args.src, ROOT)}`（schemaVersion {d.get('schemaVersion')}）  ")
     L.append(f"> 目标 UUID：`{d['uuid']}`  ")
     L.append(f"> 发射功率统一 **-10 dBm**（设备档位无 -8/-12，详见 docs/08 §1.3）  ")
     L.append(f"> 广播间隔：沿用部署计划 `broadcastInterval`（当前全部 300 ms）  ")
@@ -120,9 +126,9 @@ def main():
 
     L.append("> 本清单由 `src/tools/gen_beacon_at_commands.py` 依据部署计划 JSON 生成，部署计划更新后重新运行即可。")
 
-    with open(OUT, "w", encoding="utf-8") as f:
+    with open(args.out, "w", encoding="utf-8") as f:
         f.write("\n".join(L))
-    print(f"written: {OUT}")
+    print(f"written: {args.out}")
     print(f"beacons={len(beacons)}  uuid32={uuid32}  rssi_hex={rssi_h}")
 
 
