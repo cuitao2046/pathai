@@ -660,13 +660,14 @@ def main():
     _a = _ap.ArgumentParser(description="交互式楼层渲染")
     _a.add_argument("--geo", default=GEO_IN, help="v9 楼层 GeoJSON 路径")
     _a.add_argument("--beacons", default=None, help="信标部署方案 JSON（覆盖默认 beacon_deployment_plan.json）")
+    _a.add_argument("--fingerprint", default=None, help="指纹采集网格 JSON（覆盖默认 fingerprint_grid.json，可传路线版 fingerprint_grid_routes.json）")
     _a.add_argument("--out", default=HTML_OUT, help="输出 HTML 路径")
     _args = _a.parse_args()
     geo = json.load(open(_args.geo, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
 
     # 指纹采集网格（generate_fingerprint_grid.py 生成的独立清单，默认隐藏图层）
-    fp_path = Path(GEO_IN).parent / "fingerprint_grid.json"
+    fp_path = Path(_args.fingerprint) if _args.fingerprint else (Path(GEO_IN).parent / "fingerprint_grid.json")
     fp_floors = {}
     if fp_path.exists():
         try:
