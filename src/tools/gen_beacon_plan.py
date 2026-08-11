@@ -25,9 +25,13 @@ gen_beacon_plan.py — 依据 docs/07-信标部署方案.md，从 v9 楼层 GeoJ
     python src/tools/gen_beacon_plan.py
     python src/tools/gen_beacon_plan.py --geo result/school_building_01_map_v9.geojson \
         --out result/beacon_deployment_plan.json
+    # 按指定导航路线布点（仅覆盖测试路线，压缩部署数量）
+    python src/tools/gen_beacon_plan.py --mode route \
+        --routes result/beacon_routes.json \
+        --out result/beacon_deployment_plan_routes.json
 """
 from __future__ import annotations
-import argparse, json, math
+import argparse, importlib.util, json, math
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
@@ -56,7 +60,8 @@ IMPORTANT_ROOM_TYPES = {
 }
 INFRA_ROOM_TYPES = {"infrastructure", "shaft", "pipe", "well", "duct"}
 OPEN_TYPES = {"corridor", "lobby", "activity", "atrium", "elevator_lobby", "stair_lobby", "entrance", "accessible_entrance"}
-_SEM_RANK = {"stair": 4, "elevator": 3, "door": 2, "intersection": 1}
+_SEM_RANK = {"stair": 4, "elevator": 3, "door": 2, "intersection": 1, "corridor": 0}
+ROUTE_SPACING_DEFAULT = 10.0   # 走廊填充间距（米），保证测试路线连续覆盖
 
 def _dist(a, b):
     return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
@@ -214,7 +219,7 @@ def collect_door_candidates(floor_no, idx, params):
         })
     return cands
 
-def collect_intersection_candidates(floor_no, idx, params):
+def collect_intersection_candidates(floor_no, idx, params, require_degree=True):
     snap_max = float(params["offsets"]["snapMax"])
     min_deg = int(params["minJunctionDegree"])
     cands = []
@@ -226,7 +231,8 @@ def collect_intersection_candidates(floor_no, idx, params):
             other = idx["node_by_id"].get(nid)
             if other and other.get("type") != "room":
                 useful.append((nid, ed, other))
-        if len(useful) < min_deg: continue
+        # 全楼模式要求度≥3；按路线模式(require_degree=False)放行路径上所有交叉口
+        if require_degree and len(useful) < min_deg: continue
         c0 = n["coordinates"]
         sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mounts"], snap_max, prefer=("column", "wall", "door"))
         label = n.get("label") or cid
@@ -447,7 +453,7 @@ CONSTRUCTION = {
     ],
 }
 
-def build_plan(geo, params=None):
+def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, require_degree=True):
     params = {**DEFAULT_PARAMS, **(params or {})}
     params["offsets"] = {**DEFAULT_PARAMS["offsets"], **(params.get("offsets") or {})}
     install_date = date.today().isoformat()
@@ -455,9 +461,14 @@ def build_plan(geo, params=None):
     for fk, fl in (geo.get("floors") or {}).items():
         floor_no = int(fk); idx = _index_floor(fl)
         all_cands.extend(collect_door_candidates(floor_no, idx, params))
-        all_cands.extend(collect_intersection_candidates(floor_no, idx, params))
+        all_cands.extend(collect_intersection_candidates(floor_no, idx, params, require_degree=require_degree))
         all_cands.extend(collect_stair_candidates(floor_no, idx, params))
         all_cands.extend(collect_elevator_candidates(floor_no, idx, params))
+    # 按路线模式：仅保留路径上的节点候选（sourceNodeId 在 allowed_ids）
+    if allowed_ids is not None:
+        all_cands = [c for c in all_cands if c.get("sourceNodeId") in allowed_ids]
+    if extra_candidates:
+        all_cands.extend(extra_candidates)
     n_before = len(all_cands)
     merged = consolidate(all_cands, float(params["consolidateDist"]))
     beacons = assign_ids(merged, params, install_date)
@@ -496,23 +507,132 @@ def build_plan(geo, params=None):
         },
     }
 
+
+def _load_route_graph(geo):
+    """按需加载导航路由模块（src/topology/route_rules.py），复用其受限 Dijkstra 还原路径。"""
+    topo_py = Path(__file__).resolve().parents[1] / "topology" / "route_rules.py"
+    spec = importlib.util.spec_from_file_location("route_rules", str(topo_py))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.RouteGraph(geo)
+
+
+def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
+    """按指定导航路线布点：仅在路径节点(门口/交叉口/楼梯/电梯)与走廊填充段部署信标。
+
+    routes: list of {start, end, mode?, label?}；复用 RouteGraph.generate_route 还原路径。
+    走廊填充：相邻非房间、同层路径段若长度>spacing，则按 spacing 等距补充覆盖点。
+    """
+    params = {**DEFAULT_PARAMS, **(params or {})}
+    params["offsets"] = {**DEFAULT_PARAMS["offsets"], **(params.get("offsets") or {})}
+    graph = _load_route_graph(geo)
+    idx_by_floor = {int(fk): _index_floor(fl) for fk, fl in (geo.get("floors") or {}).items()}
+    snap_max = float(params["offsets"]["snapMax"])
+
+    allowed = set()
+    route_meta = []
+    fill_cands = []
+    for rt in routes:
+        start, end = rt["start"], rt["end"]
+        mode = rt.get("mode", "normal")
+        res = graph.generate_route(start, end, mode)
+        if not res.get("reachable"):
+            print(f"  [warn] 路线不可达，跳过：{start} -> {end} (mode={mode})")
+            continue
+        path = res["path"]
+        route_meta.append({
+            "label": rt.get("label", f"{start} -> {end}"),
+            "start": start, "end": end, "mode": mode,
+            "distance_m": res["distance"], "nodes": len(path),
+            "crossFloor": res["cross_floor"], "usedElevator": res["used_elevator"],
+            "usedStair": res["used_stair"],
+        })
+        for nid in path:
+            allowed.add(nid)
+        # 走廊填充：相邻段（排除房间内部段与跨层段）
+        for a, b in zip(path, path[1:]):
+            na, nb = graph.nodes[a], graph.nodes[b]
+            if na["type"] == "room" or nb["type"] == "room":
+                continue
+            if na["floor"] != nb["floor"]:
+                continue
+            c0, c1 = na["coords"], nb["coords"]
+            if not c0 or not c1:
+                continue
+            d = _dist(c0, c1)
+            if d <= spacing:
+                continue
+            k = int(math.floor(d / spacing))
+            idx = idx_by_floor[na["floor"]]
+            for i in range(1, k + 1):
+                t = i / (k + 1)
+                px = c0[0] + (c1[0] - c0[0]) * t
+                py = c0[1] + (c1[1] - c0[1]) * t
+                sx, sy, mount, sd = _snap_to_mount(px, py, idx["mounts"], snap_max,
+                                                   prefer=("column", "wall", "door"))
+                fill_cands.append({
+                    "semanticTag": "corridor", "subType": "fill",
+                    "plannedCoordinates": [px, py], "coordinates": [sx, sy],
+                    "floor": na["floor"],
+                    "locationDesc": f"{na['floor']}F 路线走廊覆盖点（{rt.get('label', '')} 段）",
+                    "sourceNodeId": None, "sourceNodeType": "route_corridor",
+                    "riskLevel": 0.3, "mountType": mount, "snapDist_m": round(sd, 2),
+                    "priority": 5,
+                })
+
+    plan = build_plan(geo, params, allowed_ids=allowed, extra_candidates=fill_cands,
+                      require_degree=False)
+    plan["schemaVersion"] = "1.2-route-based"
+    plan["mode"] = "route"
+    plan["routeSpacing_m"] = spacing
+    plan["routes"] = route_meta
+    plan["strategy"]["principle"] = ("按路线优先：仅在测试导航路径的节点(门口/交叉口/楼梯/电梯)"
+                                     f"与走廊填充段(间距≤{spacing:.0f}m)布点，覆盖测试路线即可，大幅压缩总数")
+    plan["strategy"]["simplifications"].append(
+        "按路线模式：路径上所有交叉口均布点（不限度≥3）；走廊段按间距补充覆盖点保证连续导航")
+    return plan
+
 def main():
     ap = argparse.ArgumentParser(description="可施工/可运维 ROI 蓝牙信标部署方案生成器")
     ap.add_argument("--geo", default=str(DEFAULT_GEO), help="v9 楼层 GeoJSON 路径")
-    ap.add_argument("--out", default=str(DEFAULT_OUT), help="输出信标部署方案 JSON")
+    ap.add_argument("--out", default=None, help="输出信标部署方案 JSON（默认按模式自动命名）")
+    ap.add_argument("--mode", choices=["full", "route"], default="full",
+                    help="full=全楼覆盖(默认)；route=仅按指定路线布点")
+    ap.add_argument("--routes", default=None,
+                    help="route 模式：路线清单 JSON（[{start,end,mode?,label?}, ...]）")
+    ap.add_argument("--route-spacing", type=float, default=ROUTE_SPACING_DEFAULT,
+                    help="route 模式：走廊填充间距(米)，默认 10")
     args = ap.parse_args()
     geo = json.loads(Path(args.geo).read_text(encoding="utf-8"))
-    plan = build_plan(geo)
-    Path(args.out).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if args.mode == "route":
+        if not args.routes:
+            ap.error("route 模式需提供 --routes 路线清单 JSON")
+        routes = json.loads(Path(args.routes).read_text(encoding="utf-8"))
+        if isinstance(routes, dict):
+            routes = routes.get("routes", routes.get("items", []))
+        out = args.out or str(ROOT / "result" / "beacon_deployment_plan_routes.json")
+        plan = build_plan_routes(geo, routes, spacing=args.route_spacing)
+    else:
+        out = args.out or str(DEFAULT_OUT)
+        plan = build_plan(geo)
+
+    Path(out).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     s = plan["summary"]
+    print(f"mode: {plan.get('mode', 'full')}")
     print(f"venue: {plan['venueName']}")
+    if plan.get("mode") == "route":
+        for rt in plan.get("routes", []):
+            print(f"  route: {rt['label']} | {rt['distance_m']}m | {rt['nodes']}节点 | "
+                  f"cross={rt['crossFloor']} elev={rt['usedElevator']} stair={rt['usedStair']}")
+        print(f"  routeSpacing_m: {plan.get('routeSpacing_m')}")
     print(f"total: {s['total']}")
     print(f"  byFloor: {s['byFloor']}")
     print(f"  bySemantic: {s['bySemantic']}")
     print(f"  bySubType: {s['bySubType']}")
     print(f"  byMount: {s['byMount']}")
     print(f"  wall-like: {s['wallLikeCount']}  ceiling_pendant: {s['ceilingPendantCount']}")
-    print(f"written: {args.out}")
+    print(f"written: {out}")
     return 0
 
 if __name__ == "__main__":

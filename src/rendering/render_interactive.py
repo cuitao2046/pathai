@@ -49,13 +49,14 @@ NODE_COLORS = {
     "facility_entrance": "#2980B9",
 }
 FACILITY_COLORS = {"staircase": "#8E44AD", "elevator": "#16A085"}
-# 信标部署点配色（与图例一致）：交叉口/门口/楼梯/电梯/出入口
+# 信标部署点配色（与图例一致）：交叉口/门口/楼梯/电梯/走廊覆盖点
 BEACON_COLORS = {
     "intersection": "#FB8C00",
     "door": "#8E24AA",
     "stair": "#E53935",
     "elevator": "#1E88E5",
     "entrance": "#43A047",
+    "corridor": "#00897B",
 }
 
 # 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
@@ -655,7 +656,13 @@ function exportAnnoOverrides(){
 
 
 def main():
-    geo = json.load(open(GEO_IN, encoding="utf-8"))
+    import argparse as _ap
+    _a = _ap.ArgumentParser(description="交互式楼层渲染")
+    _a.add_argument("--geo", default=GEO_IN, help="v9 楼层 GeoJSON 路径")
+    _a.add_argument("--beacons", default=None, help="信标部署方案 JSON（覆盖默认 beacon_deployment_plan.json）")
+    _a.add_argument("--out", default=HTML_OUT, help="输出 HTML 路径")
+    _args = _a.parse_args()
+    geo = json.load(open(_args.geo, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
 
     # 指纹采集网格（generate_fingerprint_grid.py 生成的独立清单，默认隐藏图层）
@@ -671,7 +678,7 @@ def main():
         print("  [hint] 未找到 fingerprint_grid.json，可先运行 generate_fingerprint_grid.py")
 
     # 信标部署方案（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
-    bc_path = Path(GEO_IN).parent / "beacon_deployment_plan.json"
+    bc_path = Path(_args.beacons) if _args.beacons else (Path(_args.geo).parent / "beacon_deployment_plan.json")
     beacon_floors = {}
     if bc_path.exists():
         try:
@@ -2271,6 +2278,7 @@ function srLocate(el) {{
     <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>楼梯（密集）</div>
     <div class="lg-item"><div class="lg-sw" style="background:#1E88E5;border-radius:50%;width:11px;height:11px"></div>电梯（密集）</div>
     <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>出入口</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#00897B;border-radius:50%;width:11px;height:11px"></div>走廊覆盖点（路线模式）</div>
   </div>
   </div><!-- /lg-grid -->
 </div><!-- /legend-panel -->
@@ -3417,10 +3425,10 @@ applyTransform(); setZoomInfo();
     anno_script = build_anno_script(min_x, max_y, svh_per_floor, sorted_floors)
     parts[-1] = parts[-1].replace("</body></html>", anno_script + "\n</body></html>")
 
-    with open(HTML_OUT, "w", encoding="utf-8") as f:
+    with open(_args.out, "w", encoding="utf-8") as f:
         f.write("".join(parts))
 
-    print(f"已生成: {HTML_OUT}")
+    print(f"已生成: {_args.out}")
     print(f"  SVG: {svw} × {svh} px | 每层 {svh_per_floor} px")
     print(f"  坐标范围: x[{min_x:.1f}, {max_x:.1f}], y[{min_y:.1f}, {max_y:.1f}]")
     print(f"  楼层: {len(sorted_floors)} 层 | 跨层连接: {len(cf)} 条")
