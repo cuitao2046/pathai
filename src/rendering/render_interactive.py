@@ -1841,9 +1841,14 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     ("楼层", f"{b.get('floor')}F"),
                     ("坐标(米)", f"({cx:.2f}, {cy:.2f})"),
                     ("安装位置", b.get("locationDesc", "")),
+                    ("安装方式", b.get("mountType", "")),
+                    ("吸附偏移", f"{b.get('snapDist_m', 0)} m"),
+                    ("类型/方向", "/".join(filter(None, [b.get("subType", ""), b.get("direction", "")])) or "—"),
                     ("发射功率", f"{b.get('txPower')} dBm"),
                     ("广播间隔", f"{b.get('broadcastInterval')} ms"),
                     ("安装高度", f"{b.get('installHeight')} m"),
+                    ("电池型号", b.get("batteryModel", "")),
+                    ("预期寿命", f"{b.get('expectedLifespan')} 年" if b.get("expectedLifespan") else ""),
                     ("来源节点", b.get("sourceNodeId", "")),
                 ]}
                 attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid})

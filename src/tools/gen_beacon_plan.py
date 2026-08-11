@@ -1,514 +1,519 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-gen_beacon_plan.py — 依据 docs/07-信标部署方案.md 的方案说明，从 v9 楼层 GeoJSON
-自动生成「信标部署方案 JSON（新表台账）」。
+gen_beacon_plan.py — 依据 docs/07-信标部署方案.md，从 v9 楼层 GeoJSON 生成
+「可施工 / 可运维优先」的蓝牙信标部署方案 JSON（新表台账 + 施工运维手册）。
 
-设计原则（见文档 §二/§三）：
-  - 决策节点优先，而非均匀覆盖。重点覆盖安全节点与导航决策点。
-  - 现有拓扑节点（topology.nodes）即天然「决策节点」：
-        intersection  -> 走廊交叉口 / 转角
-        doorway       -> 重要房间门口
-        facility      -> 楼梯 / 电梯（最高风险，密集部署）
-        facility_entrance -> 建筑出入口
-    （room 中心节点不是部署点，排除。）
-  - 发射功率按节点类型区分（文档 §4.1）：
-        密集 / 高风险节点（楼梯、电梯）降低功率以缩小重叠、提升指纹区分度；
-        交叉口为决策密集点，适度降低；门口 / 出入口用开阔走廊功率。
+设计原则（面向视障室内导航，兼顾施工可行性与运维成本）：
+  - 决策节点优先 + 安全点加密：门口(重要房间) / 度≥3 交叉口 / 楼梯 / 电梯。
+  - 可施工：信标坐标不要求钉死在拓扑点，而是在 ≤2.5m 内吸附到「可附着安装面」
+    （结构柱 column / 门套 door_frame / 侧墙 wall）；无法吸附才用短吊杆天花
+    （ceiling_pendant，有效高度≈3m）并标记为运维重点。
+  - 可运维：安装高度墙装 2.2m / 天花 3.0m；楼梯·电梯强制墙装或门套；
+    每台信标带 mountType + snapDist_m，电池可换（CR2477），年度抽检。
+  - 防过密：交叉口方向标≤2 条且边≥4m 才加；2m 内不同语义合并；压缩纯天花阵列。
+  - 排除：常闭防火门、内开且门后归属房间的常开防火门、纯基础设施门口、
+    纯走廊连通门口、建筑出入口(户外设施)不部署。
 
-v2 精修（ROI 导向，见 docs/07 + 密度分析）：
-  ① 门口只保留「重要房间」（教室/办公室/卫生间/楼梯间/电梯厅等），剔管道井等次要门口；
-  ② 高风险节点加密：交叉口四向（沿各连通边偏移）、楼梯入口+预警（入口前3~5m）、
-     电梯厅（每个电梯口 + 厅中央）；
-  ③ 合并「不同语义且坐标重合 <1.5m」的冗余信标（门口↔交叉口、电梯↔门口），零覆盖损失。
-
-输出 beacon_deployment_plan.json 字段对齐文档 §5.1 台账：
-    beacon_id / uuid / major / minor / coordinates / floor / location_desc /
-    install_height / tx_power / broadcast_interval / battery_model /
-    expected_lifespan / semantic_tag / install_date
-并附带 sourceNodeId（可追溯回拓扑节点）、subType（dir/warning/elevator_door/hall_center）等元数据。
+输出 beacon_deployment_plan.json：
+  - beacons[]：含 beaconId/uuid/major/minor/coordinates(施工坐标)/plannedCoordinates
+    (规划坐标)/floor/locationDesc/mountType/installHeight/txPower/subType 等。
+  - construction / procurement：内嵌施工原则与采购型号建议，形成自洽部署手册。
+  - summary.byMount：统计墙装/柱/门套/天花数量，供施工与预算核算。
 
 用法：
     python src/tools/gen_beacon_plan.py
     python src/tools/gen_beacon_plan.py --geo result/school_building_01_map_v9.geojson \
-        --out result/beacon_deployment_plan.json --uuid <UUID> --install-date 2026-08-10
+        --out result/beacon_deployment_plan.json
 """
 from __future__ import annotations
-
-import argparse
-import json
-import math
-import sys
-from collections import Counter, OrderedDict, defaultdict
+import argparse, json, math
+from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
+from typing import Dict, List, Optional, Sequence, Tuple
 
-# ---- 路径解析（与 render_interactive.py 一致：脚本在 src/tools/ 下） ----
 ROOT = Path(__file__).resolve().parents[2]          # .../pathai
 DEFAULT_GEO = ROOT / "result" / "school_building_01_map_v9.geojson"
 DEFAULT_OUT = ROOT / "result" / "beacon_deployment_plan.json"
 
-# ---- 文档 §4.1 / §4.2 默认参数 ----
-DEFAULT_UUID = "B9407F30-F5F8-466E-AFF9-25556B57FE6D"   # 场馆维度统一 UUID
-DEFAULT_INSTALL_HEIGHT = 2.5      # m
-DEFAULT_INTERVAL = 200            # ms
-DEFAULT_BATTERY = "CR2477"
-DEFAULT_LIFESPAN = 3              # 年
-# 发射功率（dBm）：密集/高风险节点降功率以缩小覆盖重叠（文档 §4.1）
-TX_DENSE = -12        # 楼梯 / 电梯
-TX_INTERSECTION = -10 # 交叉口（决策密集点）
-TX_NORMAL = -8        # 门口 / 出入口（开阔走廊）
-
-# 语义 -> 显示名 / Minor 类别基码（文档示例 101 入口 / 102 转角 / 103 交叉口）
-SEMANTIC_META = OrderedDict([
-    ("entrance",     {"label": "出入口",   "minor_base": 101, "tx": TX_NORMAL}),
-    ("door",         {"label": "门口",     "minor_base": 102, "tx": TX_NORMAL}),
-    ("intersection", {"label": "交叉口",   "minor_base": 103, "tx": TX_INTERSECTION}),
-    ("stair",        {"label": "楼梯",     "minor_base": 104, "tx": TX_DENSE}),
-    ("elevator",     {"label": "电梯",     "minor_base": 105, "tx": TX_DENSE}),
-])
-
-# 拓扑节点 type -> 语义标签
-NODE_TYPE_TO_SEMANTIC = {
-    "facility_entrance": "entrance",
-    "doorway": "door",
-    "intersection": "intersection",
-    "facility": "stair",   # facilityType 可能为 staircase / elevator，下方再细分
+IBEACON_UUID = "B9407F30-F5F8-466E-AFF9-25556B57FE6D"
+DEFAULT_PARAMS = {
+    "installHeightWall": 2.2,
+    "installHeightCeiling": 3.0,
+    "broadcastInterval": 300,
+    "batteryModel": "CR2477",
+    "expectedLifespanYears": 5,
+    "txPowerBySemantic": {"door": -8, "intersection": -10, "stair": -12, "elevator": -12},
+    "offsets": {"stairWarning": 3.5, "snapMax": 2.5},
+    "consolidateDist": 2.0,
+    "minJunctionDegree": 3,
 }
-
-# 基础设施房间类型（管道井/水井/风井等）：纯基础设施门口不部署信标
-INFRASTRUCTURE_ROOM_TYPES = {"infrastructure"}
-
-# 户外/建筑出入口类节点（facility_entrance）：属室内外交界设施，按需求不部署信标；
-# 文档 §室外预警信标 列为后续独立扩展方向。
-OUTDOOR_EXCLUDED_NODE_TYPES = {"facility_entrance"}
-
-# v2 ①：门口只保留「重要房间」类型；其余（基础设施/纯走廊连通）门口不布信标。
 IMPORTANT_ROOM_TYPES = {
-    "room", "toilet", "staircase", "stair_lobby",
-    "elevator_lobby", "lobby", "activity", "atrium",
+    "classroom", "lab", "office", "meeting", "toilet", "library", "medical",
+    "reception", "counseling", "activity", "lobby", "stair_lobby", "elevator_lobby",
+    "staircase", "elevator_hall", "storage", "equipment", "room",
+}
+INFRA_ROOM_TYPES = {"infrastructure", "shaft", "pipe", "well", "duct"}
+OPEN_TYPES = {"corridor", "lobby", "activity", "atrium", "elevator_lobby", "stair_lobby", "entrance", "accessible_entrance"}
+_SEM_RANK = {"stair": 4, "elevator": 3, "door": 2, "intersection": 1}
+
+def _dist(a, b):
+    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
+
+def _unit(dx, dy):
+    L = math.hypot(dx, dy)
+    return (0.0, 0.0) if L < 1e-9 else (dx / L, dy / L)
+
+def _dir_label(dx, dy):
+    return ("东" if dx >= 0 else "西") if abs(dx) >= abs(dy) else ("北" if dy >= 0 else "南")
+
+def _round_coord(c, nd=3):
+    return [round(float(c[0]), nd), round(float(c[1]), nd)]
+
+def _quantize_opening(c, q=0.4):
+    return (int(round(float(c[0]) / q)), int(round(float(c[1]) / q)))
+
+def _poly_centroid(coords):
+    ring = coords[0] if coords and isinstance(coords[0][0], (list, tuple)) else coords
+    if not ring or len(ring) < 3:
+        return None
+    pts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    return [sum(xs)/len(xs), sum(ys)/len(ys)] if xs else None
+
+def _build_mount_index(fl):
+    pts = []
+    geom = fl.get("geometry") or {}
+    for c in geom.get("columns") or []:
+        g = c.get("geometry") or {}
+        if g.get("type") == "Polygon":
+            cen = _poly_centroid(g.get("coordinates"))
+            if cen: pts.append((cen[0], cen[1], "column"))
+        elif g.get("type") == "Point":
+            xy = g.get("coordinates")
+            if xy: pts.append((float(xy[0]), float(xy[1]), "column"))
+    for d in geom.get("doors") or []:
+        g = d.get("geometry") or {}
+        if g.get("type") == "Point":
+            xy = g["coordinates"]; pts.append((float(xy[0]), float(xy[1]), "door"))
+        elif g.get("type") == "LineString":
+            coords = g.get("coordinates") or []
+            if len(coords) >= 2:
+                pts.append(((coords[0][0]+coords[-1][0])/2, (coords[0][1]+coords[-1][1])/2, "door"))
+        elif g.get("type") == "Polygon":
+            cen = _poly_centroid(g.get("coordinates"))
+            if cen: pts.append((cen[0], cen[1], "door"))
+    for w in geom.get("walls") or []:
+        coords = (w.get("geometry") or {}).get("coordinates") or []
+        if len(coords) >= 2:
+            pts.append((float(coords[0][0]), float(coords[0][1]), "wall"))
+            pts.append((float(coords[-1][0]), float(coords[-1][1]), "wall"))
+    for s in geom.get("stairs") or []:
+        g = s.get("geometry") or {}
+        if g.get("type") == "Polygon":
+            ring = (g.get("coordinates") or [[]])[0]
+            step = max(1, len(ring)//8) if ring else 1
+            for i in range(0, len(ring), step):
+                pts.append((float(ring[i][0]), float(ring[i][1]), "stair_wall"))
+        elif g.get("type") == "LineString":
+            for p in g.get("coordinates") or []:
+                pts.append((float(p[0]), float(p[1]), "stair_wall"))
+    return pts
+
+def _snap_to_mount(x, y, mounts, max_d, prefer=None):
+    prefer_set = set(prefer or [])
+    best = None
+    for mx, my, kind in mounts:
+        d = math.hypot(mx - x, my - y)
+        if d > max_d: continue
+        score = d - (0.35 if kind in prefer_set else 0.0)
+        if best is None or score < best[0]:
+            best = (score, d, mx, my, kind)
+    if best is None:
+        return x, y, "ceiling_pendant", 0.0
+    _, d, mx, my, kind = best
+    mount = {"column": "column", "door": "door_frame", "wall": "wall", "stair_wall": "wall"}.get(kind, "wall")
+    return mx, my, mount, d
+
+def _index_floor(fl):
+    rooms = fl.get("geometry", {}).get("rooms") or []
+    doors = fl.get("geometry", {}).get("doors") or []
+    nodes = fl.get("topology", {}).get("nodes") or []
+    edges = fl.get("topology", {}).get("edges") or []
+    risk = fl.get("accessibility", {}).get("riskNodes") or []
+    elevs = fl.get("accessibility", {}).get("elevators") or []
+    room_by_id = {}
+    for r in rooms:
+        rid = r.get("id") or (r.get("properties") or {}).get("roomId")
+        if rid: room_by_id[rid] = r
+    door_by_id = {d.get("id"): d for d in doors if d.get("id")}
+    node_by_id = {n["id"]: n for n in nodes}
+    adj = defaultdict(list)
+    for e in edges:
+        a, b = e.get("from"), e.get("to")
+        if not a or not b: continue
+        d = float(e.get("distance") or 0.0)
+        if d <= 0 and a in node_by_id and b in node_by_id:
+            d = _dist(node_by_id[a]["coordinates"], node_by_id[b]["coordinates"])
+        adj[a].append((b, d)); adj[b].append((a, d))
+    return {"rooms": rooms, "doors": doors, "nodes": nodes, "edges": edges, "risk": risk,
+            "elevators": elevs, "room_by_id": room_by_id, "door_by_id": door_by_id,
+            "node_by_id": node_by_id, "adj": adj, "mounts": _build_mount_index(fl)}
+
+def _room_type(room_by_id, rid):
+    r = room_by_id.get(rid)
+    return ((r.get("properties") or {}).get("roomType") or "") if r else ""
+
+def _should_keep_doorway(n, idx):
+    rooms = n.get("rooms") or []
+    door_type = (n.get("doorType") or "").lower()
+    if door_type == "fire":
+        is_open = None
+        inward_into_room = False
+        for sid in n.get("sourceDoorIds") or []:
+            d = idx["door_by_id"].get(sid)
+            if not d:
+                continue
+            p = d.get("properties") or {}
+            if p.get("isNormallyOpen") is True:
+                is_open = True
+            # 门向内开且门后空间为房间(非走廊/开放空间) -> 门套侧墙落在房间内，不布
+            if n.get("openDirection") == "inward":
+                sir = p.get("swingIntoRoom")
+                if sir and _room_type(idx["room_by_id"], sir) == "room":
+                    inward_into_room = True
+        if is_open is not True or inward_into_room:
+            return False
+    if not rooms: return True
+    types = [_room_type(idx["room_by_id"], rid) for rid in rooms]
+    if types and all(t in INFRA_ROOM_TYPES or t == "" for t in types): return False
+    if any(t in IMPORTANT_ROOM_TYPES for t in types): return True
+    if any(t in OPEN_TYPES for t in types) and any(t and t not in OPEN_TYPES and t not in INFRA_ROOM_TYPES for t in types):
+        return True
+    if types and all(t in OPEN_TYPES for t in types): return False
+    return False
+
+def collect_door_candidates(floor_no, idx, params):
+    cands, seen = [], set()
+    for n in idx["nodes"]:
+        if n.get("type") != "doorway" or not _should_keep_doorway(n, idx): continue
+        key = _quantize_opening(n["coordinates"])
+        if key in seen: continue
+        seen.add(key)
+        x, y = n["coordinates"]
+        cands.append({
+            "semanticTag": "door", "subType": "base",
+            "plannedCoordinates": [x, y], "coordinates": [x, y],
+            "floor": floor_no,
+            "locationDesc": f"{floor_no}F 门口（{n.get('label') or n['id']}）",
+            "sourceNodeId": n["id"], "sourceNodeType": "doorway",
+            "riskLevel": float(n.get("riskLevel") or 1.0),
+            "adjacentRooms": n.get("rooms") or [],
+            "mountType": "door_frame", "snapDist_m": 0.0, "priority": 40,
+        })
+    return cands
+
+def collect_intersection_candidates(floor_no, idx, params):
+    snap_max = float(params["offsets"]["snapMax"])
+    min_deg = int(params["minJunctionDegree"])
+    cands = []
+    for n in idx["nodes"]:
+        if n.get("type") != "intersection": continue
+        cid = n["id"]
+        useful = []
+        for nid, ed in idx["adj"].get(cid) or []:
+            other = idx["node_by_id"].get(nid)
+            if other and other.get("type") != "room":
+                useful.append((nid, ed, other))
+        if len(useful) < min_deg: continue
+        c0 = n["coordinates"]
+        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mounts"], snap_max, prefer=("column", "wall", "door"))
+        label = n.get("label") or cid
+        cands.append({
+            "semanticTag": "intersection", "subType": "base",
+            "plannedCoordinates": list(c0), "coordinates": [sx, sy],
+            "floor": floor_no,
+            "locationDesc": f"{floor_no}F 交叉口（{label}）" + ("" if mount != "ceiling_pendant" else " · 建议短吊杆"),
+            "sourceNodeId": cid, "sourceNodeType": "intersection",
+            "riskLevel": float(n.get("riskLevel") or 0.5),
+            "mountType": mount, "snapDist_m": round(sd, 2),
+            "priority": 30 if mount != "ceiling_pendant" else 15,
+        })
+        useful.sort(key=lambda t: -t[1])
+        used_dirs = set()
+        for nid, ed, other in useful[:4]:
+            if len(used_dirs) >= 2 or ed < 4.0: continue
+            dx = other["coordinates"][0] - c0[0]; dy = other["coordinates"][1] - c0[1]
+            ux, uy = _unit(dx, dy); dlab = _dir_label(ux, uy)
+            if dlab in used_dirs: continue
+            used_dirs.add(dlab)
+            step = min(2.0, max(1.0, ed * 0.35))
+            px, py = c0[0] + ux * step, c0[1] + uy * step
+            sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mounts"], snap_max, prefer=("column", "wall", "door"))
+            if mount2 == "ceiling_pendant" and mount != "ceiling_pendant":
+                continue
+            cands.append({
+                "semanticTag": "intersection", "subType": "dir", "direction": dlab,
+                "plannedCoordinates": [px, py], "coordinates": [sx2, sy2],
+                "floor": floor_no,
+                "locationDesc": f"{floor_no}F 交叉口（{label} · {dlab}向）",
+                "sourceNodeId": cid, "sourceNodeType": "intersection",
+                "riskLevel": 0.5, "mountType": mount2, "snapDist_m": round(sd2, 2),
+                "priority": 22 if mount2 != "ceiling_pendant" else 10,
+            })
+    return cands
+
+def collect_stair_candidates(floor_no, idx, params):
+    warn = float(params["offsets"]["stairWarning"]); snap_max = float(params["offsets"]["snapMax"])
+    cands = []
+    for n in idx["nodes"]:
+        if not (n.get("type") == "facility" and n.get("facilityType") == "staircase"): continue
+        c0 = n["coordinates"]; label = n.get("label") or n["id"]
+        sx, sy, mount, sd = _snap_to_mount(c0[0], c0[1], idx["mounts"], snap_max, prefer=("stair_wall", "wall", "column", "door"))
+        if mount == "ceiling_pendant": mount = "wall"
+        cands.append({
+            "semanticTag": "stair", "subType": "base",
+            "plannedCoordinates": list(c0), "coordinates": [sx, sy],
+            "floor": floor_no,
+            "locationDesc": f"{floor_no}F 楼梯入口（{label}）· 装前室/梯段侧墙",
+            "sourceNodeId": n["id"], "sourceNodeType": "facility",
+            "riskLevel": float(n.get("riskLevel") or 10.0),
+            "mountType": mount, "snapDist_m": round(sd, 2), "priority": 55,
+        })
+        best = None
+        for nid, ed in idx["adj"].get(n["id"]) or []:
+            other = idx["node_by_id"].get(nid)
+            if not other or other.get("type") not in ("doorway", "intersection"): continue
+            d = _dist(c0, other["coordinates"])
+            if best is None or d < best[0]: best = (d, other)
+        if best is not None:
+            other = best[1]
+            ux, uy = _unit(other["coordinates"][0]-c0[0], other["coordinates"][1]-c0[1])
+            if ux or uy:
+                px, py = c0[0]+ux*warn, c0[1]+uy*warn
+                sx2, sy2, mount2, sd2 = _snap_to_mount(px, py, idx["mounts"], snap_max, prefer=("wall", "column", "door", "stair_wall"))
+                cands.append({
+                    "semanticTag": "stair", "subType": "warning",
+                    "plannedCoordinates": [px, py], "coordinates": [sx2, sy2],
+                    "floor": floor_no,
+                    "locationDesc": f"{floor_no}F 楼梯预警（{label} 前约 {warn:.0f}m）",
+                    "sourceNodeId": n["id"], "sourceNodeType": "facility",
+                    "riskLevel": 10.0, "mountType": mount2, "snapDist_m": round(sd2, 2), "priority": 50,
+                })
+    return cands
+
+def collect_elevator_candidates(floor_no, idx, params):
+    snap_max = float(params["offsets"]["snapMax"]); cands = []
+    elev_nodes = [n for n in idx["nodes"] if n.get("type")=="facility" and n.get("facilityType")=="elevator"]
+    for n in elev_nodes:
+        c0 = n["coordinates"]; label = n.get("label") or n["id"]
+        cands.append({
+            "semanticTag": "elevator", "subType": "elevator_door",
+            "plannedCoordinates": list(c0), "coordinates": list(c0),
+            "floor": floor_no,
+            "locationDesc": f"{floor_no}F 电梯口（{label}）· 门套或呼梯板旁",
+            "sourceNodeId": n["id"], "sourceNodeType": "facility",
+            "riskLevel": float(n.get("riskLevel") or 1.0),
+            "mountType": "door_frame", "snapDist_m": 0.0, "priority": 45,
+        })
+    lobbies = []
+    for r in idx["rooms"]:
+        props = r.get("properties") or {}
+        if props.get("roomType") == "elevator_lobby" and props.get("centroid"):
+            lobbies.append(props["centroid"])
+    if not lobbies and elev_nodes:
+        used = [False]*len(elev_nodes)
+        for i, n in enumerate(elev_nodes):
+            if used[i]: continue
+            cluster = [n]; used[i] = True
+            for j in range(i+1, len(elev_nodes)):
+                if not used[j] and _dist(n["coordinates"], elev_nodes[j]["coordinates"]) < 8:
+                    cluster.append(elev_nodes[j]); used[j] = True
+            lobbies.append([sum(x["coordinates"][0] for x in cluster)/len(cluster),
+                            sum(x["coordinates"][1] for x in cluster)/len(cluster)])
+    for cen in lobbies:
+        sx, sy, mount, sd = _snap_to_mount(cen[0], cen[1], idx["mounts"], snap_max, prefer=("column", "wall"))
+        cands.append({
+            "semanticTag": "elevator", "subType": "hall_center",
+            "plannedCoordinates": list(cen), "coordinates": [sx, sy],
+            "floor": floor_no, "locationDesc": f"{floor_no}F 电梯厅 · 优先柱/侧墙",
+            "sourceNodeId": None, "sourceNodeType": "elevator_lobby",
+            "riskLevel": 1.0, "mountType": mount, "snapDist_m": round(sd, 2), "priority": 35,
+        })
+    return cands
+
+def consolidate(cands, dist_m):
+    ordered = sorted(cands, key=lambda c: (-c.get("priority", 0), c["semanticTag"]))
+    kept = []
+    for c in ordered:
+        absorbed = False
+        for k in kept:
+            if k["floor"] != c["floor"] or _dist(k["coordinates"], c["coordinates"]) > dist_m:
+                continue
+            if _SEM_RANK.get(c["semanticTag"], 0) > _SEM_RANK.get(k["semanticTag"], 0):
+                for field in ("semanticTag", "subType", "locationDesc", "sourceNodeId", "sourceNodeType",
+                              "mountType", "direction", "plannedCoordinates"):
+                    if c.get(field) is not None: k[field] = c[field]
+                k["coordinates"] = list(c["coordinates"])
+                k["riskLevel"] = max(float(k.get("riskLevel") or 0), float(c.get("riskLevel") or 0))
+                if c.get("adjacentRooms"): k["adjacentRooms"] = c["adjacentRooms"]
+            else:
+                k["riskLevel"] = max(float(k.get("riskLevel") or 0), float(c.get("riskLevel") or 0))
+                if c.get("adjacentRooms") and not k.get("adjacentRooms"):
+                    k["adjacentRooms"] = c["adjacentRooms"]
+                if k.get("mountType") == "ceiling_pendant" and c.get("mountType") != "ceiling_pendant":
+                    k["mountType"] = c["mountType"]; k["coordinates"] = list(c["coordinates"])
+            absorbed = True; break
+        if not absorbed: kept.append(dict(c))
+    return kept
+
+def assign_ids(beacons, params, install_date):
+    by_floor = defaultdict(list)
+    for b in beacons: by_floor[int(b["floor"])].append(b)
+    out, minor = [], 10100
+    tx_map = params["txPowerBySemantic"]
+    for fl in sorted(by_floor.keys()):
+        seq = 0
+        for b in by_floor[fl]:
+            seq += 1; minor += 1
+            sem = b["semanticTag"]; mount = b.get("mountType") or "wall"
+            height = params["installHeightCeiling"] if mount == "ceiling_pendant" else params["installHeightWall"]
+            item = {
+                "beaconId": f"BK-{fl:02d}-{seq:03d}", "uuid": IBEACON_UUID,
+                "major": fl, "minor": minor,
+                "coordinates": _round_coord(b["coordinates"]),
+                "plannedCoordinates": _round_coord(b.get("plannedCoordinates") or b["coordinates"]),
+                "floor": fl, "locationDesc": b["locationDesc"], "mountType": mount,
+                "installHeight": height, "txPower": tx_map.get(sem, -10),
+                "broadcastInterval": params["broadcastInterval"],
+                "batteryModel": params["batteryModel"],
+                "expectedLifespan": params["expectedLifespanYears"],
+                "semanticTag": sem, "installDate": install_date,
+                "sourceNodeId": b.get("sourceNodeId"), "sourceNodeType": b.get("sourceNodeType"),
+                "riskLevel": float(b.get("riskLevel") or 0.5), "snapDist_m": b.get("snapDist_m", 0),
+            }
+            if b.get("adjacentRooms"): item["adjacentRooms"] = b["adjacentRooms"]
+            if b.get("subType"): item["subType"] = b["subType"]
+            if b.get("direction"): item["direction"] = b["direction"]
+            out.append(item)
+    return out
+
+PROCUREMENT = {
+    "protocol": ["iBeacon", "Eddystone-UID"], "uuid": IBEACON_UUID,
+    "recommendedModels": [
+        {"role": "主力（门套/柱/侧墙）", "vendor": "Minew 深圳矿鑫", "model": "i10 / E8 壁挂型",
+         "why": "可换 CR2477、iBeacon、SDK 成熟、批量价友好，适合校舍大规模部署",
+         "battery": "CR2477，约 4–6 年（300ms 广播）", "ip": "IP65–IP67",
+         "mount": "3M 胶 + 螺钉孔，壁挂/门套", "unitPriceCNY": "35–80（批量）",
+         "qtyHint": "按 wall/door_frame/column 点数"},
+        {"role": "主力备选", "vendor": "Feasycom 飞易通", "model": "FSC-BP108 / BP104 可换电池",
+         "why": "续航与可编程性好，支持 iBeacon，国内供货稳定",
+         "battery": "CR2477，约 5–8 年", "ip": "IP67", "mount": "壁挂/磁吸底座",
+         "unitPriceCNY": "40–90", "qtyHint": "与 Minew 二选一统一型号"},
+        {"role": "天花短吊杆（少量）", "vendor": "Minew / Feasycom", "model": "同系列 + 吊装支架/吸顶盒",
+         "why": "仅无法靠柱靠墙的交叉口；有效高度约 3 m", "battery": "同壁挂，必须可换电",
+         "ip": "IP65+", "mount": "短吊杆 0.5–1.0 m 或灯盘共杆", "unitPriceCNY": "信标+支架 60–120",
+         "qtyHint": "summary.byMount.ceiling_pendant"},
+        {"role": "楼梯高风险点（可选加固）", "vendor": "Minew", "model": "MBM01 / 工业外壳版",
+         "why": "抗磕碰、IP67，适合楼梯间与学生活动密集区", "battery": "长续航可换电",
+         "ip": "IP67", "mount": "侧墙螺钉固定", "unitPriceCNY": "80–150", "qtyHint": "stair 语义点"},
+    ],
+    "notRecommended": ["一次性不可换电池贴纸型", "仅 USB 供电型", "无品牌超低价模块"],
+    "acceptanceTests": [
+        "手机 App 在点位 3–5 m 内稳定收到对应 major/minor",
+        "楼梯预警点：距梯段入口约 3–4 m 可触发语音",
+        "吊装点：站立高度 RSSI 与墙装同量级（必要时 +2 dB txPower）",
+    ],
+}
+CONSTRUCTION = {
+    "principles": [
+        "语义坐标可在 2.5 m 内平移到柱、门套、侧墙；以 mountType 与 coordinates 为施工依据",
+        "安装高度：墙/门套/柱 2.0–2.2 m；天花吊装有效高度约 3.0 m（非贴 4 m+ 板底）",
+        "禁止占用消防栓、疏散指示灯、弱电箱正面；可借侧缘",
+        "楼梯、电梯口必须墙装或门套装，不得只靠走廊天花",
+        "同一柱/门套多点合并后只装 1 台高优先级语义",
+    ],
+    "byMountType": {
+        "door_frame": "门套侧或门楣下，避开闭门器；胶+螺钉，高度 2.0–2.2 m",
+        "column": "结构柱朝向走廊一侧，避免被广告牌完全遮挡",
+        "wall": "走廊侧墙、楼梯前室墙、电梯厅侧墙；距阴角 ≥0.3 m",
+        "ceiling_pendant": "短吊杆或与灯具共杆，有效高度≈3 m；必须可换电池并登记检修周期",
+    },
+    "ops": [
+        "每年抽检 20% 点位电量与广播；天花点优先巡检",
+        "更换电池后保持同一 major/minor",
+        "装修拆除时更新部署 JSON 的 status 字段",
+    ],
 }
 
-# v2 ②：高风险节点加密的几何偏移
-OFFSET_INTERSECTION = 2.5   # m，交叉口四向信标离交叉口距离（沿连通边方向）
-OFFSET_WARN = 4.0           # m，楼梯预警信标距楼梯入口距离（沿进入走廊方向）
-
-# v2 ③：合并「不同语义且坐标重合 < 此距离」的冗余信标（门口↔交叉口 / 电梯↔门口）
-CONSOLIDATE_DIST = 1.5
-# 合并时保留优先级高的语义（高风险/具体 = 优先）
-SEM_PRIORITY = {"stair": 5, "elevator": 5, "door": 3, "intersection": 2, "entrance": 1}
-
-
-def _is_pure_infra_doorway(n: dict, room_type: dict) -> bool:
-    """门口连接的房间是否全部为基础设施类型（纯管道井/水井/风井门口）。"""
-    rs = n.get("rooms") or []
-    return bool(rs) and all(room_type.get(r) in INFRASTRUCTURE_ROOM_TYPES for r in rs)
-
-
-def _doorway_open_key(coord, q: float = 1.0):
-    """门口坐标量化到 q 米网格，用于识别「同一物理开口」的多个门口节点。"""
-    if not coord or len(coord) < 2:
-        return None
-    return (round(coord[0] / q), round(coord[1] / q))
-
-
-def _doorway_has_important_room(n: dict, room_type: dict) -> bool:
-    """门口是否连接任一『重要房间』类型（v2 ①：只部署重要房间门口信标）。"""
-    rs = n.get("rooms") or []
-    if not rs:
-        return False
-    return any(room_type.get(r) in IMPORTANT_ROOM_TYPES for r in rs)
-
-
-def node_semantic(n: dict) -> str | None:
-    """把拓扑节点映射为信标语义标签；room 中心节点返回 None（不部署）。"""
-    t = n.get("type")
-    if t == "room":
-        return None
-    if t == "facility":
-        ft = n.get("facilityType", "staircase")
-        return "elevator" if ft == "elevator" else "stair"
-    return NODE_TYPE_TO_SEMANTIC.get(t)
-
-
-def _unit(a, b):
-    """由 a 指向 b 的单位向量；a==b 返回 None。"""
-    if not a or not b or len(a) < 2 or len(b) < 2:
-        return None
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    d = math.hypot(dx, dy)
-    if d < 1e-9:
-        return None
-    return dx / d, dy / d
-
-
-def _compass(u):
-    """单位向量 -> 东/西/南/北（粗略方向标注，用于交叉口四向信标）。"""
-    if not u:
-        return ""
-    x, y = u
-    if abs(x) >= abs(y):
-        return "东" if x > 0 else "西"
-    return "北" if y > 0 else "南"
-
-
-def build_location_desc(floor: int, sem: str, n: dict,
-                        sub_type: str | None = None,
-                        direction: str | None = None,
-                        offset_m: float | None = None) -> str:
-    label = n.get("label") or ""
-    if sem == "door":
-        rooms = n.get("rooms") or []
-        rstr = "、".join(rooms) if rooms else "—"
-        return f"{floor}F 门口（连接：{rstr}）"
-    if sem == "intersection":
-        if sub_type == "dir":
-            return f"{floor}F 交叉口（{label or '转角'} · {direction or ''}向）"
-        return f"{floor}F 交叉口（{label or '转角'}）"
-    if sem == "stair":
-        if sub_type == "warning":
-            return f"{floor}F 楼梯预警（{label or n.get('id','')} · 入口前{offset_m or OFFSET_WARN:.0f}m）"
-        return f"{floor}F 楼梯（{label or n.get('id','')}）"
-    if sem == "elevator":
-        if sub_type == "elevator_door":
-            return f"{floor}F 电梯口（{label or n.get('id','')}）"
-        if sub_type == "hall_center":
-            return f"{floor}F 电梯厅中央（{label or n.get('id','')}）"
-        return f"{floor}F 电梯（{label or n.get('id','')}）"
-    if sem == "entrance":
-        lab = (label or "建筑入口")
-        if lab == "出入口":
-            lab = "建筑入口"
-        return f"{floor}F 出入口（{lab}）"
-    return f"{floor}F 信标"
-
-
-def _make_beacon(floor, sem, coord, src_node, seq, uuid, install_height,
-                 interval, install_date, sub_type=None, direction=None,
-                 offset_m=None):
-    meta = SEMANTIC_META[sem]
-    cx, cy = round(float(coord[0]), 3), round(float(coord[1]), 3)
-    rows = {
-        "beaconId": None,      # 由 _renumber 统一重新编号
-        "uuid": uuid,
-        "major": floor,
-        "minor": meta["minor_base"] * 100 + seq,   # 暂定，_renumber 修正
-        "coordinates": [cx, cy],
-        "floor": floor,
-        "locationDesc": build_location_desc(floor, sem, src_node, sub_type, direction, offset_m),
-        "installHeight": install_height,
-        "txPower": meta["tx"],
-        "broadcastInterval": interval,
-        "batteryModel": DEFAULT_BATTERY,
-        "expectedLifespan": DEFAULT_LIFESPAN,
-        "semanticTag": sem,
-        "installDate": install_date,
-        "sourceNodeId": src_node.get("id"),
-        "sourceNodeType": src_node.get("type"),
-        "riskLevel": src_node.get("riskLevel"),
-    }
-    if sub_type:
-        rows["subType"] = sub_type
-    if direction:
-        rows["direction"] = direction
-    if "blindAccessible" in src_node:
-        rows["blindAccessible"] = bool(src_node["blindAccessible"])
-    if "wheelchairAccessible" in src_node:
-        rows["wheelchairAccessible"] = bool(src_node["wheelchairAccessible"])
-    if src_node.get("facilityType"):
-        rows["facilityType"] = src_node["facilityType"]
-    if src_node.get("rooms"):
-        rows["adjacentRooms"] = src_node["rooms"]
-    return rows
-
-
-def _consolidate(bs: list) -> list:
-    """v2 ③：合并「不同语义 + 坐标重合 < CONSOLIDATE_DIST」的冗余信标，保留优先级高的。
-
-    同语义的相邻信标（如交叉口四向的各方向点）不合并——它们服务不同方向，非冗余。
-    """
-    n = len(bs)
-    drop = set()
-    for i in range(n):
-        if i in drop:
-            continue
-        bi = bs[i]
-        for j in range(i + 1, n):
-            if j in drop:
-                continue
-            bj = bs[j]
-            if bi["semanticTag"] == bj["semanticTag"]:
-                continue
-            dx = bi["coordinates"][0] - bj["coordinates"][0]
-            dy = bi["coordinates"][1] - bj["coordinates"][1]
-            if math.hypot(dx, dy) < CONSOLIDATE_DIST:
-                pi = SEM_PRIORITY.get(bi["semanticTag"], 0)
-                pj = SEM_PRIORITY.get(bj["semanticTag"], 0)
-                if pi >= pj:
-                    drop.add(j)
-                else:
-                    drop.add(i)
-                    break
-    return [b for i, b in enumerate(bs) if i not in drop]
-
-
-def _renumber(beacons: list):
-    """楼层内 beacon_id 连续编号；同语义 minor 类别内序号递增。"""
-    floor_seq = defaultdict(int)
-    sem_seq = defaultdict(int)
-    for b in beacons:
-        f = b["floor"]
-        s = b["semanticTag"]
-        floor_seq[f] += 1
-        sem_seq[(f, s)] += 1
-        b["beaconId"] = f"BK-{f:02d}-{floor_seq[f]:03d}"
-        b["minor"] = SEMANTIC_META[s]["minor_base"] * 100 + sem_seq[(f, s)]
-
-
-def gen_plan(geo: dict, uuid: str, install_height: float, interval: int,
-             install_date: str) -> dict:
-    beacons = []
-    # 收集所有房间类型（room id 含楼层前缀，全局唯一），用于判定门口重要性
-    room_type = {}
-    for _fk in geo["floors"].values():
-        for r in _fk.get("geometry", {}).get("rooms", []):
-            room_type[r.get("id")] = (r.get("properties", {}) or {}).get("type")
-
-    # 门对象属性查表（isNormallyOpen / swingIntoRoom / doorType），用于防火门排除判定
-    door_info = {}
-    for _fk in geo["floors"].values():
-        for d in _fk.get("geometry", {}).get("doors", []):
-            pid = d.get("id")
-            if pid:
-                p = d.get("properties", {}) or {}
-                door_info[pid] = {
-                    "isNormallyOpen": p.get("isNormallyOpen"),
-                    "swingIntoRoom": p.get("swingIntoRoom"),
-                    "doorType": p.get("doorType"),
-                }
-
-    # 逐楼层处理，保证 beacon_id / minor 在楼层内有序且可复现
-    for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
-        floor = int(fk)
-        fdata = geo["floors"][fk]
-        topo = fdata.get("topology", {})
-        nodes = topo.get("nodes", [])
-        edges = topo.get("edges", [])
-
-        # 本层查表：节点坐标、邻接、电梯门、电梯质心
-        node_by_id = {n["id"]: n for n in nodes}
-        edges_by_node = defaultdict(list)
-        for e in edges:
-            a, b = e.get("from"), e.get("to")
-            if a in node_by_id and b in node_by_id:
-                edges_by_node[a].append(b)
-                edges_by_node[b].append(a)
-        elev_doors = defaultdict(list)
-        for ed in fdata.get("geometry", {}).get("elevatorDoors", []):
-            elev_doors[ed.get("properties", {}).get("elevatorId")].append(ed)
-        elev_centroid = {}
-        for el in fdata.get("geometry", {}).get("elevators", []):
-            cid = (el.get("properties", {}) or {}).get("centroid")
-            if cid:
-                elev_centroid[el.get("id")] = cid
-
-        # 同门口(同一物理开口)只布 1 个信标：按坐标量化分组，每组选代表节点部署
-        doorway_groups = defaultdict(list)
-        for n in nodes:
-            if n.get("type") == "doorway":
-                k = _doorway_open_key(n.get("coordinates"))
-                if k is not None:
-                    doorway_groups[k].append(n)
-        kept_doorway = set()
-        for grp in doorway_groups.values():
-            if len(grp) == 1:
-                kept_doorway.add(grp[0]["id"])
-                continue
-            rep = sorted(grp, key=lambda n: (
-                1 if _is_pure_infra_doorway(n, room_type) else 0,
-                -len(n.get("rooms") or []),
-                n["id"],
-            ))[0]
-            kept_doorway.add(rep["id"])
-
-        cat_seq = Counter()           # semantic -> 楼层内序号
-        floor_beacons = []
-
-        def emit(sem, coord, src_node, sub_type=None, direction=None, offset_m=None):
-            if not coord or len(coord) < 2:
-                return
-            cat_seq[sem] += 1
-            floor_beacons.append(_make_beacon(
-                floor, sem, coord, src_node, cat_seq[sem], uuid,
-                install_height, interval, install_date,
-                sub_type=sub_type, direction=direction, offset_m=offset_m))
-
-        for n in nodes:
-            sem = node_semantic(n)
-            if sem is None:
-                continue
-            # 户外/建筑出入口类节点（室内外交界设施）按需求不部署信标
-            if n.get("type") in OUTDOOR_EXCLUDED_NODE_TYPES:
-                continue
-            # 门口：同开口只留代表；重要房间门口才布；防火门排除
-            if n.get("type") == "doorway":
-                if n["id"] not in kept_doorway:
-                    continue
-                if not _doorway_has_important_room(n, room_type):
-                    continue
-                if n.get("doorType") == "fire":
-                    _dis = [door_info[s] for s in (n.get("sourceDoorIds") or [])
-                            if s in door_info]
-                    _normally_open = any((d or {}).get("isNormallyOpen") is True
-                                         for d in _dis)
-                    _belongs_room = False
-                    if n.get("openDirection") == "inward":
-                        for d in _dis:
-                            _sir = (d or {}).get("swingIntoRoom")
-                            if _sir and room_type.get(_sir) == "room":
-                                _belongs_room = True
-                                break
-                    if (not _normally_open) or _belongs_room:
-                        continue
-            coord = n.get("coordinates")
-            # ---- 电梯厅：厅中央(质心) + 每个电梯口（v2 ②） ----
-            if sem == "elevator":
-                eid = n.get("elevatorId")
-                cc = elev_centroid.get(eid) or coord
-                emit("elevator", cc, n, sub_type="hall_center")
-                for ed in elev_doors.get(eid, []):
-                    coord_ed = (ed.get("geometry", {}) or {}).get("coordinates")
-                    emit("elevator", coord_ed, n, sub_type="elevator_door")
-                continue
-            # ---- 基础信标 ----
-            emit(sem, coord, n)
-            # ---- 高风险节点加密（v2 ②） ----
-            if sem == "intersection":
-                # 四向：沿每个连通的走廊/门口/设施边偏移放置方向信标
-                for oid in edges_by_node.get(n["id"], []):
-                    on = node_by_id.get(oid)
-                    if on is None:
-                        continue
-                    ot = on.get("type")
-                    if ot not in ("intersection", "doorway", "facility"):
-                        continue
-                    u = _unit(coord, on.get("coordinates"))
-                    if u is None:
-                        continue
-                    pos = [coord[0] + u[0] * OFFSET_INTERSECTION,
-                           coord[1] + u[1] * OFFSET_INTERSECTION]
-                    emit("intersection", pos, n, sub_type="dir", direction=_compass(u))
-            elif sem == "stair":
-                # 入口(基础) + 预警(入口前 OFFSET_WARN m，沿进入走廊方向)
-                for oid in edges_by_node.get(n["id"], []):
-                    on = node_by_id.get(oid)
-                    if on is None:
-                        continue
-                    u = _unit(coord, on.get("coordinates"))
-                    if u is None:
-                        continue
-                    pos = [coord[0] + u[0] * OFFSET_WARN,
-                           coord[1] + u[1] * OFFSET_WARN]
-                    emit("stair", pos, n, sub_type="warning", offset_m=OFFSET_WARN)
-
-        # v2 ③ 合并重合冗余信标（同层内）
-        floor_beacons = _consolidate(floor_beacons)
-        beacons.extend(floor_beacons)
-
-    _renumber(beacons)
-    return beacons
-
-
-def summarize(beacons: list) -> dict:
-    by_floor = Counter(b["floor"] for b in beacons)
+def build_plan(geo, params=None):
+    params = {**DEFAULT_PARAMS, **(params or {})}
+    params["offsets"] = {**DEFAULT_PARAMS["offsets"], **(params.get("offsets") or {})}
+    install_date = date.today().isoformat()
+    all_cands = []
+    for fk, fl in (geo.get("floors") or {}).items():
+        floor_no = int(fk); idx = _index_floor(fl)
+        all_cands.extend(collect_door_candidates(floor_no, idx, params))
+        all_cands.extend(collect_intersection_candidates(floor_no, idx, params))
+        all_cands.extend(collect_stair_candidates(floor_no, idx, params))
+        all_cands.extend(collect_elevator_candidates(floor_no, idx, params))
+    n_before = len(all_cands)
+    merged = consolidate(all_cands, float(params["consolidateDist"]))
+    beacons = assign_ids(merged, params, install_date)
+    by_floor = Counter(str(b["floor"]) for b in beacons)
     by_sem = Counter(b["semanticTag"] for b in beacons)
-    by_sub = Counter((b["semanticTag"], b.get("subType") or "base") for b in beacons)
+    by_sub = Counter(f"{b['semanticTag']}/{b.get('subType') or 'base'}" for b in beacons)
+    by_mount = Counter(b.get("mountType") or "unknown" for b in beacons)
     return {
-        "total": len(beacons),
-        "byFloor": {str(k): v for k, v in sorted(by_floor.items())},
-        "bySemantic": dict(by_sem),
-        "bySubType": {f"{k[0]}/{k[1]}": v for k, v in sorted(by_sub.items())},
+        "schemaVersion": "1.1-constructable",
+        "generatedBy": "gen_beacon_plan.py",
+        "generatedAt": install_date,
+        "venueId": geo.get("venueId"), "venueName": geo.get("venueName"),
+        "sourceGeojson": "school_building_01_map_v9.geojson",
+        "docRef": "docs/07-信标部署方案.md", "uuid": IBEACON_UUID,
+        "defaultParams": params,
+        "strategy": {
+            "principle": "可施工优先：门套/柱/侧墙吸附；决策点与安全点覆盖；压缩纯天花阵列",
+            "sources": "topology doorway / degree≥3 intersection / stair&elevator；吸附 columns/walls/doors",
+            "simplifications": [
+                "门口仅重要房间；防火门默认不布（常闭/内开归属房间不布）；同开口只 1 个",
+                "交叉口仅度≥3；中心优先吸附结构柱；方向标最多 2 条且尽量靠墙",
+                "楼梯入口+预警必须可墙装；电梯口门套装",
+                "2 m 内不同语义合并；平移≤2.5 m 到可附着点",
+                "无法吸附则 ceiling_pendant（短吊杆≈3 m），并计入运维重点",
+            ],
+            "stats": {"candidatesBeforeMerge": n_before, "afterMerge": len(beacons)},
+        },
+        "construction": CONSTRUCTION, "procurement": PROCUREMENT,
+        "beacons": beacons,
+        "summary": {
+            "total": len(beacons),
+            "byFloor": dict(sorted(by_floor.items())),
+            "bySemantic": dict(by_sem), "bySubType": dict(by_sub), "byMount": dict(by_mount),
+            "ceilingPendantCount": by_mount.get("ceiling_pendant", 0),
+            "wallLikeCount": sum(by_mount.get(k, 0) for k in ("wall", "column", "door_frame")),
+        },
     }
-
 
 def main():
-    ap = argparse.ArgumentParser(description="生成信标部署方案 JSON（决策节点优先 + 高风险加密）")
+    ap = argparse.ArgumentParser(description="可施工/可运维 ROI 蓝牙信标部署方案生成器")
     ap.add_argument("--geo", default=str(DEFAULT_GEO), help="v9 楼层 GeoJSON 路径")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="输出信标部署方案 JSON")
-    ap.add_argument("--uuid", default=DEFAULT_UUID, help="iBeacon UUID（场馆维度统一）")
-    ap.add_argument("--install-height", type=float, default=DEFAULT_INSTALL_HEIGHT)
-    ap.add_argument("--interval", type=int, default=DEFAULT_INTERVAL, help="广播间隔 ms")
-    ap.add_argument("--install-date", default=date.today().isoformat(),
-                    help="安装日期 YYYY-MM-DD（默认今天）")
-    ap.add_argument("--tx-dense", type=int, default=TX_DENSE, help="楼梯/电梯发射功率 dBm")
-    ap.add_argument("--tx-intersection", type=int, default=TX_INTERSECTION)
-    ap.add_argument("--tx-normal", type=int, default=TX_NORMAL, help="门口/出入口发射功率 dBm")
     args = ap.parse_args()
-
-    # 允许命令行微调发射功率
-    SEMANTIC_META["stair"]["tx"] = args.tx_dense
-    SEMANTIC_META["elevator"]["tx"] = args.tx_dense
-    SEMANTIC_META["intersection"]["tx"] = args.tx_intersection
-    SEMANTIC_META["door"]["tx"] = args.tx_normal
-    SEMANTIC_META["entrance"]["tx"] = args.tx_normal
-
-    geo_path = Path(args.geo)
-    if not geo_path.exists():
-        print(f"[error] 找不到 GeoJSON：{geo_path}", file=sys.stderr)
-        sys.exit(1)
-    geo = json.load(open(geo_path, encoding="utf-8"))
-
-    beacons = gen_plan(geo, args.uuid, args.install_height, args.interval, args.install_date)
-    summary = summarize(beacons)
-
-    plan = OrderedDict()
-    plan["schemaVersion"] = "1.0"
-    plan["generatedBy"] = "gen_beacon_plan.py"
-    plan["generatedAt"] = date.today().isoformat()
-    plan["venueId"] = geo.get("venueId")
-    plan["venueName"] = geo.get("venueName")
-    plan["sourceGeojson"] = str(geo_path.name)
-    plan["docRef"] = "docs/07-信标部署方案.md"
-    plan["uuid"] = args.uuid
-    plan["defaultParams"] = {
-        "installHeight": args.install_height,
-        "broadcastInterval": args.interval,
-        "batteryModel": DEFAULT_BATTERY,
-        "expectedLifespan": DEFAULT_LIFESPAN,
-        "txPowerBySemantic": {k: SEMANTIC_META[k]["tx"] for k in SEMANTIC_META},
-        "offsets": {"intersectionDir": OFFSET_INTERSECTION, "stairWarning": OFFSET_WARN},
-        "consolidateDist": CONSOLIDATE_DIST,
-    }
-    plan["strategy"] = {
-        "principle": "决策节点优先（非均匀覆盖）；覆盖安全节点与导航决策点",
-        "sources": "topology.nodes 中 intersection/doorway/facility；room 中心节点不部署",
-        "simplifications": [
-            "门口只保留『重要房间』(教室/办公室/卫生间/楼梯间/电梯厅等)，剔管道井等次要门口（v2 ①）",
-            "高风险节点加密：交叉口四向（沿各连通边偏移 2.5m）、楼梯入口+预警（入口前 4m）、"
-            "电梯厅（每个电梯口 + 厅中央）（v2 ②，对应文档 §3.1/§3.2/§3.3）",
-            "合并『不同语义且坐标重合 <1.5m』的冗余信标（门口↔交叉口、电梯↔门口），零覆盖损失（v2 ③）",
-            "建筑出入口（facility_entrance）属室内外交界户外设施，按需求不部署信标；室外预警信标为后续独立扩展",
-            "纯基础设施门口（管道井/水井/风井等）不部署信标",
-            "同一物理门口（坐标量化同开口的多个门口节点）只布 1 个信标，取代表节点",
-            "防火门排除：常闭防火门（isNormallyOpen!=True）与内开且归属房间的防火门不部署信标",
-        ],
-    }
-    plan["beacons"] = beacons
-    plan["summary"] = summary
-
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    json.dump(plan, open(out_path, "w", encoding="utf-8"),
-              ensure_ascii=False, indent=2)
-
-    print(f"[ok] 信标部署方案已生成：{out_path}")
-    print(f"  总计 {summary['total']} 个信标")
-    print(f"  按楼层：{summary['byFloor']}")
-    print(f"  按语义：{summary['bySemantic']}")
-    print("  按子类：")
-    for k, v in summary["bySubType"].items():
-        print(f"    {k}: {v}")
-
+    geo = json.loads(Path(args.geo).read_text(encoding="utf-8"))
+    plan = build_plan(geo)
+    Path(args.out).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    s = plan["summary"]
+    print(f"venue: {plan['venueName']}")
+    print(f"total: {s['total']}")
+    print(f"  byFloor: {s['byFloor']}")
+    print(f"  bySemantic: {s['bySemantic']}")
+    print(f"  bySubType: {s['bySubType']}")
+    print(f"  byMount: {s['byMount']}")
+    print(f"  wall-like: {s['wallLikeCount']}  ceiling_pendant: {s['ceilingPendantCount']}")
+    print(f"written: {args.out}")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
