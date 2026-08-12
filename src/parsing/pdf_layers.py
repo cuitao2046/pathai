@@ -13,6 +13,7 @@ import re
 
 LABEL_MIN_SIZE = 8.5       # 房间名称最小字号(pt)（略降以捕获 ~9pt 卫生间等小标签）
 TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
+LAYER_ELEVATOR = "A-FLOR-EVTR"  # 电梯井图层名
 
 # 楼梯/电梯井编号（图纸权威标识，如 II-B2-01#ST / II-02#EL）。
 # 同一井道在各层沿用同一编号，是比"几何中心距离"可靠得多的跨层配对依据。

@@ -36,7 +36,8 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely.strtree import STRtree
 
 # 全局常量唯一来源（比例/原点/步行速度等，见 docs/code-review-2026-08-12.md D1-D4）
-from src.common.constants import SCALE, ORIGIN_X, ORIGIN_Y, BLIND_WALK_SPEED
+from src.common.constants import (SCALE, ORIGIN_X, ORIGIN_Y, BLIND_WALK_SPEED,
+                                  PT_PER_M)
 
 # 拓扑建模（指南 第五章）
 # 注：跨层边不从此导入——本文件使用内嵌的 cross_floor_edges（图纸井道编号配对），
@@ -58,14 +59,21 @@ from src.geometry.contour import building_outline
 from src.parsing.pdf_layers import (extract_layer_items, extract_room_labels,
                                     extract_facility_codes,
                                     extract_dk_text_labels,
-                                    get_default_on_layers)
+                                    get_default_on_layers, LAYER_ELEVATOR)
 # B1：几何工具/聚类/栅格化下沉到 src/geometry/
 from src.geometry.geo_utils import (angle_diff, bezier_mid, merge_collinear,
                                     point_to_seg_dist, pt2m, seg_angle, seg_len,
                                     seg_midpoint, _point_line_distance)
-from src.geometry.clustering import (_bbox_area_m2, _bbox_aspect, bbox_clusters,
-                                     cluster_items)
+from src.geometry.clustering import cluster_items
 from src.geometry.rasterize import rasterize_walls
+# B1：语义分类（房间类型/楼梯电梯/合班教室/门开向）下沉到 src/semantics/
+from src.semantics.room_types import classify_room_type
+from src.semantics.door_swing import door_swing_attributes
+from src.semantics.stair_elevator import (
+    STAIR_MAX_ASPECT, STAIR_MAX_ASPECT_CODED,
+    attach_elevator_door_nodes, detect_elevator_boxes, detect_elevator_doors,
+    detect_stair_boxes)
+from src.semantics.heban import inject_heban_classroom_rooms
 
 # ---------------------------------------------------------------- 配置
 
@@ -115,7 +123,6 @@ LAYER_WALL = "WALL"
 LAYER_WINDOW = "window"
 LAYER_DOOR_FIRE = "DOOR_FIRE"
 LAYER_STAIR = "STAIR"
-LAYER_ELEVATOR = "A-FLOR-EVTR"
 LAYER_COLUMNS = ("COLUMN", "柱子-刚结构")
 
 # 参与房间多边形化的结构图层（默认开启时）。
@@ -142,8 +149,6 @@ LAYERS_FURNITURE = ()  # DISABLED: A-METAL-S 已迁至 LAYERS_STRUCT，不再单
 LAYERS_IGNORE = ("A-TECH-SANT",)
 LAYERS_ANNO_EXCLUDE = ("AXIS", "A-ANNO-150-TXT", "A-ANNO-LEVL", "A-ANNO-TTLB",
                        "A-ANNO-SYMB")
-
-PT_PER_M = 1.0 / SCALE  # ≈ 15.53 pt/m
 
 # 阈值（pt）
 TINY_STROKE = 8.0            # <0.5m 的短线，候选标识glyph
@@ -178,13 +183,6 @@ MERGE_REGION_M2 = 9.0      # 小于该面积的未标注单元可经守卫式泛
 # 编号文本正则已随提取函数迁至 src/parsing/pdf_layers.py（B1）；此处保留
 # 后续房间/设施匹配用的空间容差。
 FACILITY_CODE_NEAR_M = 2.0   # 编号文字到设施 bbox 的最大容差(米)
-STAIR_MAX_ASPECT = 3.0       # 无编号且长宽比超此值 → 判为伪楼梯并剔除
-STAIR_MAX_ASPECT_CODED = 5.0 # 有编号时仍拒绝极端细长条（防走廊+踏步被吸进）
-STAIR_AREA_MIN_M2 = 3.0      # 楼梯 bbox 最小面积（覆盖踏步线缺失的碎片）
-STAIR_AREA_MAX_M2 = 80.0     # 楼梯 bbox 最大面积
-STAIR_CLUSTER_GAP_M = 1.5    # 楼梯聚类间距（米）——紧间距避免不同井道合并
-ELEV_AREA_MIN_M2 = 1.0       # 电梯井最小面积
-ELEV_AREA_MAX_M2 = 30.0      # 电梯井最大面积
 STAIR_ROOM_DEDUP_M = 2.0     # 注入楼梯间 room 时与已有 staircase 中心距 < 此值则跳过
 
 # 非封闭空间的室外/开敞标签：不参与房间探测（避免抢占附近区域）
@@ -192,34 +190,6 @@ STAIR_ROOM_DEDUP_M = 2.0     # 注入楼梯间 room 时与已有 staircase 中�
 # 应被识别为房间（或作为 topology facility_entrance 节点），故不列入黑名单。
 LABEL_SKIP_RE = re.compile(
     r"(非机动车车库入口|非机动车车库出入口|消防车道|车道|雨棚|屋面|上空|庭园|台阶|坡道|散水|屋顶平台|泄爆井|不上人屋面)")
-
-ROOM_TYPE_RULES = [
-    ("卫生间", "toilet"), ("洗手间", "toilet"),
-    ("楼梯", "staircase"), ("电梯", "elevator_hall"),
-    ("走道", "corridor"), ("走廊", "corridor"), ("过道", "corridor"),
-    ("门厅", "lobby"), ("大厅", "lobby"),
-    ("门厅无障碍出入口", "accessible_entrance"),
-    ("无障碍出入口", "accessible_entrance"),
-    ("人防主出入口", "entrance"), ("出入口", "entrance"),
-    # 合班教室 = 大型封闭教室，禁止当公共/开放空间
-    ("合班教室", "classroom"), ("合班", "classroom"),
-    ("教室", "classroom"), ("书法", "classroom"), ("美术", "classroom"),
-    ("音乐", "classroom"), ("实验室", "lab"),
-    (" resource", "classroom"), (" resource教室", "classroom"),
-    ("办公", "office"), ("会议", "meeting"), ("接待", "meeting"),
-    ("设备", "equipment"), ("机房", "equipment"), ("配电", "equipment"),
-    ("水井", "infrastructure"), ("风井", "infrastructure"), ("排风井", "infrastructure"), ("管井", "infrastructure"), ("井", "infrastructure"),
-    ("储藏", "storage"), ("存放", "storage"), ("资料", "storage"), ("档案", "storage"),
-    ("广播", "equipment"), ("管控", "equipment"),
-    # 饮水处为服务核心内的开敞壁龛（无门，紧贴水井/卫生间模块），
-    # 归为服务设备类，纳入「服务核心模块豁免」，避免误判为不可达封闭房间。
-    ("饮水", "equipment"),
-    ("图书", "library"), ("阅览", "library"),
-    ("卫生室", "medical"), ("心理", "counseling"), ("辅导", "counseling"),
-    ("活动", "activity"), ("社团", "activity"),
-    ("传达", "reception"), ("前台", "reception"),
-    ("庭园", "atrium"), ("上空", "atrium"),
-]
 
 # 开放空间类型 → 独立编号前缀（区别于封闭房间的 RM- 系列）；
 # 走廊/门厅/大厅/活动/中庭与房间/管井/电梯/楼梯间等封闭空间是不同类型，
@@ -444,9 +414,6 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
 
 # ------------------------------------------------------------ 门属性（指南 §3.2）
 
-# 门开向探测：沿摆弧鼓出侧法向逐级外推，判断门扇扫入哪个房间
-DOOR_PROBE_STEPS_M = (0.5, 0.9, 1.4)
-
 # 图纸不可判、必须现场勘测补充的门属性（指南 §6.2）
 DOOR_SURVEY_FIELDS = ("hasThreshold", "isGlass", "isAutomatic")
 
@@ -461,87 +428,6 @@ DOOR_CIRCULATION_TYPES = {
     "corridor", "lobby", "entrance", "accessible_entrance", "atrium",
     "elevator_hall", "elevator_lobby", "stair_lobby",
 }
-
-
-def door_swing_attributes(dr, rooms_by_id, public_types):
-    """从摆弧几何推导门的开向与铰链侧（指南 §3.2「开向：内开/外开/左开/右开」）。
-
-    几何依据：
-      - hinge 为门轴（落在墙线上），tip 为闭门端（门扇关闭时沿墙方向的端点），
-        故 hinge→tip 即墙线方向，radius=门宽；
-      - arc_mid 为摆弧中点，必然鼓向门扇扫过的一侧 = 门的开向侧。
-
-    判定：
-      - openDirection：沿鼓出侧法向从门中心外推，落入的房间若为公共通行空间
-        （走廊/门厅等）则为「外开」outward，否则为「内开」inward；
-      - hingeSide：站在开向侧面向门洞，铰链在观察者左手边为「左开」left。
-        左右手性依赖坐标系朝向，故在**米制坐标**（Y 已翻转为向上的右手系）下计算，
-        直接用 pt 坐标会左右颠倒。
-    """
-    out = {"openDirection": None, "hingeSide": None, "swingIntoRoom": None,
-           "swingIntoRoomType": None, "openDirectionSource": None}
-    if dr.get("kind") == "opening":
-        return out                      # 无门扇洞口，不存在开向
-    axis, arc_mid = dr.get("axis"), dr.get("arc_mid")
-    if not axis or not arc_mid:
-        return out
-    hinge_pt, tip_pt = axis
-    cx_pt, cy_pt = dr["center"]
-
-    # 墙线方向（pt）
-    ux, uy = tip_pt[0] - hinge_pt[0], tip_pt[1] - hinge_pt[1]
-    L = math.hypot(ux, uy)
-    if L < 1e-9:
-        return out
-    ux, uy = ux / L, uy / L
-    # 摆弧中点相对墙线的侧向分量 → 决定鼓出侧法向
-    side = (arc_mid[0] - cx_pt) * (-uy) + (arc_mid[1] - cy_pt) * ux
-    if abs(side) < 1e-9:
-        return out
-    sgn = 1.0 if side > 0 else -1.0
-    nx_pt, ny_pt = -uy * sgn, ux * sgn   # pt 空间中指向开门侧的单位法向
-
-    # --- openDirection：沿法向外推，找门扇扫入的房间 ---
-    # 门的 rooms 常只记录一侧（另一侧走廊未必成为归属房间），故先查门自身
-    # 关联的房间，再回退到全库房间；两者都落空时用「反向排除」推断。
-    own_ids = [rid for rid in (dr.get("rooms") or []) if rid in rooms_by_id]
-    other_ids = [rid for rid in rooms_by_id if rid not in set(own_ids)]
-    for step_m in DOOR_PROBE_STEPS_M:
-        d_pt = step_m / SCALE
-        probe = Point(cx_pt + nx_pt * d_pt, cy_pt + ny_pt * d_pt)
-        for rid in own_ids + other_ids:
-            poly = rooms_by_id[rid].get("polygon_pt")
-            if poly is not None and poly.contains(probe):
-                rtype = rooms_by_id[rid].get("roomType")
-                out["swingIntoRoom"] = rid
-                out["swingIntoRoomType"] = rtype
-                out["openDirection"] = ("outward" if rtype in public_types
-                                        else "inward")
-                out["openDirectionSource"] = "polygon"
-                break
-        if out["openDirection"]:
-            break
-
-    # 反向排除：门只关联到一个房间且门扇明显不扫入它，则必然扫向对侧。
-    # 对侧若是该房间之外的通行空间即为外开；若已知侧本身是走廊则反之。
-    if out["openDirection"] is None and len(own_ids) == 1:
-        known_type = rooms_by_id[own_ids[0]].get("roomType")
-        out["openDirection"] = ("inward" if known_type in public_types
-                                else "outward")
-        out["openDirectionSource"] = "inferred_opposite"
-
-    # --- hingeSide：在米制右手系下判定左右开 ---
-    hx, hy = pt2m(hinge_pt)
-    cx_m, cy_m = pt2m((cx_pt, cy_pt))
-    mx, my = pt2m((cx_pt + nx_pt, cy_pt + ny_pt))
-    nx_m, ny_m = mx - cx_m, my - cy_m
-    nl = math.hypot(nx_m, ny_m)
-    if nl > 1e-12:
-        nx_m, ny_m = nx_m / nl, ny_m / nl
-        # 观察者站在开向侧面向门：视线 d=-n，其左手方向 = (n_y, -n_x)
-        dot_left = (hx - cx_m) * ny_m + (hy - cy_m) * (-nx_m)
-        out["hingeSide"] = "left" if dot_left > 0 else "right"
-    return out
 
 
 # ---------------------------------------------------------------- 墙体与房间
@@ -1487,275 +1373,6 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
             "Z": Z, "cids": room_cids}
 
 
-def classify_room_type(label):
-    # 合班教室：始终为封闭教室，不得落入 corridor/lobby/activity 等开放类型
-    if label and ("合班教室" in label or ( "合班" in label and "教室" in label)):
-        return "classroom"
-    if label and "合班" in label and not any(
-            k in label for k in ("走道", "走廊", "门厅", "大厅")):
-        return "classroom"
-    for kw, tp in ROOM_TYPE_RULES:
-        if kw in label:
-            return tp
-    return "room"
-
-
-# ---------------------------------------------------------------- 楼梯/电梯/柱
-
-def detect_stair_boxes(items_by_layer):
-    """统一楼梯 bbox 检测：STAIR + A-FLOR-STRS 合并聚类 + 面积/长宽比过滤。
-
-    返回 list[(x0,y0,x1,y1)]（pt）。早期注入 staircase room、门洞范围判定、
-    最终 geometry 共用同一套结果，消除多路径参数不一致问题。
-    """
-    pts = []
-    for lname in ("STAIR", "A-FLOR-STRS"):
-        si = items_by_layer.get(lname, {"lines": [], "quads": []})
-        for seg in si.get("lines", []):
-            pts.append(seg)
-        for q in si.get("quads", []):
-            if len(q) >= 3:
-                pts.append((q[0], q[2]))
-    if not pts:
-        return []
-    boxes = bbox_clusters(pts, gap_pt=STAIR_CLUSTER_GAP_M * PT_PER_M)
-    out = []
-    for b in boxes:
-        area = _bbox_area_m2(b)
-        if area < STAIR_AREA_MIN_M2 or area > STAIR_AREA_MAX_M2:
-            continue
-        if _bbox_aspect(b) > STAIR_MAX_ASPECT:
-            continue
-        out.append(b)
-    return out
-
-
-def detect_elevator_boxes(items_by_layer):
-    """电梯井 bbox：A-FLOR-EVTR 聚类 + 面积过滤。"""
-    evtr = items_by_layer.get(LAYER_ELEVATOR, {"lines": [], "quads": [], "curves": []})
-    pts = list(evtr.get("lines", []))
-    for q in evtr.get("quads", []):
-        if len(q) >= 2:
-            pts.append(q[:2])
-    if not pts:
-        return []
-    boxes = bbox_clusters(pts, gap_pt=2 * PT_PER_M)
-    out = []
-    for b in boxes:
-        area = _bbox_area_m2(b)
-        if ELEV_AREA_MIN_M2 <= area <= ELEV_AREA_MAX_M2:
-            out.append(b)
-    return out
-
-
-def detect_elevator_doors(window_groups, evtr_boxes, floor_no,
-                          gap_m=1.5, max_width_m=3.0):
-    """把「电梯井外墙上的窗户」识别为电梯门元素（需求⑱）。
-
-    现实建筑中电梯井道外墙的采光/检修窗即电梯门所在位置；此处将
-    电梯 bbox buffer 范围内的 window 组识别为电梯门，归属对应电梯。
-
-    参数：
-      window_groups: parse_floor 的 window_groups（pt 坐标系，含 axis/center/length_pt）
-      evtr_boxes:   电梯井 bbox 列表（pt：(x0,y0,x1,y1)）
-      floor_no:     楼层号
-      gap_m:        窗户距电梯墙的最大距离（米）
-      max_width_m:  电梯门最大宽度（米，超出视为建筑窗不识别）
-
-    返回: [{index, elev_index, center_m, axis_m, width_m}]（米制坐标）
-    """
-    if not window_groups or not evtr_boxes:
-        return []
-    gap_pt = gap_m / SCALE
-    max_w_pt = max_width_m / SCALE
-    elev_polys = []
-    for bxd in evtr_boxes:
-        x0, y0, x1, y1 = bxd
-        elev_polys.append((x0, y0, x1, y1))
-    out = []
-    for i, wg in enumerate(window_groups):
-        a, b = wg["axis"]
-        # 窗组中心（pt）
-        mx = (a[0] + b[0]) / 2.0
-        my = (a[1] + b[1]) / 2.0
-        # 窗宽（pt）
-        w_pt = wg["length_pt"]
-        if w_pt > max_w_pt:
-            continue
-        # 找最近的电梯 bbox：中心到 bbox 矩形的最短距离
-        best_d, best_bi = float("inf"), None
-        for bi, (x0, y0, x1, y1) in enumerate(elev_polys):
-            dx = max(0.0, max(x0 - mx, mx - x1))
-            dy = max(0.0, max(y0 - my, my - y1))
-            d = math.hypot(dx, dy)
-            if d < best_d:
-                best_d, best_bi = d, bi
-        if best_bi is None or best_d > gap_pt:
-            continue
-        _mid_pt = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-        _c = pt2m(_mid_pt)
-        out.append({
-            "index": len(out),
-            "elev_index": best_bi,
-            "center_m": [round(_c[0], 3), round(_c[1], 3)],
-            "axis_m": [[round(pt2m(a)[0], 3), round(pt2m(a)[1], 3)],
-                       [round(pt2m(b)[0], 3), round(pt2m(b)[1], 3)]],
-            "width_m": round(w_pt * SCALE, 3),
-        })
-    return out
-
-
-def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
-                               floor_no, link_radius_m=15.0):
-    """把电梯门元素接入拓扑：生成 TD 节点，连对应电梯 TF 与最近公共节点。
-
-    规则：
-      - 每个电梯门生成独立 doorway 节点（doorType="elevator"，label=所属电梯）；
-      - 连到对应电梯的 facility(TF) 节点（按 elev_index 匹配）；
-      - 连到距门 ≤link_radius_m 的开放空间（intersection / facility_entrance /
-        facility / doorway 均可，取最近者，保证门可达）；
-      - 编号从当前最大 TD 序号之后续号（不与既有门冲突）。
-    """
-    if not elevator_doors:
-        return nodes, edges
-    # 当前最大 TD 序号
-    max_td = 0
-    for n in nodes:
-        if n.get("type") == "doorway":
-            try:
-                max_td = max(max_td, int(n["id"].split("-")[-1]))
-            except ValueError:
-                pass
-    # 电梯 TF：facilityType=elevator。按坐标最近匹配（reconcile 重排后 index
-    # 不可靠），并回填 elevatorId（需求⑳：门归属一律用元素 ID）。
-    # TF 自身 label 即电梯编号，但归属字段统一用 ID。
-    tf_nodes = [n for n in nodes
-                if n.get("type") == "facility" and n.get("facilityType") == "elevator"]
-    elev_by_centroid = {}
-    for n in tf_nodes:
-        n.setdefault("elevatorId", None)  # 由调用方按坐标回填
-    # 开放空间候选（不含纯管井门——规则 5 已剔除连接，但节点仍可作挂接点）
-    cand = [n for n in nodes if n.get("type") in
-            ("intersection", "facility_entrance", "doorway")]
-    new_nodes, new_edges = [], []
-    node_id_set = {n["id"] for n in nodes}
-    edge_id_set = {e["id"] for e in edges}
-    seq = max_td
-    # 边序号：从既有最大 TE 序号 +1 起，单调递增（避免死循环）
-    max_te = 0
-    for e in edges:
-        try:
-            max_te = max(max_te, int(e["id"].split("-")[-1]))
-        except (ValueError, IndexError):
-            pass
-    edge_seq = max_te
-    # 电梯门 → 电梯 TF 匹配：优先 elevatorId（Feature 格式，归属用 ID），
-    # 否则坐标最近（兼容 detect 原始 dict，规避 reconcile 重排后的 index 错位）
-    def _match_tf(ed):
-        _ep = ed.get("properties", {}) if "elev_index" not in ed else {}
-        ec = list(ed["geometry"]["coordinates"]) if "elev_index" not in ed \
-            else list(ed["center_m"])
-        if _ep.get("elevatorId"):
-            for n in nodes:
-                if n.get("type") == "facility" \
-                   and n.get("facilityType") == "elevator" \
-                   and n.get("elevatorId") == _ep["elevatorId"]:
-                    return n
-            # TF 未带 elevatorId：按坐标最近回退（并回填）
-        best_n, best_d = None, float("inf")
-        for n in tf_nodes:
-            d = math.hypot(ec[0] - n["coordinates"][0],
-                           ec[1] - n["coordinates"][1])
-            if d < best_d:
-                best_d, best_n = d, n
-        return best_n
-
-    for i, ed in enumerate(elevator_doors):
-        # 兼容两种格式：detect 原始 dict（elev_index）或 build_geojson Feature
-        if "elev_index" in ed:
-            ei = ed["elev_index"]
-            center = ed["center_m"]
-            el_label = (elevators[ei]["properties"]["label"]
-                        if 0 <= ei < len(elevators) else f"电梯{floor_no}F-{ei + 1}")
-            el_id = (elevators[ei]["id"]
-                     if 0 <= ei < len(elevators) else None)
-        else:
-            _ep = ed.get("properties", {})
-            ei = _ep.get("elevatorIndex", 0)
-            center = list(ed["geometry"]["coordinates"])
-            el_label = _ep.get("elevatorLabel", f"电梯{floor_no}F-{ei + 1}")
-            el_id = _ep.get("elevatorId")  # 归属元素 ID（需求⑳）
-        seq += 1
-        td_id = obj_id(f"F{floor_no}", OBJ_TYPE["topo_doorway"], seq)
-        while td_id in node_id_set:
-            seq += 1
-            td_id = obj_id(f"F{floor_no}", OBJ_TYPE["topo_doorway"], seq)
-        node_id_set.add(td_id)
-        nd = {
-            "id": td_id,
-            "type": "doorway",
-            "doorType": "elevator",
-            "label": f"电梯门（{el_label}）",
-            "coordinates": list(center),
-            "rooms": [el_id] if el_id else [],
-            "elevatorId": el_id,
-            "elevatorLabel": el_label,
-            "elevatorIndex": ei,
-            "blindAccessible": True,
-            "wheelchairAccessible": True,
-        }
-        new_nodes.append(nd)
-        # 连对应电梯 TF（需求⑳：用 elevatorId 归属匹配，回退坐标最近）
-        tf_node = _match_tf(ed)
-        if tf_node:
-            tf_id = tf_node["id"]
-            # 回填 TF 的 elevatorId（需求⑳：归属用元素 ID）
-            if el_id and tf_node.get("elevatorId") is None:
-                tf_node["elevatorId"] = el_id
-            d = math.hypot(center[0] - tf_node["coordinates"][0],
-                           center[1] - tf_node["coordinates"][1])
-            edge_seq += 1
-            eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
-            while eid in edge_id_set:
-                edge_seq += 1
-                eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
-            edge_id_set.add(eid)
-            new_edges.append({
-                "id": eid, "from": tf_id, "to": td_id,
-                "distance": round(d, 2),
-                "estimatedTime": round(d / BLIND_WALK_SPEED, 1),
-                "accessibilityLevel": 0, "riskLevel": 1,
-                "walkable": True, "wheelchairAccessible": True,
-                "blindAccessible": True,
-                "type": "elevator_door",
-            })
-        # 连最近公共节点
-        best = None
-        best_d = link_radius_m
-        for c in cand:
-            d = math.hypot(center[0] - c["coordinates"][0],
-                           center[1] - c["coordinates"][1])
-            if d < best_d:
-                best_d, best = d, c
-        if best is not None:
-            edge_seq += 1
-            eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
-            while eid in edge_id_set:
-                edge_seq += 1
-                eid = obj_id(f"F{floor_no}", OBJ_TYPE["topo_edge"], edge_seq)
-            edge_id_set.add(eid)
-            new_edges.append({
-                "id": eid, "from": td_id, "to": best["id"],
-                "distance": round(best_d, 2),
-                "estimatedTime": round(best_d / BLIND_WALK_SPEED, 1),
-                "accessibilityLevel": 0, "riskLevel": 1,
-                "walkable": True, "wheelchairAccessible": True,
-                "blindAccessible": True,
-                "type": "elevator_door",
-            })
-    return nodes + new_nodes, edges + new_edges
-
-
 def _tf_coord(nodes, nid):
     for n in nodes:
         if n["id"] == nid:
@@ -2032,314 +1649,6 @@ def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
             r["centroid_m"] = list(pt2m((u.centroid.x, u.centroid.y)))
     rooms.extend(new_rooms)
     return len(new_rooms)
-
-
-
-
-
-# ── 射线投票参数 ──
-_HEBAN_AXIS_TOL = 2.0          # pt：轴向判定容差
-_HEBAN_MIN_SEG_LEN = 5.0       # pt：最小有效墙段长度
-_HEBAN_H_SPAN = 180.0          # pt：水平射线跨度
-_HEBAN_V_SPAN = 140.0          # pt：垂直射线跨度
-_HEBAN_RAY_SAMPLES = 401       # 射线采样数
-_HEBAN_RAY_BIN = 3.0           # pt：投票分箱大小
-_HEBAN_MIN_SUPPORT = 0.50      # 最低支持率
-
-
-def _heban_real_polygon_v2(label_pt_pt, all_segs, furn_segs, closures):
-    """
-    合班教室真实闭合墙体识别 v2 —— 语义种子 + 多方向射线投票。
-
-    替代 v1 的多尺度形态学闭运算方案。核心思路：
-      1) 从标签点（语义种子）向四个方向发射大量射线；
-      2) 每条射线碰撞最近墙体，统计碰撞坐标的众数；
-      3) 门洞缺口仅影响少数射线，不改变众数；
-      4) 四个方向的众数坐标构成房间矩形边界。
-
-    参数同 _heban_real_polygon，返回 shapely Polygon 或 None。
-    """
-    from collections import Counter
-
-    seed_x, seed_y = label_pt_pt
-
-    # 合并所有墙体来源（结构墙 + 家具线 + 封口线）
-    all_lines = list(all_segs) + list(furn_segs) + list(closures)
-    if not all_lines:
-        return None
-
-    tol = _HEBAN_AXIS_TOL
-    min_len = _HEBAN_MIN_SEG_LEN
-    vert = []   # [(x, y_min, y_max), ...]
-    horz = []   # [(y, x_min, x_max), ...]
-
-    for (x1, y1), (x2, y2) in all_lines:
-        if abs(x1 - x2) <= tol and abs(y1 - y2) > min_len:
-            x = (x1 + x2) / 2.0
-            vert.append((x, min(y1, y2), max(y1, y2)))
-        elif abs(y1 - y2) <= tol and abs(x1 - x2) > min_len:
-            y = (y1 + y2) / 2.0
-            horz.append((y, min(x1, x2), max(x1, x2)))
-
-    if len(vert) < 5 or len(horz) < 5:
-        return None
-
-    # ── 射线投票辅助函数 ──
-
-    def _cluster_mode(values):
-        """对射线碰撞坐标做分箱投票，返回 (均值坐标, 支持数)。"""
-        if not values:
-            return None, 0
-        hist = Counter(int(round(v / _HEBAN_RAY_BIN)) for v in values)
-        best_bin, support = hist.most_common(1)[0]
-        center = best_bin * _HEBAN_RAY_BIN
-        in_cluster = [v for v in values
-                      if abs(v - center) <= _HEBAN_RAY_BIN * 0.60]
-        return sum(in_cluster) / len(in_cluster), support
-
-    def _vote_vertical(side):
-        """向水平方向发射射线，投票找左/右墙。"""
-        values = []
-        for i in range(_HEBAN_RAY_SAMPLES):
-            y = seed_y - _HEBAN_V_SPAN + 2.0 * _HEBAN_V_SPAN * i / (_HEBAN_RAY_SAMPLES - 1)
-            candidates = [
-                x for x, y0, y1 in vert
-                if y0 - tol <= y <= y1 + tol
-                and ((side == "left" and x < seed_x - tol)
-                     or (side == "right" and x > seed_x + tol))
-            ]
-            if candidates:
-                values.append(max(candidates) if side == "left" else min(candidates))
-        coord, support = _cluster_mode(values)
-        if coord is None:
-            return None
-        ratio = support / len(values) if values else 0
-        if ratio < _HEBAN_MIN_SUPPORT:
-            return None
-        return coord
-
-    def _vote_horizontal(side):
-        """向垂直方向发射射线，投票找上/下墙。"""
-        values = []
-        for i in range(_HEBAN_RAY_SAMPLES):
-            x = seed_x - _HEBAN_H_SPAN + 2.0 * _HEBAN_H_SPAN * i / (_HEBAN_RAY_SAMPLES - 1)
-            candidates = [
-                y for y, x0, x1 in horz
-                if x0 - tol <= x <= x1 + tol
-                and ((side == "top" and y < seed_y - tol)
-                     or (side == "bottom" and y > seed_y + tol))
-            ]
-            if candidates:
-                values.append(max(candidates) if side == "top" else min(candidates))
-        coord, support = _cluster_mode(values)
-        if coord is None:
-            return None
-        ratio = support / len(values) if values else 0
-        if ratio < _HEBAN_MIN_SUPPORT:
-            return None
-        return coord
-
-    # ── 四方向投票 ──
-    left = _vote_vertical("left")
-    right = _vote_vertical("right")
-    top = _vote_horizontal("top")
-    bottom = _vote_horizontal("bottom")
-
-    if any(v is None for v in (left, right, top, bottom)):
-        return None
-
-    if not (left < right and top < bottom):
-        return None
-
-    poly = Polygon([
-        (left, top), (right, top),
-        (right, bottom), (left, bottom),
-    ])
-    if not poly.is_valid:
-        poly = poly.buffer(0)
-    if poly.is_empty:
-        return None
-
-    area_m2 = float(poly.area) * (SCALE ** 2)
-    if not (30.0 <= area_m2 <= 300.0):
-        return None
-
-    return poly
-
-
-def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
-                                  all_segs=(), furn_segs=(), closures=()):
-    """
-    合班教室注入（隔离版）：只服务合班自身，不影响其他空间。
-
-    约束：
-      1) 优先用局部闭合墙体识别得到真实多边形；失败才回退到 3m 占位方块；
-      2) 只「追加」门归属，从不删除其它 room id；
-      3) 不抢已明确归属其它封闭房间的门；
-      4) 不修改其它房间的 roomType / walkable。
-    """
-    if not labels_with_pt:
-        return 0
-
-    OPEN = {"corridor", "lobby", "activity", "atrium",
-            "elevator_lobby", "stair_lobby", "entrance", "accessible_entrance"}
-    room_by_id = {r["id"]: r for r in rooms}
-
-    def _lab(r):
-        return r.get("label") or ""
-
-    def _door_free_for_heban(dr):
-        """门未被其它封闭房间独占时才可挂合班。"""
-        for rid in dr.get("rooms") or []:
-            r = room_by_id.get(rid)
-            if r is None:
-                continue
-            if "合班" in _lab(r):
-                continue
-            rt = r.get("roomType") or ""
-            if rt not in OPEN and rt != "infrastructure":
-                # 已属于教室/办公/卫生间等封闭空间 → 不抢
-                return False
-        return True
-
-    targets = [r for r in rooms if "合班" in _lab(r)]
-
-    if not targets:
-        for entry in labels_with_pt:
-            label = entry[0]
-            pt_pt = entry[1]
-            if "合班" not in label:
-                continue
-            # 标签是否已落在某个已有封闭房间内？若是则不注入，避免叠房间
-            cx_m, cy_m = pt2m(pt_pt)
-            skip = False
-            for r in rooms:
-                if r.get("roomType") in OPEN:
-                    continue
-                poly = r.get("polygon_pt")
-                if poly is None or getattr(poly, "is_empty", True):
-                    continue
-                try:
-                    if poly.contains(Point(pt_pt[0], pt_pt[1])):
-                        skip = True
-                        break
-                except Exception:
-                    pass
-            if skip:
-                print(f"[F{floor_no}] 合班标签已在其它封闭房间内，跳过注入")
-                continue
-
-            def m2pt(xm, ym):
-                return (xm / SCALE + ORIGIN_X, ORIGIN_Y - ym / SCALE)
-
-            # 优先识别真实闭合墙体多边形；失败才回退 3m 占位方块
-            real_poly = _heban_real_polygon_v2(pt_pt, all_segs, furn_segs, closures)
-            if real_poly is not None:
-                poly = real_poly
-                source = "heban_inject_real"
-                print(f"[F{floor_no}] 合班教室识别真实闭合墙体: "
-                      f"面积≈{float(poly.area) * (SCALE ** 2):.1f}m²")
-            else:
-                # 极小占位（3m×3m），仅作拓扑质心，降低压盖邻室风险
-                half = 1.5
-                corners_m = [
-                    (cx_m - half, cy_m - half),
-                    (cx_m + half, cy_m - half),
-                    (cx_m + half, cy_m + half),
-                    (cx_m - half, cy_m + half),
-                ]
-                corners_pt = [m2pt(x, y) for x, y in corners_m]
-                poly = Polygon(corners_pt)
-                source = "heban_inject"
-                print(f"[F{floor_no}] 合班教室真实墙体识别失败，回退 3m 占位")
-            # 若与其它封闭房间相交，尝试差集；失败则仍用原多边形（拓扑用）
-            try:
-                others = []
-                for r in rooms:
-                    if r.get("roomType") in OPEN:
-                        continue
-                    op = r.get("polygon_pt")
-                    if op is not None and not getattr(op, "is_empty", True):
-                        others.append(op)
-                if others:
-                    diff = poly.difference(unary_union(others))
-                    if not diff.is_empty:
-                        if diff.geom_type == "Polygon":
-                            poly = diff
-                        elif diff.geom_type == "MultiPolygon" and diff.geoms:
-                            poly = max(diff.geoms, key=lambda g: g.area)
-            except Exception:
-                pass
-
-            seq = sum(1 for r in rooms if "-RM-" in str(r.get("id", ""))) + 1
-            rid = obj_id(f"F{floor_no}", OBJ_TYPE["room"], seq)
-            used_ids = {r["id"] for r in rooms}
-            while rid in used_ids:
-                seq += 1
-                rid = obj_id(f"F{floor_no}", OBJ_TYPE["room"], seq)
-
-            coords_m = [list(pt2m((x, y))) for x, y in poly.exterior.coords]
-            room = {
-                "id": rid,
-                "label": label if "教室" in label else "合班教室",
-                "roomType": "classroom",
-                "polygon_pt": poly,
-                "centroid_pt": (pt_pt[0], pt_pt[1]),
-                "coords_m": coords_m,
-                "centroid_m": [cx_m, cy_m],
-                "area_m2": round(float(poly.area) * (SCALE ** 2), 2),
-                "synthetic": True,
-                "source": source,
-            }
-            rooms.append(room)
-            room_by_id[rid] = room
-            targets.append(room)
-            print(f"[F{floor_no}] 注入合班教室(隔离): {rid} @ "
-                  f"({cx_m:.1f},{cy_m:.1f}) 占位≈{room['area_m2']}m²")
-
-    if not targets:
-        return 0
-
-    for room in targets:
-        poly_pt = room.get("polygon_pt")
-        cand = []
-        for dr in doors:
-            if not _door_free_for_heban(dr):
-                continue
-            dpt = dr.get("center")
-            if not dpt:
-                continue
-            # 用门到房间多边形边界的距离（米），替代质心距离。
-            # 门应落在房间墙面上，边界距离天然区分"墙上门"与"隔壁走廊门"。
-            if poly_pt is not None and not poly_pt.is_empty:
-                bdist_pt = poly_pt.exterior.distance(Point(dpt[0], dpt[1]))
-                bdist_m = bdist_pt * SCALE
-            else:
-                dm = pt2m(dpt)
-                bdist_m = math.hypot(dm[0] - room["centroid_m"][0],
-                                     dm[1] - room["centroid_m"][1])
-            if bdist_m > 1.0:  # 门中心距墙面超过 1m → 不是该房间的门
-                continue
-            pri = 0 if dr.get("kind") == "fire" else (
-                1 if dr.get("kind") == "opening" else 2)
-            cand.append((pri, bdist_m, dr))
-        cand.sort(key=lambda x: (x[0], x[1]))  # 按 (优先级, 边界距离) 排序，不比较 dict
-        picked = []
-        for pri, d, dr in cand:
-            if len(picked) >= 6:  # 上限放宽到 6，边界距离判据足以防误挂
-                break
-            picked.append((d, dr))
-        for d, dr in picked:
-            rooms_list = dr.setdefault("rooms", [])
-            if room["id"] not in rooms_list:
-                rooms_list.append(room["id"])  # 只追加，不删原有
-        if not picked:
-            print(f"[F{floor_no}] 警告: 合班 {room['id']} 无可用门"
-                  f"（近门均已属其它封闭房间或不在墙上）")
-        else:
-            print(f"[F{floor_no}] 合班 {room['id']} 关联门 {len(picked)} 扇"
-                  f"（只追加, 最近 {picked[0][0]:.1f}m）")
-    return len(targets)
 
 
 def parse_floor(pdf_path, floor_no):

@@ -13,6 +13,7 @@ topology.py、pipeline.py、route_rules.py、render_interactive.py 及各 tools 
 SCALE = 0.0529          # 米 / pt
 ORIGIN_X = 2019.1       # pt
 ORIGIN_Y = 1154.8       # pt
+PT_PER_M = 1.0 / SCALE  # ≈ 15.53 pt/m
 
 # 步行速度（指南 5.2）
 BLIND_WALK_SPEED = 0.8  # 视障步速 0.8 m/s
