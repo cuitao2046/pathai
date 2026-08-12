@@ -1881,7 +1881,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     ("区域类型", "安全节点" if is_safe else "普通"),
                     ("采集优先级", str(prio)),
                     ("来源", src),
-                    ("坐标", f"({cx:.2f}, {cy:.2f})"),
                 ]}
                 if p.get("nearNodeId"):
                     det["rows"].append(("邻近节点", f"{p['nearNodeId']} ({p.get('nearNodeType','')})"))
@@ -1912,7 +1911,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     ("楼层", f"{p.get('floor','?')}F"),
                     ("可见信标数", str(vis)),
                     ("三点定位", "可" if ok else "不足（需≥3）"),
-                    ("坐标", f"({cx:.2f}, {cy:.2f})"),
                 ]}
                 attr = info_attr({"tip": tip, "detail": det, "kind": "coverage", "id": p.get("id", "")})
                 # 默认隐藏（图层面板未勾选），与指纹/信标图层一致
@@ -1944,7 +1942,6 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                     ("Major", b.get("major", "")),
                     ("Minor", b.get("minor", "")),
                     ("楼层", f"{b.get('floor')}F"),
-                    ("坐标(米)", f"({cx:.2f}, {cy:.2f})"),
                     ("安装位置", b.get("locationDesc", "")),
                     ("安装方式", b.get("mountType", "")),
                     ("吸附偏移", f"{b.get('snapDist_m', 0)} m"),
@@ -2576,7 +2573,7 @@ function injectCentroid(g, d){{
   pts.forEach(function(p){{ sx += p[0]; sy += p[1]; }});
   var cg = svg2geo(sx / pts.length, sy / pts.length);
   d.detail._hasCentroid = true;
-  d.detail.rows = [['质心坐标', cg.x.toFixed(2) + ', ' + cg.y.toFixed(2) + ' m（' + cg.floor + 'F）']].concat(d.detail.rows);
+  d.detail.rows = [['质心坐标', '(' + cg.x.toFixed(2) + ', ' + cg.y.toFixed(2) + ')']].concat(d.detail.rows);
 }}
 wrapper.addEventListener('click', function(e) {{
   if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
