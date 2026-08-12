@@ -18,5 +18,9 @@ ORIGIN_Y = 1154.8       # pt
 BLIND_WALK_SPEED = 0.8  # 视障步速 0.8 m/s
 NORMAL_WALK_SPEED = 1.2  # 普通步行 1.2 m/s
 
-# 路由规则（route_rules / render_interactive 共用，避免两边漂移）
+# 路由规则（route_rules / compute_route_rule_extras / 前端 Dijkstra 共用，唯一来源，
+# 前端由 build_path_rules_js 序列化注入，禁止在 JS 内嵌常量，见 docs/code-review-2026-08-12.md A2）
 DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}  # 门类型边权惩罚（米）
+DOOR_DEFAULT_PENALTY = 9.0  # 未知门类型的兜底惩罚（含 elevator 门等）
+SAME_FLOOR_MID_TYPES = {"intersection", "facility_entrance", "doorway"}  # 同层路线允许的中间节点
+CROSS_FLOOR_MID_TYPES = SAME_FLOOR_MID_TYPES | {"facility"}  # 跨层额外放行设施节点

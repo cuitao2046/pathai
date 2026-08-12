@@ -74,11 +74,13 @@ class TestConstantsSingleSource(unittest.TestCase):
     """
 
     BUSINESS_CONSTS = {"SCALE", "ORIGIN_X", "ORIGIN_Y",
-                       "BLIND_WALK_SPEED", "NORMAL_WALK_SPEED", "DOOR_PENALTY"}
+                       "BLIND_WALK_SPEED", "NORMAL_WALK_SPEED", "DOOR_PENALTY",
+                       "DOOR_DEFAULT_PENALTY", "SAME_FLOOR_MID_TYPES", "CROSS_FLOOR_MID_TYPES"}
 
     # 允许的兜底重复定义（值必须与 constants 同名常量相等）
     CONSISTENT_ALLOWED = {
-        "src/rendering/render_interactive.py": {"DOOR_PENALTY"},
+        "src/rendering/render_interactive.py": {"DOOR_PENALTY", "DOOR_DEFAULT_PENALTY",
+                                                "SAME_FLOOR_MID_TYPES", "CROSS_FLOOR_MID_TYPES"},
         "src/tools/field_survey_calibrate.py": {"SCALE", "ORIGIN_X", "ORIGIN_Y"},
         "src/tools/merge_manual_edges.py": {"BLIND_WALK_SPEED"},
     }
@@ -93,7 +95,7 @@ class TestConstantsSingleSource(unittest.TestCase):
     CORE_FILES = [
         "src/parsing/parse_cad_pdf.py",
         "src/topology/topology.py",
-        "src/routing/route_rules.py",
+        "src/topology/route_rules.py",
         "src/pipeline/pipeline.py",
         "src/rendering/render_interactive.py",
         "src/tools/export_skeleton_template.py",
@@ -105,14 +107,25 @@ class TestConstantsSingleSource(unittest.TestCase):
     def _collect_assignments(self, path):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         found = {}
+
+        def resolve(node):
+            if isinstance(node, ast.Name):
+                return found.get(node.id, "<nonliteral>")
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+                left, right = resolve(node.left), resolve(node.right)
+                if isinstance(left, set) and isinstance(right, set):
+                    return left | right
+                return "<nonliteral>"
+            try:
+                return ast.literal_eval(node)
+            except Exception:
+                return "<nonliteral>"
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 for t in node.targets:
                     if isinstance(t, ast.Name) and t.id in self.BUSINESS_CONSTS:
-                        try:
-                            found[t.id] = ast.literal_eval(node.value)
-                        except Exception:
-                            found[t.id] = "<nonliteral>"
+                        found[t.id] = resolve(node.value)
         return found
 
     def test_no_rogue_constant_redefinitions(self):

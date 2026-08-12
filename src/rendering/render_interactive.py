@@ -20,12 +20,21 @@ import json
 import math
 from pathlib import Path
 
-# 门类型边权惩罚，统一来源 src/common/constants.py（D4）；
-# 本脚本可独立运行，故无法导入 src 包时兜底同值。
+# 路由规则常量统一来源 src/common/constants.py（D4/A2）；
+# 本脚本可独立运行，故无法导入 src 包时兜底同值（兜底值必须与 constants 保持一致，
+# test_invariants 会核对；前端 Dijkstra 常量一律通过 build_path_rules_js 序列化注入）。
 try:
-    from src.common.constants import DOOR_PENALTY
+    from src.common.constants import (
+        DOOR_PENALTY,
+        DOOR_DEFAULT_PENALTY,
+        SAME_FLOOR_MID_TYPES,
+        CROSS_FLOOR_MID_TYPES,
+    )
 except ImportError:
     DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}
+    DOOR_DEFAULT_PENALTY = 9.0
+    SAME_FLOOR_MID_TYPES = {"intersection", "facility_entrance", "doorway"}
+    CROSS_FLOOR_MID_TYPES = SAME_FLOOR_MID_TYPES | {"facility"}
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
@@ -499,9 +508,9 @@ def compute_route_rule_extras(geo):
             for rid in (n.get("rooms") or []):
                 t = n.get("doorType")
                 # 常开防火门：视为 swing 同级（penalty=0）
-                p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, 9)
+                p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, DOOR_DEFAULT_PENALTY)
                 cur = best_door.get(rid)
-                cur_p = DOOR_PENALTY.get(cur, 9) if cur else None
+                cur_p = DOOR_PENALTY.get(cur, DOOR_DEFAULT_PENALTY) if cur else None
                 if cur is None or p < cur_p:
                     best_door[rid] = t
     room_best_door = {}
@@ -543,6 +552,20 @@ def compute_route_rule_extras(geo):
         "room_best_door": room_best_door,
         "wall_crossing_titi": wall_crossing_titi,
         "infra_doorway_ids": infra_doorway_ids,
+    }
+
+
+def build_path_rules_js():
+    """路由规则数据序列化（A2：前端 Dijkstra 不再内嵌常量，唯一来源 constants）。
+
+    注入到 path-graph-data 的 rules 字段，JS 端 doorPenalty / MID_TYPES 一律从
+    PATH_GRAPH.rules 读取；任何规则数值改动只改 constants.py，前端自动跟随。
+    """
+    return {
+        "doorPenalty": DOOR_PENALTY,
+        "doorDefaultPenalty": DOOR_DEFAULT_PENALTY,
+        "midTypesSameFloor": sorted(SAME_FLOOR_MID_TYPES),
+        "midTypesCrossFloor": sorted(CROSS_FLOOR_MID_TYPES),
     }
 
 
@@ -2297,7 +2320,9 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         })
     path_graph_js = json.dumps(
         {"nodes": path_nodes, "edges": path_edges,
-         "infraDoorwayIds": sorted(_infra_doorway_ids)},
+         "infraDoorwayIds": sorted(_infra_doorway_ids),
+         # A2：路由规则序列化注入，前端 Dijkstra 禁止内嵌常量
+         "rules": build_path_rules_js()},
         ensure_ascii=False, separators=(",", ":"))
     parts.append(
         f'<script type="application/json" id="path-graph-data">{path_graph_js}</script>\n'
@@ -3169,10 +3194,13 @@ function edgeAllowed(e, mode) {
   return true;
 }
 
-// 门类型边权惩罚（米），越小越优先。与 route_rules.DOOR_PENALTY 一致。
+// 门类型边权惩罚（米），越小越优先。
+// A2：唯一来源 constants.py，由 build_path_rules_js 序列化注入，禁止内嵌常量。
 function doorPenalty(dt) {
-  var P = { swing: 0.0, fire: 0.5, opening: 1.0 };
-  return (dt in P) ? P[dt] : 9;
+  var R = (PATH_GRAPH && PATH_GRAPH.rules) || {};
+  var P = R.doorPenalty || {};
+  var def = (R.doorDefaultPenalty != null) ? R.doorDefaultPenalty : 9;
+  return (dt in P) ? P[dt] : def;
 }
 
 // 常闭防火门判定：isNormallyOpen === false 的 fire 门
@@ -3263,9 +3291,13 @@ function buildPathAdj(mode, doorFilter, allowWall) {
 function dijkstraCore(startId, endId, mode, adj) {
   var nodes = PATH_GRAPH.nodes;
   // 规则 1：同层禁 facility 中转；跨层允许 facility 中转（电梯/楼梯用于跨层）
-  var MID_TYPES = isSameFloor(startId, endId)
-    ? { intersection: 1, facility_entrance: 1, doorway: 1 }
-    : { intersection: 1, facility_entrance: 1, doorway: 1, facility: 1 };
+  // A2：唯一来源 constants.py，由 build_path_rules_js 序列化注入，禁止内嵌常量。
+  var _rules = (PATH_GRAPH && PATH_GRAPH.rules) || {};
+  var _midList = isSameFloor(startId, endId)
+    ? (_rules.midTypesSameFloor || [])
+    : (_rules.midTypesCrossFloor || []);
+  var MID_TYPES = {};
+  _midList.forEach(function(t){ MID_TYPES[t] = 1; });
   var dist = {}, prev = {}, prevEdge = {};
   Object.keys(nodes).forEach(function(id){ dist[id] = Infinity; });
   dist[startId] = 0;

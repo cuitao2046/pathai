@@ -36,14 +36,15 @@ from collections import defaultdict
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
-# 门类型边权惩罚（米），越小越优先；统一来源 src/common/constants.py
-from src.common.constants import DOOR_PENALTY
+# 路由规则常量（门惩罚/中间节点白名单）统一来源 src/common/constants.py，
+# 前端 Dijkstra 由 build_path_rules_js 序列化注入，禁止本文件再定义。
+from src.common.constants import (
+    DOOR_PENALTY,
+    DOOR_DEFAULT_PENALTY,
+    SAME_FLOOR_MID_TYPES,
+    CROSS_FLOOR_MID_TYPES,
+)
 from src.geometry.segments import segments_properly_cross
-
-# 同层路线允许的「中间节点」类型（不含 facility 楼梯/电梯）
-SAME_FLOOR_MID_TYPES = {"intersection", "facility_entrance", "doorway"}
-# 跨层路线额外允许 facility 作为中转（电梯/楼梯用于跨层）
-CROSS_FLOOR_MID_TYPES = SAME_FLOOR_MID_TYPES | {"facility"}
 
 
 class RouteGraph:
@@ -128,7 +129,7 @@ class RouteGraph:
                     if rid not in best_door:
                         best_door[rid] = t
                     else:
-                        cur_p = DOOR_PENALTY.get(best_door[rid], 9)
+                        cur_p = DOOR_PENALTY.get(best_door[rid], DOOR_DEFAULT_PENALTY)
                         if p < cur_p:
                             best_door[rid] = t
         for n in self.nodes.values():
@@ -257,7 +258,7 @@ class RouteGraph:
         dn = self._door_node_of_edge(e)
         return dn.get("doorType") if dn else None
 
-    def _door_penalty(self, node, default=9.0):
+    def _door_penalty(self, node, default=DOOR_DEFAULT_PENALTY):
         """门类型惩罚（米）：常开防火门与普通门平等对待（penalty=0）。
         E2 统一「常开防火门无惩罚」判定，避免三处重复书写改漏。"""
         if node.get("doorType") == "fire" and node.get("isNormallyOpen"):
@@ -282,7 +283,8 @@ class RouteGraph:
             # 仅在 room↔door 边施加门类型惩罚（每扇门只惩罚一次）
             if (a and a["type"] == "room") or (b and b["type"] == "room"):
                 # E2：常开防火门与普通门平等对待，无惩罚（由 _door_penalty 统一判定）
-                w += self._door_penalty(self._door_node_of_edge(e), default=0.0)
+                # A2：未知门类型统一按 DOOR_DEFAULT_PENALTY，与前端 doorPenalty 默认一致
+                w += self._door_penalty(self._door_node_of_edge(e))
         return w
 
     def _mid_types(self, start_id, end_id):
@@ -341,7 +343,7 @@ class RouteGraph:
                     best = None
                 if best is not None and _door_node is not None:
                     edge_p = self._door_penalty(_door_node)
-                    if edge_p > DOOR_PENALTY.get(best, 9):
+                    if edge_p > DOOR_PENALTY.get(best, DOOR_DEFAULT_PENALTY):
                         continue
             w = self._edge_weight(e)
             adj[a].append((b, w, e["id"]))
