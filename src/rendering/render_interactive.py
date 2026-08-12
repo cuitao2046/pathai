@@ -655,6 +655,71 @@ function exportAnnoOverrides(){
     return tpl.replace('__CONSTS__', consts)
 
 
+# ---- 三点定位覆盖（Trilateration coverage）无线模型 ----
+# 与 src/tools/analyze_trilateration_coverage.py 同口径：射线穿墙 RSSI 衰减判定可见信标数，
+# 每个指纹点需 >=3 个可见信标方可三点定位。覆盖随 --beacons 信标方案动态变化。
+try:
+    from shapely.geometry import LineString
+    from shapely.strtree import STRtree
+    _HAS_SHAPELY = True
+except Exception:
+    _HAS_SHAPELY = False
+
+COV_TX_POWER = -10       # dBm，三角定位要求功率一致
+COV_RSSI_REF_1M = -50    # dBm，TxPower=-10 时 1m 参考(RSSI_ref = TX - FSPL@1m, FSPL≈40dB)
+COV_N = 3.5              # 室内路径损耗指数
+COV_WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}  # 每面墙衰减 dB
+COV_VISIBLE = -85        # dBm 稳定可检测阈值
+COV_OFFSET = 0.25         # m，信标向采样点偏移(天线在墙内侧)
+COV_D_MAX = 11.0          # m，超出即使 0 墙也不可见
+# 可见信标数 -> 颜色（>=3 绿可定位；越少越红）
+COV_COLORS = {0: "#E53935", 1: "#FB8C00", 2: "#FBC02D", 3: "#43A047"}
+
+
+def build_coverage_index(geo_json):
+    """为每层构建墙体线段 STRtree，返回 {floor: (segs, atten, tree)}。无 shapely 时返回 {}。"""
+    if not _HAS_SHAPELY:
+        return {}
+    idx = {}
+    for fk in geo_json["floors"]:
+        fg = geo_json["floors"][fk]["geometry"]
+        segs, atten = [], []
+        for w in fg.get("walls", []):
+            coords = w.get("geometry", {}).get("coordinates", [])
+            if len(coords) < 2:
+                continue
+            segs.append(LineString([(x, y) for x, y in coords]))
+            atten.append(COV_WALL_ATTEN.get(w.get("properties", {}).get("material"), 12))
+        if segs:
+            idx[str(fk)] = (segs, atten, STRtree(segs))
+    return idx
+
+
+def visible_beacon_count(px, py, beacons, cidx):
+    """点(px,py)对同层 beacons[(x,y)...] 的可见信标数（射线穿墙 RSSI 模型）。
+       cidx = (segs, atten, tree) 或 None。"""
+    if cidx is None:
+        return 0
+    segs, atten, tree = cidx
+    v = 0
+    for (bx, by) in beacons:
+        dx, dy = bx - px, by - py
+        d = math.hypot(dx, dy)
+        if d > COV_D_MAX or d < 1e-6:
+            continue
+        ux, uy = dx / d, dy / d
+        ox, oy = bx - ux * COV_OFFSET, by - uy * COV_OFFSET
+        seg = LineString([(px, py), (ox, oy)])
+        loss = 0.0
+        for j in tree.query(seg):
+            if seg.intersects(segs[j]):
+                loss += atten[j]
+        rssi = COV_RSSI_REF_1M - 10 * COV_N * math.log10(d) - loss
+        if rssi > COV_VISIBLE:
+            v += 1
+    return v
+
+
 def main():
     import argparse as _ap
     _a = _ap.ArgumentParser(description="交互式楼层渲染")
@@ -919,6 +984,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
   <label><input type="checkbox" onchange="toggleLayer('material', this.checked)"> 地面材质</label>
   <label><input type="checkbox" onchange="toggleLayer('fingerprint', this.checked)"> 指纹网格</label>
   <label><input type="checkbox" onchange="toggleLayer('beacon', this.checked)"> 信标部署点</label>
+  <label><input type="checkbox" onchange="toggleLayer('coverage', this.checked)"> 三点定位覆盖</label>
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
   <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
@@ -980,6 +1046,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 ''')
 
     # ---------------- 逐层生成 SVG ----------------
+    cov_index = build_coverage_index(geo)
     for i, fk in enumerate(sorted_floors):
         floor = int(fk)
         fd = geo["floors"][fk]
@@ -1828,6 +1895,36 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if n_fp:
                 print(f"  [F{fk}] 指纹网格图层: {n_fp} 个点")
 
+        # 11.5 三点定位覆盖（基于已加载信标方案 + 本层墙体，对每指纹点算可见信标数着色）
+        cov_fk = cov_index.get(str(fk))
+        bc_fk = beacon_floors.get(str(fk))
+        if fp_fd and cov_fk is not None and bc_fk:
+            n_cov = 0
+            bc_coords = [(b["coordinates"][0], b["coordinates"][1]) for b in bc_fk]
+            for p in fp_fd.get("points", []):
+                cx, cy = p["coordinates"][0], p["coordinates"][1]
+                sx, sy = tosvg(cx, cy)
+                vis = visible_beacon_count(cx, cy, bc_coords, cov_fk)
+                col = COV_COLORS.get(min(vis, 3), "#43A047")
+                ok = vis >= 3
+                tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
+                det = {"title": f"指纹点 {p.get('id','')} 覆盖", "rows": [
+                    ("楼层", f"{p.get('floor','?')}F"),
+                    ("可见信标数", str(vis)),
+                    ("三点定位", "可" if ok else "不足（需≥3）"),
+                    ("坐标", f"({cx:.2f}, {cy:.2f})"),
+                ]}
+                attr = info_attr({"tip": tip, "detail": det, "kind": "coverage", "id": p.get("id", "")})
+                # 默认隐藏（图层面板未勾选），与指纹/信标图层一致
+                parts.append(
+                    f'<g class="layer_coverage" style="display:none" {attr}>'
+                    f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '
+                    f'fill-opacity="0.82" stroke="#fff" stroke-width="0.5"/></g>\n'
+                )
+                n_cov += 1
+            if n_cov:
+                print(f"  [F{fk}] 三点定位覆盖图层: {n_cov} 个点")
+
         # 12. 信标部署点（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
         bc_list = beacon_floors.get(str(fk))
         if bc_list:
@@ -2281,6 +2378,12 @@ function srLocate(el) {{
     <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>出入口</div>
     <div class="lg-item"><div class="lg-sw" style="background:#00897B;border-radius:50%;width:11px;height:11px"></div>走廊覆盖点（路线模式）</div>
   </div>
+  <div class="lg-sec"><div class="lg-title">三点定位覆盖</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>≥3 信标（可三点定位）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FBC02D;border-radius:50%;width:11px;height:11px"></div>2 信标</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>1 信标</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>0（无覆盖）</div>
+  </div>
   </div><!-- /lg-grid -->
 </div><!-- /legend-panel -->
 </div><!-- /left -->
@@ -2496,7 +2599,7 @@ wrapper.addEventListener('click', function(e) {{
 // ---- 图层开关 ----
 var allLayers = ['room','infrastructure','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','elevator_door','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon'];
+  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon','coverage'];
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
