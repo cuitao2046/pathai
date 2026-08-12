@@ -22,10 +22,14 @@ import math
 import os
 import sys
 
-# ---- 与 parse_cad_pdf.py 同步的坐标变换常量 ----
-SCALE = 0.0529        # 米 / pt
-ORIGIN_X = 2019.1     # pt
-ORIGIN_Y = 1154.8     # pt
+# ---- 与 parse_cad_pdf.py 同步的坐标变换常量（统一来源 src/common/constants.py）----
+# 本脚本可独立运行，无法导入 src 包时兜底同值。
+try:
+    from src.common.constants import SCALE, ORIGIN_X, ORIGIN_Y
+except ImportError:
+    SCALE = 0.0529        # 米 / pt
+    ORIGIN_X = 2019.1     # pt
+    ORIGIN_Y = 1154.8     # pt
 
 # 偏差判定阈值（米），与指南第十节验收标准一致
 THRESH_OK = 0.3       # < 0.3 可用

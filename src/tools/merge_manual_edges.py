@@ -35,7 +35,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 GEOJSON = ROOT / "result" / "school_building_01_map_v9.geojson"
 RENDER = ROOT / "src" / "rendering" / "render_interactive.py"
-BLIND_WALK_SPEED = 0.8  # 视障步速 m/s（与 topology.py 一致）
+
+# 视障步速 m/s（统一来源 src/common/constants.py；独立运行兜底同值）
+try:
+    from src.common.constants import BLIND_WALK_SPEED
+except ImportError:
+    BLIND_WALK_SPEED = 0.8
 
 
 def main(argv=None):
