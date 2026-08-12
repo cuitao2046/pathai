@@ -2542,8 +2542,10 @@ function showDetail(d) {{
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
 var clickTimer = null;
 // 选中元素详情注入「质心坐标」行（米制 CAD 坐标）：
-// 从被点击 <g> 内的 polygon/polyline 顶点取平均（SVG 用户空间）-> svg2geo 反算，
-// 覆盖房间/走廊/可通行区/楼梯/电梯/柱体等面元素与骨架等线元素。
+// 收集被点击 <g> 内所有几何的采样点(SVG 用户空间)取平均 -> svg2geo 反算。
+// 支持: polygon/polyline 顶点、line 两端、rect 中心、circle 圆心，
+// 覆盖房间/走廊/可通行区/楼梯/电梯(面)、电梯门/骨架(线)、防火门(矩形)、
+// 普通门/拓扑节点(圆)等全部拓扑要素。
 function injectCentroid(g, d){{
   if(!d || !d.detail || !d.detail.rows || d.detail._hasCentroid) return;
   var pts = [];
@@ -2554,7 +2556,22 @@ function injectCentroid(g, d){{
       if(m.length === 2 && isFinite(parseFloat(m[0]))) pts.push([parseFloat(m[0]), parseFloat(m[1])]);
     }});
   }});
-  if(pts.length < 3) return;
+  g.querySelectorAll('line').forEach(function(sh){{
+    var x1 = parseFloat(sh.getAttribute('x1')), y1 = parseFloat(sh.getAttribute('y1'));
+    var x2 = parseFloat(sh.getAttribute('x2')), y2 = parseFloat(sh.getAttribute('y2'));
+    if(isFinite(x1) && isFinite(y1)) pts.push([x1, y1]);
+    if(isFinite(x2) && isFinite(y2)) pts.push([x2, y2]);
+  }});
+  g.querySelectorAll('rect').forEach(function(sh){{
+    var x = parseFloat(sh.getAttribute('x')), y = parseFloat(sh.getAttribute('y'));
+    var w = parseFloat(sh.getAttribute('width')), h = parseFloat(sh.getAttribute('height'));
+    if(isFinite(x) && isFinite(y) && isFinite(w) && isFinite(h)) pts.push([x + w / 2, y + h / 2]);
+  }});
+  g.querySelectorAll('circle').forEach(function(sh){{
+    var cx = parseFloat(sh.getAttribute('cx')), cy = parseFloat(sh.getAttribute('cy'));
+    if(isFinite(cx) && isFinite(cy)) pts.push([cx, cy]);
+  }});
+  if(pts.length === 0) return;
   var sx = 0, sy = 0;
   pts.forEach(function(p){{ sx += p[0]; sy += p[1]; }});
   var cg = svg2geo(sx / pts.length, sy / pts.length);
