@@ -49,7 +49,7 @@ NODE_COLORS = {
     "facility_entrance": "#2980B9",
 }
 FACILITY_COLORS = {"staircase": "#8E44AD", "elevator": "#16A085"}
-# 信标部署点配色（与图例一致）：交叉口/门口/楼梯/电梯/走廊覆盖点
+# 信标部署点配色（与图例一致）：交叉口/门口/楼梯/电梯/走廊覆盖点 + 三点定位/放置质量语义
 BEACON_COLORS = {
     "intersection": "#FB8C00",
     "door": "#8E24AA",
@@ -57,6 +57,11 @@ BEACON_COLORS = {
     "elevator": "#1E88E5",
     "entrance": "#43A047",
     "corridor": "#00897B",
+    "trilateration_base": "#1565C0",        # 全楼三点定位：基础信标（深蓝）
+    "trilateration_fill": "#6A1B9A",        # 全楼三点定位：覆盖补点（深紫）
+    "trilateration_route_base": "#0277BD",  # 路线三点定位：基础信标（亮蓝）
+    "trilateration_route_fill": "#4A148C",  # 路线三点定位：覆盖补点（亮紫）
+    "placement_quality_fill": "#EF6C00",    # 放置质量后处理补点（深橙）
 }
 
 # 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
@@ -720,6 +725,31 @@ def visible_beacon_count(px, py, beacons, cidx):
     return v
 
 
+def visible_ids(px, py, beacons, cidx):
+    """点(px,py)对同层 beacons[(bid,(x,y))...] 的可见信标 ID 列表（穿墙模型，与 coverage 同口径）。
+       cidx = (segs, atten, tree) 或 None。"""
+    if cidx is None:
+        return []
+    segs, atten, tree = cidx
+    out = []
+    for (bid, (bx, by)) in beacons:
+        dx, dy = bx - px, by - py
+        d = math.hypot(dx, dy)
+        if d > COV_D_MAX or d < 1e-6:
+            continue
+        ux, uy = dx / d, dy / d
+        ox, oy = bx - ux * COV_OFFSET, by - uy * COV_OFFSET
+        seg = LineString([(px, py), (ox, oy)])
+        loss = 0.0
+        for j in tree.query(seg):
+            if seg.intersects(segs[j]):
+                loss += atten[j]
+        rssi = COV_RSSI_REF_1M - 10 * COV_N * math.log10(d) - loss
+        if rssi > COV_VISIBLE:
+            out.append(bid)
+    return out
+
+
 def main():
     import argparse as _ap
     _a = _ap.ArgumentParser(description="交互式楼层渲染")
@@ -1047,6 +1077,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 
     # ---------------- 逐层生成 SVG ----------------
     cov_index = build_coverage_index(geo)
+    beacon_contrib = collections.defaultdict(list)  # beaconId -> 关键贡献点[[x,y],...]
     for i, fk in enumerate(sorted_floors):
         floor = int(fk)
         fd = geo["floors"][fk]
@@ -1899,11 +1930,18 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
         bc_fk = beacon_floors.get(str(fk))
         if fp_fd and cov_fk is not None and bc_fk:
             n_cov = 0
+            bc_id = [(b.get("beaconId", ""), (b["coordinates"][0], b["coordinates"][1])) for b in bc_fk]
             bc_coords = [(b["coordinates"][0], b["coordinates"][1]) for b in bc_fk]
             for p in fp_fd.get("points", []):
                 cx, cy = p["coordinates"][0], p["coordinates"][1]
                 sx, sy = tosvg(cx, cy)
-                vis = visible_beacon_count(cx, cy, bc_coords, cov_fk)
+                vis_ids = visible_ids(cx, cy, bc_id, cov_fk)
+                vis = len(vis_ids)
+                # 关键贡献点：该点恰靠 vis==3 维持可定位，移除其中任一可见信标即 <3
+                if vis == 3:
+                    for bid in vis_ids:
+                        if bid:
+                            beacon_contrib[bid].append([round(cx, 2), round(cy, 2)])
                 col = COV_COLORS.get(min(vis, 3), "#43A047")
                 ok = vis >= 3
                 tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
@@ -2182,6 +2220,11 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
     full_geojson_js = json.dumps(geo, ensure_ascii=False, separators=(",", ":"))
     parts.append(
         f'<script type="application/json" id="full-geojson-data">{full_geojson_js}</script>\n'
+    )
+    # 信标关键贡献点表（JS 选中信标时高亮：该点恰靠此信标维持 >=3 可见）
+    parts.append(
+        f'<script type="application/json" id="beacon-contrib-data">'
+        f'{json.dumps(dict(beacon_contrib), ensure_ascii=False, separators=(",", ":"))}</script>\n'
     )
 
     # ---------------- 图例 + 详情面板 + JS ----------------
@@ -2549,6 +2592,7 @@ function clearHighlight() {{
   document.querySelectorAll('.neighbor').forEach(function(el){{ el.classList.remove('neighbor'); }});
   var ring = document.getElementById('path-flash-ring');
   if (ring) ring.innerHTML = '';
+  clearBeaconContrib();
 }}
 function resetDetail() {{ document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
@@ -2632,6 +2676,42 @@ function injectCentroid(g, d){{
   d.detail._hasCentroid = true;
   d.detail.rows = [['质心坐标', '(' + cg.x.toFixed(2) + ', ' + cg.y.toFixed(2) + ')']].concat(d.detail.rows);
 }}
+// ---- 选中信标：高亮其「关键贡献点」（该 1m 网格点恰靠此信标维持 >=3 可见，移除即 <3）----
+var BEACON_CONTRIB = null;
+function loadBeaconContrib(){{
+  if (BEACON_CONTRIB !== null) return BEACON_CONTRIB;
+  var el = document.getElementById('beacon-contrib-data');
+  try {{ BEACON_CONTRIB = el ? JSON.parse(el.textContent) : {{}}; }} catch(e) {{ BEACON_CONTRIB = {{}}; }}
+  return BEACON_CONTRIB;
+}}
+function clearBeaconContrib(){{
+  document.querySelectorAll('.beacon-contrib').forEach(function(el){{
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }});
+}}
+function showBeaconContrib(t){{
+  clearBeaconContrib();
+  var d2 = null; try {{ d2 = JSON.parse(t.getAttribute('data-info')); }} catch(e) {{ return; }}
+  if (d2.kind !== 'beacon' || !d2.id) return;
+  var m = loadBeaconContrib()[d2.id];
+  if (!m || !m.length) return;
+  var fk = t.getAttribute('data-floor');
+  var fi = GEOX.floorKeys.indexOf(String(fk));
+  if (fi < 0) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'beacon-contrib');
+  m.forEach(function(c){{
+    var sx = GEOX.marginX + (c[0] - GEOX.ox) * GEOX.scale;
+    var sy = fi * GEOX.perFloor + GEOX.titleH + GEOX.marginY + (GEOX.oy - c[1]) * GEOX.scale;
+    var cEl = document.createElementNS(NS, 'circle');
+    cEl.setAttribute('cx', sx); cEl.setAttribute('cy', sy);
+    cEl.setAttribute('r', 4.2); cEl.setAttribute('fill', 'none');
+    cEl.setAttribute('stroke', '#2E7D32'); cEl.setAttribute('stroke-width', 1.6);
+    g.appendChild(cEl);
+  }});
+  svg.appendChild(g);
+}}
 wrapper.addEventListener('click', function(e) {{
   if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
   var t = e.target.closest('[data-info]');
@@ -2656,12 +2736,14 @@ wrapper.addEventListener('click', function(e) {{
     clickTimer = null;
     // 已选中 → 再次点击取消选中，并还原关联状态
     if (t.classList.contains('selected')) {{
-      clearHighlight(); resetDetail();
+      clearHighlight(); clearBeaconContrib(); resetDetail();
       return;
     }}
     // 未选中 → 切换为选中：先还原其它，再建立本要素的关联状态
     clearHighlight(); t.classList.add('selected');
     showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
+    // 信标 → 高亮其关键贡献点（绿色轮廓圈，见 showBeaconContrib）
+    if (d.kind === 'beacon') showBeaconContrib(t);
     // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
     if (d.kind === 'node' && d.id) {{
       ensureLayer('topo_node', true);
