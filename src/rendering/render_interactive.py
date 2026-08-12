@@ -1965,6 +1965,38 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if n_bc:
                 print(f"  [F{fk}] 信标部署点图层: {n_bc} 个信标")
 
+        # 坐标系（每层左下角，1m 刻度 = SCALE px，独立 class 不随图层开关显隐）
+        ax_x0, ax_y0 = 6, fbase_y + svh_per_floor - 14
+        ax_len = 10 * SCALE
+        parts.append(f'<g class="coord-axes" pointer-events="none">')
+        parts.append(f'<rect x="{ax_x0 - 8}" y="{ax_y0 - ax_len - 14}" width="{ax_len + 34}" '
+                     f'height="{ax_len + 26}" fill="rgba(255,255,255,0.88)" stroke="#ccc" stroke-width="0.5"/>')
+        parts.append(f'<text x="{ax_x0}" y="{ax_y0 - 8}" font-size="8" fill="#555">坐标系 {floor}F（1 m/格）</text>')
+        # X 轴 + 刻度 + 箭头
+        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0}" x2="{ax_x0 + ax_len}" y2="{ax_y0}" stroke="#888" stroke-width="1"/>')
+        parts.append(f'<line x1="{ax_x0 + ax_len}" y1="{ax_y0}" x2="{ax_x0 + ax_len - 4}" y2="{ax_y0 - 3}" stroke="#888" stroke-width="1"/>')
+        parts.append(f'<line x1="{ax_x0 + ax_len}" y1="{ax_y0}" x2="{ax_x0 + ax_len - 4}" y2="{ax_y0 + 3}" stroke="#888" stroke-width="1"/>')
+        for k in range(0, 11):
+            tx = ax_x0 + k * SCALE
+            parts.append(f'<line x1="{tx:.1f}" y1="{ax_y0}" x2="{tx:.1f}" y2="{ax_y0 + 3}" stroke="#888" stroke-width="0.8"/>')
+            if k % 2 == 0:
+                parts.append(f'<text x="{tx:.1f}" y="{ax_y0 + 11}" font-size="6" text-anchor="middle" fill="#666">{k}</text>')
+        parts.append(f'<text x="{ax_x0 + ax_len + 4}" y="{ax_y0 + 3}" font-size="7" fill="#555">X →</text>')
+        # Y 轴 + 刻度 + 箭头（SVG y 向下，向上即 y 递减）
+        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0}" x2="{ax_x0}" y2="{ax_y0 - ax_len}" stroke="#888" stroke-width="1"/>')
+        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0 - ax_len}" x2="{ax_x0 - 3}" y2="{ax_y0 - ax_len + 4}" stroke="#888" stroke-width="1"/>')
+        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0 - ax_len}" x2="{ax_x0 + 3}" y2="{ax_y0 - ax_len + 4}" stroke="#888" stroke-width="1"/>')
+        for k in range(0, 11):
+            ty = ax_y0 - k * SCALE
+            parts.append(f'<line x1="{ax_x0}" y1="{ty:.1f}" x2="{ax_x0 - 3}" y2="{ty:.1f}" stroke="#888" stroke-width="0.8"/>')
+            if k % 2 == 0:
+                parts.append(f'<text x="{ax_x0 - 4}" y="{ty + 2:.1f}" font-size="6" text-anchor="end" fill="#666">{k}</text>')
+        parts.append(f'<text x="{ax_x0 - 4}" y="{ax_y0 - ax_len - 3}" font-size="7" fill="#555">Y ↑</text>')
+        # 原点 (0,0)
+        parts.append(f'<circle cx="{ax_x0}" cy="{ax_y0}" r="2.2" fill="#C62828"/>')
+        parts.append(f'<text x="{ax_x0 + 3}" y="{ax_y0 - 3}" font-size="6" fill="#C62828">(0,0)</text>')
+        parts.append('</g>\n')
+
         # 楼层分隔线
         if i < len(sorted_floors) - 1:
             sep_y = (i + 1) * svh_per_floor
