@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "venueId": "school-building-01",
+  "version": "9.0.0",
+  "generated_at": "2026-08-12",
+  "source": "E:\\code\\pathai\\result\\school_building_01_map_v9.geojson",
+  "source_sha256": "fe481b591fe8a35b29044d318cc4a97c9a864c87a650e738964a8584c41657f7",
+  "stats": {
+    "floors": {
+      "1": {
+        "nodes": 284,
+        "edges": 350,
+        "TR": 50,
+        "TD": 135,
+        "TI": 78,
+        "TF": 13,
+        "TEN": 8,
+        "doors_geom": 132,
+        "skeleton_segs": 59,
+        "walkable_feats": 31,
+        "rooms_total": 50,
+        "rooms_with_door": 50,
+        "main_component": 284,
+        "components": 1,
+        "coverage": 1.0,
+        "skeleton_short_ratio": 0.0,
+        "skeleton_total_len_m": 700.6
+      },
+      "2": {
+        "nodes": 181,
+        "edges": 243,
+        "TR": 39,
+        "TD": 79,
+        "TI": 53,
+        "TF": 10,
+        "TEN": 0,
+        "doors_geom": 76,
+        "skeleton_segs": 48,
+        "walkable_feats": 16,
+        "rooms_total": 39,
+        "rooms_with_door": 39,
+        "main_component": 181,
+        "components": 1,
+        "coverage": 1.0,
+        "skeleton_short_ratio": 0.0,
+        "skeleton_total_len_m": 564.3
+      }
+    },
+    "crossFloorEdges": {
+      "count": 10,
+      "stair": 7,
+      "elevator": 3
+    }
+  }
+}
