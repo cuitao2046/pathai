@@ -8,7 +8,15 @@ import contextlib
 import io
 import unittest
 
-from testutil import assert_golden, compute_stats, load_golden, skip_if_missing
+from testutil import (
+    assert_golden,
+    assert_struct_golden,
+    compute_stats,
+    compute_struct_fingerprint,
+    load_golden,
+    load_struct_golden,
+    skip_if_missing,
+)
 
 
 class TestPipelineGolden(unittest.TestCase):
@@ -34,6 +42,12 @@ class TestPipelineGolden(unittest.TestCase):
         self.assertEqual(geo.get("version"), golden["version"])
         actual = compute_stats(geo)
         assert_golden(self, actual, golden)
+
+    def test_pipeline_reproduces_struct_fingerprint(self):
+        geo = self._run_pipeline()
+        golden = load_struct_golden()
+        actual = compute_struct_fingerprint(geo)
+        assert_struct_golden(self, actual, golden)
 
 
 if __name__ == "__main__":
