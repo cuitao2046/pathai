@@ -29,14 +29,16 @@ src/route_rules.py — 导航路线生成规则（与 render_interactive.py 前�
   无门卫生间(endpoint 为 doorless toilet) 例外放行。
 """
 import json
+import heapq
 import math
 from collections import defaultdict
 
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
-# 门类型边权惩罚（米），越小越优先
-DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}
+# 门类型边权惩罚（米），越小越优先；统一来源 src/common/constants.py
+from src.common.constants import DOOR_PENALTY
+from src.geometry.segments import segments_properly_cross
 
 # 同层路线允许的「中间节点」类型（不含 facility 楼梯/电梯）
 SAME_FLOOR_MID_TYPES = {"intersection", "facility_entrance", "doorway"}
@@ -122,7 +124,7 @@ class RouteGraph:
                 for rid in n["rooms"]:
                     t = n["doorType"]
                     # 常开防火门与普通门平等对待（penalty=0）
-                    p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, 9)
+                    p = self._door_penalty(n)
                     if rid not in best_door:
                         best_door[rid] = t
                     else:
@@ -151,9 +153,10 @@ class RouteGraph:
                 continue
             if all(room_id_to_type.get(r) == "infrastructure" for r in rids):
                 self.infra_doorway_ids.add(nid)
+        # 边 id 索引（C2）：_edge_by_id 由 O(E) 线性扫描降为 O(1)
+        self.edge_by_id = {e["id"]: e for e in self.edges}
 
     def _add_doorless_toilet_links(self, radius=20.0):
-        import math as _m
         cand_types = {"intersection", "facility_entrance", "doorway", "facility"}
         seq = 0
         for n in self.nodes.values():
@@ -167,7 +170,7 @@ class RouteGraph:
                     continue
                 if m["floor"] != n["floor"]:
                     continue
-                d = _m.hypot(cx - m["coords"][0], cy - m["coords"][1])
+                d = math.hypot(cx - m["coords"][0], cy - m["coords"][1])
                 if d < best_d:
                     best_d, best = d, m
             if best is None:
@@ -240,15 +243,26 @@ class RouteGraph:
                 return True
         return False
 
-    def _edge_door_type(self, e: dict):
-        """门类型存于门节点(非边)，从 doorway 端点推导。"""
+    def _door_node_of_edge(self, e: dict):
+        """门节点存于边端点（门类型/常开属性都在门节点上），从 doorway 端点推导。"""
         a = self.nodes.get(e["from"])
         b = self.nodes.get(e["to"])
         if a and a["type"] == "doorway":
-            return a.get("doorType")
+            return a
         if b and b["type"] == "doorway":
-            return b.get("doorType")
+            return b
         return None
+
+    def _edge_door_type(self, e: dict):
+        dn = self._door_node_of_edge(e)
+        return dn.get("doorType") if dn else None
+
+    def _door_penalty(self, node, default=9.0):
+        """门类型惩罚（米）：常开防火门与普通门平等对待（penalty=0）。
+        E2 统一「常开防火门无惩罚」判定，避免三处重复书写改漏。"""
+        if node.get("doorType") == "fire" and node.get("isNormallyOpen"):
+            return 0.0
+        return DOOR_PENALTY.get(node.get("doorType"), default)
 
     def _edge_is_closed_fire_door(self, e: dict):
         """常闭防火门：isNormallyOpen == False 的 fire 门不可通行。"""
@@ -267,14 +281,8 @@ class RouteGraph:
             b = self.nodes.get(e["to"])
             # 仅在 room↔door 边施加门类型惩罚（每扇门只惩罚一次）
             if (a and a["type"] == "room") or (b and b["type"] == "room"):
-                # 常开防火门与普通门平等对待，无惩罚
-                if dt == "fire":
-                    is_open = (a.get("isNormallyOpen") if a and a["type"] == "doorway"
-                               else b.get("isNormallyOpen") if b and b["type"] == "doorway"
-                               else None)
-                    if is_open:
-                        return w  # 常开防火门无惩罚
-                w += DOOR_PENALTY.get(dt, 0.0)
+                # E2：常开防火门与普通门平等对待，无惩罚（由 _door_penalty 统一判定）
+                w += self._door_penalty(self._door_node_of_edge(e), default=0.0)
         return w
 
     def _mid_types(self, start_id, end_id):
@@ -322,8 +330,6 @@ class RouteGraph:
             # 常开防火门与普通门平等对待（penalty=0）
             if door_filter:
                 ta, tb = self.nodes[a]["type"], self.nodes[b]["type"]
-                e_dt = self._edge_door_type(e)
-                # 常开防火门 → 实际 penalty=0
                 _door_node = None
                 if ta == "room" and tb == "doorway":
                     _door_node = self.nodes[b]
@@ -332,11 +338,9 @@ class RouteGraph:
                     _door_node = self.nodes[a]
                     best = self.nodes[b].get("best_door_type")
                 else:
-                    _door_node = None
                     best = None
                 if best is not None and _door_node is not None:
-                    edge_p = 0.0 if (e_dt == "fire" and _door_node.get("isNormallyOpen")) \
-                        else DOOR_PENALTY.get(e_dt, 9)
+                    edge_p = self._door_penalty(_door_node)
                     if edge_p > DOOR_PENALTY.get(best, 9):
                         continue
             w = self._edge_weight(e)
@@ -370,11 +374,10 @@ class RouteGraph:
         prev = {}
         prev_edge = {}
         visited = set()
-        # 简易优先队列（列表 + 排序）
+        # 优先队列（C1）：heapq 替代「列表 + 全量 sort + pop(0)」，摊还 O(log V)/次
         pq = [(0.0, start_id)]
         while pq:
-            pq.sort(key=lambda x: x[0])
-            d, u = pq.pop(0)
+            d, u = heapq.heappop(pq)
             if u in visited:
                 continue
             visited.add(u)
@@ -398,7 +401,7 @@ class RouteGraph:
                     dist[nb] = nd
                     prev[nb] = u
                     prev_edge[nb] = eid
-                    pq.append((nd, nb))
+                    heapq.heappush(pq, (nd, nb))
 
         if end_id not in dist:
             return None
@@ -439,10 +442,7 @@ class RouteGraph:
         }
 
     def _edge_by_id(self, eid):
-        for e in self.edges:
-            if e["id"] == eid:
-                return e
-        return None
+        return self.edge_by_id.get(eid)
 
     # ------------------------------------------------------------------ #
     # 规则 3：穿墙几何校验（无门卫生间例外）
@@ -460,32 +460,9 @@ class RouteGraph:
 
         判定：两端点位于墙线两侧(opposite sides)且交点落在线段内。
         共线/同侧(沿墙并行)不算穿墙。
+        （审查 B10：几何判定统一收敛到 src/geometry/segments.py）
         """
-        ax, ay = A[0], A[1]
-        bx, by = B[0], B[1]
-        px, py = p1[0], p1[1]
-        qx, qy = p2[0], p2[1]
-        dx, dy = bx - ax, by - ay
-
-        def side(x, y):
-            return (bx - ax) * (y - ay) - (by - ay) * (x - ax)
-
-        s1 = side(px, py)
-        s2 = side(qx, qy)
-        if s1 == 0 and s2 == 0:
-            return False  # 共线：沿墙，非穿透
-        if s1 * s2 > 0:
-            return False  # 同侧：沿墙并行，非穿透
-        if abs(dx) < 1e-12 and abs(dy) < 1e-12:
-            return False  # 退化墙线
-        # 异侧：求交点参数
-        ex, ey = qx - px, qy - py
-        det = dx * ey - dy * ex
-        if abs(det) < 1e-12:
-            return False
-        u = (ex * (ay - py) - ey * (ax - px)) / det  # 沿墙 A->B 参数
-        t = (dy * (px - ax) - dx * (py - ay)) / det  # 沿路径 p1->p2 参数
-        return (0.0 - 1e-9) <= t <= (1.0 + 1e-9) and (0.0 - 1e-9) <= u <= (1.0 + 1e-9)
+        return segments_properly_cross(p1, p2, A, B)
 
     def validate_wall_crossing(self, path, mode="normal"):
         """对路径的公共空间段做穿墙检测。

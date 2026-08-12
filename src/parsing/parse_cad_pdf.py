@@ -36,8 +36,13 @@ from shapely.geometry import LineString, MultiPolygon, Point, Polygon, box
 from shapely import snap as shp_snap
 from shapely.strtree import STRtree
 
+# 全局常量唯一来源（比例/原点/步行速度等，见 docs/code-review-2026-08-12.md D1-D4）
+from src.common.constants import SCALE, ORIGIN_X, ORIGIN_Y, BLIND_WALK_SPEED
+
 # 拓扑建模（指南 第五章）
-from src.topology import (build_floor_topology, build_cross_floor_edges, obj_id,
+# 注：跨层边不从此导入——本文件使用内嵌的 cross_floor_edges（图纸井道编号配对），
+# topology.build_cross_floor_edges 为几何配对版，两者并存见 docs/code-review-2026-08-12.md A3。
+from src.topology import (build_floor_topology, obj_id,
                           OBJ_TYPE, assign_node_risk_levels)
 
 try:
@@ -86,11 +91,8 @@ def _load_manual_skeleton():
         MANUAL_SKELETON = {}
     return MANUAL_SKELETON
 
-# 比例尺校准：轴网 8400mm = 158.8pt（AXIS 层间距众数），
-# 与窗编号 M2GW5924(5900mm)=111.5pt 互证。v7 的 0.0644 偏大 22%，已弃用。
-SCALE = 0.0529          # 米 / pt
-ORIGIN_X = 2019.1       # pt
-ORIGIN_Y = 1154.8       # pt
+# 比例尺/原点已统一到 src/common/constants.py（SCALE/ORIGIN_X/ORIGIN_Y），
+# 校准依据见该模块注释：轴网 8400mm = 158.8pt，与窗编号 M2GW5924 互证。
 
 # Phase2+ 骨架导航管线开关（T3–T8）。True 时用中轴拓扑替代质心最近邻。
 USE_SKELETON = True
@@ -118,7 +120,9 @@ LAYERS_STRUCT = ("WALL", "A-WALL-CONC", "A-WALL-FINI", "A-FLOR-STRS",
 # 处理：以细线(1px)单独栅格化参与封闭；凡围出 <ABSORB_CELL_M2 微单元的
 # 家具线在微单元邻域内擦除（打通厕位与走道），真实隔墙两侧都是大房间、
 # 邻域无微单元，不受影响。
-LAYERS_FURNITURE = ()  # A-METAL-S 已迁至 LAYERS_STRUCT，不再单独作为家具层
+LAYERS_FURNITURE = ()  # DISABLED: A-METAL-S 已迁至 LAYERS_STRUCT，不再单独作为家具层。
+# 注意：空配置使下方 furn_segs 收集循环恒为空、整条 furn_segs 参数链成为死代码
+# （审查 A5）。若后续需要单独处理家具层，请补回真实图层名并同步验证链上各分支。
 # 强制剔除的图层：整层元素不参与任何解析（不计入墙体封闭、门/窗/房间识别）。
 # A-TECH-SANT（卫生/给排水器具等）已设为默认关闭，且 PyMuPDF 的
 # page.get_drawings() 不感知图层可见性、会照常返回其全部矢量元素，
@@ -294,6 +298,17 @@ def point_to_seg_dist(p, a, b):
     t_clamped = max(0.0, min(1.0, t))
     px, py = ax + t_clamped * dx, ay + t_clamped * dy
     return math.hypot(p[0] - px, p[1] - py), t
+
+
+def bezier_mid(bz):
+    """三次贝塞尔曲线中点（t=0.5，四重线性插值）。
+    用于门摆弧弧中点的统一计算（审查 E5：收敛 detect_doors/parse_floor 两处重复实现）。"""
+    p1, p2, p3, p4 = bz
+    def lerp(a, b, t=0.5):
+        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+    q1, q2, q3 = lerp(p1, p2), lerp(p2, p3), lerp(p3, p4)
+    r1, r2 = lerp(q1, q2), lerp(q2, q3)
+    return lerp(r1, r2)
 
 
 class UnionFind:
@@ -624,14 +639,6 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     返回 [{'center': p_pt, 'width_pt': w, 'axis': (a,b), 'kind': 'swing'|'fire'}]
     """
     door_segs = []  # (hinge, tip, radius, kind)
-
-    def bezier_mid(bz):
-        p1, p2, p3, p4 = bz
-        def lerp(a, b, t=0.5):
-            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-        q1, q2, q3 = lerp(p1, p2), lerp(p2, p3), lerp(p3, p4)
-        r1, r2 = lerp(q1, q2), lerp(q2, q3)
-        return lerp(r1, r2)
 
     def nearest_wall_dist(p):
         if not struct_segs:
@@ -1084,7 +1091,9 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
 
 
 def dedupe_doorways(doors):
-    """仅合并**同类型**重合的门（swing↔swing、fire↔fire、opening↔opening）。
+    """DISABLED: 未在任何调用链中使用（死代码），保留仅供 git 历史参考。
+    # 用户约定「门不合并」：每扇门独立成 TD，见 docs/设计决策记录.md ADR-门不合并。
+    # 原实现：仅合并**同类型**重合的门（swing↔swing、fire↔fire、opening↔opening）。
 
     不同类型（如 swing 与 opening 标在相邻不同洞口）不合并——用户明确：
     门洞和普通门不做去重合并，只针对同类型门去重。
@@ -2182,7 +2191,7 @@ def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
             new_edges.append({
                 "id": eid, "from": tf_id, "to": td_id,
                 "distance": round(d, 2),
-                "estimatedTime": round(d / 0.8, 1),
+                "estimatedTime": round(d / BLIND_WALK_SPEED, 1),
                 "accessibilityLevel": 0, "riskLevel": 1,
                 "walkable": True, "wheelchairAccessible": True,
                 "blindAccessible": True,
@@ -2206,7 +2215,7 @@ def attach_elevator_door_nodes(nodes, edges, elevator_doors, elevators,
             new_edges.append({
                 "id": eid, "from": td_id, "to": best["id"],
                 "distance": round(best_d, 2),
-                "estimatedTime": round(best_d / 0.8, 1),
+                "estimatedTime": round(best_d / BLIND_WALK_SPEED, 1),
                 "accessibilityLevel": 0, "riskLevel": 1,
                 "walkable": True, "wheelchairAccessible": True,
                 "blindAccessible": True,
@@ -2494,110 +2503,6 @@ def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
 
 
 
-def _heban_real_polygon(label_pt_pt, all_segs, furn_segs, closures):
-    """
-    合班教室真实闭合墙体识别（局部、不影响其它空间）：
-      1) 在标签点周围取局部墙图（结构墙+家具线+门/窗封口）；
-      2) 用形态学闭运算桥合标准门/窗宽度的小缺口，把真实墙体闭合成环；
-      3) 从标签点泛洪，提取包含标签点的自由空间连通域；
-      4) 轮廓简化 -> shapely Polygon。
-    多档核宽（1.2/1.6/2.0/2.4/2.8m）自动选择落在 30~250m² 的结果，
-    太大（漏进走廊）或太小（未闭合）时回退为 None。
-    """
-    import cv2
-    import numpy as np
-    if not all_segs:
-        return None
-    half_m = 18.0
-    half_pt = half_m / SCALE
-    minx = label_pt_pt[0] - half_pt
-    maxx = label_pt_pt[0] + half_pt
-    miny = label_pt_pt[1] - half_pt
-    maxy = label_pt_pt[1] + half_pt
-    Z = RENDER_ZOOM
-    W = int((maxx - minx) * Z) + 1
-    H = int((maxy - miny) * Z) + 1
-    if W <= 20 or H <= 20:
-        return None
-
-    def to_px(p):
-        return (int(round((p[0] - minx) * Z)), int(round((p[1] - miny) * Z)))
-
-    walls = np.zeros((H, W), np.uint8)
-    for a, b in list(all_segs) + list(furn_segs) + list(closures):
-        pa, pb = to_px(a), to_px(b)
-        if 0 <= pa[0] < W and 0 <= pa[1] < H and 0 <= pb[0] < W and 0 <= pb[1] < H:
-            cv2.line(walls, pa, pb, 255, thickness=2)
-
-    label_px = to_px(label_pt_pt)
-    if not (0 <= label_px[0] < W and 0 <= label_px[1] < H):
-        return None
-
-    best_poly = None
-    best_score = None
-
-    # 局部算法：合班是完整矩形房间，仅走廊侧有大开口漏进走廊。
-    # 用递增的形态学闭运算桥合开口；核足够大时漏口被封，泛洪只填房间内部→面积≈80m²。
-    # 局部图不影响全局其它空间（只取含标签点的轮廓），故可用较大核激进封口。
-    for km in (1.2, 1.6, 2.0, 2.4, 2.8, 3.5, 4.5, 6.0):
-        k = int(round(km / (SCALE / Z)))
-        k = max(5, k | 1)  # 奇数核
-        closed = cv2.morphologyEx(
-            walls, cv2.MORPH_CLOSE,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
-        # 标签点若落在墙上，找最近自由像素
-        lx, ly = label_px
-        if closed[ly, lx] != 0:
-            found = None
-            for r in range(1, 30):
-                for dy in range(-r, r + 1):
-                    for dx in range(-r, r + 1):
-                        x, y = lx + dx, ly + dy
-                        if 0 <= x < W and 0 <= y < H and closed[y, x] == 0:
-                            found = (x, y)
-                            break
-                    if found:
-                        break
-                if found:
-                    break
-            if not found:
-                continue
-            lx, ly = found
-        mask = np.zeros((H + 2, W + 2), np.uint8)
-        try:
-            # floodFill 把填充区域(=种子点像素值0)改写为 newVal=128 写回图像 closed，
-            # 而 mask 对应像素只置为 1（非 128）。故取填充区域要用 closed==128。
-            cv2.floodFill(closed, mask, (lx, ly), 128)
-        except Exception:
-            continue
-        comp = (closed == 128).astype(np.uint8) * 255
-        contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL,
-                                       cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            continue
-        cnt = max(contours, key=cv2.contourArea)
-        area_px = cv2.contourArea(cnt)
-        area_m2 = area_px * (SCALE / Z) ** 2
-        if not (30.0 <= area_m2 <= 250.0):
-            continue
-        peri = cv2.arcLength(cnt, True)
-        approx = cv2.approxPolyDP(cnt, max(1.0, 0.015 * peri), True)
-        if len(approx) < 3:
-            continue
-        pts = [(float(p[0][0]) / Z + minx,
-                float(p[0][1]) / Z + miny) for p in approx]
-        poly = Polygon(pts)
-        if not poly.is_valid:
-            poly = poly.buffer(0)
-        if poly.is_empty or float(poly.area) * (SCALE ** 2) < 30.0:
-            continue
-        # 选面积最接近典型合班教室 ~80m² 的核
-        score = abs(area_m2 - 80.0)
-        if best_poly is None or score < best_score:
-            best_poly = poly
-            best_score = score
-
-    return best_poly
 
 
 # ── 射线投票参数 ──
@@ -2945,6 +2850,7 @@ def parse_floor(pdf_path, floor_no):
     # 合并虚线/点划线断段，恢复连续墙体；同时记录桥接的墙缝（用于无摆弧开口检测）
     struct_segs, wall_gaps = merge_collinear(struct_segs, record_gaps=True)
     # --- 家具层线段（细线参与封闭，微单元邻域内可擦除；剔除 LAYERS_IGNORE）
+    # 审查 A5：LAYERS_FURNITURE 为空配置，本循环恒不执行，furn_segs 恒空（死代码链）。
     furn_segs = []
     for lname in LAYERS_FURNITURE:
         if lname in LAYERS_IGNORE:
@@ -2989,14 +2895,6 @@ def parse_floor(pdf_path, floor_no):
                 return True
         return False
 
-    def _bez_mid(bz):
-        p1, p2, p3, p4 = bz
-        def lp(a, b, t=0.5):
-            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-        q1, q2, q3 = lp(p1, p2), lp(p2, p3), lp(p3, p4)
-        r1, r2 = lp(q1, q2), lp(q2, q3)
-        return lp(r1, r2)
-
     def fire_arc_near_wall(bz, tol=15.0):
         """防火门摆弧贴墙判定（较 swing 门宽松）。
 
@@ -3008,7 +2906,7 @@ def parse_floor(pdf_path, floor_no):
         xs = [p[0] for p in bz]
         ys = [p[1] for p in bz]
         x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-        m = _bez_mid(bz)
+        m = bezier_mid(bz)
         corners = [(x0, y0), (x0, y1), (x1, y0), (x1, y1)]
         # 弧圆心（铰链）= 离弧中点最远的角点
         center = max(corners,
@@ -3029,7 +2927,7 @@ def parse_floor(pdf_path, floor_no):
         xs = [p[0] for p in bz]
         ys = [p[1] for p in bz]
         x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-        m = _bez_mid(bz)
+        m = bezier_mid(bz)
         corners = [(x0, y0), (x0, y1), (x1, y0), (x1, y1)]
         center = max(corners,
                      key=lambda c: (c[0] - m[0]) ** 2 + (c[1] - m[1]) ** 2)  # 铰链

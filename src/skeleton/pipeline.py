@@ -35,8 +35,8 @@ try:
 except ImportError:
     bridge_disconnected_components = None  # type: ignore
 
-
-BLIND_WALK_SPEED = 0.8
+# 全局常量统一来源（见 docs/code-review-2026-08-12.md D1-D4）
+from src.common.constants import BLIND_WALK_SPEED, SCALE
 
 
 def _merge_nearby_points(pts, radius_m=1.0):
@@ -392,6 +392,11 @@ def _merge_nearby_doors(doors: list, max_dist_m: float = 0.8,
                         coords: Optional[Sequence] = None) -> list:
     """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
 
+    DISABLED: 用户明确约定「同一物理开口只允许一扇门」，禁止任何形式门合并
+    （见 docs/设计决策记录.md ADR-01 门不合并、docs/项目迭代日志.md 门不合并铁律）。
+    本函数不再被 build_skeleton_topology 调用，保留仅为历史参考；
+    恢复使用前必须征得用户确认。
+
     同一物理开口常被识别为多条门记录（swing + fire + opening），其几何中心重合；
     也可能在投影到骨架后落到同一骨架点（同一房间多个邻近入口）。合并后 rooms 取并集、
     kind 取 fire 优先、width 取最大，避免拓扑层出现重叠/重复的 TD 节点
@@ -459,14 +464,6 @@ def build_skeleton_topology(
         若提供，则 TI 节点 / TI-TI 边 / 骨架线 直接取自 JSON，**跳过中轴提取**；
         TR/TD/TF/TEN 节点及挂接边仍按下方统一逻辑生成（门/设施挂到手动 TI）。
         若省略，则走自动中轴骨架生成。
-    """
-    """
-    T8 替代逻辑：基于骨架生成 topology nodes/edges。
-
-    rooms: parse_cad_pdf 的 rooms（含 roomType, centroid_m, id, polygon 可选）
-    doors: [{center_m, kind, width_pt, rooms}, ...]
-    stairs/elevators: GeoJSON-like features with properties.centroid
-    walkable_by_room_id: room_id → Shapely walkable poly (meters)
     """
     if obj_type is None:
         obj_type = {
@@ -713,7 +710,7 @@ def build_skeleton_topology(
             "label": {"swing": "普通门", "fire": "防火门",
                       "opening": "门洞"}.get(kind, "门"),
             "doorType": kind,
-            "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
+            "width_m": round(float(dr.get("width_pt", 0)) * SCALE, 3),
             "coordinates": [round(coords[0], 3), round(coords[1], 3)],
             "rooms": dr.get("rooms", []),
             "sourceDoorIds": [door_id] if door_id else None,

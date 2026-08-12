@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-T12: GeoJSON 拓扑质量校验
+T12: GeoJSON 拓扑质量校验（任务索引见 docs/task.md；验收标准见《公共空间识别方案》第八章）
 
 对应《公共空间识别方案》第八章验收标准的可自动化部分：
   - 门投影 / doorway 覆盖
@@ -94,7 +94,8 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
         report.append(f"[F{floor_key}] {msg}")
 
     # 1) 门口覆盖：拓扑设计上 doorway 节点只为「服务封闭房间的门」建模
-    #    （走廊↔走廊的纯通行门归入走廊骨架 TI↔TI，同开口的摆弧/防火/门洞合并为一个 TD）。
+    #    （走廊↔走廊的纯通行门归入走廊骨架 TI↔TI；每扇门独立成 TD，不合并，
+    #    与用户约定「同一物理开口只允许一扇门」一致，见 memory）。
     #    因此校验目标改为：每个封闭房间(TR)均应能经门(doorway)进入——即存在 TR↔TD 边。
     n_doors = stats["doors_geom"]
     room_ids = {n["id"] for n in by_type["room"]}

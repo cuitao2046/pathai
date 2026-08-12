@@ -17,11 +17,10 @@
 """
 import math
 import collections
+import itertools
 
-# 视障步速 0.8 m/s（指南 5.2）
-BLIND_WALK_SPEED = 0.8
-# 普通步行 1.2 m/s（房间-门距离等微路径）
-NORMAL_WALK_SPEED = 1.2
+# 视障步速 0.8 m/s / 普通步行 1.2 m/s（指南 5.2），统一来源 src/common/constants.py
+from src.common.constants import BLIND_WALK_SPEED, NORMAL_WALK_SPEED, SCALE
 
 # 公共/可达性配置（与 parse_cad_pdf 保持一致）
 PUBLIC_TYPES = {"toilet", "staircase", "elevator_hall", "corridor", "lobby",
@@ -253,6 +252,11 @@ def assign_node_risk_levels(nodes, rooms):
 def _merge_nearby_doors(doors, max_dist_m=0.8, coords=None):
     """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
 
+    DISABLED: 用户明确约定「同一物理开口只允许一扇门」，禁止任何形式门合并
+    （见 docs/设计决策记录.md ADR-01 门不合并、docs/项目迭代日志.md 门不合并铁律）。
+    本函数不再被 build_floor_topology 调用，保留仅为历史参考；
+    恢复使用前必须征得用户确认。
+
     同一物理开口常被识别为多条门记录（swing + fire + opening），几何中心重合；
     coords 可传入预先算好的合并依据坐标（如投影后的最终坐标），为 None 时退回用
     door 的 center_m。合并后 rooms 取并集、kind 取 fire 优先、width 取最大。
@@ -270,13 +274,13 @@ def _merge_nearby_doors(doors, max_dist_m=0.8, coords=None):
     for i in range(len(doors)):
         if used[i]:
             continue
-        ci = centers[i]
+        ci = coords[i]
         cluster = [i]
         used[i] = True
         for j in range(i + 1, len(doors)):
             if used[j]:
                 continue
-            cj = centers[j]
+            cj = coords[j]
             if math.hypot(ci[0] - cj[0], ci[1] - cj[1]) < max_dist_m:
                 cluster.append(j)
                 used[j] = True
@@ -358,7 +362,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             "type": "doorway",
             "label": {"swing": "普通门", "fire": "防火门", "opening": "门洞"}[kind],
             "doorType": kind,
-            "width_m": round(float(dr.get("width_pt", 0)) * 0.0529, 3),
+            "width_m": round(float(dr.get("width_pt", 0)) * SCALE, 3),
             "coordinates": list(_to_xy(dr.get("center_m"))),
             "rooms": dr.get("rooms", []),
             # 指南 §3.2 开向：外开门（门扇扫入走廊）对视障用户风险更高
@@ -424,12 +428,12 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
             })
 
     # ---------- 边构建 ----------
-    edge_seq = [0]
+    edge_seq = itertools.count(1)
     def add_edge(frm, to, distance, a_level=0, r_level=0.5,
                  wheel=True, blind=True):
-        edge_seq[0] += 1
+        seq = next(edge_seq)
         edges.append({
-            "id": obj_id(_floor_tag(floor_no), OBJ_TYPE["topo_edge"], edge_seq[0]),
+            "id": obj_id(_floor_tag(floor_no), OBJ_TYPE["topo_edge"], seq),
             "from": frm,
             "to": to,
             "distance": round(float(distance), 2),

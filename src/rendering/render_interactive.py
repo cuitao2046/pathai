@@ -20,6 +20,13 @@ import json
 import math
 from pathlib import Path
 
+# 门类型边权惩罚，统一来源 src/common/constants.py（D4）；
+# 本脚本可独立运行，故无法导入 src 包时兜底同值。
+try:
+    from src.common.constants import DOOR_PENALTY
+except ImportError:
+    DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 HTML_OUT = str(BASE_DIR / "result" / "floor_layout_v9_interactive.html")
@@ -410,31 +417,36 @@ def _seg_crosses_wall(p1, p2, A, B):
 
     判定：两端点位于墙线两侧(opposite sides)且交点落在线段内；共线/同侧
     （沿墙并行）不算穿墙。
+    （审查 B10：几何判定统一收敛到 src/geometry/segments.py，独立运行时本地兜底）
     """
-    ax, ay = A[0], A[1]
-    bx, by = B[0], B[1]
-    px, py = p1[0], p1[1]
-    qx, qy = p2[0], p2[1]
-    dx, dy = bx - ax, by - ay
+    try:
+        from src.geometry.segments import segments_properly_cross
+        return segments_properly_cross(p1, p2, A, B)
+    except ImportError:
+        ax, ay = A[0], A[1]
+        bx, by = B[0], B[1]
+        px, py = p1[0], p1[1]
+        qx, qy = p2[0], p2[1]
+        dx, dy = bx - ax, by - ay
 
-    def side(x, y):
-        return (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+        def side(x, y):
+            return (bx - ax) * (y - ay) - (by - ay) * (x - ax)
 
-    s1 = side(px, py)
-    s2 = side(qx, qy)
-    if s1 == 0 and s2 == 0:
-        return False  # 共线：沿墙，非穿透
-    if s1 * s2 > 0:
-        return False  # 同侧：沿墙并行，非穿透
-    if abs(dx) < 1e-12 and abs(dy) < 1e-12:
-        return False  # 退化墙线
-    ex, ey = qx - px, qy - py
-    det = dx * ey - dy * ex
-    if abs(det) < 1e-12:
-        return False
-    u = (ex * (ay - py) - ey * (ax - px)) / det  # 沿墙 A->B 参数
-    t = (dy * (px - ax) - dx * (py - ay)) / det  # 沿路径 p1->p2 参数
-    return (-1e-9) <= t <= (1 + 1e-9) and (-1e-9) <= u <= (1 + 1e-9)
+        s1 = side(px, py)
+        s2 = side(qx, qy)
+        if s1 == 0 and s2 == 0:
+            return False  # 共线：沿墙，非穿透
+        if s1 * s2 > 0:
+            return False  # 同侧：沿墙并行，非穿透
+        if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+            return False  # 退化墙线
+        ex, ey = qx - px, qy - py
+        det = dx * ey - dy * ex
+        if abs(det) < 1e-12:
+            return False
+        u = (ex * (ay - py) - ey * (ax - px)) / det  # 沿墙 A->B 参数
+        t = (dy * (px - ax) - dx * (py - ay)) / det  # 沿路径 p1->p2 参数
+        return (-1e-9) <= t <= (1 + 1e-9) and (-1e-9) <= u <= (1 + 1e-9)
 
 
 def compute_route_rule_extras(geo):
@@ -446,7 +458,6 @@ def compute_route_rule_extras(geo):
     - wall_crossing_titi: 两端均为 intersection 且直线段真正穿墙的 TI<->TI 边 id 集合；
     - infra_doorway_ids: 归属全部为 infrastructure 的门节点 id 集合（纯管井门，规则 5）。
     """
-    DOOR_PENALTY = {"swing": 0.0, "fire": 0.5, "opening": 1.0}
     node_by_id = {}
     for fk, fd in geo["floors"].items():
         for n in (fd.get("topology", {}) or {}).get("nodes", []):
@@ -1471,7 +1482,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             else:
                 layer_cls = "layer_room"
             parts.append(
-                f'<g class="{layer_cls}" data-roomid="{_rid or ''}" data-mid="{_rid or ''}" {info_attr({"tip": tip, "detail": det}, floor=floor, coll="rooms", pid=_rid, store="geometry", key="id")}>'
+                f'<g class="{layer_cls}" data-roomid="{_rid or ""}" data-mid="{_rid or ""}" {info_attr({"tip": tip, "detail": det}, floor=floor, coll="rooms", pid=_rid, store="geometry", key="id")}>'
                 f'<polygon points="{pts}" fill="{_fill}" stroke="{_stroke}" stroke-width="{_sw}" stroke-dasharray="{_dash}"/></g>\n'
             )
             if label:
@@ -1613,9 +1624,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             _eid = _nearest_topo(_ec)
             if _eid:
                 det["topoId"] = _eid
+            _elev_tip = f"电梯门（{_elev_id or '?'}）"
             parts.append(
                 f'<g class="layer_elevator_door" data-mid="{evd["id"]}" '
-                f'{info_attr({"tip": f"电梯门（{_elev_id or "?"}）", "detail": det})}>'
+                f'{info_attr({"tip": _elev_tip, "detail": det})}>'
                 f'<line x1="{ax0}" y1="{ay0}" x2="{ax1}" y2="{ay1}" '
                 f'stroke="#AD1457" stroke-width="1.6" stroke-dasharray="2.5,1.5"/>'
                 f'<circle cx="{sx}" cy="{sy}" r="1.8" fill="#F8BBD0" '
