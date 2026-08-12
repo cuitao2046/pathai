@@ -51,9 +51,10 @@ try:
 except ImportError:
     _HAS_SKELETON = False
     build_skeleton_topology = None  # type: ignore
-# 复用渲染脚本的建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
+# 复用建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
 # 用于 walkable 沿外墙裁剪，避免走廊多边形延伸到户外紧贴墙体的位置。
-from src.rendering.render_interactive import building_outline
+# B2：轮廓链下沉到 src/geometry/contour.py，parsing 与 rendering 共同引用。
+from src.geometry.contour import building_outline
 
 # ---------------------------------------------------------------- 配置
 
