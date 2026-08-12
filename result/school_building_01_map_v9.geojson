@@ -120507,30 +120507,6 @@
           },
           {
             "id": "F1-TE-0355",
-            "from": "F1-TI-0195",
-            "to": "F1-TI-0208",
-            "distance": 6.65,
-            "estimatedTime": 8.3,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0356",
-            "from": "F1-TI-0150",
-            "to": "F1-TI-0195",
-            "distance": 5.1,
-            "estimatedTime": 6.4,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F1-TE-0357",
             "from": "F1-TI-0202",
             "to": "F1-TI-0237",
             "distance": 3.55,
@@ -120542,11 +120518,11 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0358",
-            "from": "F1-TI-0149",
-            "to": "F1-TI-0168",
-            "distance": 2.13,
-            "estimatedTime": 2.7,
+            "id": "F1-TE-0356",
+            "from": "F1-TI-0195",
+            "to": "F1-TI-0208",
+            "distance": 6.65,
+            "estimatedTime": 8.3,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -120554,7 +120530,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0359",
+            "id": "F1-TE-0357",
             "from": "F1-TI-0156",
             "to": "F1-TI-0022",
             "distance": 9.87,
@@ -120566,11 +120542,35 @@
             "blindAccessible": true
           },
           {
-            "id": "F1-TE-0360",
+            "id": "F1-TE-0358",
             "from": "F1-TI-0155",
-            "to": "F1-TI-0150",
+            "to": "F1-TI-0195",
+            "distance": 4.4,
+            "estimatedTime": 5.5,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0359",
+            "from": "F1-TI-0150",
+            "to": "F1-TI-0155",
             "distance": 2.66,
             "estimatedTime": 3.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F1-TE-0360",
+            "from": "F1-TI-0149",
+            "to": "F1-TI-0168",
+            "distance": 2.13,
+            "estimatedTime": 2.7,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,
@@ -224472,30 +224472,6 @@
           },
           {
             "id": "F2-TE-0246",
-            "from": "F2-TI-0055",
-            "to": "F2-TI-0173",
-            "distance": 6.24,
-            "estimatedTime": 7.8,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F2-TE-0247",
-            "from": "F2-TI-0074",
-            "to": "F2-TI-0187",
-            "distance": 6.34,
-            "estimatedTime": 7.9,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F2-TE-0248",
             "from": "F2-TI-0166",
             "to": "F2-TI-0188",
             "distance": 3.53,
@@ -224507,19 +224483,7 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0249",
-            "from": "F2-TI-0145",
-            "to": "F2-TI-0201",
-            "distance": 7.24,
-            "estimatedTime": 9.0,
-            "accessibilityLevel": 0,
-            "riskLevel": 0.5,
-            "walkable": true,
-            "wheelchairAccessible": true,
-            "blindAccessible": true
-          },
-          {
-            "id": "F2-TE-0250",
+            "id": "F2-TE-0247",
             "from": "F2-TI-0161",
             "to": "F2-TI-0059",
             "distance": 3.33,
@@ -224531,11 +224495,47 @@
             "blindAccessible": true
           },
           {
-            "id": "F2-TE-0251",
+            "id": "F2-TE-0248",
+            "from": "F2-TI-0145",
+            "to": "F2-TI-0201",
+            "distance": 7.24,
+            "estimatedTime": 9.0,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-0249",
             "from": "F2-TI-0079",
             "to": "F2-TI-0224",
             "distance": 7.46,
             "estimatedTime": 9.3,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-0250",
+            "from": "F2-TI-0074",
+            "to": "F2-TI-0187",
+            "distance": 6.34,
+            "estimatedTime": 7.9,
+            "accessibilityLevel": 0,
+            "riskLevel": 0.5,
+            "walkable": true,
+            "wheelchairAccessible": true,
+            "blindAccessible": true
+          },
+          {
+            "id": "F2-TE-0251",
+            "from": "F2-TI-0055",
+            "to": "F2-TI-0173",
+            "distance": 6.24,
+            "estimatedTime": 7.8,
             "accessibilityLevel": 0,
             "riskLevel": 0.5,
             "walkable": true,

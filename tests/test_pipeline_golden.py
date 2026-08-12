@@ -1,7 +1,7 @@
 """全链路 golden 回归：以当前源码重跑 CAD PDF 解析管线，断言统计与参照一致。
 
 覆盖 parse_floor + build_geojson 全链路（含手动骨架优先路径），
-可发现「静态校验通过但管线漂移」的回归。依赖 shapely/pikepdf，缺失时跳过。
+可发现「静态校验通过但管线漂移」的回归。依赖 shapely/fitz，缺失时跳过。
 解析 PDF 较慢且日志冗长，输出重定向到缓冲区。
 """
 import contextlib
@@ -21,7 +21,7 @@ from testutil import (
 
 class TestPipelineGolden(unittest.TestCase):
     def setUp(self):
-        skip_if_missing("shapely", "pikepdf")
+        skip_if_missing("shapely", "fitz")
         import src.parsing.parse_cad_pdf as mod
         self.mod = mod
         # 重置手动骨架缓存，确保按当前 result/skeleton_manual_parsed.json 重新加载
