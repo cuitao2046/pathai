@@ -920,9 +920,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 /* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
 .layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon {{ stroke: #00BCD4 !important; stroke-width: 2.6 !important; }}
 .layer_fingerprint circle {{ cursor: pointer; }}
+.layer_coverage circle {{ cursor: pointer; }}
 .layer_beacon circle {{ cursor: pointer; }}
 .layer_beacon text {{ font-weight: bold; pointer-events: none; }}
 .layer_beacon:hover circle {{ stroke: #FFC107; stroke-width: 1.4; }}
+.layer_beacon.beacon-hit circle {{ stroke: #FFC107; stroke-width: 3; }}
+.layer_beacon.beacon-hit text {{ fill: #E65100 !important; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
 .zoom-btn {{ width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 #mode-switch {{ position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.95); border: 1px solid #d0d0d0; border-radius: 6px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); z-index: 25; }}
@@ -1986,10 +1989,12 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                         ("楼层", f"{p.get('floor','?')}F"),
                         ("可见信标数", str(vis)),
                         ("三点定位", "可" if ok else "不足（需≥3）"),
+                        ("覆盖信标", "、".join(vis_ids) if vis_ids else "—"),
                     ]}
-                    attr = info_attr({"tip": tip, "detail": det, "kind": "coverage", "id": p.get("id", "")})
+                    attr = info_attr({"tip": tip, "detail": det, "kind": "coverage",
+                                      "id": p.get("id", ""), "covBeacons": vis_ids})
                     parts.append(
-                        f'<g class="layer_coverage" style="display:none" {attr}>'
+                        f'<g class="layer_coverage" style="display:none" data-mode="{mode}" {attr}>'
                         f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '
                         f'fill-opacity="0.82" stroke="#fff" stroke-width="0.5"/></g>\n'
                     )
@@ -2632,6 +2637,7 @@ function clearHighlight() {{
   var ring = document.getElementById('path-flash-ring');
   if (ring) ring.innerHTML = '';
   clearBeaconContrib();
+  clearCoverageBeacons();
 }}
 function resetDetail() {{ document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }}
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
@@ -2752,6 +2758,22 @@ function showBeaconContrib(t){{
   }});
   svg.appendChild(g);
 }}
+// ---- 选中三点覆盖点：高亮覆盖它的信标（同模式 .layer_beacon 中 id 命中者）----
+function clearCoverageBeacons(){{
+  document.querySelectorAll('.beacon-hit').forEach(function(el){{ el.classList.remove('beacon-hit'); }});
+}}
+function showCoverageBeacons(t, d){{
+  clearCoverageBeacons();
+  var mode = t.getAttribute('data-mode') || 'global';
+  var list = d.covBeacons || [];
+  list.forEach(function(bid){{
+    document.querySelectorAll('.layer_beacon[data-mode="' + mode + '"]').forEach(function(g){{
+      var f = g.getAttribute('data-info');
+      if (!f) return;
+      try {{ var bd = JSON.parse(f); if (bd.id === bid) g.classList.add('beacon-hit'); }} catch(e){{}}
+    }});
+  }});
+}}
 wrapper.addEventListener('click', function(e) {{
   if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
   var t = e.target.closest('[data-info]');
@@ -2784,6 +2806,8 @@ wrapper.addEventListener('click', function(e) {{
     showDetail(d.detail || {{ title: d.tip || '详情', rows: [] }});
     // 信标 → 高亮其关键贡献点（绿色轮廓圈，见 showBeaconContrib）
     if (d.kind === 'beacon') showBeaconContrib(t);
+    // 三点覆盖点 → 高亮覆盖它的信标（黄色描边，见 showCoverageBeacons）
+    if (d.kind === 'coverage') showCoverageBeacons(t, d);
     // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
     if (d.kind === 'node' && d.id) {{
       ensureLayer('topo_node', true);
