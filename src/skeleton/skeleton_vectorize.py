@@ -88,11 +88,11 @@ def graph_to_linestrings(
         return []
 
     deg = dict(G.degree())
-    key_nodes = {n for n, d in deg.items() if d != 2}
+    key_nodes = sorted(n for n, d in deg.items() if d != 2)
     # 孤立点
     if not key_nodes and G.number_of_nodes() > 0:
         # 整图是一个环或单链
-        key_nodes = {next(iter(G.nodes()))}
+        key_nodes = [next(iter(G.nodes()))]
 
     visited_edges = set()
     lines: List[LineString] = []

@@ -1069,15 +1069,16 @@ def build_skeleton_topology(
                         st.append(v)
             comps.append(c)
         if len(comps) > 1:
-            comps.sort(key=len, reverse=True)
+            # 确定性排序：同长分量按最小节点 id 定序（避免依赖 set 哈希迭代顺序）
+            comps.sort(key=lambda c: (len(c), min(c)), reverse=True)
             n_soft = 0
             main = comps[0]
             for island in comps[1:]:
                 best = None
                 best_d = 25.0  # 仅桥接 ≤25m 的近邻分量（走廊缝隙）
-                for a in island:
+                for a in sorted(island):
                     ca = nmap[a]["coordinates"]
-                    for b in main:
+                    for b in sorted(main):
                         cb = nmap[b]["coordinates"]
                         d = math.hypot(ca[0] - cb[0], ca[1] - cb[1])
                         if d < best_d:
