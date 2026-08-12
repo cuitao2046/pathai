@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>室内盲导 · 交互式楼层可视化 v9</title>
+<style>
+body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f8f9fa; margin: 0; padding: 16px; color: #333; }
+.header { max-width: 1400px; margin: 0 auto 12px; }
+.header h2 { margin: 0 0 4px; font-size: 20px; }
+.header .meta { color: #888; font-size: 12px; line-height: 1.6; }
+.header .meta .tag { display: inline-block; background: #E3F2FD; color: #1565C0; padding: 1px 8px; border-radius: 3px; font-weight: bold; }
+#app { max-width: 1400px; margin: 0 auto; display: flex; gap: 12px; align-items: flex-start; }
+#left { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+#svg-container { position: relative; border: 1px solid #ddd; background: #fefefe; overflow: hidden; height: calc(100vh - 240px); min-height: 480px; border-radius: 6px; }
+#svg-wrapper { width: 100%; height: 100%; overflow: hidden; cursor: grab; }
+#svg-wrapper.grabbing { cursor: grabbing; }
+svg { display: block; background: #fff; }
+.layer_room polygon { opacity: 0.55; cursor: pointer; }
+.layer_lobby_elevator polygon, .layer_lobby_stair polygon { opacity: 0.85; cursor: pointer; }
+.layer_corridor polygon, .layer_lobby polygon, .layer_activity polygon, .layer_atrium polygon { opacity: 0.55; cursor: pointer; }
+.layer_wall path { stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }
+.layer_building_outline polygon { fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.layer_building_outline polygon:hover { stroke-width: 2.6; }
+.layer_window path { stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; cursor: pointer; }
+.layer_window path:hover { stroke-width: 3; }
+.layer_stairs polygon { opacity: 0.6; cursor: pointer; }
+.layer_elevator polygon { opacity: 0.6; cursor: pointer; }
+.layer_elevator_door * { cursor: pointer; }
+.layer_column polygon { fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }
+.layer_walkable polygon { fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; cursor: pointer; }
+.layer_walkable polygon:hover { stroke-width: 1.4; }
+/* 骨架段：可见线不拦截事件，透明命中线捕获点击（点击任意位置都有详情） */
+.layer_skeleton polyline.vis { stroke: #00ACC1; stroke-width: 1.4; fill: none; opacity: 0.85; pointer-events: none; }
+.layer_skeleton polyline.hit { stroke: transparent; stroke-width: 8; fill: none; pointer-events: stroke; cursor: pointer; }
+/* 骨架交叉口：可见红点不拦截事件，透明命中圆捕获点击（关联 TI 节点详情） */
+.layer_skeleton_node circle.vis { fill: #E53935; stroke: #B71C1C; stroke-width: 0.6; opacity: 0.9; pointer-events: none; }
+.layer_skeleton_node circle.hit { fill: transparent; pointer-events: visiblePainted; cursor: pointer; }
+.layer_door circle, .layer_door polygon, .layer_door rect { cursor: pointer; }
+.layer_door_swing *, .layer_door_opening *, .layer_door_fire * { cursor: pointer; }
+.layer_topo_node *, .layer_topo_edge path, .layer_topo_edge_titi path { cursor: pointer; }
+.layer_topo_edge path { stroke: #27AE60; stroke-width: 1.6; fill: none; opacity: 0.65; stroke-dasharray: 3,2; }
+.layer_topo_edge path:hover { stroke-width: 3.4; opacity: 0.9; }
+.layer_topo_edge_titi path { stroke: #9CCC65; stroke-width: 1.2; fill: none; opacity: 0.55; stroke-dasharray: 2,4; }
+.layer_topo_edge_titi path:hover { stroke-width: 3; opacity: 0.9; }
+.layer_risk * { cursor: pointer; }
+.layer_ramp *, .layer_tactile *, .layer_material * { cursor: pointer; }
+.layer_crossfloor path { stroke-width: 1.6; fill: none; stroke-dasharray: 6,4; opacity: 0.65; cursor: pointer; }
+text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events: none; }
+/* 带 data-info 的图元文字标签允许接收点击（命中父 <g> 的 data-info 展示详情） */
+.layer_room text, .layer_corridor text, .layer_lobby text, .layer_activity text, .layer_atrium text,
+.layer_lobby_elevator text, .layer_lobby_stair text, .layer_infrastructure text,
+.layer_stairs text, .layer_elevator text, .layer_topo_node text, .layer_crossfloor text { pointer-events: auto; cursor: pointer; }
+.selected { stroke: #FFC107 !important; stroke-width: 2.4 !important; }
+/* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
+.layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon { stroke: #FFC107 !important; stroke-width: 2.6 !important; }
+.layer_topo_edge.selected path, .layer_topo_edge_titi.selected path { stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }
+.layer_topo_node.path-start circle, .layer_topo_node.path-start rect, .layer_topo_node.path-start polygon { stroke: #4CAF50 !important; stroke-width: 3 !important; }
+.layer_topo_node.path-end circle, .layer_topo_node.path-end rect, .layer_topo_node.path-end polygon { stroke: #E91E63 !important; stroke-width: 3 !important; }
+.layer_topo_node.path-via circle, .layer_topo_node.path-via rect, .layer_topo_node.path-via polygon { stroke: #FF9800 !important; stroke-width: 2.2 !important; }
+/* 路径列表中点击节点 → 图上醒目高亮：节点放大 + 橙色粗描边 + 外圈脉冲环（需求⑬） */
+.layer_topo_node.path-node-flash circle, .layer_topo_node.path-node-flash rect, .layer_topo_node.path-node-flash polygon { stroke: #FF5722 !important; stroke-width: 4 !important; filter: drop-shadow(0 0 6px rgba(255,87,34,0.95)); }
+#path-flash-ring { pointer-events: none; }
+#path-flash-ring circle { fill: none; stroke: #FF5722; stroke-width: 3.5; }
+@keyframes pathFlashPulse { 0% { r: 6; opacity: 1; } 100% { r: 26; opacity: 0; } }
+#path-flash-ring circle.pulse { animation: pathFlashPulse 0.9s ease-out infinite; }
+#path-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #FFF3E0; border: 1px solid #FFCC80; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
+#path-bar button { border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+#path-bar button.active { background: #E91E63; color: #fff; border-color: #C2185B; }
+#path-bar .hint { color: #666; }
+#path-bar .result { color: #BF360C; font-weight: bold; }
+#edge-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #FCE4EC; border: 1px solid #F48FB1; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
+#edge-bar button { border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+#edge-bar button.active { background: #E91E63; color: #fff; border-color: #C2185B; }
+#edge-bar .hint { color: #666; }
+#edge-bar .result { color: #AD1457; font-weight: bold; }
+/* 区域标注工具条 */
+#anno-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; background: #E8F5E9; border: 1px solid #A5D6A7; border-radius: 6px; font-size: 12px; margin-bottom: 8px; }
+#anno-bar .hint { color: #555; }
+#anno-bar .result { color: #2E7D32; font-weight: bold; }
+#anno-bar button { border: 1px solid #ccc; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+#anno-bar button.active { background: #2E7D32; color: #fff; border-color: #1B5E20; }
+#anno-bar select { font-size: 12px; padding: 3px 6px; border-radius: 4px; border: 1px solid #ccc; }
+/* 点击拓扑节点时直接可达（邻居）节点的高亮，用青色与选中节点区分 */
+.layer_topo_node.neighbor circle, .layer_topo_node.neighbor rect, .layer_topo_node.neighbor polygon { stroke: #00BCD4 !important; stroke-width: 2.6 !important; }
+.layer_fingerprint circle { cursor: pointer; }
+.layer_coverage circle { cursor: pointer; }
+.layer_beacon circle { cursor: pointer; }
+.layer_beacon text { font-weight: bold; pointer-events: none; }
+.layer_beacon:hover circle { stroke: #FFC107; stroke-width: 1.4; }
+.layer_beacon.beacon-hit circle { stroke: #FFC107; stroke-width: 3; }
+.layer_beacon.beacon-hit text { fill: #E65100 !important; }
+.zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
+.zoom-btn { width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+#mode-switch { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.95); border: 1px solid #d0d0d0; border-radius: 6px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); z-index: 25; }
+#mode-switch .mode-label { font-size: 12px; color: #666; margin-right: 2px; }
+.mode-btn { border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; padding: 3px 12px; }
+.mode-btn.active { background: #1565C0; color: #fff; border-color: #1565C0; }
+.zoom-btn:hover { background: #f0f0f0; }
+.zoom-info { position: absolute; bottom: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #666; z-index: 10; border: 1px solid #ddd; }
+.search-panel { position: absolute; top: 10px; left: 10px; z-index: 20; width: 250px; font-size: 13px; }
+.search-panel input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #c7c7c7; border-radius: 7px; font-size: 13px; background: #fff; box-shadow: 0 1px 5px rgba(0,0,0,0.12); outline: none; }
+.search-panel input:focus { border-color: #1565C0; box-shadow: 0 1px 7px rgba(21,101,192,0.25); }
+.search-results { margin-top: 6px; background: #fff; border: 1px solid #e0e0e0; border-radius: 7px; max-height: 320px; overflow-y: auto; box-shadow: 0 6px 18px rgba(0,0,0,0.16); display: none; }
+.search-results.show { display: block; }
+.sr-item { padding: 7px 10px; cursor: pointer; border-bottom: 1px solid #f1f1f1; display: flex; flex-direction: column; gap: 2px; }
+.sr-item:last-child { border-bottom: none; }
+.sr-item:hover, .sr-item.active { background: #E3F2FD; }
+.sr-title { font-weight: 600; color: #222; }
+.sr-meta { font-size: 11px; color: #888; }
+.sr-tag { display: inline-block; background: #EEEEEE; color: #555; border-radius: 3px; padding: 0 5px; margin-right: 5px; font-size: 11px; }
+.search-empty { padding: 10px; color: #999; font-size: 12px; }
+#tooltip { position: absolute; pointer-events: none; background: rgba(33,33,33,0.92); color: #fff; padding: 6px 9px; border-radius: 5px; font-size: 12px; line-height: 1.5; z-index: 30; display: none; max-width: 280px; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+#floor-jump { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 4px; }
+.floor-btn { border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; padding: 4px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.floor-btn.active { background: #1565C0; color: #fff; border-color: #1565C0; }
+.layer-controls { background: #fff; padding: 8px 12px; border-radius: 6px; border: 1px solid #e0e0e0; display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; font-size: 12px; }
+.layer-controls b { margin-right: 2px; }
+.layer-controls label { cursor: pointer; white-space: nowrap; user-select: none; }
+.layer-controls label input { margin-right: 3px; }
+.layer-controls .bulk-btn { margin-left: 8px; padding: 3px 12px; border: 1px solid #1565C0; background: #fff; color: #1565C0; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; }
+.layer-controls .bulk-btn:hover { background: #E3F2FD; }
+.layer-controls .bulk-btn.primary { background: #1565C0; color: #fff; }
+.layer-controls .bulk-btn.primary:hover { background: #0D47A1; }
+/* 图例：移到「要素详情」下方，占据左栏整宽，内部自适应多列 */
+#legend-panel { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; font-size: 12px; }
+#legend-panel h4 { margin: 0 0 8px; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+#legend-panel .lg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 20px; align-items: start; }
+.lg-sec { margin-bottom: 8px; break-inside: avoid; }
+.lg-title { font-weight: bold; color: #555; margin-bottom: 3px; font-size: 11px; }
+.lg-item { display: flex; align-items: center; margin: 2px 0; line-height: 1.5; font-size: 11px; }
+.lg-sw { width: 14px; height: 14px; margin-right: 6px; flex-shrink: 0; border-radius: 2px; border: 1px solid #ccc; }
+.lg-sw.line { background: transparent; border: none; position: relative; }
+.lg-sw.line::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px; transform: translateY(-50%); }
+#detail { margin-top: 12px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; font-size: 13px; }
+#detail h4 { margin: 0 0 6px; font-size: 14px; }
+#detail .row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #eee; }
+#detail .row span:first-child { color: #888; }
+#detail .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+.badge.ok { background: #E8F5E9; color: #2E7D32; }
+.badge.no { background: #FFEBEE; color: #C62828; }
+/* ---------- 右栏：路径规划完整路径列表 ---------- */
+#route-panel { width: 288px; flex: 0 0 288px; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 12px 10px; font-size: 12px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; align-self: flex-start; position: sticky; top: 12px; }
+#route-panel h4 { margin: 0 0 8px; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+#route-panel h4 .rp-mode { font-size: 11px; font-weight: normal; color: #fff; background: #1565C0; border-radius: 3px; padding: 1px 7px; }
+#route-summary { font-size: 12px; line-height: 1.7; margin-bottom: 8px; }
+#route-summary .rp-od { color: #333; font-weight: bold; word-break: break-all; }
+#route-summary .rp-kv { display: flex; justify-content: space-between; color: #666; border-bottom: 1px dashed #eee; padding: 2px 0; }
+#route-summary .rp-kv b { color: #AD1457; }
+#route-summary .rp-note { margin-top: 5px; background: #FFF8E1; border: 1px solid #FFE082; color: #8D6E63; border-radius: 4px; padding: 4px 7px; line-height: 1.5; }
+.rp-empty { color: #999; line-height: 1.6; }
+#route-steps { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+#route-steps li { display: flex; gap: 7px; padding: 5px 4px; border-radius: 4px; cursor: pointer; border-bottom: 1px solid #f4f4f4; }
+#route-steps li:hover { background: #FCE4EC; }
+#route-steps li.active { background: #F8BBD0; }
+.rp-idx { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 10px; line-height: 18px; text-align: center; font-weight: bold; }
+.rp-body { flex: 1 1 auto; min-width: 0; }
+.rp-name { color: #222; font-weight: bold; line-height: 1.4; word-break: break-all; }
+.rp-meta { color: #888; font-size: 11px; line-height: 1.5; }
+.rp-tag { display: inline-block; padding: 0 5px; border-radius: 3px; font-size: 10px; margin-right: 4px; color: #fff; }
+.rp-seg { flex: 0 0 auto; text-align: right; color: #AD1457; font-size: 11px; white-space: nowrap; }
+.rp-seg .rp-cum { display: block; color: #aaa; font-size: 10px; }
+.rp-xf { color: #E53935; font-weight: bold; }
+#detail .edit-bar { margin-top: 8px; display: flex; gap: 8px; align-items: center; }
+#detail .edit-bar button { padding: 3px 10px; font-size: 12px; cursor: pointer; border: 1px solid #888; background: #f5f5f5; border-radius: 3px; }
+#detail .edit-bar button:hover { background: #e0e0e0; }
+#detail .edit-hint { font-size: 11px; color: #999; }
+#detail .edit-note { font-size: 12px; color: #c0392b; margin: 6px 0; }
+#detail .edit-row { display: flex; flex-direction: column; margin: 6px 0; }
+#detail .edit-row label { font-size: 12px; color: #555; margin-bottom: 2px; }
+#detail .edit-row input[type=text], #detail .edit-row input[type=number], #detail .edit-row textarea { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px; }
+#detail .edit-row textarea { font-family: monospace; }
+</style></head><body>
+<div class="header">
+  <h2>初中学部1#教学楼 · 交互式楼层图 <span class="tag">v9</span></h2>
+  <p class="meta">
+    坐标系: <b>米制局部坐标系</b>（x向右 y向上）&nbsp;|&nbsp; 缩放: 1m = __SCALE__px &nbsp;|&nbsp;
+    范围: x∈[__MIN_X__, __MAX_X__]m, y∈[__MIN_Y__, __MAX_Y__]m &nbsp;|&nbsp;
+    建筑尺寸: ~__WIDTH_M__m × __HEIGHT_M__m
+  </p>
+  <p class="meta" style="margin-top:2px">
+    v9 更新: 无摆弧门洞(DK洞口)识别 · 出入口/公共空间识别 · 拓扑图按指南第五章建模（room/doorway/intersection/facility/facility_entrance 五类节点）&nbsp;|&nbsp;
+    跨层连接: __N_CF__ 条（楼梯 __N_CF_STAIR__ / 电梯 __N_CF_ELEV__）
+  </p>
+</div>
+<div id="app">
+<div id="left">
+<div class="layer-controls" id="layerControls">
+  <b>图层:</b>
+  <label><input type="checkbox" checked onchange="toggleLayer('room', this.checked)"> 房间</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('infrastructure', this.checked)"> 基础设施（风井/管道井）</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('corridor', this.checked)"> 走道</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby', this.checked)"> 门厅</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('activity', this.checked)"> 活动区</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('atrium', this.checked)"> 中庭</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby_elevator', this.checked)"> 电梯前室</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('lobby_stair', this.checked)"> 楼梯前室</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('walkable', this.checked)"> 可通行区域</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('skeleton', this.checked)"> 走廊骨架</label>
+  <label><input type="checkbox" onchange="toggleLayer('skeleton_node', this.checked)"> 骨架交叉口</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('wall', this.checked)"> 墙体</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('window', this.checked)"> 窗户</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('stairs', this.checked)"> 楼梯</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('elevator', this.checked)"> 电梯</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('elevator_door', this.checked)"> 电梯门</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('column', this.checked)"> 柱子</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('building_outline', this.checked)"> 建筑外轮廓</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_swing', this.checked)"> 普通门</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_opening', this.checked)"> 门洞</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('door_fire', this.checked)"> 防火门</label>
+  <label><input type="checkbox" onchange="toggleLayer('topo_node', this.checked)"> 拓扑节点</label>
+  <label><input type="checkbox" onchange="toggleLayer('topo_edge', this.checked)"> 拓扑边</label>
+  <label><input type="checkbox" onchange="toggleLayer('topo_edge_titi', this.checked)" title="交叉口(TI)之间的拓扑边，默认隐藏；走廊连通主视觉由青色骨架展示">交叉口连接边</label>
+  <label><input type="checkbox" checked onchange="toggleLayer('crossfloor', this.checked)"> 跨层连接</label>
+  <label><input type="checkbox" onchange="toggleLayer('risk', this.checked)"> 风险点</label>
+  <label><input type="checkbox" onchange="toggleLayer('ramp', this.checked)"> 坡道</label>
+  <label><input type="checkbox" onchange="toggleLayer('tactile', this.checked)"> 盲道</label>
+  <label><input type="checkbox" onchange="toggleLayer('material', this.checked)"> 地面材质</label>
+  <label><input type="checkbox" onchange="toggleLayer('fingerprint', this.checked)"> 指纹网格</label>
+  <label><input type="checkbox" onchange="toggleLayer('beacon', this.checked)"> 信标部署点</label>
+  <label><input type="checkbox" onchange="toggleLayer('coverage', this.checked)"> 三点定位覆盖</label>
+  <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
+  <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
+  <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
+</div>
+<div id="path-bar">
+  <b>路径规划</b>
+  <button type="button" id="btn-path-mode" onclick="togglePathMode()">选点导航</button>
+  <label>模式
+    <select id="path-mode-select" onchange="recomputePathIfReady()">
+      <option value="normal">普通</option>
+      <option value="blind">视障</option>
+      <option value="wheelchair">轮椅</option>
+    </select>
+  </label>
+  <button type="button" onclick="clearPath()">清除路径</button>
+  <span class="hint" id="path-hint">开启后依次点击两个拓扑节点（起点→终点）</span>
+  <span class="result" id="path-result"></span>
+</div>
+<div id="edge-bar">
+  <b>拓扑边编辑</b>
+  <button type="button" id="btn-del-edge" onclick="deleteSelectedEdge()" disabled title="先单击选中一条拓扑边">删除选中拓扑边</button>
+  <button type="button" onclick="saveGeojson()" title="将增删的拓扑边写回 GeoJSON 文件（弹窗选择保存位置）">保存 GeoJSON</button>
+  <span class="hint" id="edge-hint">双击拓扑节点添加拓扑边（依次双击两个节点）；单击拓扑边后可用「删除选中拓扑边」</span>
+  <span class="result" id="edge-list"></span>
+</div>
+<div id="anno-bar">
+  <b>区域标注</b>
+  <button type="button" id="btn-anno-toggle" onclick="toggleAnnoMode()">进入标注模式</button>
+  <label>目标类型
+    <select id="anno-type">
+      <option value="elevator_lobby">电梯前厅</option>
+      <option value="stair_lobby">楼梯前厅</option>
+      <option value="lobby">门厅/大堂</option>
+      <option value="corridor">走廊</option>
+      <option value="activity">活动室</option>
+      <option value="atrium">中庭</option>
+      <option value="room">普通房间</option>
+    </select>
+  </label>
+  <button type="button" onclick="exportAnnoOverrides()" title="导出已标注的覆盖项，供重新解析后 apply_room_overrides.py 复现">导出标注(JSON)</button>
+  <button type="button" onclick="saveGeojson()" title="将标注类型写回 GeoJSON 文件">保存 GeoJSON</button>
+  <span class="hint" id="anno-hint">点「进入标注模式」后，在图上拖拽框选区域，松手即把该层落在框内（质心）的房间标记为所选类型。</span>
+  <span class="result" id="anno-list"></span>
+</div>
+<div id="svg-container">
+<div class="search-panel">
+  <input id="search-input" type="text" placeholder="按名称 / 编号 / 类型模糊搜索…" autocomplete="off">
+  <div id="search-results" class="search-results"></div>
+</div>
+<div id="mode-switch" title="切换信标部署/指纹采集/三点覆盖所对应方案">
+  <span class="mode-label">方案：</span>
+  <button id="mode-btn-global" class="mode-btn active" onclick="setMode('global')">全局</button>
+  <button id="mode-btn-route" class="mode-btn" onclick="setMode('route')">测试路线</button>
+</div>
+<div id="floor-jump"></div>
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="zoomIn()" title="放大">+</button>
+  <button class="zoom-btn" onclick="zoomOut()" title="缩小">−</button>
+  <button class="zoom-btn" onclick="resetView()" title="重置">&#8634;</button>
+</div>
+<div id="tooltip"></div>
+<div id="svg-wrapper">
+<svg id="main-svg" xmlns="http://www.w3.org/2000/svg" width="__SVW__" height="__SVH__" style="display:block">
+__SVG_BODY__<g id="manual-edge-layer"></g>
+</svg>
+</div><!-- /svg-wrapper -->
+
+<script>
+// ===== 语义模糊搜索 + 定位居中 =====
+// 该脚本会被注入到交互式 HTML 中（位于主脚本之前），所有依赖的全局函数
+// （applyTransform / showDetail / ensureLayer / clearHighlight / toggleLayer /
+// rpEsc / allLayers 以及 svg / wrapper / scale / translateX / translateY）
+// 均为全局定义，运行时（用户点击）均已就绪。
+var SEARCH_LAYERS = ['room', 'infrastructure', 'corridor', 'lobby', 'activity', 'atrium', 'lobby_elevator', 'lobby_stair',
+  'door_swing', 'door_fire', 'door_opening', 'topo_node', 'stairs', 'elevator', 'risk', 'ramp', 'tactile', 'material', 'crossfloor'];
+var SEARCH_TYPE_CN = {
+  room: '房间', infrastructure: '基础设施', corridor: '走道', lobby: '门厅', activity: '活动区', atrium: '中庭',
+  lobby_elevator: '电梯前室', lobby_stair: '楼梯前室',
+  door_swing: '普通门', door_fire: '防火门', door_opening: '门洞',
+  topo_node: '拓扑节点', stairs: '楼梯', elevator: '电梯', risk: '风险点', ramp: '坡道',
+  tactile: '盲道', material: '地面材质', crossfloor: '跨层连接'
+};
+var SEARCH_INDEX = null;
+
+function srBuildIndex() {
+  if (SEARCH_INDEX) return SEARCH_INDEX;
+  var idx = [];
+  document.querySelectorAll('#main-svg [data-info]').forEach(function (el) {
+    var cls = el.getAttribute('class') || '';
+    var layer = null;
+    for (var i = 0; i < SEARCH_LAYERS.length; i++) {
+      if (cls.indexOf('layer_' + SEARCH_LAYERS[i]) !== -1) { layer = SEARCH_LAYERS[i]; break; }
+    }
+    if (!layer) return;
+    var raw;
+    try { raw = JSON.parse(el.getAttribute('data-info')); } catch (e) { return; }
+    var title = (raw.detail && raw.detail.title) || '';
+    var parts = [];
+    if (raw.id) parts.push(raw.id);
+    if (raw.kind) parts.push(raw.kind);
+    if (raw.tip) parts.push(raw.tip);
+    if (title) parts.push(title);
+    if (raw.detail && raw.detail.rows) {
+      raw.detail.rows.forEach(function (r) { if (r && r[1] != null) parts.push(String(r[1])); });
+    }
+    var rid = el.getAttribute('data-roomid');
+    if (rid) parts.push(rid);
+    idx.push({
+      el: el, layer: layer, text: parts.join(' '),
+      disp: title || (raw.id || ''),
+      id: raw.id || '', rid: rid || ''
+    });
+  });
+  SEARCH_INDEX = idx;
+  return idx;
+}
+
+function srFloorFromId(s) {
+  s = String(s || '');
+  var up = s.toUpperCase();
+  var i = up.indexOf('F');
+  while (i >= 0) {
+    var num = '';
+    var j = i + 1;
+    while (j < s.length && s[j] >= '0' && s[j] <= '9') { num += s[j]; j++; }
+    if (num) return num;
+    i = up.indexOf('F', i + 1);
+  }
+  return '';
+}
+
+// 模糊打分：子串优先（高权重），否则逐字符子序列匹配（按间隔惩罚）
+function srScore(q, text) {
+  if (!q) return -1;
+  text = (text || '').toLowerCase();
+  q = q.toLowerCase().trim();
+  if (!q) return -1;
+  var p = text.indexOf(q);
+  if (p >= 0) return 1000 - p - text.length * 0.05;
+  var ti = 0, gaps = 0, last = -1, matched = 0;
+  for (var i = 0; i < q.length; i++) {
+    var ch = q[i], found = -1;
+    for (var j = ti; j < text.length; j++) { if (text[j] === ch) { found = j; break; } }
+    if (found < 0) return -1;
+    if (last >= 0) gaps += (found - last - 1);
+    last = found; ti = found + 1; matched++;
+  }
+  if (matched < q.length) return -1;
+  return 400 - gaps - matched;
+}
+
+function srRun(q, dropdown) {
+  var idx = srBuildIndex();
+  var scored = [];
+  for (var i = 0; i < idx.length; i++) {
+    var s = srScore(q, idx[i].text);
+    if (s > 0) scored.push({ e: idx[i], s: s });
+  }
+  scored.sort(function (a, b) { return b.s - a.s; });
+  scored = scored.slice(0, 12);
+  if (!scored.length) {
+    dropdown.innerHTML = '<div class="search-empty">未找到匹配「' + rpEsc(q) + '」的元素</div>';
+    dropdown.classList.add('show');
+    return;
+  }
+  var html = '';
+  scored.forEach(function (it, k) {
+    var e = it.e;
+    var fl = srFloorFromId(e.id || e.rid);
+    html += '<div class="sr-item" data-k="' + k + '">'
+      + '<div class="sr-title">' + rpEsc(e.disp) + '</div>'
+      + '<div class="sr-meta"><span class="sr-tag">' + rpEsc(SEARCH_TYPE_CN[e.layer] || e.layer) + '</span>'
+      + (e.id ? rpEsc(e.id) + ' · ' : '') + (fl ? ('F' + fl + ' · ') : '') + '匹配度 ' + Math.round(it.s) + '</div>'
+      + '</div>';
+  });
+  dropdown.innerHTML = html;
+  dropdown.classList.add('show');
+  var items = dropdown.querySelectorAll('.sr-item');
+  for (var n = 0; n < items.length; n++) {
+    (function (li, entry) {
+      li.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        srLocate(entry.e.el);
+        dropdown.classList.remove('show');
+        var inp = document.getElementById('search-input');
+        if (inp) inp.blur();
+      });
+    })(items[n], scored[n]);
+  }
+}
+
+function srEnsureVisible(el) {
+  var cls = (el.getAttribute('class') || '');
+  for (var i = 0; i < allLayers.length; i++) {
+    var name = allLayers[i];
+    if (cls.indexOf('layer_' + name) !== -1) {
+      var cb = document.querySelector('#layerControls input[onchange*="' + name + '"]');
+      if (cb && !cb.checked) { cb.checked = true; toggleLayer(name, true); }
+    }
+  }
+  el.style.display = '';
+}
+
+var _srHi = null;
+function srClearHi() {
+  if (_srHi && _srHi.parentNode) { _srHi.parentNode.removeChild(_srHi); _srHi = null; }
+}
+function srHighlight(cx, cy) {
+  srClearHi();
+  var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  var c1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c1.setAttribute('cx', cx); c1.setAttribute('cy', cy); c1.setAttribute('r', 11);
+  c1.setAttribute('fill', 'none'); c1.setAttribute('stroke', '#FF6D00'); c1.setAttribute('stroke-width', 2);
+  c1.setAttribute('stroke-dasharray', '5,3');
+  g.appendChild(c1);
+  var c2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c2.setAttribute('cx', cx); c2.setAttribute('cy', cy); c2.setAttribute('r', 4);
+  c2.setAttribute('fill', '#FF6D00'); c2.setAttribute('opacity', 0.55);
+  g.appendChild(c2);
+  svg.appendChild(g);
+  _srHi = g;
+  setTimeout(srClearHi, 2600);
+}
+
+function srLocate(el) {
+  srEnsureVisible(el);
+  var b = el.getBBox();
+  var cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  if (scale < 2.5) scale = 2.5;
+  var rect = wrapper.getBoundingClientRect();
+  translateX = rect.width / 2 - cx * scale;
+  translateY = rect.height / 2 - cy * scale;
+  applyTransform(); setZoomInfo();
+  srHighlight(cx, cy);
+  clearHighlight();
+  el.classList.add('selected');
+  try {
+    var d = JSON.parse(el.getAttribute('data-info'));
+    showDetail(d.detail || { title: d.tip || '详情', rows: [] });
+  } catch (e) {}
+  if ((el.getAttribute('class') || '').indexOf('layer_topo_node') !== -1) {
+    ensureLayer('topo_node', true); ensureLayer('topo_edge', true);
+  }
+}
+
+(function () {
+  var inp = document.getElementById('search-input');
+  var dropdown = document.getElementById('search-results');
+  if (!inp || !dropdown) return;
+  inp.addEventListener('input', function () { srRun(inp.value, dropdown); });
+  inp.addEventListener('focus', function () { if (inp.value) srRun(inp.value, dropdown); });
+  inp.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      var first = dropdown.querySelector('.sr-item');
+      if (first) first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    } else if (e.key === 'Escape') {
+      dropdown.classList.remove('show'); inp.blur();
+    }
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target !== inp && !dropdown.contains(e.target)) dropdown.classList.remove('show');
+  });
+})();
+
+</script>
+</div><!-- /svg-container -->
+<div id="detail"><h4>点击任意要素查看详情</h4><div style="color:#999;font-size:12px">悬停查看提示，点击锁定详情；再次点击同一要素可取消选中。点击拓扑节点会高亮其<b style="color:#FFC107">相连边</b>与<b style="color:#00BCD4">直接可达节点</b>（青色）。</div></div>
+<div id="legend-panel">
+  <h4>图例说明 (v9)</h4>
+  <div class="lg-grid">
+  <div class="lg-sec"><div class="lg-title">建筑要素</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#333"></div>墙体</div>
+    <div class="lg-item"><div class="lg-sw line" style="--c:#81D4FA"></div>窗户段</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FFF9C4"></div>房间/教室</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:1px dashed #B0BEC5"></div>走道/通道（虚线轮廓）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#B0BEC5;border:1px solid #78909C"></div>柱子</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:2px solid #222"></div>建筑外轮廓（实线）</div>
+  </div>
+  <div class="lg-sec"><div class="lg-title">门</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#2196F3;border-radius:50%;width:11px;height:11px;margin-left:1px"></div>普通门（window 摆弧）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#1E8449;width:12px;height:12px;transform:rotate(45deg);margin-left:1px"></div>门洞（DK 标注墙缝）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FF5722;width:11px;height:11px;margin-left:1px"></div>防火门·常开</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#8B0000;width:11px;height:11px;margin-left:1px"></div>防火门·常闭</div>
+</div>
+  <div class="lg-sec"><div class="lg-title">拓扑节点 (v9)</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E67E22;border-radius:50%;width:11px;height:11px"></div>房间节点</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#C0392B;border-radius:50%;width:10px;height:10px"></div>门口节点</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#27AE60;width:11px;height:11px"></div>走廊交叉口</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#8E44AD;border-radius:50%;width:12px;height:12px"></div>楼梯接入</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#16A085;border-radius:50%;width:12px;height:12px"></div>电梯接入</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#2980B9;clip-path:polygon(50% 0,0 100%,100% 100%)"></div>出入口</div>
+  </div>
+  <div class="lg-sec"><div class="lg-title">无障碍 / 跨层</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#4CAF50;height:0;border-bottom:2px dashed #4CAF50"></div>坡道</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FFD600;height:0;border-bottom:2px solid #FFD600"></div>盲道路径</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#9C27B0;transform:rotate(45deg)"></div>地面材质</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E53935;height:0;border-bottom:2px dashed #E53935"></div>楼梯跨层</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#1E88E5;height:0;border-bottom:2px dashed #1E88E5"></div>电梯跨层</div>
+  </div>
+  <div class="lg-sec"><div class="lg-title">风险</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#F44336;border-radius:50%"></div>风险点</div>
+  </div>
+  <div class="lg-sec"><div class="lg-title">信标部署点</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>交叉口/转角</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#8E24AA;border-radius:50%;width:11px;height:11px"></div>门口</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>楼梯（密集）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#1E88E5;border-radius:50%;width:11px;height:11px"></div>电梯（密集）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>出入口</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#00897B;border-radius:50%;width:11px;height:11px"></div>走廊覆盖点（路线模式）</div>
+  </div>
+  <div class="lg-sec"><div class="lg-title">三点定位覆盖</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#43A047;border-radius:50%;width:11px;height:11px"></div>≥3 信标（可三点定位）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FBC02D;border-radius:50%;width:11px;height:11px"></div>2 信标</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>1 信标</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>0（无覆盖）</div>
+  </div>
+  </div><!-- /lg-grid -->
+</div><!-- /legend-panel -->
+</div><!-- /left -->
+<div id="route-panel">
+  <h4><span>路径规划 · 完整路径</span><span class="rp-mode" id="rp-mode">普通</span></h4>
+  <div id="route-summary" class="rp-empty">尚未规划路径。<br>点上方「选点导航」后依次点击起点、终点拓扑节点，这里会列出完整途经节点清单（可点击定位）。</div>
+  <ol id="route-steps"></ol>
+</div><!-- /route-panel -->
+</div><!-- /app -->
+<script>
+__MAIN_JS__
+</script>
+</body></html>
