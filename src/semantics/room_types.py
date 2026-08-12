@@ -46,3 +46,21 @@ def classify_room_type(label):
         if kw in label:
             return tp
     return "room"
+
+
+# 开放空间类型 → 独立编号前缀（区别于封闭房间的 RM- 系列）；
+# 走廊/门厅/大厅/活动/中庭与房间/管井/电梯/楼梯间等封闭空间是不同类型，
+# 不能合并编号，故在生成 room id 时分流到各自 OBJ_TYPE 键。
+_OPEN_ID_KEY = {
+    "corridor": "corridor", "lobby": "lobby",
+    "activity": "activity", "atrium": "atrium",
+}
+
+# 功能房间统一类型（需求⑳+1）：办公室/实验室/教室等封闭功能房间一律 type="room"，
+# 原用途（classroom/office/lab...）落到 roomSubType 子类别；走廊/门厅/楼梯/卫生间/
+# 电梯厅/管井/出入口等公共/设施型保持独立 type 不变。
+FUNCTIONAL_ROOM_TYPES = {
+    "room", "classroom", "lab", "office", "meeting", "storage",
+    "equipment", "library", "medical", "counseling", "activity",
+    "reception",
+}

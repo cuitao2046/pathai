@@ -23,9 +23,11 @@ class TestPipelineGolden(unittest.TestCase):
     def setUp(self):
         skip_if_missing("shapely", "fitz")
         import src.parsing.parse_cad_pdf as mod
+        import src.io.geojson_writer as gw
         self.mod = mod
         # 重置手动骨架缓存，确保按当前 result/skeleton_manual_parsed.json 重新加载
-        mod.MANUAL_SKELETON = None
+        # （B1 拆分后 MANUAL_SKELETON 归 geojson_writer 模块所有）
+        gw.MANUAL_SKELETON = None
 
     def _run_pipeline(self):
         mod = self.mod
