@@ -754,39 +754,63 @@ def main():
     import argparse as _ap
     _a = _ap.ArgumentParser(description="交互式楼层渲染")
     _a.add_argument("--geo", default=GEO_IN, help="v9 楼层 GeoJSON 路径")
-    _a.add_argument("--beacons", default=None, help="信标部署方案 JSON（覆盖默认 beacon_deployment_plan.json）")
-    _a.add_argument("--fingerprint", default=None, help="指纹采集网格 JSON（覆盖默认 fingerprint_grid.json，可传路线版 fingerprint_grid_routes.json）")
+    _a.add_argument("--beacons", default=None, help="全局信标部署方案 JSON（覆盖默认 beacon_deployment_plan.json）")
+    _a.add_argument("--fingerprint", default=None, help="全局指纹采集网格 JSON（覆盖默认 fingerprint_grid.json）")
+    _a.add_argument("--beacons-routes", default=None, help="测试路线信标部署方案 JSON（缺省自动探测 *_routes.json）")
+    _a.add_argument("--fingerprint-routes", default=None, help="测试路线指纹采集网格 JSON（缺省自动探测 fingerprint_grid_routes.json）")
     _a.add_argument("--out", default=HTML_OUT, help="输出 HTML 路径")
     _args = _a.parse_args()
     geo = json.load(open(_args.geo, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
+    geo_dir = Path(_args.geo).parent
 
-    # 指纹采集网格（generate_fingerprint_grid.py 生成的独立清单，默认隐藏图层）
-    fp_path = Path(_args.fingerprint) if _args.fingerprint else (Path(GEO_IN).parent / "fingerprint_grid.json")
+    # 指纹采集网格（两套：全局 + 测试路线，模式开关切换显示）
     fp_floors = {}
+    fp_path = Path(_args.fingerprint) if _args.fingerprint else (geo_dir / "fingerprint_grid.json")
     if fp_path.exists():
         try:
-            fp_data = json.load(open(fp_path, encoding="utf-8"))
-            fp_floors = fp_data.get("floors", {})
+            fp_floors = json.load(open(fp_path, encoding="utf-8")).get("floors", {})
+            print(f"  [info] 全局指纹网格 {fp_path.name}: "
+                  f"{sum(len(v.get('points', [])) for v in fp_floors.values())} 点")
         except Exception as e:
-            print("  [warn] 读取 fingerprint_grid.json 失败：", e)
+            print("  [warn] 读取指纹网格失败：", e)
     else:
         print("  [hint] 未找到 fingerprint_grid.json，可先运行 generate_fingerprint_grid.py")
+    fp_floors_routes = {}
+    fp_r_path = Path(_args.fingerprint_routes) if _args.fingerprint_routes else (geo_dir / "fingerprint_grid_routes.json")
+    if fp_r_path.exists():
+        try:
+            fp_floors_routes = json.load(open(fp_r_path, encoding="utf-8")).get("floors", {})
+            print(f"  [info] 路线指纹网格 {fp_r_path.name}: "
+                  f"{sum(len(v.get('points', [])) for v in fp_floors_routes.values())} 点")
+        except Exception as e:
+            print("  [warn] 读取路线指纹网格失败：", e)
 
-    # 信标部署方案（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
-    bc_path = Path(_args.beacons) if _args.beacons else (Path(_args.geo).parent / "beacon_deployment_plan.json")
+    # 信标部署方案（两套：全局 + 测试路线）
     beacon_floors = {}
+    bc_path = Path(_args.beacons) if _args.beacons else (geo_dir / "beacon_deployment_plan.json")
     if bc_path.exists():
         try:
             bc_data = json.load(open(bc_path, encoding="utf-8"))
             for b in bc_data.get("beacons", []):
                 beacon_floors.setdefault(str(b.get("floor")), []).append(b)
-            print(f"  [info] 读取信标部署方案 {bc_path.name}: "
+            print(f"  [info] 全局信标方案 {bc_path.name}: "
                   f"{len(bc_data.get('beacons', []))} 个信标")
         except Exception as e:
-            print("  [warn] 读取 beacon_deployment_plan.json 失败：", e)
+            print("  [warn] 读取全局信标方案失败：", e)
     else:
         print("  [hint] 未找到 beacon_deployment_plan.json，可先运行 gen_beacon_plan.py")
+    beacon_floors_routes = {}
+    bc_r_path = Path(_args.beacons_routes) if _args.beacons_routes else (geo_dir / "beacon_deployment_plan_trilateration_routes.json")
+    if bc_r_path.exists():
+        try:
+            bc_r_data = json.load(open(bc_r_path, encoding="utf-8"))
+            for b in bc_r_data.get("beacons", []):
+                beacon_floors_routes.setdefault(str(b.get("floor")), []).append(b)
+            print(f"  [info] 路线信标方案 {bc_r_path.name}: "
+                  f"{len(bc_r_data.get('beacons', []))} 个信标")
+        except Exception as e:
+            print("  [warn] 读取路线信标方案失败：", e)
 
     # ---- 全局范围（所有楼层共用变换，便于跨层对齐） ----
     min_x, min_y = float("inf"), float("inf")
@@ -901,6 +925,10 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 .layer_beacon:hover circle {{ stroke: #FFC107; stroke-width: 1.4; }}
 .zoom-controls {{ position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }}
 .zoom-btn {{ width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+#mode-switch {{ position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.95); border: 1px solid #d0d0d0; border-radius: 6px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); z-index: 25; }}
+#mode-switch .mode-label {{ font-size: 12px; color: #666; margin-right: 2px; }}
+.mode-btn {{ border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; padding: 3px 12px; }}
+.mode-btn.active {{ background: #1565C0; color: #fff; border-color: #1565C0; }}
 .zoom-btn:hover {{ background: #f0f0f0; }}
 .zoom-info {{ position: absolute; bottom: 10px; right: 10px; background: rgba(255,255,255,0.9); padding: 4px 8px; border-radius: 4px; font-size: 12px; color: #666; z-index: 10; border: 1px solid #ddd; }}
 .search-panel {{ position: absolute; top: 10px; left: 10px; z-index: 20; width: 250px; font-size: 13px; }}
@@ -1063,6 +1091,11 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
 <div class="search-panel">
   <input id="search-input" type="text" placeholder="按名称 / 编号 / 类型模糊搜索…" autocomplete="off">
   <div id="search-results" class="search-results"></div>
+</div>
+<div id="mode-switch" title="切换信标部署/指纹采集/三点覆盖所对应方案">
+  <span class="mode-label">方案：</span>
+  <button id="mode-btn-global" class="mode-btn active" onclick="setMode('global')">全局</button>
+  <button id="mode-btn-route" class="mode-btn" onclick="setMode('route')">测试路线</button>
 </div>
 <div id="floor-jump"></div>
 <div class="zoom-controls">
@@ -1894,78 +1927,78 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 f'stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></g>\n'
             )
 
-        # 11. 指纹采集网格（独立清单文件，默认隐藏）
-        fp_fd = fp_floors.get(str(fk))
-        if fp_fd:
-            n_fp = 0
-            for p in fp_fd.get("points", []):
-                cx, cy = p["coordinates"][0], p["coordinates"][1]
-                sx, sy = tosvg(cx, cy)
-                is_safe = p.get("regionType") == "safe"
-                col = "#FF7043" if is_safe else "#42A5F5"
-                r = 2.4 if is_safe else 1.8
-                prio = p.get("priority", 3)
-                src = p.get("source", "")
-                tip = f"指纹采集点 {p.get('id','')}\\n区域：{'安全节点' if is_safe else '普通'} · 优先级 {prio} · 来源 {src}"
-                det = {"title": f"指纹采集点 {p.get('id','')}", "rows": [
-                    ("楼层", f"{p.get('floor','?')}F"),
-                    ("区域类型", "安全节点" if is_safe else "普通"),
-                    ("采集优先级", str(prio)),
-                    ("来源", src),
-                ]}
-                if p.get("nearNodeId"):
-                    det["rows"].append(("邻近节点", f"{p['nearNodeId']} ({p.get('nearNodeType','')})"))
-                attr = info_attr({"tip": tip, "detail": det, "kind": "fingerprint", "id": p.get("id", "")})
-                parts.append(
-                    f'<g class="layer_fingerprint" {attr}>'
-                    f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
-                    f'fill-opacity="0.85" stroke="#fff" stroke-width="0.4"/></g>\n'
-                )
-                n_fp += 1
-            if n_fp:
-                print(f"  [F{fk}] 指纹网格图层: {n_fp} 个点")
-
-        # 11.5 三点定位覆盖（基于已加载信标方案 + 本层墙体，对每指纹点算可见信标数着色）
+        # 11-12. 方案相关图层（指纹采集点 + 三点覆盖 + 信标部署点），按模式分组
+        # 全局模式（默认显示）与测试路线模式（隐藏，顶部开关切换），两套数据并存
         cov_fk = cov_index.get(str(fk))
-        bc_fk = beacon_floors.get(str(fk))
-        if fp_fd and cov_fk is not None and bc_fk:
-            n_cov = 0
-            bc_id = [(b.get("beaconId", ""), (b["coordinates"][0], b["coordinates"][1])) for b in bc_fk]
-            bc_coords = [(b["coordinates"][0], b["coordinates"][1]) for b in bc_fk]
-            for p in fp_fd.get("points", []):
-                cx, cy = p["coordinates"][0], p["coordinates"][1]
-                sx, sy = tosvg(cx, cy)
-                vis_ids = visible_ids(cx, cy, bc_id, cov_fk)
-                vis = len(vis_ids)
-                # 关键贡献点：该点恰靠 vis==3 维持可定位，移除其中任一可见信标即 <3
-                if vis == 3:
-                    for bid in vis_ids:
-                        if bid:
-                            beacon_contrib[bid].append([round(cx, 2), round(cy, 2)])
-                col = COV_COLORS.get(min(vis, 3), "#43A047")
-                ok = vis >= 3
-                tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
-                det = {"title": f"指纹点 {p.get('id','')} 覆盖", "rows": [
-                    ("楼层", f"{p.get('floor','?')}F"),
-                    ("可见信标数", str(vis)),
-                    ("三点定位", "可" if ok else "不足（需≥3）"),
-                ]}
-                attr = info_attr({"tip": tip, "detail": det, "kind": "coverage", "id": p.get("id", "")})
-                # 默认隐藏（图层面板未勾选），与指纹/信标图层一致
-                parts.append(
-                    f'<g class="layer_coverage" style="display:none" {attr}>'
-                    f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '
-                    f'fill-opacity="0.82" stroke="#fff" stroke-width="0.5"/></g>\n'
-                )
-                n_cov += 1
-            if n_cov:
-                print(f"  [F{fk}] 三点定位覆盖图层: {n_cov} 个点")
 
-        # 12. 信标部署点（gen_beacon_plan.py 生成的独立清单，默认隐藏图层）
-        bc_list = beacon_floors.get(str(fk))
-        if bc_list:
+        def render_scheme_group(fp_fd, bc_fk, mode):
+            """渲染一套方案（指纹+覆盖+信标），包进 <g class="mode-xxx"> 供模式开关显隐。"""
+            if not bc_fk:
+                return
+            hide = ' style="display:none"' if mode == "route" else ""
+            parts.append(f'<g class="mode-{mode}"{hide}>\n')
+            # 指纹采集点
+            if fp_fd:
+                n_fp = 0
+                for p in fp_fd.get("points", []):
+                    cx, cy = p["coordinates"][0], p["coordinates"][1]
+                    sx, sy = tosvg(cx, cy)
+                    is_safe = p.get("regionType") == "safe"
+                    col = "#FF7043" if is_safe else "#42A5F5"
+                    r = 2.4 if is_safe else 1.8
+                    prio = p.get("priority", 3)
+                    src = p.get("source", "")
+                    tip = f"指纹采集点 {p.get('id','')}\\n区域：{'安全节点' if is_safe else '普通'} · 优先级 {prio} · 来源 {src}"
+                    det = {"title": f"指纹采集点 {p.get('id','')}", "rows": [
+                        ("楼层", f"{p.get('floor','?')}F"),
+                        ("区域类型", "安全节点" if is_safe else "普通"),
+                        ("采集优先级", str(prio)),
+                        ("来源", src),
+                    ]}
+                    if p.get("nearNodeId"):
+                        det["rows"].append(("邻近节点", f"{p['nearNodeId']} ({p.get('nearNodeType','')})"))
+                    attr = info_attr({"tip": tip, "detail": det, "kind": "fingerprint", "id": p.get("id", "")})
+                    parts.append(
+                        f'<g class="layer_fingerprint" {attr}>'
+                        f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
+                        f'fill-opacity="0.85" stroke="#fff" stroke-width="0.4"/></g>\n'
+                    )
+                    n_fp += 1
+                if n_fp:
+                    print(f"  [F{fk}][{mode}] 指纹网格图层: {n_fp} 个点")
+            # 三点定位覆盖（对每指纹点按可见信标数着色；贡献点 key 带 mode 前缀避免跨方案 beaconId 冲突）
+            if fp_fd and cov_fk is not None:
+                n_cov = 0
+                bc_id = [(b.get("beaconId", ""), (b["coordinates"][0], b["coordinates"][1])) for b in bc_fk]
+                for p in fp_fd.get("points", []):
+                    cx, cy = p["coordinates"][0], p["coordinates"][1]
+                    sx, sy = tosvg(cx, cy)
+                    vis_ids = visible_ids(cx, cy, bc_id, cov_fk)
+                    vis = len(vis_ids)
+                    if vis == 3:
+                        for bid in vis_ids:
+                            if bid:
+                                beacon_contrib[f"{mode}:{bid}"].append([round(cx, 2), round(cy, 2)])
+                    col = COV_COLORS.get(min(vis, 3), "#43A047")
+                    ok = vis >= 3
+                    tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
+                    det = {"title": f"指纹点 {p.get('id','')} 覆盖", "rows": [
+                        ("楼层", f"{p.get('floor','?')}F"),
+                        ("可见信标数", str(vis)),
+                        ("三点定位", "可" if ok else "不足（需≥3）"),
+                    ]}
+                    attr = info_attr({"tip": tip, "detail": det, "kind": "coverage", "id": p.get("id", "")})
+                    parts.append(
+                        f'<g class="layer_coverage" style="display:none" {attr}>'
+                        f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '
+                        f'fill-opacity="0.82" stroke="#fff" stroke-width="0.5"/></g>\n'
+                    )
+                    n_cov += 1
+                if n_cov:
+                    print(f"  [F{fk}][{mode}] 三点定位覆盖图层: {n_cov} 个点")
+            # 信标部署点
             n_bc = 0
-            for b in bc_list:
+            for b in bc_fk:
                 cx, cy = b["coordinates"][0], b["coordinates"][1]
                 sx, sy = tosvg(cx, cy)
                 sem = b.get("semanticTag", "")
@@ -1993,7 +2026,7 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 ]}
                 attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid})
                 parts.append(
-                    f'<g class="layer_beacon" data-floor="{fk}" {attr}>'
+                    f'<g class="layer_beacon" data-floor="{fk}" data-mode="{mode}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
                     f'fill-opacity="0.9" stroke="#ffffff" stroke-width="0.5"/>'
                     f'<text x="{fmt(float(sx) + 4)}" y="{fmt(float(sy) + 1.5)}" '
@@ -2001,7 +2034,13 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
                 )
                 n_bc += 1
             if n_bc:
-                print(f"  [F{fk}] 信标部署点图层: {n_bc} 个信标")
+                print(f"  [F{fk}][{mode}] 信标部署点图层: {n_bc} 个信标")
+            parts.append('</g>\n')
+
+        # 全局模式组（默认显示）
+        render_scheme_group(fp_floors.get(str(fk)), beacon_floors.get(str(fk)), "global")
+        # 测试路线模式组（默认隐藏，顶部开关切换）
+        render_scheme_group(fp_floors_routes.get(str(fk)), beacon_floors_routes.get(str(fk)), "route")
 
         # ===== 实际坐标系（与地图真实位置对齐，非图例）：5m 网格 + 1m 刻度尺
         #       + y=0/x=0 轴高亮 + 原点(0,0)。独立 class，不随图层开关显隐 =====
@@ -2693,7 +2732,8 @@ function showBeaconContrib(t){{
   clearBeaconContrib();
   var d2 = null; try {{ d2 = JSON.parse(t.getAttribute('data-info')); }} catch(e) {{ return; }}
   if (d2.kind !== 'beacon' || !d2.id) return;
-  var m = loadBeaconContrib()[d2.id];
+  var mode = t.getAttribute('data-mode') || 'global';
+  var m = loadBeaconContrib()[mode + ':' + d2.id];
   if (!m || !m.length) return;
   var fk = t.getAttribute('data-floor');
   var fi = GEOX.floorKeys.indexOf(String(fk));
@@ -2774,6 +2814,17 @@ wrapper.addEventListener('click', function(e) {{
 var allLayers = ['room','infrastructure','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','elevator_door','column','building_outline',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon','coverage'];
+// ---- 方案模式开关（全局 / 测试路线）：切换信标部署/指纹采集/三点覆盖三套数据 ----
+var CUR_MODE = 'global';
+function setMode(m) {{
+  CUR_MODE = m;
+  document.querySelectorAll('.mode-global').forEach(function(el){{ el.style.display = (m === 'global') ? '' : 'none'; }});
+  document.querySelectorAll('.mode-route').forEach(function(el){{ el.style.display = (m === 'route') ? '' : 'none'; }});
+  var bg = document.getElementById('mode-btn-global'), br = document.getElementById('mode-btn-route');
+  if (bg) bg.classList.toggle('active', m === 'global');
+  if (br) br.classList.toggle('active', m === 'route');
+  clearBeaconContrib();
+}}
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {{
   document.querySelectorAll('.layer_' + name).forEach(function(el){{ el.style.display = checked ? '' : 'none'; }});
