@@ -767,7 +767,7 @@ def main():
                 min_x, min_y = min(min_x, p[0]), min(min_y, p[1])
                 max_x, max_y = max(max_x, p[0]), max(max_y, p[1])
 
-    svw = int((max_x - min_x) * SCALE + MARGIN_X * 2)
+    svw = int((max_x - min_x) * SCALE + MARGIN_X * 2) + 14  # +14px 容纳 x=0 轴与原点(0,0)
     svh_per_floor = int((max_y - min_y) * SCALE + MARGIN_Y * 2 + FLOOR_TITLE_H)
     svh = svh_per_floor * len(geo["floors"]) + 20
     ox, oy = min_x, max_y
@@ -1965,36 +1965,61 @@ text {{ font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-event
             if n_bc:
                 print(f"  [F{fk}] 信标部署点图层: {n_bc} 个信标")
 
-        # 坐标系（每层左下角，1m 刻度 = SCALE px，独立 class 不随图层开关显隐）
-        ax_x0, ax_y0 = 6, fbase_y + svh_per_floor - 14
-        ax_len = 10 * SCALE
-        parts.append(f'<g class="coord-axes" pointer-events="none">')
-        parts.append(f'<rect x="{ax_x0 - 8}" y="{ax_y0 - ax_len - 14}" width="{ax_len + 34}" '
-                     f'height="{ax_len + 26}" fill="rgba(255,255,255,0.88)" stroke="#ccc" stroke-width="0.5"/>')
-        parts.append(f'<text x="{ax_x0}" y="{ax_y0 - 8}" font-size="8" fill="#555">坐标系 {floor}F（1 m/格）</text>')
-        # X 轴 + 刻度 + 箭头
-        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0}" x2="{ax_x0 + ax_len}" y2="{ax_y0}" stroke="#888" stroke-width="1"/>')
-        parts.append(f'<line x1="{ax_x0 + ax_len}" y1="{ax_y0}" x2="{ax_x0 + ax_len - 4}" y2="{ax_y0 - 3}" stroke="#888" stroke-width="1"/>')
-        parts.append(f'<line x1="{ax_x0 + ax_len}" y1="{ax_y0}" x2="{ax_x0 + ax_len - 4}" y2="{ax_y0 + 3}" stroke="#888" stroke-width="1"/>')
-        for k in range(0, 11):
-            tx = ax_x0 + k * SCALE
-            parts.append(f'<line x1="{tx:.1f}" y1="{ax_y0}" x2="{tx:.1f}" y2="{ax_y0 + 3}" stroke="#888" stroke-width="0.8"/>')
-            if k % 2 == 0:
-                parts.append(f'<text x="{tx:.1f}" y="{ax_y0 + 11}" font-size="6" text-anchor="middle" fill="#666">{k}</text>')
-        parts.append(f'<text x="{ax_x0 + ax_len + 4}" y="{ax_y0 + 3}" font-size="7" fill="#555">X →</text>')
-        # Y 轴 + 刻度 + 箭头（SVG y 向下，向上即 y 递减）
-        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0}" x2="{ax_x0}" y2="{ax_y0 - ax_len}" stroke="#888" stroke-width="1"/>')
-        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0 - ax_len}" x2="{ax_x0 - 3}" y2="{ax_y0 - ax_len + 4}" stroke="#888" stroke-width="1"/>')
-        parts.append(f'<line x1="{ax_x0}" y1="{ax_y0 - ax_len}" x2="{ax_x0 + 3}" y2="{ax_y0 - ax_len + 4}" stroke="#888" stroke-width="1"/>')
-        for k in range(0, 11):
-            ty = ax_y0 - k * SCALE
-            parts.append(f'<line x1="{ax_x0}" y1="{ty:.1f}" x2="{ax_x0 - 3}" y2="{ty:.1f}" stroke="#888" stroke-width="0.8"/>')
-            if k % 2 == 0:
-                parts.append(f'<text x="{ax_x0 - 4}" y="{ty + 2:.1f}" font-size="6" text-anchor="end" fill="#666">{k}</text>')
-        parts.append(f'<text x="{ax_x0 - 4}" y="{ax_y0 - ax_len - 3}" font-size="7" fill="#555">Y ↑</text>')
-        # 原点 (0,0)
-        parts.append(f'<circle cx="{ax_x0}" cy="{ax_y0}" r="2.2" fill="#C62828"/>')
-        parts.append(f'<text x="{ax_x0 + 3}" y="{ax_y0 - 3}" font-size="6" fill="#C62828">(0,0)</text>')
+        # ===== 实际坐标系（与地图真实位置对齐，非图例）：5m 网格 + 1m 刻度尺
+        #       + y=0/x=0 轴高亮 + 原点(0,0)。独立 class，不随图层开关显隐 =====
+        parts.append(f'<g class="coord-grid" pointer-events="none">')
+        # 地图内容区像素范围
+        c_min_px = MARGIN_X
+        c_max_px = MARGIN_X + (max_x - min_x) * SCALE
+        c_min_py = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - max_y) * SCALE
+        c_max_py = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - min_y) * SCALE
+        # 1) 5m 网格（浅灰细线）
+        x0g = math.ceil(min_x / 5.0) * 5.0
+        x1g = math.floor(max_x / 5.0) * 5.0
+        xv = x0g
+        while xv <= x1g:
+            px = MARGIN_X + (xv - min_x) * SCALE
+            parts.append(f'<line x1="{px:.1f}" y1="{c_min_py:.1f}" x2="{px:.1f}" y2="{c_max_py:.1f}" stroke="#e6e6e6" stroke-width="0.4"/>')
+            xv += 5.0
+        y0g = math.ceil(min_y / 5.0) * 5.0
+        y1g = math.floor(max_y / 5.0) * 5.0
+        yv = y0g
+        while yv <= y1g:
+            py = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - yv) * SCALE
+            parts.append(f'<line x1="{c_min_px:.1f}" y1="{py:.1f}" x2="{c_max_px:.1f}" y2="{py:.1f}" stroke="#e6e6e6" stroke-width="0.4"/>')
+            yv += 5.0
+        # 2) X 刻度尺（沿内容区底部，1m 短刻度 / 5m 长刻度+坐标值）
+        ruler_y = c_max_py + 6
+        for xv in range(math.floor(min_x), math.ceil(max_x) + 1):
+            px = MARGIN_X + (xv - min_x) * SCALE
+            if xv % 5 == 0:
+                parts.append(f'<line x1="{px:.1f}" y1="{ruler_y}" x2="{px:.1f}" y2="{ruler_y + 6}" stroke="#666" stroke-width="0.8"/>')
+                parts.append(f'<text x="{px:.1f}" y="{ruler_y + 13}" font-size="5.5" text-anchor="middle" fill="#555">{xv}</text>')
+            else:
+                parts.append(f'<line x1="{px:.1f}" y1="{ruler_y}" x2="{px:.1f}" y2="{ruler_y + 3}" stroke="#999" stroke-width="0.5"/>')
+        # 3) Y 刻度尺（沿内容区左侧，1m 短刻度 / 5m 长刻度+坐标值）
+        ruler_x = c_min_px - 8
+        for yv in range(math.floor(min_y), math.ceil(max_y) + 1):
+            py = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - yv) * SCALE
+            if yv % 5 == 0:
+                parts.append(f'<line x1="{ruler_x - 6}" y1="{py:.1f}" x2="{ruler_x}" y2="{py:.1f}" stroke="#666" stroke-width="0.8"/>')
+                parts.append(f'<text x="{ruler_x - 7}" y="{py + 2:.1f}" font-size="5.5" text-anchor="end" fill="#555">{yv}</text>')
+            else:
+                parts.append(f'<line x1="{ruler_x - 3}" y1="{py:.1f}" x2="{ruler_x}" y2="{py:.1f}" stroke="#999" stroke-width="0.5"/>')
+        # 4) 轴高亮：y=0（X 轴）与 x=0（Y 轴），位于可视范围时红色虚线
+        gy0 = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - 0.0) * SCALE
+        gx0 = MARGIN_X + (0.0 - min_x) * SCALE
+        if min_y <= 0 <= max_y:
+            parts.append(f'<line x1="{c_min_px:.1f}" y1="{gy0:.1f}" x2="{c_max_px:.1f}" y2="{gy0:.1f}" stroke="#C62828" stroke-width="0.9" stroke-dasharray="6,3"/>')
+            parts.append(f'<text x="{c_min_px + 3:.1f}" y="{gy0 - 3:.1f}" font-size="6" fill="#C62828">y=0（X 轴）</text>')
+        if min_x <= 0 <= max_x:
+            parts.append(f'<line x1="{gx0:.1f}" y1="{c_min_py:.1f}" x2="{gx0:.1f}" y2="{c_max_py:.1f}" stroke="#C62828" stroke-width="0.9" stroke-dasharray="6,3"/>')
+            parts.append(f'<text x="{gx0 + 2:.1f}" y="{c_min_py + 10}" font-size="6" fill="#C62828">x=0（Y 轴）</text>')
+        # 5) 原点 (0,0)（y=0 与 x=0 交点，位于地图右外侧）
+        ox_px = MARGIN_X + (0.0 - min_x) * SCALE
+        oy_px = fbase_y + FLOOR_TITLE_H + MARGIN_Y + (oy - 0.0) * SCALE
+        parts.append(f'<circle cx="{ox_px:.1f}" cy="{oy_px:.1f}" r="2.6" fill="#C62828"/>')
+        parts.append(f'<text x="{ox_px - 3:.1f}" y="{oy_px - 4:.1f}" font-size="6.5" fill="#C62828" text-anchor="end">原点(0,0)</text>')
         parts.append('</g>\n')
 
         # 楼层分隔线
