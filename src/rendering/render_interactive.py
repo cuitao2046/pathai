@@ -2541,12 +2541,33 @@ function showDetail(d) {{
 // 单击选中延迟抑制：双击（拓扑边加边）时取消挂起的单击选中，避免详情面板闪烁；
 // 拓扑边点击即时响应（不受双击抑制影响，双击边无操作）。
 var clickTimer = null;
+// 选中元素详情注入「质心坐标」行（米制 CAD 坐标）：
+// 从被点击 <g> 内的 polygon/polyline 顶点取平均（SVG 用户空间）-> svg2geo 反算，
+// 覆盖房间/走廊/可通行区/楼梯/电梯/柱体等面元素与骨架等线元素。
+function injectCentroid(g, d){{
+  if(!d || !d.detail || !d.detail.rows || d.detail._hasCentroid) return;
+  var pts = [];
+  g.querySelectorAll('polygon, polyline').forEach(function(sh){{
+    var ps = (sh.getAttribute('points') || '').split(/\\s+/);
+    ps.forEach(function(pair){{
+      var m = pair.split(',');
+      if(m.length === 2 && isFinite(parseFloat(m[0]))) pts.push([parseFloat(m[0]), parseFloat(m[1])]);
+    }});
+  }});
+  if(pts.length < 3) return;
+  var sx = 0, sy = 0;
+  pts.forEach(function(p){{ sx += p[0]; sy += p[1]; }});
+  var cg = svg2geo(sx / pts.length, sy / pts.length);
+  d.detail._hasCentroid = true;
+  d.detail.rows = [['质心坐标', cg.x.toFixed(2) + ', ' + cg.y.toFixed(2) + ' m（' + cg.floor + 'F）']].concat(d.detail.rows);
+}}
 wrapper.addEventListener('click', function(e) {{
   if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
   var t = e.target.closest('[data-info]');
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try {{ d = JSON.parse(info); }} catch (err) {{ return; }}
+  injectCentroid(t, d);   // 选中即注入质心坐标（无需其它分支单独处理）
   // 拓扑边：即时选中/取消 + 详情 + 记录选中（启用删除按钮）
   if (d.kind === 'edge' && d.id) {{
     if (t.classList.contains('selected')) {{
