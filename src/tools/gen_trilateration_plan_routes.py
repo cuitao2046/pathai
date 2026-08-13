@@ -12,7 +12,10 @@ gen_trilateration_plan_routes.py — 仅针对"选定导航测试路径"的三�
   1. 读取 GeoJSON + 基础路线计划(beacon_deployment_plan_routes.json, 48 个) +
      指纹网格路线点(result/fingerprint_grid_routes.json, 753 点) 作为覆盖目标。
   2. 对每层目标点射线穿墙算 RSSI，统计每点可见信标数(< 3 为缺口)。
-  3. 贪心补点(距离模型 + 实时计数跟踪)，将补点吸附到最近墙(走廊墙, 贴墙安装)。
+  3. 贪心补点(距离模型 + 实时计数跟踪 + 最小间距 MIN_SPACING 去重)，将补点吸附到
+     最近墙(走廊墙, 贴墙安装)。吸附失败(SNAP_MAX 内无墙)的候选一律丢弃并记入
+     summary.unplaceableDetail —— 不降级为天花板吊装, 因为视障导航要求信标必须在
+     公共空间墙面/柱体上(可触及校准 + 可施工)。
   4. 全部信标 txPower 统一 -10 dBm，写 augmented 计划。
   5. 用真实穿墙模型重仿真，输出最终 >=3 覆盖率。
 
@@ -46,6 +49,8 @@ VISIBLE = -85
 D_MAX = 11.0
 OFFSET = 0.25
 FILL_R = 8.0      # 贪心补点覆盖半径(距离模型, 走廊内近似 0 墙)
+MIN_SPACING = 1.5  # 补点与既有信标的最小间距(m), 防止坐标重合/堆积
+SNAP_MAX = 4.0     # 吸附墙面的最大搜索距离(m), 超出视为无墙可贴
 
 
 def load():
@@ -105,16 +110,22 @@ def visible_count(px, py, beacons, tree, segs, atten):
     return cnt
 
 
-def greedy_fill_counts(pts_counts, cap, R):
+def greedy_fill_counts(pts_counts, cap, R, existing=None, min_spacing=MIN_SPACING):
     """跟踪每个缺口点的实时可见数, 反复选取能为最多缺口点 +1 的位置布放补点,
-    直到所有点都 >=3 或达上限。pts_counts: [[x,y,count], ...] (in-place 更新)。"""
+    直到所有点都 >=3 或达上限。pts_counts: [[x,y,count], ...] (in-place 更新)。
+
+    existing: 既有信标坐标列表, 候选点与其中任一点距离 < min_spacing 时被剔除,
+    避免生成坐标重合/堆积的补点(均匀性 R4 的主要劣化来源)。"""
     added = []
+    placed = list(existing or [])
     weak = [p for p in pts_counts if p[2] < 3]
     while weak and len(added) < cap:
         best = None
         bestcov = 0
         for p in weak:
             cx, cy = p[0], p[1]
+            if any(math.hypot(cx - qx, cy - qy) < min_spacing for (qx, qy) in placed):
+                continue
             cov = 0
             for q in weak:
                 if math.hypot(q[0] - cx, q[1] - cy) <= R:
@@ -125,6 +136,7 @@ def greedy_fill_counts(pts_counts, cap, R):
         if best is None or bestcov == 0:
             break
         added.append(best)
+        placed.append(best)
         bx, by = best
         for q in weak:
             if math.hypot(q[0] - bx, q[1] - by) <= R:
@@ -136,7 +148,7 @@ def greedy_fill_counts(pts_counts, cap, R):
 def snap_to_wall(pt, segs):
     p = Point(pt)
     best = None
-    bestd = 4.0
+    bestd = SNAP_MAX
     for s in segs:
         d = p.distance(s)
         if d < bestd:
@@ -169,6 +181,7 @@ def main():
                "floors": [], "added": 0}
     new_minor = max_minor
     added_total = 0
+    unplaceable_total = 0
 
     for fl in ["1", "2"]:
         fg = geo["floors"][fl]["geometry"]
@@ -177,10 +190,23 @@ def main():
         pts = target_pts.get(fl, [])
         pts_counts = [[x, y, visible_count(x, y, beacons, tree, segs, atten)] for (x, y) in pts]
         before = [p for p in pts_counts if p[2] < 3]
-        added = greedy_fill_counts(pts_counts, args.fill_cap, FILL_R)
+        added = greedy_fill_counts(pts_counts, args.fill_cap, FILL_R, existing=beacons)
         seq = 1
+        unplaceable = []
         for (cx, cy) in added:
             snapped, found = snap_to_wall((cx, cy), segs)
+            if not found:
+                # 无墙可吸附: 该点只能吊装天花板, 违反「仅墙面/柱体安装」约束,
+                # 故丢弃并记录, 由人工评估是否改走廊立柱或调整测试路线。
+                unplaceable.append({"coordinates": [round(cx, 3), round(cy, 3)],
+                                    "reason": f"no_wall_within_{SNAP_MAX}m"})
+                continue
+            # 吸附后可能被拉近既有信标, 需复核最小间距, 防止重合堆积
+            if any(math.hypot(snapped[0] - qx, snapped[1] - qy) < MIN_SPACING
+                   for (qx, qy) in beacons):
+                unplaceable.append({"coordinates": [round(cx, 3), round(cy, 3)],
+                                    "reason": f"snapped_within_{MIN_SPACING}m_of_existing"})
+                continue
             new_minor += 1
             beacons.append(snapped)
             entry = {
@@ -191,10 +217,9 @@ def main():
                 "coordinates": [snapped[0], snapped[1]],
                 "plannedCoordinates": [snapped[0], snapped[1]],
                 "floor": int(fl),
-                "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)"
-                               + ("" if found else " / 无墙可吸附-需评估"),
-                "mountType": "wall" if found else "ceiling",
-                "installHeight": 2.2 if found else 3.0,
+                "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
+                "mountType": "wall",
+                "installHeight": 2.2,
                 "txPower": TX_POWER,
                 "broadcastInterval": 300,
                 "batteryModel": "CR2477",
@@ -215,22 +240,29 @@ def main():
             c = visible_count(x, y, beacons, tree, segs, atten)
             hist[min(c, 5)] = hist.get(min(c, 5), 0) + 1
         ge3 = sum(v for k, v in hist.items() if k >= 3)
+        placed = seq - 1
         summary["floors"].append({
             "floor": fl, "samples": len(pts),
             "base_beacons": len(base_beac.get(fl, [])),
-            "added_beacons": len(added),
+            "added_beacons": placed,
+            "candidates": len(added),
+            "unplaceable": len(unplaceable),
+            "unplaceableDetail": unplaceable,
             "total_beacons": len(beacons),
             "weak_before": len(before), "weak_after": len(after),
             "pct_ge3_before": round(100.0 * (len(pts) - len(before)) / len(pts), 2) if pts else 0,
             "pct_ge3_after": round(100.0 * ge3 / len(pts), 2) if pts else 0,
             "hist_after": hist,
         })
-        added_total += len(added)
-        print(f"F{fl}: 基础 {len(base_beac.get(fl,[]))} + 补点 {len(added)} = {len(beacons)} | "
+        added_total += placed
+        unplaceable_total += len(unplaceable)
+        print(f"F{fl}: 基础 {len(base_beac.get(fl,[]))} + 补点 {placed} = {len(beacons)} | "
+              f"候选 {len(added)} 丢弃 {len(unplaceable)} | "
               f">=3 覆盖 {summary['floors'][-1]['pct_ge3_before']}% -> "
               f"{summary['floors'][-1]['pct_ge3_after']}% | 剩余缺口 {len(after)}")
 
     summary["added"] = added_total
+    summary["unplaceable"] = unplaceable_total
     summary["total_beacons"] = len(aug_plan["beacons"])
 
     out_plan = ROOT / "result" / "beacon_deployment_plan_trilateration_routes.json"
