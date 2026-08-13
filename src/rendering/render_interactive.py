@@ -893,19 +893,21 @@ def main():
             x1, y1 = tosvg(c[0][0], c[0][1])
             x2, y2 = tosvg(c[1][0], c[1][1])
             wp = w.get("properties", {})
+            _wid = w.get("id", "")
             t_m = wp.get("thickness")
             mat = wp.get("material")
             t_disp = f"{t_m*100:.0f} cm" if isinstance(t_m, (int, float)) else "—"
             mat_disp = MAT_CN.get(mat, mat or "—")
-            wtip = f"墙体\\n厚度：{t_disp}\\n材质：{mat_disp}"
-            wdet = {"title": "墙体", "rows": [
+            wtip = f"墙体 {_wid}\\n厚度：{t_disp}\\n材质：{mat_disp}"
+            wdet = {"title": f"墙体 {_wid}", "rows": [
+                ("ID", _wid),
                 ("厚度", t_disp),
                 ("材质", mat_disp),
                 ("材质来源", wp.get("materialSource", "—")),
                 ("来源图层", wp.get("sourceLayer", "—")),
             ]}
             parts.append(
-                f'<g class="layer_wall" {info_attr({"tip": wtip, "detail": wdet, "kind": "wall"})}>'
+                f'<g class="layer_wall" {info_attr({"id": _wid, "tip": wtip, "detail": wdet, "kind": "wall"}, floor=floor, coll="walls", pid=_wid, store="geometry", key="id")}>'
                 f'<path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
             )
 

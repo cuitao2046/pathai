@@ -130,8 +130,10 @@ class FloorModel:
                         if f.get("geometry", {}).get("type") == "Polygon"]
         self.coltree = STRtree(self.cols) if self.cols else None
         # 用户指定可挂载柱(F1 南侧: 交叉口 31/47 与音乐教室路线区)
+        # ⚠️ 柱 ID 经 2026-08-13 同心嵌套去重后重排：旧 F1-C-0192/0206/0238
+        # → 新 F1-C-0104/0111/0128（同物理柱，按质心映射）。
         self.prime_cols = [i for i, cid in enumerate(self.col_ids)
-                           if cid in ("F1-C-0238", "F1-C-0192", "F1-C-0206")]
+                           if cid in ("F1-C-0104", "F1-C-0111", "F1-C-0128")]
         # 走廊
         self.corridors = [shape(f["geometry"]) for f in fg["rooms"]
                           if (f.get("properties", {}).get("type") or

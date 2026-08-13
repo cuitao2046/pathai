@@ -87,6 +87,55 @@ LAYER_DOOR_FIRE = "DOOR_FIRE"
 LAYER_STAIR = "STAIR"
 LAYER_COLUMNS = ("COLUMN", "柱子-刚结构")
 
+
+def dedupe_concentric_col_boxes(col_boxes, tol_m=0.05, overlap=0.9):
+    """合并同一物理柱的同心嵌套/重复 bbox（解析层去重）。
+
+    背景：'柱子-刚结构' 图层对每根结构柱系统性绘制了两套同心描边矩形——
+    外层 0.50m（约 109 根）与内层 0.45m（约 109 根），质心一致、交集面积
+    ≈内层全面积；个别柱（如 F1-C-0109/0110/0233/0234）甚至四重重复
+    （两套 0.50m + 两套 0.45m 全同心）。重复提取会导致：柱 ID 数量虚高、
+    STRtree 最近邻命中外层非指定柱、walkable 障碍物重复扣除。
+
+    判定规则（同一物理柱）：
+      1. 质心距离 ≤ tol_m（米，默认 0.05m，按 PT_PER_M 换算 pt）；
+      2. 交集面积 / min(两 bbox 面积) ≥ overlap（默认 0.9）。
+    保留策略：保留面积较大的 bbox（外层 0.50m）——
+      - walkable 障碍物对 col_boxes 做 buffer(0.10m) 取并集：外层 bbox 本就
+        覆盖内层，去重后并集不变 → 下游零漂移；
+      - 物理上外层（含粉刷完成面）更接近真实可挂载柱面。
+    保持原输入顺序（先出现者在前），返回去重后列表。
+
+    col_boxes: [(x0, y0, x1, y1)]（pt 坐标，min/max 规范化后）
+    """
+    if not col_boxes:
+        return []
+    tol = tol_m * PT_PER_M
+    kept = []
+    for bx in col_boxes:
+        x0, y0, x1, y1 = bx
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        area = (x1 - x0) * (y1 - y0)
+        merged = False
+        for i, k in enumerate(kept):
+            kx0, ky0, kx1, ky1 = k
+            kcx, kcy = (kx0 + kx1) / 2, (ky0 + ky1) / 2
+            if abs(cx - kcx) > tol or abs(cy - kcy) > tol:
+                continue
+            ix = max(0.0, min(x1, kx1) - max(x0, kx0))
+            iy = max(0.0, min(y1, ky1) - max(y0, ky0))
+            inter = ix * iy
+            small = min(area, (kx1 - kx0) * (ky1 - ky0))
+            if small > 0 and inter / small >= overlap:
+                # 同一物理柱：保留面积较大者（外层）
+                if area > (kx1 - kx0) * (ky1 - ky0):
+                    kept[i] = bx
+                merged = True
+                break
+        if not merged:
+            kept.append(bx)
+    return kept
+
 # 参与房间多边形化的结构图层（默认开启时）。
 # 该 CAD 导出的墙体分散在多个结构图层中，需取并集才能闭合房间轮廓；
 # 纯标注图层（轴线/文字/标高等）不参与，避免切分房间。
@@ -1918,6 +1967,13 @@ def parse_floor(pdf_path, floor_no, cfg=None):
             xs = [p[0] for p in q]
             ys = [p[1] for p in q]
             col_boxes.append((min(xs), min(ys), max(xs), max(ys)))
+    # 同柱同心嵌套去重：'柱子-刚结构' 图层对每根柱画了 0.50m 外层 + 0.45m 内层
+    # 两套同心矩形（个别柱四重重复）。保留外层，walkable 障碍并集不变、下游零漂移。
+    n_col_raw = len(col_boxes)
+    col_boxes = dedupe_concentric_col_boxes(col_boxes)
+    if len(col_boxes) != n_col_raw:
+        print(f"[F{floor_no}] 柱 bbox 同心嵌套去重: {n_col_raw} -> {len(col_boxes)}"
+              f"（剔除 {n_col_raw - len(col_boxes)} 个重复内层/完全重复）")
 
     # 注：Walkable Polygon 生成已移至 build_geojson（reconcile_facilities 补齐
     # 楼梯/电梯 bbox 之后），保证扣除用的井道列表与最终 GeoJSON 一致。

@@ -4,7 +4,7 @@
   "version": "9.0.0",
   "generated_at": "2026-08-12",
   "source": "E:\\code\\pathai\\result\\school_building_01_map_v9.geojson",
-  "source_sha256": "d7f27165d63f490619688b29a3ee0716a60861beb4301f9745d0d4cc525eee61",
+  "source_sha256": "a606eeb3c4974306108b3b19ed45ab0ecac722b58c56054a9cd8da04a092ac87",
   "fingerprint": {
     "floors": {
       "1": {
@@ -1401,7 +1401,7 @@
         ],
         "geometryCounts": {
           "walls": 2436,
-          "columns": 246,
+          "columns": 136,
           "stairs": 10,
           "elevators": 3,
           "elevatorDoors": 3,
@@ -2353,7 +2353,7 @@
         ],
         "geometryCounts": {
           "walls": 2006,
-          "columns": 156,
+          "columns": 84,
           "stairs": 7,
           "elevators": 3,
           "elevatorDoors": 3,
