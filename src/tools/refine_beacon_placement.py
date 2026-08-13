@@ -18,10 +18,11 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
 流程:
   1. 评审基线(四规则量化指标)
   2. 原位松弛: 每信标沿最近墙滑动 + 局部网格候选, 打分(均匀+三角), 接受不降覆盖的移动
-  3. 走廊双侧补点: 缺侧补 wall-mounted 信标
-  4. 均匀补点: NN 间距 > 阈值处补点
-  5. 退化三角定向补点: 对 3 最近可见信标共线的点, 垂直方向补信标
-  6. 最终评审 + 前后对比, 写 refined 计划与评审 JSON
+  3. 统一代价补点: 走廊缺侧(R1) / 退化三角(R3) / 超长间距(R4) 三类候选在
+     同一收益尺度(W_CORR/W_TRI/W_GAP)下竞争共享配额 —— 取代原先 R1/R3/R4
+     顺序执行 + 各自抢配额的结构, 优先级由收益大小自动决定
+  4. 收尾原位松弛: 统一补点可能拉大局部间距, 再松弛一轮
+  5. 最终评审 + 前后对比, 写 refined 计划与评审 JSON
 
 性能: 三角奖励仅查询「退化点」空间索引(小半径), 最近墙用 STRtree 查询,
       全楼 324 信标方案整体运行约 1 分钟以内。
@@ -37,7 +38,7 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
   python src/tools/refine_beacon_placement.py --review-only                       # 只评审不修改
 """
 from __future__ import annotations
-import argparse, json, math, random
+import argparse, heapq, json, math, random
 from pathlib import Path
 from collections import defaultdict
 
@@ -71,15 +72,17 @@ EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(�
 NN_TARGET = 3.5           # 均匀性目标间距(m)
 NN_MIN = 2.0              # 过近阈值: 低于则视为堆积
 NN_MAX = 7.0              # 过疏阈值: 高于则考虑补点
-CV_TARGET = 0.5           # 均匀性目标: 最近邻间距变异系数 <= 0.5
-EVEN_RESERVE = 10         # 为收尾均匀化(R4)预留的新增配额, 防止被 R1/R3 挤占
+# ---- 统一代价函数权重(R1/R3/R4 同一收益尺度, 供 unified_add_pass 贪心选择) ----
+W_CORR = 12.0             # R1: 消除一条缺侧走廊的收益(硬要求, 权重最高)
+W_TRI = 1.0               # R3: 修复一个退化采样点的收益
+W_GAP = 3.0               # R4: 削减 1m 超长间距的收益(12.6m 空档收益 16.8 > R1, 优先二分)
 RELAX_STEP = 0.3          # 原位松弛候选步长(m)
 RELAX_R = 0.6             # 原位松弛候选半径(m)
 SLIDE_STEP = 0.3          # 沿墙滑动步长(m)
 SLIDE_MAX = 1.2           # 沿墙滑动最大距离(m)
 TRI_GAIN_R = 5.0          # 三角奖励查询半径(m, 信标仅移动 <=0.6m, 只影响近处点)
 MAX_RELAX_ROUNDS = 5      # 原位松弛最大轮数(每轮 <3s, 保持沙箱 120s 内完成)
-MAX_NEW = 40              # 允许新增信标上限(走廊双侧 24 + 退化三角 16 封顶)
+MAX_NEW = 40              # 允许新增信标上限(统一代价补点总量封顶)
 
 
 def tri_area(a, b, c):
@@ -153,8 +156,15 @@ class FloorModel:
         self.cache = {}
         for i, (x, y) in enumerate(self.pts):
             self.cache[(x, y)] = self._visible_ids(x, y)
-        # 退化点索引(懒构建)
+        # 退化点索引与信标树(懒构建, append/move 后失效)
         self._degen_idx = None
+        self._btree = None
+
+    def beacon_tree(self):
+        """信标位置 STRtree(懒构建; 移动/新增信标后调用方须置 self._btree=None)。"""
+        if self._btree is None:
+            self._btree = STRtree([Point(x, y) for (x, y) in self.beacons])
+        return self._btree
 
     # ---------- 几何 ----------
     @staticmethod
@@ -274,6 +284,7 @@ class FloorModel:
             if vis_new:
                 s.add(idx)
         self._degen_idx = None
+        self._btree = None
         return True
 
     # ---------- 放置质量评估 ----------
@@ -331,11 +342,14 @@ class FloorModel:
         """每走廊两侧(左右)各有多少个信标。返回 [(corr_idx, L, R), ...]"""
         out = []
         for ci, (poly, axis) in enumerate(zip(self.corridors, self.corridor_axes)):
-            if axis is None:
+            if axis is None or poly.area < 8.0:
+                # 与小走廊缺侧判定(_missing_corridor_sides)口径一致:
+                # <8m^2 的走廊段无左右侧概念, 不参与 R1 双侧统计
                 continue
+            poly_b = poly.buffer(buf)  # 缓冲只算一次, 避免每信标重复
             L = R = 0
             for (bx, by) in self.beacons:
-                if poly.buffer(buf).contains(Point(bx, by)):
+                if poly_b.contains(Point(bx, by)):
                     s = self.corridor_side((bx, by), axis)
                     if s > 0:
                         L += 1
@@ -385,7 +399,9 @@ class FloorModel:
             if len(self.cache[(x, y)]) >= 3:
                 ge3 += 1
         both = one = none = 0
+        total_corr = 0
         for ci, L, R in self.corridor_sides_present():
+            total_corr += 1
             if L > 0 and R > 0:
                 both += 1
             elif L > 0 or R > 0:
@@ -401,7 +417,7 @@ class FloorModel:
             "nn_mean_m": round(m, 2), "nn_sd_m": round(sd, 2), "nn_cv": round(cv, 3),
             "nn_min_m": round(min(nn), 2) if nn else 0,
             "nn_max_m": round(max(nn), 2) if nn else 0,
-            "corridors_total": len(self.corridors), "corridors_both": both,
+            "corridors_total": total_corr, "corridors_both": both,
             "corridors_one": one, "corridors_none": none,
             "samples": tot, "pct_ge3": round(100.0 * ge3 / tot, 2) if tot else 0,
             "tri_degenerate": degen,
@@ -433,12 +449,16 @@ def relax_pass(model, round_i):
     degen = model.degen_points()
     degen_tree = STRtree([Point(x, y) for (x, y) in degen]) if degen else None
     # 每走廊两侧计数(循环外算一次, 候选评估用增量)
+    # 注意: poly.buffer(1.2) 只算一次, 若在信标循环内会对每(走廊,信标)对
+    # 重复做多边形缓冲(全楼 204 信标 x 14 走廊 = 上千次 buffer, 耗时巨大)。
+    corr_bufs = [poly.buffer(1.2) for poly in model.corridors]
     corr_counts = []
     for ci, poly, axis in zip(range(len(model.corridors)), model.corridors, model.corridor_axes):
         Lc = Rc = 0
         if axis is not None:
+            poly_b = corr_bufs[ci]
             for (qx, qy) in model.beacons:
-                if poly.buffer(1.2).contains(Point(qx, qy)):
+                if poly_b.contains(Point(qx, qy)):
                     s = model.corridor_side((qx, qy), axis)
                     if s > 0:
                         Lc += 1
@@ -449,8 +469,8 @@ def relax_pass(model, round_i):
     corr_of = {}
     corr_side_of = {}
     for idx, (bx, by) in enumerate(model.beacons):
-        for ci, poly in enumerate(model.corridors):
-            if poly.buffer(1.2).contains(Point(bx, by)):
+        for ci, poly_b in enumerate(corr_bufs):
+            if poly_b.contains(Point(bx, by)):
                 s = model.corridor_side((bx, by), model.corridor_axes[ci])
                 if s != 0:
                     corr_of[idx] = ci
@@ -511,7 +531,7 @@ def relax_pass(model, round_i):
                 ci, s_old = cs
                 axis = model.corridor_axes[ci]
                 Lc, Rc = corr_counts[ci]
-                in_new = model.corridors[ci].buffer(1.2).contains(Point(x, y))
+                in_new = corr_bufs[ci].contains(Point(x, y))
                 if Lc > 0 and Rc > 0:
                     # 已双侧走廊: 移动不得破坏双侧(该侧唯一贡献者时强惩罚)
                     s_new = model.corridor_side((x, y), axis) if in_new else 0
@@ -528,22 +548,25 @@ def relax_pass(model, round_i):
                         R2 += 1
                     if L2 > 0 and R2 > 0:
                         score += 0.4
-            # 三角奖励(仅退化点, 小半径)
+            # 三角奖励(仅退化点, 小半径; 先 query_nearest 剪枝, 远离退化点的候选跳过)
             if degen_tree is not None:
-                for hit in degen_tree.query(Point(x, y).buffer(TRI_GAIN_R)):
-                    px, py = degen[hit]
-                    s = model.cache[(px, py)]
-                    if len(s) < 3 or idx not in s:
-                        continue
-                    vis3 = sorted(s, key=lambda k: math.hypot(
-                        model.beacons[k][0] - px, model.beacons[k][1] - py))[:3]
-                    if idx not in vis3:
-                        continue
-                    others = [k for k in vis3 if k != idx]
-                    a1 = tri_area(model.beacons[others[0]], model.beacons[others[1]], (x, y))
-                    a0 = tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]], model.beacons[vis3[2]])
-                    if a0 < EPS_AREA and a1 > a0:
-                        score += min(0.2, (a1 - a0) / (EPS_AREA * 2))
+                nn_idx = degen_tree.query_nearest(Point(x, y))
+                if (nn_idx.size and math.hypot(x - degen[nn_idx[0]][0], y - degen[nn_idx[0]][1])
+                        <= TRI_GAIN_R):
+                    for hit in degen_tree.query(Point(x, y).buffer(TRI_GAIN_R)):
+                        px, py = degen[hit]
+                        s = model.cache[(px, py)]
+                        if len(s) < 3 or idx not in s:
+                            continue
+                        vis3 = sorted(s, key=lambda k: math.hypot(
+                            model.beacons[k][0] - px, model.beacons[k][1] - py))[:3]
+                        if idx not in vis3:
+                            continue
+                        others = [k for k in vis3 if k != idx]
+                        a1 = tri_area(model.beacons[others[0]], model.beacons[others[1]], (x, y))
+                        a0 = tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]], model.beacons[vis3[2]])
+                        if a0 < EPS_AREA and a1 > a0:
+                            score += min(0.2, (a1 - a0) / (EPS_AREA * 2))
             if best_score is None or score > best_score:
                 best_score = score
                 best_c = (x, y)
@@ -723,19 +746,17 @@ def _add_beacon_to_cache(model, idx):
             s.add(idx)
 
 
-def ensure_corridor_both_sides(model, max_new):
-    """R1: 单侧走廊在缺侧新增信标(新增不破坏覆盖)。
-    位置 = 走廊内部网格采样「缺侧点」中离已有信标最远者(均匀且必在走廊内)。
-    每走廊最多 1 个。"""
-    added = []
+def _missing_corridor_sides(model, buf=1.2):
+    """R1: 返回缺侧走廊 {ci: target_side}。target_side=1 缺左侧 / -1 缺右侧;
+    双侧都缺的走廊也计入(先补任意一侧)。"""
+    missing = {}
     for ci, (poly, axis) in enumerate(zip(model.corridors, model.corridor_axes)):
-        if len(added) >= max_new:
-            break
         if axis is None or poly.area < 8.0:
-            continue  # 太小的走廊段无左右侧概念
+            continue
+        poly_b = poly.buffer(buf)  # 缓冲只算一次, 避免每信标重复
         L = R = 0
         for (bx, by) in model.beacons:
-            if poly.buffer(1.2).contains(Point(bx, by)):
+            if poly_b.contains(Point(bx, by)):
                 s = model.corridor_side((bx, by), axis)
                 if s > 0:
                     L += 1
@@ -743,183 +764,172 @@ def ensure_corridor_both_sides(model, max_new):
                     R += 1
         if L > 0 and R > 0:
             continue
-        target_side = 1 if L == 0 else -1
-        # 网格采样缺侧点
+        missing[ci] = 1 if L == 0 else -1
+    return missing
+
+
+def _min_dist_to(model, pt):
+    """pt 与既有信标的最小距离(STRtree 加速: 7m 缓冲命中集内算精确值)。
+    返回 inf 表示 7m 内无信标(对 gap 判断足够)。"""
+    btree = model.beacon_tree()
+    p = Point(pt)
+    hits = btree.query(p.buffer(NN_MAX))
+    if hits.size == 0:
+        return float("inf")
+    best = float("inf")
+    for i in hits:
+        bx, by = model.beacons[i]
+        d = math.hypot(pt[0] - bx, pt[1] - by)
+        if d < best:
+            best = d
+    return best
+
+
+def _gap_gain(model, pt):
+    """R4 分量: 候选若位于「距最近信标 > NN_MAX」的空档, 补点可削减超长间距。
+    收益按超出量计(越大越迫切); 单次补中点的边际削减恒为 NN_MAX, 故仅作排序信号。"""
+    dmin = _min_dist_to(model, pt)
+    if dmin > NN_MAX:
+        return W_GAP * (dmin - NN_MAX)
+    return 0.0
+
+
+def _tri_gain_exact(model, degen_pts, degen_tree, pt):
+    """R3 分量: 候选加入后能修复(打破共线)的退化采样点数, 精确评估。
+    仅查询 TRI_GAIN_R 半径内的退化点; 候选须比退化点当前第 3 近信标更近
+    才进入 top3, 且新三角面积 >= EPS_AREA 才视为修复。"""
+    if degen_tree is None:
+        return 0.0
+    bx, by = pt
+    nn_idx = degen_tree.query_nearest(Point(bx, by))
+    if not (nn_idx.size and math.hypot(bx - degen_pts[nn_idx[0]][0],
+                                       by - degen_pts[nn_idx[0]][1]) <= TRI_GAIN_R):
+        return 0.0
+    gain = 0
+    for hit in degen_tree.query(Point(bx, by).buffer(TRI_GAIN_R)):
+        px, py = degen_pts[hit]
+        s = model.cache[(px, py)]
+        if len(s) < 3:
+            continue
+        vis3 = sorted(s, key=lambda k: math.hypot(
+            model.beacons[k][0] - px, model.beacons[k][1] - py))[:3]
+        if tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]],
+                    model.beacons[vis3[2]]) >= EPS_AREA:
+            continue
+        if math.hypot(bx - px, by - py) >= math.hypot(
+                model.beacons[vis3[2]][0] - px, model.beacons[vis3[2]][1] - py):
+            continue
+        if tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]], pt) >= EPS_AREA:
+            gain += W_TRI
+    return gain
+
+
+def _unified_candidates(model, missing, degen_pts, degen_tree):
+    """统一候选池: 三类来源(R1 走廊缺侧 / R3 退化三角 / R4 超长间距)
+    各自生成候选并给出同一收益尺度下的分值, 由 unified_add_pass 贪心选择。"""
+    cands = []
+    seen = set()
+
+    def push(pt, gain):
+        key = (round(pt[0], 2), round(pt[1], 2))
+        if key in seen or gain <= 0:
+            return
+        seen.add(key)
+        cands.append((pt[0], pt[1], gain))
+
+    # A. R1: 缺侧走廊内网格采样, 每缺侧走廊取离既有信标最远的 top4
+    for ci, tside in missing.items():
+        poly = model.corridors[ci]
+        axis = model.corridor_axes[ci]
         minx, miny, maxx, maxy = poly.bounds
-        cands = []
+        local = []
         x = minx + 0.5
         while x < maxx:
             y = miny + 0.5
             while y < maxy:
-                if poly.contains(Point(x, y)) and model.corridor_side((x, y), axis) == target_side:
-                    if model.valid_pos(x, y):
-                        cands.append((x, y))
+                if (poly.contains(Point(x, y))
+                        and model.corridor_side((x, y), axis) == tside
+                        and model.valid_pos(x, y)):
+                    local.append((x, y))
                 y += 0.5
             x += 0.5
-        if not cands:
+        for p in heapq.nlargest(4, local, key=lambda p: _min_dist_to(model, p)):
+            push(p, W_CORR + _gap_gain(model, p))
+    # B. R3: 退化点垂直方向候选(精确评估修复数)
+    for (x, y) in degen_pts:
+        s = model.cache[(x, y)]
+        if len(s) < 3:
             continue
-        # 选离已有信标最远的(均匀)
-        def min_d_to_existing(p):
-            return min(math.hypot(p[0] - qx, p[1] - qy) for qx, qy in model.beacons)
-        best = max(cands, key=min_d_to_existing)
-        if min_d_to_existing(best) < MIN_SPACING:
-            continue
-        model.beacons.append(best)
-        added.append(best)
-        _add_beacon_to_cache(model, len(model.beacons) - 1)
-    if added:
-        model._degen_idx = None
-    return added
-
-
-def ensure_evenness(model, max_new):
-    """R4: NN 间距 > NN_MAX 的信标周边补点(贴墙)。
-
-    迭代执行: 单次补中点无法消除超长间距(如 25m 需多次二分), 故反复扫描直到
-    无超阈间距或用尽配额。每轮重新计算 NN, 避免同一空档被重复填充。"""
-    added = []
-    skip = set()
-    for _ in range(max_new * 3):
-        if len(added) >= max_new:
-            break
-        # 取当前间距最大的信标优先补, 收敛更快
-        worst_idx, worst_d = None, NN_MAX
-        for idx in range(len(model.beacons)):
-            if idx in skip:
+        vis3 = sorted(s, key=lambda k: math.hypot(
+            model.beacons[k][0] - x, model.beacons[k][1] - y))[:3]
+        b0, b1 = model.beacons[vis3[0]], model.beacons[vis3[1]]
+        dx, dy = b1[0] - b0[0], b1[1] - b0[1]
+        dlen = math.hypot(dx, dy) or 1e-9
+        nx, ny = -dy / dlen, dx / dlen
+        for sgn in (-1, 1):
+            qx, qy = x + nx * 3.0 * sgn, y + ny * 3.0 * sgn
+            w, wd = nearest_wall(model, (qx, qy), maxd=2.0)
+            if w is None:
                 continue
-            d0 = model.nn_dist(idx)
-            if d0 > worst_d:
-                worst_idx, worst_d = idx, d0
-        if worst_idx is None:
+            proj = w.interpolate(w.project(Point(qx, qy)))
+            if not model.valid_pos(proj.x, proj.y):
+                continue
+            push((proj.x, proj.y),
+                 _tri_gain_exact(model, degen_pts, degen_tree, (proj.x, proj.y))
+                 + _gap_gain(model, (proj.x, proj.y)))
+    # C. R4: 超长间距最大者的中点沿墙滑动(每个 gap 提供若干贴墙偏移候选)
+    gap_order = sorted(range(len(model.beacons)),
+                       key=lambda i: model.nn_dist(i), reverse=True)
+    for idx in gap_order:
+        d0 = model.nn_dist(idx)
+        if d0 <= NN_MAX:
             break
-        idx = worst_idx
         ox, oy = model.beacons[idx]
-        j = min(range(len(model.beacons)),
-                key=lambda k: math.hypot(model.beacons[k][0] - ox, model.beacons[k][1] - oy)
-                if k != idx else 1e9)
+        j = min((k for k in range(len(model.beacons)) if k != idx),
+                key=lambda k: math.hypot(model.beacons[k][0] - ox,
+                                         model.beacons[k][1] - oy))
         qx, qy = model.beacons[j]
         mx, my = (ox + qx) / 2, (oy + qy) / 2
         w, wd = nearest_wall(model, (mx, my), maxd=2.0)
         if w is None:
-            skip.add(idx)
             continue
-        # 墙面投影点可能恰好落在墙角/柱体旁, 沿墙前后滑动寻找合法位置,
-        # 而非直接放弃(否则超长间距永远补不上)
         t0 = w.project(Point(mx, my))
-        cand = None
-        for off in (0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8):
+        for off in (0.0, 0.6, -0.6, 1.2, -1.2):
             t = t0 + off
             if t < 0 or t > w.length:
                 continue
             pr = w.interpolate(t)
             c = (pr.x, pr.y)
-            if not model.valid_pos(*c):
-                continue
-            if any(math.hypot(c[0] - bx2, c[1] - by2) < MIN_SPACING
-                   for (bx2, by2) in model.beacons):
-                continue
-            cand = c
-            break
-        if cand is None:
-            skip.add(idx)
-            continue
-        model.beacons.append(cand)
-        added.append(cand)
-        _add_beacon_to_cache(model, len(model.beacons) - 1)
-    if added:
-        model._degen_idx = None
-    return added
+            if model.valid_pos(*c):
+                push(c, W_GAP * (d0 - NN_MAX))
+    return cands
 
 
-def balance_corridor_sides(model):
-    """R1 核心: 单侧走廊把一半信标垂直搬到对侧墙(移动而非新增, 数量不变)。
-    用 move_beacon 保证覆盖不下降; 失败的走廊由 ensure_corridor_both_sides 兜底补点。"""
-    moved = 0
-    for ci, (poly, axis) in enumerate(zip(model.corridors, model.corridor_axes)):
-        if axis is None:
-            continue
-        in_corr = []
-        for j, (bx, by) in enumerate(model.beacons):
-            if poly.buffer(1.2).contains(Point(bx, by)):
-                s = model.corridor_side((bx, by), axis)
-                if s != 0:
-                    in_corr.append((j, s))
-        if not in_corr:
-            continue
-        L = sum(1 for _, s in in_corr if s > 0)
-        R = sum(1 for _, s in in_corr if s < 0)
-        if L > 0 and R > 0:
-            continue
-        target_side = 1 if L == 0 else -1
-        px, py = axis[1]
-        plen = math.hypot(px, py) or 1e-9
-        nx, ny = -py / plen, px / plen
-        # 确保垂直方向指向缺侧
-        c = poly.centroid
-        if model.corridor_side((c.x + nx, c.y + ny), axis) != target_side:
-            nx, ny = -nx, -ny
-        # 隔一个移动一半(保均匀)
-        for k, (j, s) in enumerate(in_corr):
-            if k % 2 == 1:
-                continue
-            bx, by = model.beacons[j]
-            for tt in (2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0):
-                qx, qy = bx + nx * tt, by + ny * tt
-                w, wd = nearest_wall(model, (qx, qy), maxd=2.0)
-                if w is None:
-                    continue
-                proj = w.interpolate(w.project(Point(qx, qy)))
-                cand = (proj.x, proj.y)
-                if model.corridor_side(cand, axis) != target_side or not model.valid_pos(*cand):
-                    continue
-                if model.move_beacon(j, cand):
-                    moved += 1
-                break
-    return moved
+def unified_add_pass(model, max_new):
+    """统一代价函数贪心补点, 取代 R1/R3/R4 顺序执行 + 各自抢配额的结构。
 
-
-def fix_degenerate_triangles(model, max_new):
-    """R3: 对 3 最近可见信标共线(退化)的采样点, 在垂直方向补信标打破共线。
-    贪心: 反复选能修复最多退化点的位置。"""
+    每轮: 生成三类候选(走廊缺侧 / 退化三角 / 超长间距), 全部在同一收益尺度
+    (W_CORR/W_TRI/W_GAP)下打分, 选全局收益最高的放置; 放置后其余候选收益
+    自然衰减, 下一轮重新生成。优先级由收益大小自动决定, 配额全局共享,
+    不再需要 EVEN_RESERVE 之类的预留。"""
     added = []
     for _ in range(max_new):
-        degen = model.degen_points()
-        if not degen:
+        missing = _missing_corridor_sides(model)
+        degen_pts = model.degen_points()
+        degen_tree = (STRtree([Point(x, y) for (x, y) in degen_pts])
+                      if degen_pts else None)
+        cands = _unified_candidates(model, missing, degen_pts, degen_tree)
+        cands = [(x, y, g) for (x, y, g) in cands
+                 if _min_dist_to(model, (x, y)) >= MIN_SPACING]
+        if not cands:
             break
-        cand_scores = {}
-        for (x, y) in degen:
-            vis3 = sorted(model.cache[(x, y)], key=lambda k: math.hypot(
-                model.beacons[k][0] - x, model.beacons[k][1] - y))[:3]
-            b0, b1 = model.beacons[vis3[0]], model.beacons[vis3[1]]
-            dx, dy = b1[0] - b0[0], b1[1] - b0[1]
-            dlen = math.hypot(dx, dy) or 1e-9
-            nx, ny = -dy / dlen, dx / dlen
-            for sgn in (-1, 1):
-                qx, qy = x + nx * 3.0 * sgn, y + ny * 3.0 * sgn
-                w, wd = nearest_wall(model, (qx, qy), maxd=2.0)
-                if w is None:
-                    continue
-                proj = w.interpolate(w.project(Point(qx, qy)))
-                if not model.valid_pos(proj.x, proj.y):
-                    continue
-                key = (round(proj.x, 2), round(proj.y, 2))
-                dist = math.hypot(proj.x - x, proj.y - y)
-                cand_scores[key] = cand_scores.get(key, 0.0) + max(0.0, 1.0 - dist / 5.0)
-        if not cand_scores:
+        best = max(cands, key=lambda c: c[2])
+        if best[2] <= 0.0:
             break
-        # 去重: 候选与已有信标 <1m 则剔除, 选次优
-        while cand_scores:
-            best_cand, _ = max(cand_scores.items(), key=lambda kv: kv[1])
-            near = any(math.hypot(best_cand[0] - qx, best_cand[1] - qy) < 1.0
-                       for qx, qy in model.beacons)
-            if not near:
-                break
-            del cand_scores[best_cand]
-        if not cand_scores:
-            break
-        model.beacons.append(best_cand)
-        added.append(best_cand)
+        model.beacons.append((best[0], best[1]))
+        added.append((best[0], best[1]))
         _add_beacon_to_cache(model, len(model.beacons) - 1)
+        model._btree = None
     if added:
         model._degen_idx = None
     return added
@@ -1014,7 +1024,7 @@ def main():
         print("基线:", json.dumps(before, ensure_ascii=False), flush=True)
 
         if not args.review_only:
-            n_corr = n_tri = 0
+            n_unified = 0
             # 1. 确定性避角/避障/迁出封闭空间(先修硬性违反, 可多轮)
             for _ in range(3):
                 if (fix_corner_pass(model) == 0 and fix_obstacle_pass(model) == 0
@@ -1025,28 +1035,17 @@ def main():
                 m = relax_pass(model, rnd)
                 if m == 0:
                     break
-            # 3. 走廊双侧补点(每缺侧最多 1 个; 置于最后, 避免被后续松弛移出走廊)
-            #    预留 EVEN_RESERVE 配额给步骤 5, 否则 R1/R3 会挤占 R4 导致 CV 劣化。
-            reserve = EVEN_RESERVE if args.max_new > EVEN_RESERVE else 0
-            corr_budget = max(0, args.max_new - reserve)
-            n_corr = len(ensure_corridor_both_sides(model, corr_budget))
-            # 4. 退化三角定向补点(仅当退化率仍高, 限量 12/层)
-            after_mid = model.review()
-            degen_rate_mid = after_mid["tri_degen_rate"]
-            n_tri = 0
-            if degen_rate_mid > 8.0:
-                n_tri = len(fix_degenerate_triangles(
-                    model, min(12, max(0, corr_budget - n_corr))))
-            # 5. 收尾均匀化: 步骤 3/4 的补点会在空旷走廊拉大间距, 使 CV 劣化,
-            #    故最后再跑一轮 R4(间距过大处补点 + 原位松弛), 平衡三者优先级。
-            n_even = 0
-            budget = max(0, args.max_new - n_corr - n_tri)
-            if budget > 0 and model.review()["nn_cv"] > CV_TARGET:
-                n_even = len(ensure_evenness(model, budget))
-                for rnd in range(2):
-                    if relax_pass(model, rnd) == 0:
-                        break
-            n_corr += n_even
+            # 3. 统一代价函数补点(R1/R3/R4 同一收益尺度竞争共享配额)。
+            #    与 relax 交替执行: 松弛会移动信标改变局部 vis3(可能制造新的
+            #    退化三角), 交替让补点能修复松弛引入的问题, 直至配额用尽或收敛。
+            n_unified = 0
+            for rnd in range(3):
+                n_unified += len(unified_add_pass(
+                    model, max(0, args.max_new - n_unified)))
+                if n_unified >= args.max_new:
+                    break
+                if relax_pass(model, rnd) == 0:
+                    break
             # 记录仍超阈的间距: 这些空档受「避墙角/无可贴墙面」几何约束无法补点,
             # 需人工评估(如启用立柱安装或调整测试路线), 不应被 CV 数字掩盖。
             residual = []
@@ -1058,12 +1057,12 @@ def main():
                                      "nn_m": round(d, 2)})
             residual.sort(key=lambda r: -r["nn_m"])
             evenness_note = {
-                "reserveUsed": n_even,
+                "unifiedAdded": n_unified,
                 "residualGaps": len(residual),
                 "residualDetail": residual[:10],
             }
         else:
-            n_corr = n_tri = 0
+            n_unified = 0
             evenness_note = None
 
         after = model.review()
@@ -1109,7 +1108,7 @@ def main():
             seq += 1
 
         n_added = len(model.beacons) - n_orig
-        print(f"  F{fl} 新增信标: {n_added} (走廊双侧 {n_corr} + 退化三角 {n_tri})", flush=True)
+        print(f"  F{fl} 新增信标: {n_added} (统一代价补点 {n_unified})", flush=True)
         floor_rec = {"floor": fl, "before": before, "after": after, "added": n_added}
         if evenness_note:
             floor_rec["evenness"] = evenness_note
