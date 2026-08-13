@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import networkx as nx
 from shapely.geometry import LineString, Point, Polygon, mapping, shape
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 from .medial_axis import (
     DEFAULT_RESOLUTION,
@@ -176,10 +177,17 @@ def _merge_nearby_ti_nodes(nodes: list, edges: list,
             parent[ra] = rb
 
     r2 = radius_m * radius_m
+    # 审查 C3：候选剪枝由 O(n²) 全对扫描降为 STRtree dwithin 近邻
+    # （dwithin 为闭区间 <=，与原 `<= r2` 判定一致；下方保留原精确判定保底）
+    ti_pts = [tuple(n["coordinates"]) for n in ti_nodes]
+    tree = STRtree([Point(*p) for p in ti_pts])
     for i in range(len(ti_nodes)):
-        ax, ay = ti_nodes[i]["coordinates"]
-        for j in range(i + 1, len(ti_nodes)):
-            bx, by = ti_nodes[j]["coordinates"]
+        ax, ay = ti_pts[i]
+        for j in tree.query(Point(ax, ay), predicate="dwithin", distance=radius_m):
+            j = int(j)
+            if j <= i:
+                continue
+            bx, by = ti_pts[j]
             if (ax - bx) ** 2 + (ay - by) ** 2 <= r2:
                 union(ti_nodes[i]["id"], ti_nodes[j]["id"])
 

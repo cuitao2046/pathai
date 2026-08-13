@@ -35,6 +35,7 @@ from collections import defaultdict
 
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 # 路由规则常量（门惩罚/中间节点白名单）统一来源 src/common/constants.py，
 # 前端 Dijkstra 由 build_path_rules_js 序列化注入，禁止本文件再定义。
@@ -162,6 +163,10 @@ class RouteGraph:
 
     def _add_doorless_toilet_links(self, radius=20.0):
         cand_types = {"intersection", "facility_entrance", "doorway", "facility"}
+        # 审查 C3：半径近邻由对全部节点线性扫描降为 STRtree dwithin 查询
+        # （dwithin 为闭区间 <=，原逻辑仅接受 d < radius，下方保留原判定保底）
+        node_ids = list(self.nodes)
+        tree = STRtree([Point(*self.nodes[nid]["coords"]) for nid in node_ids])
         seq = 0
         for n in self.nodes.values():
             if not self.is_doorless_toilet(n["id"]):
@@ -169,7 +174,8 @@ class RouteGraph:
             cx, cy = n["coords"]
             best = None
             best_d = radius
-            for m in self.nodes.values():
+            for j in tree.query(Point(cx, cy), predicate="dwithin", distance=radius):
+                m = self.nodes[node_ids[int(j)]]
                 if m["id"] == n["id"] or m["type"] not in cand_types:
                     continue
                 if m["floor"] != n["floor"]:

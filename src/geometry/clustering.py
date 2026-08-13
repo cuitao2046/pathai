@@ -10,6 +10,9 @@ bbox 归并（detect_stair_boxes / detect_elevator_boxes）等均基于此层。
 import collections
 import math
 
+from shapely.geometry import box as sbox
+from shapely.strtree import STRtree
+
 from src.common.constants import SCALE
 
 
@@ -30,7 +33,12 @@ class UnionFind:
 
 
 def cluster_items(items, should_link):
-    """通用聚类：items 列表 + should_link(i, j) -> 簇列表"""
+    """通用聚类：items 列表 + should_link(i, j) -> 簇列表
+
+    审查 C3：通用 `should_link` 语义由调用方决定，无法通用剪枝，保持 O(n²)
+    全对试探。预期规模：单层门/窗线段 ≤ 数百条（约 1e5 对），解析耗时可忽略；
+    若未来扩展到多层/多楼批量解析，再按各调用点的距离判据改用 STRtree。
+    """
     n = len(items)
     uf = UnionFind(n)
     for i in range(n):
@@ -44,7 +52,12 @@ def cluster_items(items, should_link):
 
 
 def bbox_clusters(items, gap_pt):
-    """对 drawings 的 bbox 中心做网格聚类，返回 bbox 多边形列表（pt）"""
+    """对 drawings 的 bbox 中心做网格聚类，返回 bbox 多边形列表（pt）
+
+    审查 C3：候选剪枝由 O(n²) 全对扫描降为 STRtree 半径近邻——
+    对每个 box 以其膨胀 gap_pt 的邻域查询候选（超集），再用与原逻辑
+    完全相同的精确间距判定 union，结果逐对一致。
+    """
     if not items:
         return []
     boxes = []
@@ -53,11 +66,18 @@ def bbox_clusters(items, gap_pt):
         ys = [p[1] for p in it]
         boxes.append((min(xs), min(ys), max(xs), max(ys)))
     n = len(boxes)
+    geoms = [sbox(*b) for b in boxes]
+    tree = STRtree(geoms)
     uf = UnionFind(n)
     for i in range(n):
-        for j in range(i + 1, n):
-            a, b = boxes[i], boxes[j]
-            # bbox 间距 < gap
+        a = boxes[i]
+        # 膨胀 gap_pt 的 box 为查询几何：原 box 间距 < gap_pt 的对必相交（超集）
+        for j in tree.query(geoms[i].buffer(gap_pt)):
+            j = int(j)
+            if j <= i:
+                continue
+            b = boxes[j]
+            # 与原实现一致的精确间距判定
             dx = max(0, max(a[0], b[0]) - min(a[2], b[2]))
             dy = max(0, max(a[1], b[1]) - min(a[3], b[3]))
             if math.hypot(dx, dy) < gap_pt:
