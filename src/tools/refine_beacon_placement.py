@@ -66,6 +66,8 @@ GRID = 1.0
 CORNER_ANGLE_DEG = 30.0   # 顶点处墙段方向最大夹角差 > 此值为「真墙角」
 CORNER_CLEAR = 0.8        # 信标距真墙角最小净距(m)
 OBST_CLEAR = 0.5          # 信标距柱体最小净距(m)
+COL_MOUNT_TOL = 0.06      # 柱面挂载容差(m): 距柱 <= 此值视为「挂柱上」合法
+WALL_SNAP_MAX = 3.0       # 悬空修复/补点允许吸附的最近墙搜索半径(m)
 ENCLOSED_EDGE = 0.3       # 封闭空间判定的边缘容差(m): 越过此深度视为进入室内
 MIN_SPACING = 1.5         # 新增信标与既有信标最小间距(m), 防重合堆积
 EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(共线)
@@ -121,10 +123,15 @@ class FloorModel:
         # 真墙角
         self.corners = self._true_corners(fg)
         self.ctree = STRtree(self.corners) if self.corners else None
-        # 柱体(障碍)
+        # 柱体(障碍/可挂载): 记录柱 id 供指定柱优先利用
         self.cols = [shape(f["geometry"]) for f in fg.get("columns", [])
                      if f.get("geometry", {}).get("type") == "Polygon"]
+        self.col_ids = [f.get("id") for f in fg.get("columns", [])
+                        if f.get("geometry", {}).get("type") == "Polygon"]
         self.coltree = STRtree(self.cols) if self.cols else None
+        # 用户指定可挂载柱(F1 南侧: 交叉口 31/47 与音乐教室路线区)
+        self.prime_cols = [i for i, cid in enumerate(self.col_ids)
+                           if cid in ("F1-C-0238", "F1-C-0192", "F1-C-0206")]
         # 走廊
         self.corridors = [shape(f["geometry"]) for f in fg["rooms"]
                           if (f.get("properties", {}).get("type") or
@@ -291,6 +298,10 @@ class FloorModel:
     def corner_clear(self, x, y):
         if not self.ctree:
             return True
+        # 柱面挂载点豁免避角: 挂载面为柱体侧面(朝向公共空间), 不与墙线转角冲突;
+        # 贴墙柱(距真墙角<CORNER_CLEAR, 如 F1-C-0192/0206 距墙角 0.35m)因此可正常利用。
+        if self.on_column(x, y):
+            return True
         i = self.ctree.nearest(Point(x, y))
         return self.corners[i].distance(Point(x, y)) >= CORNER_CLEAR
 
@@ -300,7 +311,26 @@ class FloorModel:
         p = Point(x, y)
         i = self.coltree.nearest(p)
         poly = self.cols[i]
-        return not (poly.contains(p) or poly.buffer(0.05).contains(p) or poly.distance(p) < OBST_CLEAR)
+        # 柱面可安装: 落在柱体内部/边缘(<=COL_MOUNT_TOL)视为「挂柱上」合法,
+        # 而非障碍; 距柱 0.05~0.5m 的贴柱缝隙仍视为障碍
+        if poly.distance(p) <= COL_MOUNT_TOL:
+            return True
+        return not poly.buffer(0.05).contains(p) and poly.distance(p) >= OBST_CLEAR
+
+    def on_column(self, x, y):
+        """是否落在某柱体(边缘容差 COL_MOUNT_TOL)上——可挂载位置。"""
+        if not self.coltree:
+            return False
+        p = Point(x, y)
+        i = self.coltree.nearest(p)
+        return self.cols[i].distance(p) <= COL_MOUNT_TOL
+
+    def wall_dist(self, x, y):
+        """到最近墙线距离; 柱上点视为贴墙(返回 0)。"""
+        if self.on_column(x, y):
+            return 0.0
+        w, d = nearest_wall(self, (x, y), maxd=WALL_SNAP_MAX)
+        return d if w is not None else float("inf")
 
     def enclosed_clear(self, x, y):
         """信标不得落在封闭空间(非公共/不可达房间)内部。
@@ -507,7 +537,16 @@ def relax_pass(model, round_i):
                 if dx == 0 and dy == 0:
                     continue
                 cands.append((ox + dx * RELAX_STEP, oy + dy * RELAX_STEP))
-        valid = [(x, y) for (x, y) in cands if model.valid_pos(x, y)]
+        # 贴墙硬约束: 原信标贴墙/挂柱时, 移动候选必须仍贴墙/挂柱, 防止松弛
+        # 把贴墙点拉到走廊中线(悬空)。仅在原位置本就贴墙/柱时启用。
+        orig_wall = model.wall_dist(ox, oy)
+        valid = []
+        for (x, y) in cands:
+            if not model.valid_pos(x, y):
+                continue
+            if orig_wall <= 0.5 and model.wall_dist(x, y) > 0.5:
+                continue
+            valid.append((x, y))
         if not valid:
             valid = [(ox, oy)]
         best_c = None
@@ -621,10 +660,13 @@ def fix_corner_pass(model):
         # 不改变穿墙结构, move_beacon 拒绝率低), 同距离优先距墙角远的
         valid = []
         for cand in cands:
-            w2, wd2 = nearest_wall(model, cand, maxd=1.5)
+            w2, wd2 = nearest_wall(model, cand, maxd=2.0)
             if w2 is not None:
                 proj = w2.interpolate(w2.project(Point(*cand)))
                 cand = (proj.x, proj.y)
+            # 贴墙硬约束: 避角移动不得产生悬空点——候选必须贴墙(<=0.5m)或挂柱
+            if model.wall_dist(*cand) > 0.5:
+                continue
             if not model.valid_pos(*cand):
                 continue
             if model.ctree is not None:
@@ -723,6 +765,87 @@ def fix_enclosed_pass(model):
                 fixed += 1
                 break
     return fixed
+
+
+def fix_floating_pass(model):
+    """确定性「悬空修复」: 距墙>0.5m 且不在柱上的信标, 吸附到最近墙投影或最近柱面。
+    候选排序: 用户指定柱(prime_cols)优先 > 普通柱 > 墙投影; 按距原位置最近优先,
+    尽量保持原覆盖结构(move_beacon 拒绝率低)。不满足吸附条件的悬空点保留并计数。"""
+    fixed = 0
+    unresolved = []
+    for idx in range(len(model.beacons)):
+        ox, oy = model.beacons[idx]
+        p = Point(ox, oy)
+        dw = dist_to_wall(model, (ox, oy))
+        on_col = model.on_column(ox, oy)
+        if on_col or dw <= 0.5:
+            continue
+        # 候选: 指定柱面点(优先) + 最近墙投影 + 附近柱面点
+        cands = []
+        if model.coltree is not None:
+            for i in model.prime_cols:
+                poly = model.cols[i]
+                if poly.distance(p) <= WALL_SNAP_MAX:
+                    cp = poly.boundary.interpolate(poly.boundary.project(p))
+                    vx, vy = p.x - cp.x, p.y - cp.y
+                    vlen = math.hypot(vx, vy) or 1e-9
+                    ux, uy = vx / vlen, vy / vlen
+                    cands.append((cp.x + ux * 0.03, cp.y + uy * 0.03, 0.20))
+        w, wd = nearest_wall(model, (ox, oy), maxd=WALL_SNAP_MAX)
+        if w is not None:
+            proj = w.interpolate(w.project(p))
+            cands.append((proj.x, proj.y, 0.10))
+            # 备用: 沿最近墙滑动(绕过 MIN_SPACING 冲突/非法点)
+            coords = list(w.coords)
+            ang = math.atan2(coords[-1][1] - coords[0][1], coords[-1][0] - coords[0][0])
+            for sgn in (-1, 1):
+                for dd in (0.6, 1.2, 1.8, 2.4):
+                    cands.append((proj.x + sgn * dd * math.cos(ang),
+                                  proj.y + sgn * dd * math.sin(ang), 0.10))
+        if model.coltree is not None:
+            i = model.coltree.nearest(p)
+            poly = model.cols[i]
+            if poly.distance(p) <= WALL_SNAP_MAX:
+                cp = poly.boundary.interpolate(poly.boundary.project(p))
+                vx, vy = p.x - cp.x, p.y - cp.y
+                vlen = math.hypot(vx, vy) or 1e-9
+                ux, uy = vx / vlen, vy / vlen
+                cands.append((cp.x + ux * 0.03, cp.y + uy * 0.03, 0.15))
+        valid = []
+        for cx, cy, prio in cands:
+            if not model.valid_pos(cx, cy):
+                continue
+            if any(math.hypot(cx - qx, cy - qy) < MIN_SPACING
+                   for j, (qx, qy) in enumerate(model.beacons) if j != idx):
+                continue
+            dmove = math.hypot(cx - ox, cy - oy)
+            valid.append((prio * 100.0 + dmove, (cx, cy)))
+        if not valid:
+            unresolved.append((idx, round(dw, 2)))
+            continue
+        valid.sort(key=lambda t: t[0])
+        for _, cand in valid:
+            if model.move_beacon(idx, cand):
+                fixed += 1
+                break
+        else:
+            unresolved.append((idx, round(dw, 2)))
+    if unresolved:
+        model._floating_unresolved = unresolved
+    return fixed
+
+
+def dist_to_wall(model, pt):
+    """pt 到最近墙线的距离(全量扫描, 用于悬空判定; 柱上点返回 0)。"""
+    if model.on_column(*pt):
+        return 0.0
+    best = float("inf")
+    p = Point(pt)
+    for seg in model.segs:
+        d = p.distance(seg)
+        if d < best:
+            best = d
+    return best
 
 
 def _add_beacon_to_cache(model, idx):
@@ -854,7 +977,18 @@ def _unified_candidates(model, missing, degen_pts, degen_tree):
                 y += 0.5
             x += 0.5
         for p in heapq.nlargest(4, local, key=lambda p: _min_dist_to(model, p)):
-            push(p, W_CORR + _gap_gain(model, p))
+            # 贴墙硬约束: 网格点必须投影到最近墙(<=1.2m)上才可作为候选,
+            # 杜绝走廊中线悬空点; 投影后仍须在走廊内且合法。
+            wx, wd = nearest_wall(model, p, maxd=1.2)
+            if wx is None:
+                continue
+            proj = wx.interpolate(wx.project(Point(*p)))
+            q = (proj.x, proj.y)
+            if not (poly.buffer(0.1).contains(Point(*q))
+                    and model.corridor_side(q, axis) == tside
+                    and model.valid_pos(*q)):
+                continue
+            push(q, W_CORR + _gap_gain(model, q))
     # B. R3: 退化点垂直方向候选(精确评估修复数)
     for (x, y) in degen_pts:
         s = model.cache[(x, y)]
@@ -902,6 +1036,26 @@ def _unified_candidates(model, missing, degen_pts, degen_tree):
             c = (pr.x, pr.y)
             if model.valid_pos(*c):
                 push(c, W_GAP * (d0 - NN_MAX))
+    # D. 指定柱挂载: 用户指定的免费柱(F1-C-0238/0192/0206)柱面候选,
+    #    收益取 R3/R4 分量(附近退化点修复 + 超长间距削减), 不产生 R1 走廊侧贡献。
+    for i in model.prime_cols:
+        poly = model.cols[i]
+        ring = poly.boundary
+        n = max(12, int(ring.length / 0.4))
+        for k in range(n):
+            bp = ring.interpolate(ring.length * k / n)
+            cx, cy = bp.x, bp.y
+            # 略向内偏 0.03m 保证点在柱体上(挂柱)
+            ccx, ccy = poly.centroid.x, poly.centroid.y
+            vx, vy = cx - ccx, cy - ccy
+            vlen = math.hypot(vx, vy) or 1e-9
+            q = (cx - vx / vlen * 0.03, cy - vy / vlen * 0.03)
+            if not model.valid_pos(*q):
+                continue
+            gain = (_tri_gain_exact(model, degen_pts, degen_tree, q)
+                    + _gap_gain(model, q))
+            if gain > 0:
+                push(q, gain)
     return cands
 
 
@@ -1025,11 +1179,15 @@ def main():
 
         if not args.review_only:
             n_unified = 0
-            # 1. 确定性避角/避障/迁出封闭空间(先修硬性违反, 可多轮)
+            # 1. 确定性避角/避障/迁出封闭空间/悬空吸附(先修硬性违反, 可多轮)
             for _ in range(3):
                 if (fix_corner_pass(model) == 0 and fix_obstacle_pass(model) == 0
-                        and fix_enclosed_pass(model) == 0):
+                        and fix_enclosed_pass(model) == 0
+                        and fix_floating_pass(model) == 0):
                     break
+            if getattr(model, "_floating_unresolved", None):
+                print(f"  F{fl} 悬空修复残留 {len(model._floating_unresolved)} 处: "
+                      f"{model._floating_unresolved[:10]}", flush=True)
             # 2. Lloyd 式原位松弛(均匀 + 走廊侧平衡 + 三角改善)
             for rnd in range(MAX_RELAX_ROUNDS):
                 m = relax_pass(model, rnd)
@@ -1079,9 +1237,25 @@ def main():
             entry["coordinates"] = [round(new_c[0], 3), round(new_c[1], 3)]
             entry["plannedCoordinates"] = [round(new_c[0], 3), round(new_c[1], 3)]
             entry["placementRefined"] = True
+            # 被悬空修复/松弛移到柱面的既有信标: 更正挂载标注
+            if model.on_column(*new_c) and entry.get("mountType") != "column":
+                entry["mountType"] = "column"
+                desc = entry.get("locationDesc", "")
+                if "柱面" not in desc:
+                    entry["locationDesc"] = desc + "（柱面挂载）"
         for j in range(n_orig, len(model.beacons)):
             new_minor += 1
             new_c = model.beacons[j]
+            on_col = model.on_column(*new_c)
+            # 区分指定柱(prime_cols)与普通柱: 直接测到各指定柱表面的距离,
+            # 不依赖 coltree.nearest(同柱存在内外双层重复多边形时 nearest 会
+            # 命中外层非指定柱, 如 F1-C-0192↔F1-C-0191 同心嵌套)。
+            col_tag = ""
+            if on_col:
+                qp = Point(*new_c)
+                is_prime = any(model.cols[i].distance(qp) <= COL_MOUNT_TOL
+                               for i in model.prime_cols)
+                col_tag = "指定柱面挂载" if is_prime else "柱面挂载"
             entry = {
                 "beaconId": f"BK-Q-F{fl}-{seq:03d}",
                 "uuid": plan["uuid"],
@@ -1090,8 +1264,9 @@ def main():
                 "coordinates": [round(new_c[0], 3), round(new_c[1], 3)],
                 "plannedCoordinates": [round(new_c[0], 3), round(new_c[1], 3)],
                 "floor": int(fl),
-                "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.2m, 非天花板)",
-                "mountType": "wall",
+                "locationDesc": (f"放置质量补点({col_tag} 2.2m, 非天花板)" if on_col
+                                 else "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.2m, 非天花板)"),
+                "mountType": "column" if on_col else "wall",
                 "installHeight": 2.2,
                 "txPower": TX_POWER,
                 "broadcastInterval": 300,

@@ -85,10 +85,14 @@ def dist_to_column(p, fk):
     return best
 
 
-def inside_room(p, fk):
+def inside_room(p, fk, edge_tol=0.3):
+    """返回所在封闭房间 (id, type) 或 None。
+    与 refine 脚本口径一致: 距房间边界 <= edge_tol(0.3m) 视为贴墙安装合法。"""
     for rid, poly, rtype in floor_geom[str(fk)]["rooms"]:
         if poly.contains(p):
-            return rid, rtype
+            inner = poly.buffer(-edge_tol)
+            if inner.is_empty or inner.contains(p):
+                return rid, rtype
     return None
 
 
@@ -169,15 +173,18 @@ for b in beacons:
     p = Point(b["coordinates"])
     fk = b["floor"]
     d, end_d, _ = nearest_wall_seg(p, fk)
+    dc = dist_to_column(p, fk)
+    if dc <= 0.06:
+        # 柱面挂载点(挂柱<=0.06m)豁免避角: 挂载面为柱体侧面, 不与墙转角冲突
+        continue
     if d <= 0.5 and end_d < 0.3:
         corner_list.append((b["beaconId"], fk, round(d, 2), round(end_d, 2)))
-    dc = dist_to_column(p, fk)
-    if 0.0 < dc < 0.2:
+    if 0.06 < dc < 0.5:
         obstacle_list.append((b["beaconId"], fk, round(dc, 2)))
 print(f"贴墙角信标: {len(corner_list)}")
 for c in corner_list[:15]:
     print(f"  {c[0]} F{c[1]} 距墙{c[2]}m 距端点{c[3]}m")
-print(f"紧贴柱体(距离<0.2m): {len(obstacle_list)}")
+print(f"贴柱缝隙(0.06~0.5m): {len(obstacle_list)}")
 for c in obstacle_list[:10]:
     print(f"  {c[0]} F{c[1]} 距柱{c[2]}m")
 
@@ -242,7 +249,7 @@ for fk in (1, 2):
 
 # ============ 6) 悬空 + 封闭空间 ============
 print("\n" + "=" * 62)
-print("6) 悬空检查（坐标须落在墙/柱上，距墙>0.5m 视为悬空）")
+print("6) 悬空检查（贴墙<=0.5m 或挂柱<=0.06m 合格，否则悬空）")
 floating = []
 on_column = 0
 for b in beacons:
@@ -250,7 +257,7 @@ for b in beacons:
     fk = b["floor"]
     dw = dist_to_wall(p, fk)
     dc = dist_to_column(p, fk)
-    if dc <= 0.0:
+    if dc <= 0.06:
         on_column += 1
         continue
     if dw <= 0.5:
