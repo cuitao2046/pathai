@@ -290,14 +290,26 @@ __SVG_BODY__<g id="manual-edge-layer"></g>
 // （applyTransform / showDetail / ensureLayer / clearHighlight / toggleLayer /
 // rpEsc / allLayers 以及 svg / wrapper / scale / translateX / translateY）
 // 均为全局定义，运行时（用户点击）均已就绪。
-var SEARCH_LAYERS = ['room', 'infrastructure', 'corridor', 'lobby', 'activity', 'atrium', 'lobby_elevator', 'lobby_stair',
-  'door_swing', 'door_fire', 'door_opening', 'topo_node', 'stairs', 'elevator', 'risk', 'ramp', 'tactile', 'material', 'crossfloor'];
+// 顺序敏感: 前缀互含的图层必须长名在前(如 lobby_elevator 在 lobby 前),
+// 否则 indexOf 全串匹配会被短名截胡, 导致图层归属错误(lobby 截胡电梯前室等)。
+var SEARCH_LAYERS = ['lobby_elevator', 'lobby_stair', 'lobby',
+  'elevator_door', 'elevator',
+  'topo_edge_titi', 'topo_edge', 'topo_node',
+  'skeleton_node', 'skeleton',
+  'room', 'infrastructure', 'corridor', 'activity', 'atrium',
+  'door_swing', 'door_fire', 'door_opening',
+  'stairs', 'risk', 'ramp', 'tactile', 'material', 'crossfloor',
+  'column', 'beacon', 'fingerprint', 'window'];
 var SEARCH_TYPE_CN = {
-  room: '房间', infrastructure: '基础设施', corridor: '走道', lobby: '门厅', activity: '活动区', atrium: '中庭',
-  lobby_elevator: '电梯前室', lobby_stair: '楼梯前室',
+  lobby_elevator: '电梯前室', lobby_stair: '楼梯前室', lobby: '门厅',
+  elevator_door: '电梯门', elevator: '电梯',
+  topo_edge_titi: '拓扑边(TI-TI)', topo_edge: '拓扑边', topo_node: '拓扑节点',
+  skeleton_node: '骨架交叉口', skeleton: '骨架线',
+  room: '房间', infrastructure: '基础设施', corridor: '走道', activity: '活动区', atrium: '中庭',
   door_swing: '普通门', door_fire: '防火门', door_opening: '门洞',
-  topo_node: '拓扑节点', stairs: '楼梯', elevator: '电梯', risk: '风险点', ramp: '坡道',
-  tactile: '盲道', material: '地面材质', crossfloor: '跨层连接'
+  stairs: '楼梯', risk: '风险点', ramp: '坡道',
+  tactile: '盲道', material: '地面材质', crossfloor: '跨层连接',
+  column: '柱子', beacon: '信标', fingerprint: '指纹采集点', window: '窗户段'
 };
 var SEARCH_INDEX = null;
 
