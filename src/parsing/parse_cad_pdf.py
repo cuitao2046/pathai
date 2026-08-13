@@ -59,7 +59,7 @@ from src.semantics.heban import inject_heban_classroom_rooms
 # B1：GeoJSON 组装下沉到 src/io/geojson_writer.py（13 个函数一并迁移，
 # 本文件仅保留 build_geojson 名字以便 tests 以 module.build_geojson 访问）。
 from src.io.geojson_writer import (
-    build_geojson, reset_manual_skeleton, set_use_skeleton)
+    build_geojson, set_use_skeleton)
 
 # ---------------------------------------------------------------- 配置
 
@@ -74,7 +74,8 @@ OUT_GEOJSON = str(RESULT_DIR / "school_building_01_map_v9.geojson")
 # 默认图纸配置：路径以上述常量注入，其余（场馆元信息/图签区坐标）用外置默认值（B5/D6）。
 DEFAULT_CONFIG = DrawingConfig(pdf_f1=PDF_F1, pdf_f2=PDF_F2, out_geojson=OUT_GEOJSON)
 # 手绘骨架 JSON 由 src/import_manual_skeleton.py 导出，加载逻辑已随
-# build_geojson 迁至 src/io/geojson_writer.py（set_use_skeleton/reset_manual_skeleton）。
+# build_geojson 迁至 src/io/geojson_writer.py（set_use_skeleton）；
+# --no-manual-skeleton 经 build_geojson(manual_skeleton={}) 注入（审查 B4）。
 
 # 比例尺/原点已统一到 src/common/constants.py（SCALE/ORIGIN_X/ORIGIN_Y），
 # 校准依据见该模块注释：轴网 8400mm = 158.8pt，与窗编号 M2GW5924 互证。
@@ -1973,8 +1974,8 @@ def main(argv=None):
         set_use_skeleton(False)
     elif args.use_skeleton:
         set_use_skeleton(True)
-    if args.no_manual_skeleton:
-        reset_manual_skeleton()
+    # --no-manual-skeleton：显式传空 dict 禁用（审查 B4：不再修改模块级全局）
+    manual_skeleton = {} if args.no_manual_skeleton else None
 
     cfg = DEFAULT_CONFIG.with_overrides(
         pdf_f1=args.pdf_f1, pdf_f2=args.pdf_f2, out_geojson=args.out_geojson,
@@ -1982,7 +1983,7 @@ def main(argv=None):
         venue_name=args.venue_name, version=args.version)
     f1 = parse_floor(cfg.pdf_f1, 1, cfg)
     f2 = parse_floor(cfg.pdf_f2, 2, cfg)
-    geo = build_geojson(f1, f2, cfg)
+    geo = build_geojson(f1, f2, cfg, manual_skeleton=manual_skeleton)
     Path(cfg.out_geojson).parent.mkdir(parents=True, exist_ok=True)
     with open(cfg.out_geojson, "w", encoding="utf-8") as fp:
         json.dump(geo, fp, ensure_ascii=False, indent=2)

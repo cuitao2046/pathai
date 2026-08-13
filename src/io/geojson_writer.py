@@ -2,7 +2,7 @@
 """GeoJSON 组装输出（B1 拆分自 src/parsing/parse_cad_pdf.py）。
 
 迁移自 parse_cad_pdf.py 的 GeoJSON 组装链与相关常量：
-    _load_manual_skeleton / estimate_wall_thickness /
+    _read_manual_skeleton / estimate_wall_thickness /
     wall_material_from_thickness / _keep_walkable_pieces / _walkable_geojson /
     _resolve_open_closed_overlaps / generate_walkable_polygons /
     _lobby_largest_poly / _make_lobby_room / split_lobby_pockets /
@@ -63,32 +63,29 @@ RESULT_DIR = _PROJECT_ROOT / "result"
 # 手绘骨架 JSON：由 src/import_manual_skeleton.py 导出。存在时优先于自动中轴骨架，
 # 仅替代 TI 节点 / TI-TI 边 / 骨架线；TR/TD/TF/TEN 仍自动生成并挂接到手动 TI。
 MANUAL_SKELETON_PATH = str(RESULT_DIR / "skeleton_manual_parsed.json")
-MANUAL_SKELETON = None  # None=未加载; {} = 无(文件不存在/被关闭); dict=已加载
 # build_geojson 的 cfg 默认实例：场馆元信息用外置默认值（B5）
 DEFAULT_CONFIG = DrawingConfig()
 
 
-def _load_manual_skeleton():
-    """按楼层读取手绘骨架 JSON；文件不存在则返回空 dict（视为无手动骨架）。
+def _read_manual_skeleton():
+    """读取整楼手绘骨架 JSON；文件不存在/解析失败返回 {}（视为无手动骨架）。
 
-    仅在文件存在时启用「手动骨架优先于自动中轴骨架」的生成路径。
+    审查 B4：从模块级全局缓存（_load_manual_skeleton + MANUAL_SKELETON）改为
+    每次调用独立读取，消除「多次调用 build_geojson 行为不确定」与
+    「热更新 JSON 需重启进程」两类问题。
     """
-    global MANUAL_SKELETON
-    if MANUAL_SKELETON is not None:
-        return MANUAL_SKELETON
     p = Path(MANUAL_SKELETON_PATH)
-    if p.exists():
-        try:
-            MANUAL_SKELETON = json.loads(p.read_text(encoding="utf-8"))
-            print(f"[manual-skeleton] 已加载手绘骨架: {MANUAL_SKELETON_PATH} "
-                  f"(楼层: {list(MANUAL_SKELETON.keys())})")
-        except Exception as e:
-            print(f"[WARN] 手绘骨架 JSON 解析失败，回退自动骨架: {e}")
-            MANUAL_SKELETON = {}
-    else:
+    if not p.exists():
         print(f"[manual-skeleton] 未找到 {MANUAL_SKELETON_PATH}，使用自动中轴骨架")
-        MANUAL_SKELETON = {}
-    return MANUAL_SKELETON
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        print(f"[manual-skeleton] 已加载手绘骨架: {MANUAL_SKELETON_PATH} "
+              f"(楼层: {list(data.keys())})")
+        return data
+    except Exception as e:
+        print(f"[WARN] 手绘骨架 JSON 解析失败，回退自动骨架: {e}")
+        return {}
 
 # 比例尺/原点已统一到 src/common/constants.py（SCALE/ORIGIN_X/ORIGIN_Y），
 # 校准依据见该模块注释：轴网 8400mm = 158.8pt，与窗编号 M2GW5924 互证。
@@ -102,12 +99,6 @@ def set_use_skeleton(flag):
     """骨架管线开关（替代原 main() 的 global USE_SKELETON 赋值）。"""
     global USE_SKELETON
     USE_SKELETON = bool(flag)
-
-
-def reset_manual_skeleton():
-    """忽略手绘骨架 JSON（替代原 main() 的 global MANUAL_SKELETON = {}）。"""
-    global MANUAL_SKELETON
-    MANUAL_SKELETON = {}
 
 
 # --- 楼梯/电梯井编号空间容差（编号文本到设施 bbox 的最大容差(米)）---
@@ -600,14 +591,19 @@ def _compute_fire_door_normally_open(dr, rooms_by_id):
     return func and public
 
 
-def build_geojson(f1, f2, cfg=None):
+def build_geojson(f1, f2, cfg=None, manual_skeleton=None):
     """组装完整 GeoJSON（拓扑 + walkable + skeleton 等）。
 
     cfg: Optional[DrawingConfig]——图纸级配置（审查 B5/D6）：场馆元信息、
         图签区坐标等；None 时用 DEFAULT_CONFIG（外置默认值）。
+    manual_skeleton: Optional[dict]——整楼手绘骨架（键为楼层号字符串）：
+        None=默认按 MANUAL_SKELETON_PATH 从文件读取（无进程级缓存，审查 B4）；
+        {} = 明确禁用（等价 --no-manual-skeleton）；dict = 直接使用注入数据。
     """
     if cfg is None:
         cfg = DEFAULT_CONFIG
+    if manual_skeleton is None:
+        manual_skeleton = _read_manual_skeleton()
     facility_report = reconcile_facilities(f1, f2)
     for kind, info in facility_report.items():
         for fl in ("1", "2"):
@@ -1161,7 +1157,7 @@ def build_geojson(f1, f2, cfg=None):
                     extra_nodes=extra_nodes,
                     resolution=SKELETON_RESOLUTION,
                     obj_type=OBJ_TYPE,
-                    manual_skeleton=_load_manual_skeleton().get(str(floor_no)),
+                    manual_skeleton=manual_skeleton.get(str(floor_no)),
                 )
                 nodes = topo["nodes"]
                 edges = topo["edges"]
