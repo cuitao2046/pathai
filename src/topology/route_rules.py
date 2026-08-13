@@ -156,6 +156,9 @@ class RouteGraph:
                 self.infra_doorway_ids.add(nid)
         # 边 id 索引（C2）：_edge_by_id 由 O(E) 线性扫描降为 O(1)
         self.edge_by_id = {e["id"]: e for e in self.edges}
+        # 跨层边集合（楼梯/电梯）：供 test_rule_2_blind_mode_stair_blocked 等
+        # 对拍与规则校验使用；crossFloor 标志在 _norm_edge 中由 geo["crossFloorEdges"] 置位。
+        self.cross_floor_edges = [e for e in self.edges if e.get("crossFloor")]
 
     def _add_doorless_toilet_links(self, radius=20.0):
         cand_types = {"intersection", "facility_entrance", "doorway", "facility"}
@@ -434,6 +437,10 @@ class RouteGraph:
             for eid in cross_edges)
 
         return {
+            # nodes: 规范字段名，与前端 JS Dijkstra（app.js 返回的 {nodes,...}）对齐，
+            #        供 test_route_rules_consistency 等后端↔前端对拍使用。
+            # path: 兼容别名，既有调试脚本（debug/verify_*.py）与 generate_route 仍读此字段。
+            "nodes": path,
             "path": path,
             "edges": edge_ids,
             "distance": round(dist[end_id], 2),

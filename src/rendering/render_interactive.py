@@ -558,6 +558,14 @@ def visible_ids(px, py, beacons, cidx):
 
 
 def main():
+    import sys as _sys
+    # Windows GBK 控制台无法编码 ²/→/✓ 等非 GBK 字符，导致 print 抛 UnicodeEncodeError
+    # 而中断渲染。强制 stdout/stderr 为 utf-8，使脚本在任意终端均可完整输出。
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     import argparse as _ap
     _a = _ap.ArgumentParser(description="交互式楼层渲染")
     _a.add_argument("--geo", default=GEO_IN, help="v9 楼层 GeoJSON 路径")
