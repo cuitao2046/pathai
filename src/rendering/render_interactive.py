@@ -40,6 +40,12 @@ except ImportError:
 # 正式运行方式：`pathai-render`（pip install -e . 后）或 `python -m src.rendering.render_interactive`。
 # 不再在模块导入时修改 sys.path（审查 B3：移除包内导入副作用）。
 from src.geometry.contour import _area, building_outline
+# C4：路由规则辅助量由 build_geojson 一次性写入顶层 routeExtras，渲染端直接读取；
+# 旧 GeoJSON 缺少该字段时回退到共享计算（需 shapely，独立运行环境同样具备）。
+try:
+    from src.io.geojson_writer import compute_route_rule_extras
+except ImportError:  # 无 shapely 环境：GeoJSON 带 routeExtras 时仍可渲染
+    compute_route_rule_extras = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
@@ -168,140 +174,6 @@ def build_node_lookup(geo_json):
         for n in fd.get("topology", {}).get("nodes", []):
             lookup[n["id"]] = {"floor": int(fk), "coordinates": tuple(n["coordinates"])}
     return lookup
-
-
-def _seg_crosses_wall(p1, p2, A, B):
-    """路径段 p1->p2 是否真正「穿透」墙体线段 A-B（与 route_rules 同源）。
-
-    判定：两端点位于墙线两侧(opposite sides)且交点落在线段内；共线/同侧
-    （沿墙并行）不算穿墙。
-    （审查 B10：几何判定统一收敛到 src/geometry/segments.py，独立运行时本地兜底）
-    """
-    try:
-        from src.geometry.segments import segments_properly_cross
-        return segments_properly_cross(p1, p2, A, B)
-    except ImportError:
-        ax, ay = A[0], A[1]
-        bx, by = B[0], B[1]
-        px, py = p1[0], p1[1]
-        qx, qy = p2[0], p2[1]
-        dx, dy = bx - ax, by - ay
-
-        def side(x, y):
-            return (bx - ax) * (y - ay) - (by - ay) * (x - ax)
-
-        s1 = side(px, py)
-        s2 = side(qx, qy)
-        if s1 == 0 and s2 == 0:
-            return False  # 共线：沿墙，非穿透
-        if s1 * s2 > 0:
-            return False  # 同侧：沿墙并行，非穿透
-        if abs(dx) < 1e-12 and abs(dy) < 1e-12:
-            return False  # 退化墙线
-        ex, ey = qx - px, qy - py
-        det = dx * ey - dy * ex
-        if abs(det) < 1e-12:
-            return False
-        u = (ex * (ay - py) - ey * (ax - px)) / det  # 沿墙 A->B 参数
-        t = (dy * (px - ax) - dx * (py - ay)) / det  # 沿路径 p1->p2 参数
-        return (-1e-9) <= t <= (1 + 1e-9) and (-1e-9) <= u <= (1 + 1e-9)
-
-
-def compute_route_rule_extras(geo):
-    """为前端 Dijkstra 预计算路由规则辅助量（对齐 src/route_rules.py）。
-
-    返回 dict：
-    - edge_door_type: edge_id -> doorType(str|None)，从门节点推导；
-    - room_best_door: room 节点 id -> 该房间最高优先级门类型(swing>fire>opening)；
-    - wall_crossing_titi: 两端均为 intersection 且直线段真正穿墙的 TI<->TI 边 id 集合；
-    - infra_doorway_ids: 归属全部为 infrastructure 的门节点 id 集合（纯管井门，规则 5）。
-    """
-    node_by_id = {}
-    for fk, fd in geo["floors"].items():
-        for n in (fd.get("topology", {}) or {}).get("nodes", []):
-            node_by_id[n["id"]] = n
-
-    def edge_door_type(e):
-        a = node_by_id.get(e["from"])
-        b = node_by_id.get(e["to"])
-        if a and a.get("type") == "doorway":
-            return a.get("doorType")
-        if b and b.get("type") == "doorway":
-            return b.get("doorType")
-        return None
-
-    edge_door_type_map = {}
-    for fk, fd in geo["floors"].items():
-        for e in (fd.get("topology", {}) or {}).get("edges", []):
-            # 楼层限定键：F1/F2 各自独立边编号（E000005 在两层都有）
-            edge_door_type_map[f"{fk}:{e['id']}"] = edge_door_type(e)
-
-    # 规则 5：归属全为 infrastructure 的门（纯管井门）→ 前端 Dijkstra 同步剔除
-    room_id_to_type = {}
-    for n in node_by_id.values():
-        if n.get("type") == "room":
-            room_id_to_type[n.get("roomId") or n["id"]] = n.get("roomType")
-    infra_doorway_ids = set()
-    for n in node_by_id.values():
-        if n.get("type") != "doorway":
-            continue
-        rids = n.get("rooms") or []
-        if rids and all(room_id_to_type.get(r) == "infrastructure" for r in rids):
-            infra_doorway_ids.add(n["id"])
-
-    # 房间最佳门类型（每间房取优先级最高的门）
-    # 常开防火门与普通门平等对待（penalty=0）
-    best_door = {}
-    for n in node_by_id.values():
-        if n.get("type") == "doorway":
-            for rid in (n.get("rooms") or []):
-                t = n.get("doorType")
-                # 常开防火门：视为 swing 同级（penalty=0）
-                p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, DOOR_DEFAULT_PENALTY)
-                cur = best_door.get(rid)
-                cur_p = DOOR_PENALTY.get(cur, DOOR_DEFAULT_PENALTY) if cur else None
-                if cur is None or p < cur_p:
-                    best_door[rid] = t
-    room_best_door = {}
-    for n in node_by_id.values():
-        if n.get("type") == "room":
-            rid = n.get("roomId") or n["id"]
-            if rid in best_door:
-                room_best_door[n["id"]] = best_door[rid]
-
-    # 穿墙 TI<->TI 边集合（按楼层隔离：F1/F2 投影坐标重叠，跨层墙不得参与判定）
-    wall_lines = []
-    for fk, fd in geo["floors"].items():
-        for w in (fd.get("geometry", {}) or {}).get("walls", []):
-            g = w.get("geometry", {})
-            if g.get("type") == "LineString" and len(g.get("coordinates", [])) >= 2:
-                cs = g["coordinates"]
-                wall_lines.append((fk, tuple(cs[0]), tuple(cs[-1])))
-    wall_crossing_titi = set()
-    for fk, fd in geo["floors"].items():
-        for e in (fd.get("topology", {}) or {}).get("edges", []):
-            a = node_by_id.get(e["from"])
-            b = node_by_id.get(e["to"])
-            if not a or not b:
-                continue
-            if a.get("type") != "intersection" or b.get("type") != "intersection":
-                continue
-            ca, cb = a.get("coordinates"), b.get("coordinates")
-            if not ca or not cb:
-                continue
-            for (wf, A, B) in wall_lines:
-                if wf != fk:
-                    continue  # 跨层墙不参与本层穿墙判定
-                if _seg_crosses_wall(ca, cb, A, B):
-                    wall_crossing_titi.add(f"{fk}:{e['id']}")
-                    break
-
-    return {
-        "edge_door_type": edge_door_type_map,
-        "room_best_door": room_best_door,
-        "wall_crossing_titi": wall_crossing_titi,
-        "infra_doorway_ids": infra_doorway_ids,
-    }
 
 
 def build_path_rules_js():
@@ -1745,9 +1617,16 @@ def main():
 
 
     # ---------------- 路径规划图数据（前端 Dijkstra） ----------------
-    # 预计算路由规则辅助量（对齐 src/route_rules.py）：门类型、房间最佳门、
-    # 穿墙 TI<->TI 边集合。前端据此在浏览器内执行与后端完全一致的受限 Dijkstra。
-    _rule_extras = compute_route_rule_extras(geo)
+    # C4：路由规则辅助量已由 build_geojson 一次性写入顶层 routeExtras（与
+    # route_rules 同源），渲染端直接读取，不再每次渲染重算 O(边×墙)；
+    # 旧 GeoJSON 缺少该字段时回退到共享 compute_route_rule_extras 计算。
+    _rule_extras = geo.get("routeExtras")
+    if _rule_extras is None:
+        if compute_route_rule_extras is None:
+            raise SystemExit(
+                "GeoJSON 缺少 routeExtras 且无法回退计算（需 shapely）；"
+                "请用新版管线重新生成 GeoJSON")
+        _rule_extras = compute_route_rule_extras(geo)
     _edge_door_type_map = _rule_extras["edge_door_type"]
     _room_best_door = _rule_extras["room_best_door"]
     _wall_crossing_titi = _rule_extras["wall_crossing_titi"]

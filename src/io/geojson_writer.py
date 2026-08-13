@@ -19,8 +19,9 @@ from shapely.geometry import LineString, MultiPolygon, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-# 全局常量唯一来源（比例/原点，见 docs/code-review-2026-08-12.md D1-D4）
-from src.common.constants import ORIGIN_X, ORIGIN_Y, SCALE
+# 全局常量唯一来源（比例/原点/路由规则，见 docs/code-review-2026-08-12.md D1-D4）
+from src.common.constants import (DOOR_DEFAULT_PENALTY, DOOR_PENALTY,
+                                  ORIGIN_X, ORIGIN_Y, SCALE)
 # 图纸级配置（B5/D6 外置）：场馆元信息 + 图签区坐标，可经 CLI/实例覆盖
 from src.common.drawing_config import DrawingConfig
 # 复用建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
@@ -29,6 +30,8 @@ from src.geometry.contour import building_outline
 # B1：几何工具下沉到 src/geometry/geo_utils.py
 from src.geometry.geo_utils import (_point_line_distance, angle_diff, pt2m,
                                     seg_angle, seg_len)
+# B10：穿墙几何判定唯一来源（C4：routeExtras 计算复用，渲染端不再重算）
+from src.geometry.segments import segments_properly_cross
 # B1：墙体图层名共享常量下沉到 src/parsing/pdf_layers.py
 from src.parsing.pdf_layers import LAYER_WALL
 from src.semantics.door_swing import door_swing_attributes
@@ -589,6 +592,108 @@ def _compute_fire_door_normally_open(dr, rooms_by_id):
         if rt in _FIRE_OPEN_PUBLIC:
             public = True
     return func and public
+
+
+def compute_route_rule_extras(geo):
+    """为前端 Dijkstra 预计算路由规则辅助量（C4：随 build_geojson 一次性写入
+    顶层 routeExtras，渲染端直接读取，不再每次渲染 O(边×墙) 重算）。
+
+    返回 dict：
+    - edge_door_type: edge_id -> doorType(str|None)，从门节点推导；
+    - room_best_door: room 节点 id -> 该房间最高优先级门类型(swing>fire>opening)；
+    - wall_crossing_titi: 两端均为 intersection 且直线段真正穿墙的 TI<->TI 边 id 集合；
+    - infra_doorway_ids: 归属全部为 infrastructure 的门节点 id 集合（纯管井门，规则 5）。
+
+    与 route_rules.py 规则同源（常量唯一来源 src/common/constants.py）；
+    穿墙判定复用 geometry/segments.segments_properly_cross（B10 收敛）。
+    """
+    node_by_id = {}
+    for fk, fd in geo["floors"].items():
+        for n in (fd.get("topology", {}) or {}).get("nodes", []):
+            node_by_id[n["id"]] = n
+
+    def edge_door_type(e):
+        a = node_by_id.get(e["from"])
+        b = node_by_id.get(e["to"])
+        if a and a.get("type") == "doorway":
+            return a.get("doorType")
+        if b and b.get("type") == "doorway":
+            return b.get("doorType")
+        return None
+
+    edge_door_type_map = {}
+    for fk, fd in geo["floors"].items():
+        for e in (fd.get("topology", {}) or {}).get("edges", []):
+            # 楼层限定键：F1/F2 各自独立边编号（E000005 在两层都有）
+            edge_door_type_map[f"{fk}:{e['id']}"] = edge_door_type(e)
+
+    # 规则 5：归属全为 infrastructure 的门（纯管井门）→ 前端 Dijkstra 同步剔除
+    room_id_to_type = {}
+    for n in node_by_id.values():
+        if n.get("type") == "room":
+            room_id_to_type[n.get("roomId") or n["id"]] = n.get("roomType")
+    infra_doorway_ids = set()
+    for n in node_by_id.values():
+        if n.get("type") != "doorway":
+            continue
+        rids = n.get("rooms") or []
+        if rids and all(room_id_to_type.get(r) == "infrastructure" for r in rids):
+            infra_doorway_ids.add(n["id"])
+
+    # 房间最佳门类型（每间房取优先级最高的门）
+    # 常开防火门与普通门平等对待（penalty=0）
+    best_door = {}
+    for n in node_by_id.values():
+        if n.get("type") == "doorway":
+            for rid in (n.get("rooms") or []):
+                t = n.get("doorType")
+                # 常开防火门：视为 swing 同级（penalty=0）
+                p = 0.0 if (t == "fire" and n.get("isNormallyOpen")) else DOOR_PENALTY.get(t, DOOR_DEFAULT_PENALTY)
+                cur = best_door.get(rid)
+                cur_p = DOOR_PENALTY.get(cur, DOOR_DEFAULT_PENALTY) if cur else None
+                if cur is None or p < cur_p:
+                    best_door[rid] = t
+    room_best_door = {}
+    for n in node_by_id.values():
+        if n.get("type") == "room":
+            rid = n.get("roomId") or n["id"]
+            if rid in best_door:
+                room_best_door[n["id"]] = best_door[rid]
+
+    # 穿墙 TI<->TI 边集合（按楼层隔离：F1/F2 投影坐标重叠，跨层墙不得参与判定）
+    wall_lines = []
+    for fk, fd in geo["floors"].items():
+        for w in (fd.get("geometry", {}) or {}).get("walls", []):
+            g = w.get("geometry", {})
+            if g.get("type") == "LineString" and len(g.get("coordinates", [])) >= 2:
+                cs = g["coordinates"]
+                wall_lines.append((fk, tuple(cs[0]), tuple(cs[-1])))
+    wall_crossing_titi = set()
+    for fk, fd in geo["floors"].items():
+        for e in (fd.get("topology", {}) or {}).get("edges", []):
+            a = node_by_id.get(e["from"])
+            b = node_by_id.get(e["to"])
+            if not a or not b:
+                continue
+            if a.get("type") != "intersection" or b.get("type") != "intersection":
+                continue
+            ca, cb = a.get("coordinates"), b.get("coordinates")
+            if not ca or not cb:
+                continue
+            for (wf, A, B) in wall_lines:
+                if wf != fk:
+                    continue  # 跨层墙不参与本层穿墙判定
+                if segments_properly_cross(ca, cb, A, B):
+                    wall_crossing_titi.add(f"{fk}:{e['id']}")
+                    break
+
+    return {
+        "edge_door_type": edge_door_type_map,
+        "room_best_door": room_best_door,
+        # set → 排序 list：保证 JSON 序列化字节确定（跨进程/跨运行一致）
+        "wall_crossing_titi": sorted(wall_crossing_titi),
+        "infra_doorway_ids": sorted(infra_doorway_ids),
+    }
 
 
 def build_geojson(f1, f2, cfg=None, manual_skeleton=None):
@@ -1278,7 +1383,7 @@ def build_geojson(f1, f2, cfg=None, manual_skeleton=None):
                 })
         return edges
 
-    return {
+    geo = {
         "venueId": cfg.venue_id,
         "venueName": cfg.venue_name,
         "version": cfg.version,
@@ -1302,3 +1407,6 @@ def build_geojson(f1, f2, cfg=None, manual_skeleton=None):
         },
         "crossFloorEdges": cross_floor_edges(f1, f2),
     }
+    # C4：路由规则辅助量随构建一次性写入（渲染端直接读取，不再重算）
+    geo["routeExtras"] = compute_route_rule_extras(geo)
+    return geo
