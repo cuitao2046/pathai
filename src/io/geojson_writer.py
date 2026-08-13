@@ -21,6 +21,8 @@ from shapely.strtree import STRtree
 
 # 全局常量唯一来源（比例/原点，见 docs/code-review-2026-08-12.md D1-D4）
 from src.common.constants import ORIGIN_X, ORIGIN_Y, SCALE
+# 图纸级配置（B5/D6 外置）：场馆元信息 + 图签区坐标，可经 CLI/实例覆盖
+from src.common.drawing_config import DrawingConfig
 # 复用建筑外轮廓提取（栅格化+弥合门洞+外部泛洪+Moore 追踪），
 # 用于 walkable 沿外墙裁剪，避免走廊多边形延伸到户外紧贴墙体的位置。
 from src.geometry.contour import building_outline
@@ -48,6 +50,13 @@ except ImportError:
 
 # ---------------------------------------------------------------- 配置
 
+# D5 跨层边魔法数字（审查 D5）：抽成命名常量，注明单位与语义。
+# 楼梯/电梯跨层边（crossFloorEdges）统一取值，与 validate_geojson 的断言一致。
+CROSS_FLOOR_DISTANCE_M = 4.2        # 跨层几何距离（米，占位值，不参与寻路）
+CROSS_FLOOR_EST_TIME = {"staircase": 60.0, "elevator": 15.0}   # 跨层预估时间（秒）
+CROSS_FLOOR_ACCESS = {"staircase": 999, "elevator": 0}   # 可达等级：999=含楼梯对视障禁用
+CROSS_FLOOR_RISK = {"staircase": 10, "elevator": 1}      # 风险等级：10=楼梯口
+
 # 路径自动适配：以本文件位置推导项目根目录，不依赖固定盘符/路径
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RESULT_DIR = _PROJECT_ROOT / "result"
@@ -55,6 +64,8 @@ RESULT_DIR = _PROJECT_ROOT / "result"
 # 仅替代 TI 节点 / TI-TI 边 / 骨架线；TR/TD/TF/TEN 仍自动生成并挂接到手动 TI。
 MANUAL_SKELETON_PATH = str(RESULT_DIR / "skeleton_manual_parsed.json")
 MANUAL_SKELETON = None  # None=未加载; {} = 无(文件不存在/被关闭); dict=已加载
+# build_geojson 的 cfg 默认实例：场馆元信息用外置默认值（B5）
+DEFAULT_CONFIG = DrawingConfig()
 
 
 def _load_manual_skeleton():
@@ -589,7 +600,14 @@ def _compute_fire_door_normally_open(dr, rooms_by_id):
     return func and public
 
 
-def build_geojson(f1, f2):
+def build_geojson(f1, f2, cfg=None):
+    """组装完整 GeoJSON（拓扑 + walkable + skeleton 等）。
+
+    cfg: Optional[DrawingConfig]——图纸级配置（审查 B5/D6）：场馆元信息、
+        图签区坐标等；None 时用 DEFAULT_CONFIG（外置默认值）。
+    """
+    if cfg is None:
+        cfg = DEFAULT_CONFIG
     facility_report = reconcile_facilities(f1, f2)
     for kind, info in facility_report.items():
         for fl in ("1", "2"):
@@ -1254,10 +1272,10 @@ def build_geojson(f1, f2):
                     "to": nid_dst,
                     "fromFloor": 1, "toFloor": 2, "type": kind,
                     "matchedBy": "code" if code else "geometry",
-                    "distance": 4.2,
-                    "estimatedTime": 60.0 if kind == "staircase" else 15.0,
-                    "accessibilityLevel": (999 if kind == "staircase" else 0),
-                    "riskLevel": (10 if kind == "staircase" else 1),
+                    "distance": CROSS_FLOOR_DISTANCE_M,
+                    "estimatedTime": CROSS_FLOOR_EST_TIME[kind],
+                    "accessibilityLevel": CROSS_FLOOR_ACCESS[kind],
+                    "riskLevel": CROSS_FLOOR_RISK[kind],
                     "walkable": True,
                     "wheelchairAccessible": blind_ok,
                     "blindAccessible": blind_ok,
@@ -1265,9 +1283,9 @@ def build_geojson(f1, f2):
         return edges
 
     return {
-        "venueId": "school-building-01",
-        "venueName": "初中学部1#教学楼",
-        "version": "9.0.0",
+        "venueId": cfg.venue_id,
+        "venueName": cfg.venue_name,
+        "version": cfg.version,
         "coordinateSystem": "local_meters",
         "scale": SCALE,
         "origin": {"x": ORIGIN_X, "y": ORIGIN_Y, "unit": "pt"},

@@ -35,6 +35,8 @@ from shapely.geometry import Point, Polygon, box
 
 # 全局常量唯一来源（比例/原点/步行速度等，见 docs/code-review-2026-08-12.md D1-D4）
 from src.common.constants import SCALE, PT_PER_M
+# 图纸级配置（B5/D6 外置）：PDF/输出路径、图签区坐标、场馆元信息
+from src.common.drawing_config import DrawingConfig
 
 # 拓扑建模（指南 第五章）
 # 注：跨层边不从此导入——本文件使用内嵌的 cross_floor_edges（图纸井道编号配对），
@@ -67,9 +69,13 @@ from src.io.geojson_writer import (
 # 路径自动适配：以本文件位置推导项目根目录，不依赖固定盘符/路径
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent   # .../src -> 项目根
 RESULT_DIR = PROJECT_ROOT / "result"
+# 图纸级配置（审查 B5）：PDF 路径 / 输出路径 / 图签区坐标 / 场馆元信息外置。
+# 以下默认值供直接运行与 golden 测试使用，换楼经 CLI 参数覆盖（见 main()）。
 PDF_F1 = str(PROJECT_ROOT / "A20-002-II-初中学部 1# 教学楼首层平面图-A0_BIAD-无签名.pdf")
 PDF_F2 = str(PROJECT_ROOT / "A20-003-II-初中学部 1# 教学楼二层平面图-A0_BIAD-无签名.pdf")
 OUT_GEOJSON = str(RESULT_DIR / "school_building_01_map_v9.geojson")
+# 默认图纸配置：路径以上述常量注入，其余（场馆元信息/图签区坐标）用外置默认值（B5/D6）。
+DEFAULT_CONFIG = DrawingConfig(pdf_f1=PDF_F1, pdf_f2=PDF_F2, out_geojson=OUT_GEOJSON)
 # 手绘骨架 JSON 由 src/import_manual_skeleton.py 导出，加载逻辑已随
 # build_geojson 迁至 src/io/geojson_writer.py（set_use_skeleton/reset_manual_skeleton）。
 
@@ -1241,7 +1247,11 @@ def _tf_coord(nodes, nid):
     return [0.0, 0.0]
 
 
-def parse_floor(pdf_path, floor_no):
+def parse_floor(pdf_path, floor_no, cfg=None):
+    # cfg: Optional[DrawingConfig]——图纸级配置（审查 B5/D6），None 用模块默认；
+    # 目前仅图签区坐标 title_block_x 贯穿到标签/编号提取。
+    if cfg is None:
+        cfg = DEFAULT_CONFIG
     doc = fitz.open(pdf_path)
     page = doc[0]
     on_layers = get_default_on_layers(doc)
@@ -1258,10 +1268,10 @@ def parse_floor(pdf_path, floor_no):
         print(f"[F{floor_no}] 强制剔除图层(整层忽略): {LAYERS_IGNORE}")
 
     items = extract_layer_items(page, set(active))
-    labels = extract_room_labels(page)
+    labels = extract_room_labels(page, title_block_x=cfg.title_block_x)
     # labels 现在返回 (names, codes)，拆开供 build_rooms 用
     room_names, room_codes = labels
-    facility_codes = extract_facility_codes(page)
+    facility_codes = extract_facility_codes(page, title_block_x=cfg.title_block_x)
     # DK 文本标注（旋转/竖排标注常以 text span 存储）须在 doc 关闭前提取，
     # 稍后在门洞识别阶段与矢量 DK 合并去重。
     dk_text_labels = extract_dk_text_labels(page)
@@ -1961,6 +1971,21 @@ def main(argv=None):
     ap.add_argument("--no-manual-skeleton", dest="no_manual_skeleton",
                     action="store_true",
                     help="忽略手绘骨架 JSON，强制走自动中轴骨架")
+    # 图纸级配置外置（审查 B5/D6）：换楼经 CLI 覆盖，未提供时用 DEFAULT_CONFIG。
+    ap.add_argument("--pdf-f1", dest="pdf_f1",
+                    help=f"一层图纸 PDF 路径（默认 {DEFAULT_CONFIG.pdf_f1}）")
+    ap.add_argument("--pdf-f2", dest="pdf_f2",
+                    help=f"二层图纸 PDF 路径（默认 {DEFAULT_CONFIG.pdf_f2}）")
+    ap.add_argument("--output", dest="out_geojson",
+                    help=f"输出 GeoJSON 路径（默认 {DEFAULT_CONFIG.out_geojson}）")
+    ap.add_argument("--venue-id", dest="venue_id",
+                    help=f"场馆 ID，写入顶层 venueId（默认 {DEFAULT_CONFIG.venue_id}）")
+    ap.add_argument("--venue-name", dest="venue_name",
+                    help=f"场馆名称，写入顶层 venueName（默认 {DEFAULT_CONFIG.venue_name}）")
+    ap.add_argument("--version",
+                    help=f"地图版本，写入顶层 version（默认 {DEFAULT_CONFIG.version}）")
+    ap.add_argument("--title-block-x", dest="title_block_x", type=float,
+                    help=f"图签区 x 起点（PDF pt，D6；默认 {DEFAULT_CONFIG.title_block_x}）")
     args = ap.parse_args(argv)
     if args.no_skeleton:
         set_use_skeleton(False)
@@ -1969,15 +1994,19 @@ def main(argv=None):
     if args.no_manual_skeleton:
         reset_manual_skeleton()
 
-    f1 = parse_floor(PDF_F1, 1)
-    f2 = parse_floor(PDF_F2, 2)
-    geo = build_geojson(f1, f2)
-    RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(OUT_GEOJSON, "w", encoding="utf-8") as fp:
+    cfg = DEFAULT_CONFIG.with_overrides(
+        pdf_f1=args.pdf_f1, pdf_f2=args.pdf_f2, out_geojson=args.out_geojson,
+        title_block_x=args.title_block_x, venue_id=args.venue_id,
+        venue_name=args.venue_name, version=args.version)
+    f1 = parse_floor(cfg.pdf_f1, 1, cfg)
+    f2 = parse_floor(cfg.pdf_f2, 2, cfg)
+    geo = build_geojson(f1, f2, cfg)
+    Path(cfg.out_geojson).parent.mkdir(parents=True, exist_ok=True)
+    with open(cfg.out_geojson, "w", encoding="utf-8") as fp:
         json.dump(geo, fp, ensure_ascii=False, indent=2)
     for fl, data in (("1", f1), ("2", f2)):
         print(f"[F{fl}] 未匹配标签: {data['labels_unmatched'][:20]}")
-    print("输出:", OUT_GEOJSON)
+    print("输出:", cfg.out_geojson)
 
 
 if __name__ == "__main__":

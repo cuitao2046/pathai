@@ -5,14 +5,17 @@
   默认开启图层读取 + 页面矢量元素按图层提取
   + 房间标签 / 井道编号 / 门窗 DK 编号文本提取。
 
-本模块只依赖 PyMuPDF 与标准库，不含 shapely / 拓扑逻辑；
+本模块只依赖 PyMuPDF、标准库与 src.common 纯配置（不含 shapely / 拓扑逻辑）；
 parse_cad_pdf.py 的 parse_floor 在此装配 PDF 生命周期（打开→提取→关闭）。
 """
 import math
 import re
 
+# 图签区 x 起点（PDF pt，右侧剔除）：图纸专属坐标（审查 D6），
+# 默认值外置于 src/common/drawing_config.py，可经 DrawingConfig.title_block_x 覆盖。
+from src.common.drawing_config import DEFAULT_TITLE_BLOCK_X as TITLE_BLOCK_X
+
 LABEL_MIN_SIZE = 8.5       # 房间名称最小字号(pt)（略降以捕获 ~9pt 卫生间等小标签）
-TITLE_BLOCK_X = 2900.0       # 图签区 x 起点（右侧剔除）
 LAYER_ELEVATOR = "A-FLOR-EVTR"  # 电梯井图层名
 LAYER_WALL = "WALL"          # 墙体图层（含外墙/内隔墙，双线表示）
 
@@ -57,14 +60,18 @@ def extract_layer_items(page, layer_names):
     return out
 
 
-def extract_facility_codes(page):
+def extract_facility_codes(page, title_block_x=None):
     """
     提取楼梯井/电梯井编号（II-B2-01#ST、II-02#EL），返回 [(code, (cx, cy)_pt, kind)]。
 
     这些编号是图纸的权威标识：同一井道在各楼层沿用同一编号，
     因此可直接作为跨层配对键，避免"按中心距离猜"带来的漏配/错配；
     编号字号较小（#EL 约 8.4pt），不能复用 extract_room_labels 的字号门槛。
+
+    title_block_x：图签区 x 起点（PDF pt），None 用模块默认（图纸专属坐标，D6 外置）。
     """
+    if title_block_x is None:
+        title_block_x = TITLE_BLOCK_X
     out = []
     d = page.get_text("dict")
     for block in d["blocks"]:
@@ -76,7 +83,7 @@ def extract_facility_codes(page):
             if not m:
                 continue
             x0, y0, x1, y1 = line["bbox"]
-            if x1 > TITLE_BLOCK_X:
+            if x1 > title_block_x:
                 continue
             out.append((txt, ((x0 + x1) / 2, (y0 + y1) / 2), m.group(1)))
     return out
@@ -114,7 +121,7 @@ def extract_dk_text_labels(page):
     return out
 
 
-def extract_room_labels(page):
+def extract_room_labels(page, title_block_x=None):
     """
     提取房间标签文本（大字号、排除图签区），合并多行中文（如 学生/社团/活动区）；
     同时收集 A-ANNO-150-TXT 英文编号（如 II-WR-03）作为 roomCode。
@@ -122,7 +129,11 @@ def extract_room_labels(page):
     返回 (names, codes):
       names = [(chinese_text, (cx, cy)_pt], ...]   → 空间名（用于房间探测）
       codes = [(code_text, (cx, cy)_pt], ...]       → 编号（后与房间匹配）
+
+    title_block_x：图签区 x 起点（PDF pt），None 用模块默认（图纸专属坐标，D6 外置）。
     """
+    if title_block_x is None:
+        title_block_x = TITLE_BLOCK_X
     d = page.get_text("dict")
     raw = []
     for block in d["blocks"]:
@@ -134,7 +145,7 @@ def extract_room_labels(page):
                 continue
             size = max(s["size"] for s in line["spans"])
             x0, y0, x1, y1 = line["bbox"]
-            if x1 > TITLE_BLOCK_X:
+            if x1 > title_block_x:
                 continue
             raw.append({"text": txt, "size": size,
                         "bbox": (x0, y0, x1, y1),
