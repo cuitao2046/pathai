@@ -65,10 +65,14 @@ GRID = 1.0
 CORNER_ANGLE_DEG = 30.0   # 顶点处墙段方向最大夹角差 > 此值为「真墙角」
 CORNER_CLEAR = 0.8        # 信标距真墙角最小净距(m)
 OBST_CLEAR = 0.5          # 信标距柱体最小净距(m)
+ENCLOSED_EDGE = 0.3       # 封闭空间判定的边缘容差(m): 越过此深度视为进入室内
+MIN_SPACING = 1.5         # 新增信标与既有信标最小间距(m), 防重合堆积
 EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(共线)
 NN_TARGET = 3.5           # 均匀性目标间距(m)
 NN_MIN = 2.0              # 过近阈值: 低于则视为堆积
 NN_MAX = 7.0              # 过疏阈值: 高于则考虑补点
+CV_TARGET = 0.5           # 均匀性目标: 最近邻间距变异系数 <= 0.5
+EVEN_RESERVE = 10         # 为收尾均匀化(R4)预留的新增配额, 防止被 R1/R3 挤占
 RELAX_STEP = 0.3          # 原位松弛候选步长(m)
 RELAX_R = 0.6             # 原位松弛候选半径(m)
 SLIDE_STEP = 0.3          # 沿墙滑动步长(m)
@@ -123,6 +127,16 @@ class FloorModel:
                           if (f.get("properties", {}).get("type") or
                               f.get("properties", {}).get("roomType")) == "corridor"]
         self.corridor_axes = [self._long_axis(p) for p in self.corridors]
+        # 封闭空间(非公共 / 不可达房间): 信标不得落入其内部
+        self.enclosed = []
+        for f in fg["rooms"]:
+            pr = f.get("properties", {})
+            if pr.get("public") is False or pr.get("accessible") is False:
+                try:
+                    self.enclosed.append(shape(f["geometry"]))
+                except Exception:
+                    continue
+        self.enctree = STRtree(self.enclosed) if self.enclosed else None
         # 目标采样点
         if target is not None:
             self.pts = target
@@ -277,8 +291,24 @@ class FloorModel:
         poly = self.cols[i]
         return not (poly.contains(p) or poly.buffer(0.05).contains(p) or poly.distance(p) < OBST_CLEAR)
 
+    def enclosed_clear(self, x, y):
+        """信标不得落在封闭空间(非公共/不可达房间)内部。
+        门框安装容许贴边, 故用 -ENCLOSED_EDGE 的负缓冲判定「真正进入室内」。"""
+        if not self.enctree:
+            return True
+        p = Point(x, y)
+        for i in self.enctree.query(p):
+            poly = self.enclosed[i]
+            if not poly.contains(p):
+                continue
+            inner = poly.buffer(-ENCLOSED_EDGE)
+            if inner.is_empty or inner.contains(p):
+                return False
+        return True
+
     def valid_pos(self, x, y):
-        return self.corner_clear(x, y) and self.obstacle_clear(x, y)
+        return (self.corner_clear(x, y) and self.obstacle_clear(x, y)
+                and self.enclosed_clear(x, y))
 
     def nn_dist(self, idx):
         """除 idx 外的最近邻距离。"""
@@ -337,6 +367,7 @@ class FloorModel:
         n = len(beacons)
         corner_ct = sum(0 if self.corner_clear(x, y) else 1 for (x, y) in beacons)
         obst_ct = sum(0 if self.obstacle_clear(x, y) else 1 for (x, y) in beacons)
+        enc_ct = sum(0 if self.enclosed_clear(x, y) else 1 for (x, y) in beacons)
         nn = []
         for j in range(n):
             d = self.nn_dist(j)
@@ -366,7 +397,10 @@ class FloorModel:
             "beacons": n,
             "corner_violations": corner_ct, "corner_rate": round(100.0 * corner_ct / n, 2) if n else 0,
             "obstacle_violations": obst_ct, "obstacle_rate": round(100.0 * obst_ct / n, 2) if n else 0,
+            "enclosed_violations": enc_ct, "enclosed_rate": round(100.0 * enc_ct / n, 2) if n else 0,
             "nn_mean_m": round(m, 2), "nn_sd_m": round(sd, 2), "nn_cv": round(cv, 3),
+            "nn_min_m": round(min(nn), 2) if nn else 0,
+            "nn_max_m": round(max(nn), 2) if nn else 0,
             "corridors_total": len(self.corridors), "corridors_both": both,
             "corridors_one": one, "corridors_none": none,
             "samples": tot, "pct_ge3": round(100.0 * ge3 / tot, 2) if tot else 0,
@@ -618,6 +652,56 @@ def fix_obstacle_pass(model):
     return fixed
 
 
+def fix_enclosed_pass(model):
+    """确定性「迁出封闭空间」: 落在非公共/不可达房间内部的信标, 迁到房间外最近的
+    公共侧墙面上。候选 = 房间边界上的采样点沿外法向外推, 取仍能贴墙且合法的位置,
+    按「距原位置最近」优先(尽量保持原覆盖结构, move_beacon 拒绝率低)。"""
+    fixed = 0
+    for idx in range(len(model.beacons)):
+        ox, oy = model.beacons[idx]
+        if model.enctree is None or model.enclosed_clear(ox, oy):
+            continue
+        p = Point(ox, oy)
+        host = None
+        for i in model.enctree.query(p):
+            if model.enclosed[i].contains(p):
+                host = model.enclosed[i]
+                break
+        if host is None:
+            continue
+        cands = []
+        ring = host.exterior
+        n = max(24, int(ring.length / 0.5))
+        for k in range(n):
+            bp = ring.interpolate(ring.length * k / n)
+            vx, vy = bp.x - ox, bp.y - oy
+            vlen = math.hypot(vx, vy) or 1e-9
+            ux, uy = vx / vlen, vy / vlen
+            # 从边界点继续外推, 越过墙体到达外侧公共空间
+            for dd in (0.4, 0.7, 1.0, 1.4):
+                cands.append((bp.x + ux * dd, bp.y + uy * dd))
+        valid = []
+        for cand in cands:
+            w, wd = nearest_wall(model, cand, maxd=1.5)
+            if w is not None:
+                proj = w.interpolate(w.project(Point(*cand)))
+                cand = (proj.x, proj.y)
+            if not model.valid_pos(*cand):
+                continue
+            if any(math.hypot(cand[0] - qx, cand[1] - qy) < MIN_SPACING
+                   for j, (qx, qy) in enumerate(model.beacons) if j != idx):
+                continue
+            valid.append((math.hypot(cand[0] - ox, cand[1] - oy), cand))
+        if not valid:
+            continue
+        valid.sort(key=lambda t: t[0])
+        for _, cand in valid:
+            if model.move_beacon(idx, cand):
+                fixed += 1
+                break
+    return fixed
+
+
 def _add_beacon_to_cache(model, idx):
     """把新信标 idx 加入受影响采样点的可见集(新增不破坏 >=3)。"""
     bx, by = model.beacons[idx]
@@ -678,6 +762,8 @@ def ensure_corridor_both_sides(model, max_new):
         def min_d_to_existing(p):
             return min(math.hypot(p[0] - qx, p[1] - qy) for qx, qy in model.beacons)
         best = max(cands, key=min_d_to_existing)
+        if min_d_to_existing(best) < MIN_SPACING:
+            continue
         model.beacons.append(best)
         added.append(best)
         _add_beacon_to_cache(model, len(model.beacons) - 1)
@@ -687,14 +773,26 @@ def ensure_corridor_both_sides(model, max_new):
 
 
 def ensure_evenness(model, max_new):
-    """R4: NN 间距 > NN_MAX 的信标周边补点(贴墙)。"""
+    """R4: NN 间距 > NN_MAX 的信标周边补点(贴墙)。
+
+    迭代执行: 单次补中点无法消除超长间距(如 25m 需多次二分), 故反复扫描直到
+    无超阈间距或用尽配额。每轮重新计算 NN, 避免同一空档被重复填充。"""
     added = []
-    for idx in range(len(model.beacons)):
+    skip = set()
+    for _ in range(max_new * 3):
         if len(added) >= max_new:
             break
-        d0 = model.nn_dist(idx)
-        if d0 <= NN_MAX:
-            continue
+        # 取当前间距最大的信标优先补, 收敛更快
+        worst_idx, worst_d = None, NN_MAX
+        for idx in range(len(model.beacons)):
+            if idx in skip:
+                continue
+            d0 = model.nn_dist(idx)
+            if d0 > worst_d:
+                worst_idx, worst_d = idx, d0
+        if worst_idx is None:
+            break
+        idx = worst_idx
         ox, oy = model.beacons[idx]
         j = min(range(len(model.beacons)),
                 key=lambda k: math.hypot(model.beacons[k][0] - ox, model.beacons[k][1] - oy)
@@ -703,10 +801,27 @@ def ensure_evenness(model, max_new):
         mx, my = (ox + qx) / 2, (oy + qy) / 2
         w, wd = nearest_wall(model, (mx, my), maxd=2.0)
         if w is None:
+            skip.add(idx)
             continue
-        proj = w.interpolate(w.project(Point(mx, my)))
-        cand = (proj.x, proj.y)
-        if not model.valid_pos(*cand):
+        # 墙面投影点可能恰好落在墙角/柱体旁, 沿墙前后滑动寻找合法位置,
+        # 而非直接放弃(否则超长间距永远补不上)
+        t0 = w.project(Point(mx, my))
+        cand = None
+        for off in (0.0, 0.6, -0.6, 1.2, -1.2, 1.8, -1.8):
+            t = t0 + off
+            if t < 0 or t > w.length:
+                continue
+            pr = w.interpolate(t)
+            c = (pr.x, pr.y)
+            if not model.valid_pos(*c):
+                continue
+            if any(math.hypot(c[0] - bx2, c[1] - by2) < MIN_SPACING
+                   for (bx2, by2) in model.beacons):
+                continue
+            cand = c
+            break
+        if cand is None:
+            skip.add(idx)
             continue
         model.beacons.append(cand)
         added.append(cand)
@@ -820,6 +935,51 @@ def clone_plan_entry(entry, new_coord, tag, extra=None):
     return out
 
 
+def normalize_mount_types(plan):
+    """把历史遗留的天花板吊装统一改为贴墙安装。
+    视障导航要求信标必须部署在公共空间墙面/柱体上(可触及校准 + 可施工),
+    上游已不再产生 ceiling, 此处兜底纠正既有方案中的残留项。"""
+    n = 0
+    for b in plan.get("beacons", []):
+        if b.get("mountType") == "ceiling":
+            b["mountType"] = "wall"
+            b["installHeight"] = 2.2
+            b["mountTypeNormalized"] = True
+            desc = b.get("locationDesc", "")
+            b["locationDesc"] = desc.replace(" / 无墙可吸附-需评估", "")
+            n += 1
+    if n:
+        print(f"mountType 归一: ceiling -> wall 共 {n} 个", flush=True)
+    return n
+
+
+def rebuild_summary(plan):
+    """从 beacons 数组实时聚合 summary, 避免手工维护导致的字段陈旧失真
+    (原方案 total 写 48 而实际 89, ceilingPendantCount 写 0 而实际有 1)。"""
+    beacons = plan.get("beacons", [])
+    by_floor, by_sem, by_sub, by_mount = {}, {}, {}, {}
+    for b in beacons:
+        fl = str(b.get("floor", ""))
+        by_floor[fl] = by_floor.get(fl, 0) + 1
+        sem = b.get("semanticTag", "unknown")
+        by_sem[sem] = by_sem.get(sem, 0) + 1
+        sub = f"{sem}/{b.get('subType', 'base')}"
+        by_sub[sub] = by_sub.get(sub, 0) + 1
+        mt = b.get("mountType", "unknown")
+        by_mount[mt] = by_mount.get(mt, 0) + 1
+    ceiling = by_mount.get("ceiling", 0)
+    plan["summary"] = {
+        "total": len(beacons),
+        "byFloor": dict(sorted(by_floor.items())),
+        "bySemantic": dict(sorted(by_sem.items())),
+        "bySubType": dict(sorted(by_sub.items())),
+        "byMount": dict(sorted(by_mount.items())),
+        "ceilingPendantCount": ceiling,
+        "wallLikeCount": len(beacons) - ceiling,
+    }
+    return plan["summary"]
+
+
 def main():
     ap = argparse.ArgumentParser(description="三点定位信标方案放置质量后处理(四规则)")
     ap.add_argument("--plan", default=str(DEFAULT_PLAN), help="输入信标方案 JSON")
@@ -855,9 +1015,10 @@ def main():
 
         if not args.review_only:
             n_corr = n_tri = 0
-            # 1. 确定性避角/避障(先修硬性违反, 可多轮)
+            # 1. 确定性避角/避障/迁出封闭空间(先修硬性违反, 可多轮)
             for _ in range(3):
-                if fix_corner_pass(model) == 0 and fix_obstacle_pass(model) == 0:
+                if (fix_corner_pass(model) == 0 and fix_obstacle_pass(model) == 0
+                        and fix_enclosed_pass(model) == 0):
                     break
             # 2. Lloyd 式原位松弛(均匀 + 走廊侧平衡 + 三角改善)
             for rnd in range(MAX_RELAX_ROUNDS):
@@ -865,15 +1026,45 @@ def main():
                 if m == 0:
                     break
             # 3. 走廊双侧补点(每缺侧最多 1 个; 置于最后, 避免被后续松弛移出走廊)
-            n_corr = len(ensure_corridor_both_sides(model, 24))
+            #    预留 EVEN_RESERVE 配额给步骤 5, 否则 R1/R3 会挤占 R4 导致 CV 劣化。
+            reserve = EVEN_RESERVE if args.max_new > EVEN_RESERVE else 0
+            corr_budget = max(0, args.max_new - reserve)
+            n_corr = len(ensure_corridor_both_sides(model, corr_budget))
             # 4. 退化三角定向补点(仅当退化率仍高, 限量 12/层)
             after_mid = model.review()
             degen_rate_mid = after_mid["tri_degen_rate"]
             n_tri = 0
             if degen_rate_mid > 8.0:
-                n_tri = len(fix_degenerate_triangles(model, min(12, max(0, args.max_new - n_corr))))
+                n_tri = len(fix_degenerate_triangles(
+                    model, min(12, max(0, corr_budget - n_corr))))
+            # 5. 收尾均匀化: 步骤 3/4 的补点会在空旷走廊拉大间距, 使 CV 劣化,
+            #    故最后再跑一轮 R4(间距过大处补点 + 原位松弛), 平衡三者优先级。
+            n_even = 0
+            budget = max(0, args.max_new - n_corr - n_tri)
+            if budget > 0 and model.review()["nn_cv"] > CV_TARGET:
+                n_even = len(ensure_evenness(model, budget))
+                for rnd in range(2):
+                    if relax_pass(model, rnd) == 0:
+                        break
+            n_corr += n_even
+            # 记录仍超阈的间距: 这些空档受「避墙角/无可贴墙面」几何约束无法补点,
+            # 需人工评估(如启用立柱安装或调整测试路线), 不应被 CV 数字掩盖。
+            residual = []
+            for i in range(len(model.beacons)):
+                d = model.nn_dist(i)
+                if d > NN_MAX:
+                    bx, by = model.beacons[i]
+                    residual.append({"coordinates": [round(bx, 2), round(by, 2)],
+                                     "nn_m": round(d, 2)})
+            residual.sort(key=lambda r: -r["nn_m"])
+            evenness_note = {
+                "reserveUsed": n_even,
+                "residualGaps": len(residual),
+                "residualDetail": residual[:10],
+            }
         else:
             n_corr = n_tri = 0
+            evenness_note = None
 
         after = model.review()
         print("refined:", json.dumps(after, ensure_ascii=False), flush=True)
@@ -919,7 +1110,13 @@ def main():
 
         n_added = len(model.beacons) - n_orig
         print(f"  F{fl} 新增信标: {n_added} (走廊双侧 {n_corr} + 退化三角 {n_tri})", flush=True)
-        review["floors"].append({"floor": fl, "before": before, "after": after, "added": n_added})
+        floor_rec = {"floor": fl, "before": before, "after": after, "added": n_added}
+        if evenness_note:
+            floor_rec["evenness"] = evenness_note
+            if evenness_note["residualGaps"]:
+                print(f"  F{fl} 仍超阈间距(>{NN_MAX}m): {evenness_note['residualGaps']} 处 "
+                      f"(受避墙角/无贴墙面约束, 需人工评估)", flush=True)
+        review["floors"].append(floor_rec)
         review["newBeacons"] += n_added
 
         keys = ["corner_rate", "obstacle_rate", "nn_cv", "corridors_both",
@@ -928,11 +1125,16 @@ def main():
             f"{k}: {before[k]} -> {after[k]}" for k in keys), flush=True)
 
     if not args.review_only:
+        normalize_mount_types(refined_plan)
+        rebuild_summary(refined_plan)
         json.dump(refined_plan, open(out_path, "w", encoding="utf-8"),
                   ensure_ascii=False, indent=2)
         review["outputPlan"] = str(out_path)
+        review["summary"] = refined_plan["summary"]
         print(f"\nrefined 方案已写入: {out_path}", flush=True)
         print(f"新增信标总数: {review['newBeacons']}", flush=True)
+        print(f"summary 已重算: {json.dumps(refined_plan['summary'], ensure_ascii=False)}",
+              flush=True)
 
     review_path = ROOT / "result" / "trilateration_placement_review.json"
     json.dump(review, open(review_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
