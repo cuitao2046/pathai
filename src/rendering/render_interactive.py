@@ -12,7 +12,7 @@
 门类型 swing/fire/opening；边用 from/to 节点 id 引用）。
 
 用法:
-    python render_interactive.py [geojson_path]
+    python -m src.rendering.render_interactive [geojson_path]
 默认输入 result/school_building_01_map_v9.geojson，输出 result/floor_layout_v9_interactive.html
 """
 import collections
@@ -36,15 +36,12 @@ except ImportError:
     SAME_FLOOR_MID_TYPES = {"intersection", "facility_entrance", "doorway"}
     CROSS_FLOOR_MID_TYPES = SAME_FLOOR_MID_TYPES | {"facility"}
 
-# B2：建筑外轮廓纯 Python 计算已下沉到 src/geometry/contour.py（parsing 与 rendering 共用）；
-# 直接运行本脚本时项目根不在 sys.path，先注入以便包内导入。
-import sys
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+# B2：建筑外轮廓纯 Python 计算已下沉到 src/geometry/contour.py（parsing 与 rendering 共用）。
+# 正式运行方式：`pathai-render`（pip install -e . 后）或 `python -m src.rendering.render_interactive`。
+# 不再在模块导入时修改 sys.path（审查 B3：移除包内导入副作用）。
 from src.geometry.contour import _area, building_outline
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 HTML_OUT = str(BASE_DIR / "result" / "floor_layout_v9_interactive.html")
 

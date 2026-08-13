@@ -21,15 +21,12 @@ import fitz  # PyMuPDF
 import json
 import math
 import re
-import sys
 import collections
 import heapq
 from pathlib import Path
 
-# 包内导入兼容：将项目根加入 sys.path，支持 `python src/parsing/parse_cad_pdf.py` 直接运行
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+# 正式运行方式：`pathai-parse`（pip install -e . 后）或 `python -m src.parsing.parse_cad_pdf`。
+# 不再在模块导入时修改 sys.path（审查 B3：移除包内导入副作用）。
 
 from shapely.geometry import Point, Polygon, box
 
