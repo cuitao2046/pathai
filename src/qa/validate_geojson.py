@@ -197,6 +197,56 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
     return stats
 
 
+def validate_blind_reachability(geo: dict, report: List[str]) -> Dict[str, Any]:
+    """盲模式房间可达性普查：每层各房间 → 该层最大度数房间，测 blind 可达。
+
+    背景：全图连通性检查只统计节点覆盖率，桥补边（accessibilityLevel=999，
+    linkType=cross_wing_platform）会掩盖「盲模式房间不可达」——这类边对视障
+    剔除后，被其连接的区域在 blind 模式下完全断连（如 F2 东翼 10 房间）。
+    本检查直接用 RouteGraph 的 blind 寻路逐房间验证，防此类回归。
+    """
+    from src.topology.route_rules import RouteGraph  # 延迟导入避免循环依赖
+    g = RouteGraph(geo)
+    rooms_by_floor = defaultdict(list)
+    for n in g.nodes.values():
+        if n["type"] == "room" and n.get("roomId"):
+            # 管井/设备间（infrastructure）非导航目标：其门被规则 5 剔除
+            # （纯管井门不出现于导航路径），不应纳入可达性普查。
+            if n.get("roomType") == "infrastructure":
+                continue
+            rooms_by_floor[n["floor"]].append((n.get("roomId"), n["id"]))
+    stats: Dict[str, Any] = {"ok": True, "issues": [], "by_floor": {}}
+    total_unreach = 0
+    total_rooms = 0
+    for fl in sorted(rooms_by_floor):
+        rids = rooms_by_floor[fl]
+        total_rooms += len(rids)
+        # 目标：该层度数最高的房间（大概率在主分量内），避免目标自身在孤岛
+        target = None
+        best_deg = -1
+        for _rid, nid in rids:
+            deg = sum(1 for e in g.edges if nid in (e["from"], e["to"]))
+            if deg > best_deg:
+                best_deg, target = deg, nid
+        unreach = []
+        for rid, nid in rids:
+            if g.shortest_path(nid, target, "blind") is None:
+                unreach.append(rid)
+        total_unreach += len(unreach)
+        stats["by_floor"][str(fl)] = {"rooms": len(rids), "unreachable": len(unreach)}
+        if unreach:
+            issue_str = ", ".join(sorted(unreach)[:12])
+            more = " …" if len(unreach) > 12 else ""
+            report.append(f"[F{fl}] 盲模式不可达房间 {len(unreach)}/{len(rids)}: "
+                          f"{issue_str}{more}")
+            if len(unreach) > 3:
+                stats["ok"] = False
+                report.append(f"[F{fl}] 盲模式不可达房间数 >3，判为质量缺陷（hard）")
+    stats["rooms_total"] = total_rooms
+    stats["rooms_unreachable"] = total_unreach
+    return stats
+
+
 def validate_cross_floor(geo: dict, report: List[str]) -> Dict[str, Any]:
     xes = geo.get("crossFloorEdges") or []
     floors = geo.get("floors") or {}
@@ -267,6 +317,13 @@ def validate_geojson(path: str, verbose: bool = True) -> int:
     xe = validate_cross_floor(geo, report)
     all_ok = all_ok and xe["ok"]
     print(f"\n[跨层] XE={xe['count']} 楼梯={xe['stair']} 电梯={xe['elevator']}")
+
+    blind = validate_blind_reachability(geo, report)
+    all_ok = all_ok and blind["ok"]
+    print(f"\n[盲可达] 房间 {blind['rooms_total']} 个，盲模式不可达 "
+          f"{blind['rooms_unreachable']} 个")
+    for fk, st in sorted(blind["by_floor"].items()):
+        print(f"        F{fk}: {st['unreachable']}/{st['rooms']} 不可达")
 
     print("\n--- 问题列表 ---")
     if not report:

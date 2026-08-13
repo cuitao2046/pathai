@@ -4,7 +4,7 @@
   "version": "9.0.0",
   "generated_at": "2026-08-12",
   "source": "E:\\code\\pathai\\result\\school_building_01_map_v9.geojson",
-  "source_sha256": "bf31f696b6ea3fbbf6bb73059aa0f3a0595410e5ad55e78977065cddbc940e8c",
+  "source_sha256": "d7f27165d63f490619688b29a3ee0716a60861beb4301f9745d0d4cc525eee61",
   "stats": {
     "floors": {
       "1": {
@@ -28,7 +28,7 @@
       },
       "2": {
         "nodes": 181,
-        "edges": 243,
+        "edges": 242,
         "TR": 39,
         "TD": 79,
         "TI": 53,

@@ -6183,11 +6183,12 @@
     "to": "F2-TI-0202",
     "distance": 40.318,
     "estimatedTime": 50.4,
-    "accessibilityLevel": 0,
-    "riskLevel": 0.5,
+    "accessibilityLevel": 999,
+    "riskLevel": 8,
     "walkable": true,
     "wheelchairAccessible": true,
-    "blindAccessible": true
+    "blindAccessible": false,
+    "note": "开放平台走廊段（SK-HC-044），视障人士不可用"
    },
    {
     "id": "F2-TE-0073",
@@ -6248,6 +6249,43 @@
     "walkable": true,
     "wheelchairAccessible": true,
     "blindAccessible": true
+   },
+   {
+    "id": "F2-TE-0078",
+    "from": "F2-TI-0089",
+    "to": "F2-TI-0086",
+    "distance": 9.03,
+    "estimatedTime": 11.3,
+    "accessibilityLevel": 0,
+    "riskLevel": 0.5,
+    "walkable": true,
+    "wheelchairAccessible": true,
+    "blindAccessible": true
+   },
+   {
+    "id": "F2-TE-0079",
+    "from": "F2-TI-0145",
+    "to": "F2-TI-0193",
+    "distance": 6.27,
+    "estimatedTime": 7.8,
+    "accessibilityLevel": 0,
+    "riskLevel": 0.5,
+    "walkable": true,
+    "wheelchairAccessible": true,
+    "blindAccessible": true
+   },
+   {
+    "id": "F2-TE-0080",
+    "from": "F2-TI-0085",
+    "to": "F2-TI-0201",
+    "distance": 3.26,
+    "estimatedTime": 4.08,
+    "accessibilityLevel": 0,
+    "riskLevel": 0.5,
+    "walkable": true,
+    "wheelchairAccessible": true,
+    "blindAccessible": true,
+    "note": "SK-HC-042 真实走廊段（TI-0085 与 TI-0201 之间 3.26m 盲可达），修复 bridge 误判孤岛补边"
    }
   ]
  }

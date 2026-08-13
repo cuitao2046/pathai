@@ -679,14 +679,15 @@ function buildPathAdj(mode, doorFilter, allowWall) {
 }
 
 // 核心 Dijkstra（应用规则 1 中间节点白名单 + 规则 3 门穿透防护）
-function dijkstraCore(startId, endId, mode, adj) {
+function dijkstraCore(startId, endId, mode, adj, midTypesOverride) {
   var nodes = PATH_GRAPH.nodes;
   // 规则 1：同层禁 facility 中转；跨层允许 facility 中转（电梯/楼梯用于跨层）
   // A2：唯一来源 constants.py，由 build_path_rules_js 序列化注入，禁止内嵌常量。
+  // 第四层跨层绕行回退：midTypesOverride 传入 midTypesCrossFloor，放行 facility 中转。
   var _rules = (PATH_GRAPH && PATH_GRAPH.rules) || {};
-  var _midList = isSameFloor(startId, endId)
+  var _midList = midTypesOverride || (isSameFloor(startId, endId)
     ? (_rules.midTypesSameFloor || [])
-    : (_rules.midTypesCrossFloor || []);
+    : (_rules.midTypesCrossFloor || []));
   var MID_TYPES = {};
   _midList.forEach(function(t){ MID_TYPES[t] = 1; });
   var dist = {}, prev = {}, prevEdge = {};
@@ -737,10 +738,13 @@ function dijkstraCore(startId, endId, mode, adj) {
 
 function dijkstra(startId, endId, mode) {
   if (!PATH_GRAPH) return null;
-  // 三层回退（对齐 route_rules.shortest_path）：
+  // 四层回退（对齐 route_rules.shortest_path）：
   // 1) 仅用最佳门 + 不穿墙 TI<->TI 边；
   // 2) 若不可达（最佳门未接入路网）回退允许所有门；
-  // 3) 仍不可达（穿墙边是桥边）回退纳入穿墙边保连通。
+  // 3) 仍不可达（穿墙边是桥边）回退纳入穿墙边保连通；
+  // 4) 仍不可达（同层两翼被盲不可达走廊隔断）回退放宽中间节点白名单为
+  //    midTypesCrossFloor，允许经电梯跨层绕行（如 F2 东翼→F1→F2 西翼）。
+  var _rules = (PATH_GRAPH && PATH_GRAPH.rules) || {};
   var sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false));
   var note = null;
   if (!sp) {
@@ -750,6 +754,11 @@ function dijkstra(startId, endId, mode) {
   if (!sp) {
     sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, true));
     if (sp) note = 'wall_fallback';
+  }
+  if (!sp) {
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false),
+                      _rules.midTypesCrossFloor || []);
+    if (sp) note = 'cross_roundtrip';
   }
   if (sp && note) sp.note = note;
   return sp;
@@ -1051,6 +1060,8 @@ function renderRouteList(result, mode, startId, endId) {
     noteHtml = '<div class="rp-note">门回退：房间最佳门未接入路网，已放宽为可用任意附属门。</div>';
   } else if (result.note === 'wall_fallback') {
     noteHtml = '<div class="rp-note">桥边回退：两端仅靠穿墙走廊边连通，为保证可达而保留（可通行区数据待修复项）。</div>';
+  } else if (result.note === 'cross_roundtrip') {
+    noteHtml = '<div class="rp-note">跨层绕行：同层走廊对视障不可达，路线经电梯下至其他楼层、穿过该楼层后返回。</div>';
   }
   var costHtml = '';
   if (Math.abs(result.distance - geo) > 0.05) {
@@ -1143,6 +1154,7 @@ function runPath(startId, endId) {
     var noteTxt = '';
     if (result.note === 'door_fallback') noteTxt = '（门回退：最佳门未接入路网）';
     else if (result.note === 'wall_fallback') noteTxt = '（桥边回退：穿墙走廊边为保连通保留）';
+    else if (result.note === 'cross_roundtrip') noteTxt = '（跨层绕行：经电梯下至其他楼层后返回）';
     out.textContent = '路径 ' + result.nodes.length + ' 节点 · ' +
       result.distance.toFixed(1) + ' m · ' +
       (sn.label || startId) + ' → ' + (en.label || endId) + noteTxt;

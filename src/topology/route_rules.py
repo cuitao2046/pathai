@@ -377,10 +377,25 @@ class RouteGraph:
             sp = self._dijkstra(start_id, end_id, mode, adj)
             if sp is not None:
                 sp["wall_fallback"] = True
+        # 第四层：跨层绕行回退。同层起终点在前三层仍不可达时（如同一楼层
+        # 两翼被盲不可达走廊/平台隔断，如 F2 的 SK-HC-044），放宽规则 1 的
+        # 中间节点白名单为 CROSS_FLOOR_MID_TYPES（放行 facility 中转），
+        # 允许经电梯下到其他楼层、穿过该楼层、再乘电梯返回。盲模式楼梯跨层
+        # 边已被 edge_allowed 剔除，因此放宽后只会走电梯跨层绕行（F2 东翼→
+        # F1→F2 西翼），普通模式楼梯/电梯均可用于绕行。
+        if sp is None:
+            adj = self._build_adjacency(mode, door_filter=True)
+            sp = self._dijkstra(start_id, end_id, mode, adj,
+                                mid_types_override=CROSS_FLOOR_MID_TYPES)
+            if sp is not None:
+                sp["cross_floor_roundtrip"] = True
         return sp
 
-    def _dijkstra(self, start_id, end_id, mode, adj):
-        mid_types = self._mid_types(start_id, end_id)
+    def _dijkstra(self, start_id, end_id, mode, adj, mid_types_override=None):
+        if mid_types_override is not None:
+            mid_types = mid_types_override
+        else:
+            mid_types = self._mid_types(start_id, end_id)
         dist = {start_id: 0.0}
         prev = {}
         prev_edge = {}
@@ -543,6 +558,9 @@ class RouteGraph:
             "used_elevator": sp["used_elevator"],
             "used_stair": sp["used_stair"],
             "mid_nodes": sp["mid_nodes"],
+            "door_fallback": sp.get("door_fallback"),
+            "wall_fallback": sp.get("wall_fallback"),
+            "cross_floor_roundtrip": sp.get("cross_floor_roundtrip"),
             "wall": wall,
             "valid": wall["ok"],
         }

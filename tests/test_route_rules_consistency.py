@@ -141,6 +141,9 @@ class TestPathParity(unittest.TestCase):
                          f"{s}->{e} [{mode}] door_fallback 不一致")
         self.assertEqual(bool(sp.get("wall_fallback")), js.get("note") == "wall_fallback",
                          f"{s}->{e} [{mode}] wall_fallback 不一致")
+        self.assertEqual(bool(sp.get("cross_floor_roundtrip")),
+                         js.get("note") == "cross_roundtrip",
+                         f"{s}->{e} [{mode}] cross_floor_roundtrip 不一致")
 
     def test_same_floor_parity(self):
         pairs = _sample_pairs(self.pg["nodes"], same_floor=True,
@@ -527,14 +530,14 @@ def _door_pass_through_blocked(u, prev_u, nb, nodes):
     return False
 
 
-def _js_dijkstra_core(pg, start_id, end_id, mode, adj):
+def _js_dijkstra_core(pg, start_id, end_id, mode, adj, mid_override=None):
     nodes = pg["nodes"]
     rules = pg.get("rules") or {}
     ns, ne = nodes.get(start_id), nodes.get(end_id)
     same = bool(ns and ne and ns.get("floor") == ne.get("floor"))
-    mid = set(rules.get("midTypesSameFloor") or [])
-    if not same:
-        mid = set(rules.get("midTypesCrossFloor") or [])
+    mid = set(mid_override) if mid_override is not None else (
+        set(rules.get("midTypesSameFloor") or []) if same
+        else set(rules.get("midTypesCrossFloor") or []))
     dist = {start_id: 0.0}
     prev, prev_edge = {}, {}
     visited = set()
@@ -581,7 +584,8 @@ def _js_dijkstra_core(pg, start_id, end_id, mode, adj):
 
 
 def js_shortest_path(pg, start_id, end_id, mode):
-    """复刻前端 JS dijkstra（door_filter -> door_fallback -> wall_fallback）。"""
+    """复刻前端 JS dijkstra（door_filter -> door_fallback -> wall_fallback -> cross_roundtrip）。"""
+    rules = pg.get("rules") or {}
     res = _js_dijkstra_core(pg, start_id, end_id, mode, _build_path_adj(pg, mode, True, False))
     note = None
     if res is None:
@@ -592,6 +596,11 @@ def js_shortest_path(pg, start_id, end_id, mode):
         res = _js_dijkstra_core(pg, start_id, end_id, mode, _build_path_adj(pg, mode, True, True))
         if res is not None:
             note = "wall_fallback"
+    if res is None:
+        res = _js_dijkstra_core(pg, start_id, end_id, mode, _build_path_adj(pg, mode, True, False),
+                                mid_override=rules.get("midTypesCrossFloor") or [])
+        if res is not None:
+            note = "cross_roundtrip"
     if res is not None and note:
         res["note"] = note
     return res
