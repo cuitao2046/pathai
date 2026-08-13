@@ -26,7 +26,7 @@ _HEBAN_RAY_BIN = 3.0           # pt：投票分箱大小
 _HEBAN_MIN_SUPPORT = 0.50      # 最低支持率
 
 
-def _heban_real_polygon_v2(label_pt_pt, all_segs, furn_segs, closures):
+def _heban_real_polygon_v2(label_pt_pt, all_segs, closures):
     """
     合班教室真实闭合墙体识别 v2 —— 语义种子 + 多方向射线投票。
 
@@ -42,8 +42,8 @@ def _heban_real_polygon_v2(label_pt_pt, all_segs, furn_segs, closures):
 
     seed_x, seed_y = label_pt_pt
 
-    # 合并所有墙体来源（结构墙 + 家具线 + 封口线）
-    all_lines = list(all_segs) + list(furn_segs) + list(closures)
+    # 合并所有墙体来源（结构墙 + 封口线）
+    all_lines = list(all_segs) + list(closures)
     if not all_lines:
         return None
 
@@ -147,7 +147,7 @@ def _heban_real_polygon_v2(label_pt_pt, all_segs, furn_segs, closures):
 
 
 def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
-                                  all_segs=(), furn_segs=(), closures=()):
+                                  all_segs=(), closures=()):
     """
     合班教室注入（隔离版）：只服务合班自身，不影响其他空间。
 
@@ -212,7 +212,7 @@ def inject_heban_classroom_rooms(rooms, doors, labels_with_pt, floor_no,
                 return (xm / SCALE + ORIGIN_X, ORIGIN_Y - ym / SCALE)
 
             # 优先识别真实闭合墙体多边形；失败才回退 3m 占位方块
-            real_poly = _heban_real_polygon_v2(pt_pt, all_segs, furn_segs, closures)
+            real_poly = _heban_real_polygon_v2(pt_pt, all_segs, closures)
             if real_poly is not None:
                 poly = real_poly
                 source = "heban_inject_real"

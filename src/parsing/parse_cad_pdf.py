@@ -100,9 +100,8 @@ LAYERS_STRUCT = ("WALL", "A-WALL-CONC", "A-WALL-FINI", "A-FLOR-STRS",
 # 处理：以细线(1px)单独栅格化参与封闭；凡围出 <ABSORB_CELL_M2 微单元的
 # 家具线在微单元邻域内擦除（打通厕位与走道），真实隔墙两侧都是大房间、
 # 邻域无微单元，不受影响。
-LAYERS_FURNITURE = ()  # DISABLED: A-METAL-S 已迁至 LAYERS_STRUCT，不再单独作为家具层。
-# 注意：空配置使下方 furn_segs 收集循环恒为空、整条 furn_segs 参数链成为死代码
-# （审查 A5）。若后续需要单独处理家具层，请补回真实图层名并同步验证链上各分支。
+# 家具级图层说明（历史）：A-METAL-S 已迁至 LAYERS_STRUCT，不再单独作为家具层，
+# 故无 LAYERS_FURNITURE 配置（审查 A5：原空配置的 furn_segs 死代码链已删除）。
 # 强制剔除的图层：整层元素不参与任何解析（不计入墙体封闭、门/窗/房间识别）。
 # A-TECH-SANT（卫生/给排水器具等）已设为默认关闭，且 PyMuPDF 的
 # page.get_drawings() 不感知图层可见性、会照常返回其全部矢量元素，
@@ -745,11 +744,11 @@ def recognize_dk_glyph_blocks(window_lines, with_strokes=True):
     return dk
 
 
-def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
+def build_rooms(all_segs, closures, label_points=None,
                 dump_path=None):
     """
     栅格化房间识别（对 CAD 断线/虚线间隙鲁棒）：
-      1. 全部墙体线段(结构+家具,粗线闭运算密封) + 门/窗封口线 -> 二值墙图
+      1. 全部墙体线段(结构,粗线闭运算密封) + 门/窗封口线 -> 二值墙图
          —— 纯矢量方案，不引入非 OCG 文字/标注墨线
       2. 连通域提取封闭自由空间；>=ABSORB_CELL_M2 的为"区域"(房间候选)，
          <ABSORB_CELL_M2 的微单元(厕位/器具格)作为"可填充区"
@@ -767,8 +766,7 @@ def build_rooms(all_segs, closures, furn_segs=(), label_points=None,
 
     if not all_segs and not closures:
         return []
-    walls, walls_furn, minx, miny, W, H, Z = rasterize_walls(
-        all_segs, closures, furn_segs)
+    walls, minx, miny, W, H, Z = rasterize_walls(all_segs, closures)
 
     def to_px(p):
         return (int(round((p[0] - minx) * Z)), int(round((p[1] - miny) * Z)))
@@ -1255,8 +1253,8 @@ def parse_floor(pdf_path, floor_no, cfg=None):
     print(f"[F{floor_no}] 默认开启图层: {sorted(on_layers)}")
 
     wanted = list({LAYER_WALL, LAYER_WINDOW, LAYER_DOOR_FIRE, LAYER_STAIR,
-                   LAYER_ELEVATOR, *LAYER_COLUMNS, *LAYERS_STRUCT,
-                   *LAYERS_FURNITURE} - set(LAYERS_IGNORE))
+                   LAYER_ELEVATOR, *LAYER_COLUMNS, *LAYERS_STRUCT}
+                  - set(LAYERS_IGNORE))
     active = [l for l in wanted if l in on_layers]
     skipped = [l for l in wanted if l not in on_layers]
     if skipped:
@@ -1287,23 +1285,11 @@ def parse_floor(pdf_path, floor_no, cfg=None):
                                      record_gaps=True)
     # 合并虚线/点划线断段，恢复连续墙体；同时记录桥接的墙缝（用于无摆弧开口检测）
     struct_segs, wall_gaps = merge_collinear(struct_segs, record_gaps=True)
-    # --- 家具层线段（细线参与封闭，微单元邻域内可擦除；剔除 LAYERS_IGNORE）
-    # 审查 A5：LAYERS_FURNITURE 为空配置，本循环恒不执行，furn_segs 恒空（死代码链）。
-    furn_segs = []
-    for lname in LAYERS_FURNITURE:
-        if lname in LAYERS_IGNORE:
-            continue
-        li = items.get(lname)
-        if not li:
-            continue
-        furn_segs.extend(wall_segments(li))
-    furn_segs = merge_collinear(furn_segs)
-    # 门贴墙判定用全部线段（门可能开在家具层隔墙上）
-    all_segs = struct_segs + furn_segs
+    # 门贴墙判定用全部线段
+    all_segs = struct_segs
     wall_segs = wall_segments(items.get(LAYER_WALL, {"lines": [], "quads": []}))
     print(f"[F{floor_no}] WALL 图层线段: {len(wall_segs)}, "
           f"结构线段并集(合并后): {len(struct_segs)}, "
-          f"家具层线段: {len(furn_segs)}, "
           f"被桥接墙缝: {len(wall_gaps)}")
 
     # --- window 图层分类
@@ -1485,7 +1471,7 @@ def parse_floor(pdf_path, floor_no, cfg=None):
 
     # --- 房间多边形（全部墙线密封 + 分水岭归属 + 守卫式泛洪，标签探测）
     room_res = build_rooms(
-        all_segs, closures, furn_segs=furn_segs, label_points=room_names,
+        all_segs, closures, label_points=room_names,
         dump_path=str(RESULT_DIR / f"_debug_wallmask_f{floor_no}.png"))
     labeled_polys = room_res["polys"]
     print(f"[F{floor_no}] 房间多边形(标签探测): {len(labeled_polys)}")
@@ -1938,8 +1924,7 @@ def parse_floor(pdf_path, floor_no, cfg=None):
     # 合班教室：墙未闭合时注入封闭房间并关联门洞 → 可导航至门口。
     # 注入阶段会尝试用局部墙图识别合班的真实闭合墙体多边形，仅影响合班自身。
     inject_heban_classroom_rooms(rooms, doors, room_names, floor_no,
-                                all_segs=all_segs, furn_segs=furn_segs,
-                                closures=closures)
+                                 all_segs=all_segs, closures=closures)
 
     return {
         "rooms": rooms,

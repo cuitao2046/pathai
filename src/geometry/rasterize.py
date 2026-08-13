@@ -10,12 +10,12 @@ RENDER_ZOOM = 3.0       # 结构层渲染放大倍数 (px/pt)
 WALL_EXT_PT = 6.0       # 墙线端点外延（桥接 T 型接头/窗洞收口缝隙）
 
 
-def rasterize_walls(all_segs, closures, furn_segs=()):
+def rasterize_walls(all_segs, closures):
     """
-    全部墙体线段(结构+家具,2px) + 门/窗封口线(3px) -> 二值墙图。
+    全部墙体线段(结构,2px) + 门/窗封口线(3px) -> 二值墙图。
     流程：原始绘制(端点外延) -> 画门窗封口线 -> 闭运算密封墙线断口。
     （注：该图真实墙也是 2px 单线，开运算去薄墙会连真墙一起溶掉，不可用）
-    返回 (walls_uint8, walls_furn_uint8, minx, miny, W, H, Z)；
+    返回 (walls_uint8, minx, miny, W, H, Z)；
     px->pt: (px/Z+minx, py/Z+miny)
     """
     import cv2
@@ -59,9 +59,4 @@ def rasterize_walls(all_segs, closures, furn_segs=()):
                              cv2.getStructuringElement(cv2.MORPH_RECT, (17, 1)))
     walls = cv2.morphologyEx(walls, cv2.MORPH_CLOSE,
                              cv2.getStructuringElement(cv2.MORPH_RECT, (1, 17)))
-
-    walls_furn = np.zeros((H, W), np.uint8)
-    for a, b in furn_segs:
-        ea, eb = extend(a, b, WALL_EXT_PT)
-        cv2.line(walls_furn, to_px(ea), to_px(eb), 255, thickness=2)
-    return walls, walls_furn, minx, miny, W, H, Z
+    return walls, minx, miny, W, H, Z
