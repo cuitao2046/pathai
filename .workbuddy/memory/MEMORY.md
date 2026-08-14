@@ -65,7 +65,10 @@
 6. CAD 文字标签包围盒误识别为房间多边形；render_interactive 用 `_is_label_bbox`(面积<6m²且长宽比≥1.5)过滤。
 7. 开放/封闭空间分治(OPEN_SPACE_TYPES={corridor,lobby,activity,atrium})，开放空间建 intersection 节点，不得合并处理。
 8. 导航穿墙：全部穿墙路线均为 walkable 多边形在薄隔墙处跨接的「桥边回退」，属数据质量问题(独立修复)，非规则逻辑缺陷；路由层已保证 0 可避免穿墙。
-9. ⚠️ **checkout 切换分支目录误删 bug（2026-08-14 发现）**：从 A 分支 checkout 到 B 分支，若 A 有 B 没有的**新增文件**，git 删除这些文件时可能**误删整个父目录**（实测 docs/ 与 debug/ 共 62 文件从磁盘消失，git status 报 D、ls 确认不存在）；对象库/HEAD/index 完好，`git checkout -- .` 可恢复。**规避：分支合入优先 cherry-pick 重放而非 rebase**（rebase 启动即 checkout）；checkout 后立即 `git status` 自检 + `git checkout -- .` 兜底。
+9. ⚠️ **git 目录误删 bug（2026-08-14 发现，checkout + cherry-pick 双触发）**：
+   - **checkout 变种**：从 A 分支 checkout 到 B 分支，若 A 有 B 没有的**新增文件**，git 删除这些文件时可能**误删整个父目录**（实测 docs/ 与 debug/ 共 62 文件从磁盘消失）；对象库/HEAD/index 完好，`git checkout -- .` 可恢复。
+   - **cherry-pick 变种（同日发现）**：cherry-pick 删除目录内大部分文件时（实测 37/41），**磁盘上整个目录被误删**（其余 4 文件也消失，git status 报 D）；对象库完好，`git checkout HEAD -- <目录>` 可恢复。
+   - **规避**：分支合入优先 cherry-pick 重放而非 rebase（rebase 启动即 checkout）；checkout/cherry-pick 删除文件后立即 `git status` 自检 + 检查被删文件同目录其余文件 + `git checkout -- .` 兜底恢复。
 
 ## 方案迭代历史（近 6 条，详见各日 .md）
 | 日期 | 标题 | 要点 |
