@@ -6,7 +6,8 @@ detect_open_column_wraps.py — 孤立柱墙壁识别（蓝牙信标柱面部署
 目标: 蓝牙信标可部署在「孤立柱子」的墙壁上（四周无遮挡）。本脚本完全基于
 现有 GeoJSON 的 columns + walls + 开放空间(rooms + walkable_regions) 做前置分析:
   算法一: 识别「四周开放」的柱 —— 质心环形探测区(不填满柱内)落在开放空间的
-          面积占比 + 8 方向射线落点检验 + 封闭房间占比, 判定可自由部署的柱。
+          面积占比 + 8 方向射线检验(落点在开放空间内 **且** 柱心→落点的射线
+          路径不被长墙截断) + 封闭房间占比, 判定可自由部署的柱。
   算法二: 识别「包裹这些柱」的墙 —— 对每个开放柱, 找贴柱(d<=d_max)且短段
           (len<=l_max) 的墙, 并按柱心方位角 4 象限覆盖检验是否真正「包裹」。
 
@@ -215,6 +216,13 @@ def classify_floor(fdict, params, floor_label, debug=False):
         wall_ids.append(f.get("id") or f"anon-wall-{len(walls)}")
     reps = dedupe_walls(walls, wall_ids)
 
+    # 长墙列表: 去重后长度 > l_max 的墙段视为「实体障碍」。
+    # 射线路径截断检查只对这些墙做 intersects —— 包柱短墙(length <= l_max
+    # 且贴柱, 即算法二收集为 wrap_walls 的那些)不算障碍, 因为信标可部署在
+    # 包柱墙上, 包柱墙是柱体的一部分, 不应阻挡「开放」判定。
+    long_walls = [rep["geom"] for rep in reps
+                  if rep["geom"].length > params["lMax"]]
+
     # ---- 2. 开放空间 O / 封闭房间 R ----
     O, R = build_open_closed(fdict, params["openSpaceTypes"])
     closed_ratio_max = params.get("closedRatioMax", CLOSED_RATIO_MAX)
@@ -239,14 +247,23 @@ def classify_floor(fdict, params, floor_label, debug=False):
         openness = a_o / (a_a + 1e-9)
         closed_ratio = a_r / (a_a + 1e-9)
 
-        # 方向抽样: 8 向射线落点(带 0.01m 小缓冲吸收边界误差)落入 O 即算开放
+        # 方向抽样: 8 向射线 —— 落点落入 O 且射线路径不被长墙截断, 才算该方向开放。
+        # (旧实现只检查落点, 不检查路径; 柱骑在长墙上时, 射线穿墙后落点仍在走廊
+        #  多边形内, 导致贴墙柱被误判为四周开放 —— 这里补上路径截断检查。)
         n_open = 0
         for k in range(N_DIRS):
             ang = math.radians(k * 360.0 / N_DIRS)
             pt = Point(p.x + params["r"] * math.cos(ang),
                        p.y + params["r"] * math.sin(ang))
-            if O is not None and O.intersects(pt.buffer(RAY_PROBE)):
-                n_open += 1
+            if O is None or not O.intersects(pt.buffer(RAY_PROBE)):
+                continue
+            # 路径截断: 柱心→落点的线段被任一长墙截断 -> 该方向不算开放。
+            # 射线起点在柱心, 柱体本身 0.5m 见方, 射线在柱体内可能与穿柱长墙
+            # 相交 —— 这正是要检测的(柱嵌在墙里), 保留。
+            ray = LineString([(p.x, p.y), (pt.x, pt.y)])
+            if any(ray.intersects(w) for w in long_walls):
+                continue
+            n_open += 1
 
         is_open = (openness >= params["opennessMin"]
                    and n_open >= params["nOpenMin"]
