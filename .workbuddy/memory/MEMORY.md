@@ -65,6 +65,7 @@
 6. CAD 文字标签包围盒误识别为房间多边形；render_interactive 用 `_is_label_bbox`(面积<6m²且长宽比≥1.5)过滤。
 7. 开放/封闭空间分治(OPEN_SPACE_TYPES={corridor,lobby,activity,atrium})，开放空间建 intersection 节点，不得合并处理。
 8. 导航穿墙：全部穿墙路线均为 walkable 多边形在薄隔墙处跨接的「桥边回退」，属数据质量问题(独立修复)，非规则逻辑缺陷；路由层已保证 0 可避免穿墙。
+9. ⚠️ **checkout 切换分支目录误删 bug（2026-08-14 发现）**：从 A 分支 checkout 到 B 分支，若 A 有 B 没有的**新增文件**，git 删除这些文件时可能**误删整个父目录**（实测 docs/ 与 debug/ 共 62 文件从磁盘消失，git status 报 D、ls 确认不存在）；对象库/HEAD/index 完好，`git checkout -- .` 可恢复。**规避：分支合入优先 cherry-pick 重放而非 rebase**（rebase 启动即 checkout）；checkout 后立即 `git status` 自检 + `git checkout -- .` 兜底。
 
 ## 方案迭代历史（近 6 条，详见各日 .md）
 | 日期 | 标题 | 要点 |
@@ -76,6 +77,7 @@
 | 2026-08-09 | 手动骨架 JSON 入库+pipeline优先 | `build_skeleton_topology(manual_skeleton=)` 有 JSON 用 JSON 无则自动；确定性可复现 |
 | 2026-08-09 | 路由规则三层落地 | 新建 `route_rules.py`(三条规则+三层回退)；前端 Dijkstra 对齐；栅格 A* 清洗工具 `fix_wall_crossing.py`；验证全绿 |
 | 2026-08-10 | 合班教室射线投票 v2 | `_heban_real_polygon_v2` 替换 v1 形态学闭运算；语义种子+射线投票→211.9m²(98.9%准确率)；零重叠、正确门关联 |
+| 2026-08-14 | route-mask 路线掩码 | `refine_beacon_placement --route-mask 6.0` 补点限路线 6m 内：95→74 信标，[7] 违规 21→0；--route-spaces 空间掩码更差(tri_degen 10.99%)、6.0 vs 9.0 无增量 → 6m 最优；GDOP×高/底比：推荐最小高/底 0.20(保守0.25)，<0.05 禁用；退化判据建议升级 GDOP>3 |
 
 ## 失败实验速记
 虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(存在外开门)；DK 是 window 层矢量笔画非文本层；宽可见图 O(n²) shapely 在大数据段错误→改 numpy 栅格 A*。
