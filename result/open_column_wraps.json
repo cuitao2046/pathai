@@ -1,0 +1,1535 @@
+{
+  "venueId": "school-building-01",
+  "venueName": "初中学部1#教学楼",
+  "version": "9.0.0",
+  "generatedAt": "2026-08-14 11:08",
+  "params": {
+    "r": 1.0,
+    "opennessMin": 0.6,
+    "nOpenMin": 6,
+    "dMax": 0.15,
+    "lMax": 2.0,
+    "closedRatioMax": 0.25,
+    "openSpaceTypes": [
+      "activity",
+      "atrium",
+      "corridor",
+      "elevator_lobby",
+      "lobby",
+      "stair_lobby"
+    ]
+  },
+  "summary": {
+    "totalColumns": 220,
+    "openColumns": 15,
+    "wrapWallSegments": 74,
+    "perFloor": {
+      "1": {
+        "totalColumns": 136,
+        "openColumns": 14,
+        "wrapWallSegments": 69,
+        "wrappedColumns": 14
+      },
+      "2": {
+        "totalColumns": 84,
+        "openColumns": 1,
+        "wrapWallSegments": 5,
+        "wrappedColumns": 1
+      }
+    }
+  },
+  "floors": {
+    "1": {
+      "totalColumns": 136,
+      "openColumns": [
+        {
+          "id": "F1-C-0025",
+          "centroid": [
+            -16.558,
+            -82.169
+          ],
+          "openness": 0.796,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0995",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0443",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1656",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1786",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0351",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0027",
+          "centroid": [
+            -24.956,
+            -56.976
+          ],
+          "openness": 0.615,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-1788",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0822",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-0173",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-0810",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1658",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0029",
+          "centroid": [
+            -24.956,
+            -82.169
+          ],
+          "openness": 1.0,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0442",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0812",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-1661",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-1790",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0824",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0350",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0038",
+          "centroid": [
+            -33.355,
+            -65.375
+          ],
+          "openness": 0.828,
+          "nOpen": 7,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-1096",
+              "distM": 0.0,
+              "lengthM": 0.502,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0140",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1988",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-2265",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0098",
+          "centroid": [
+            -41.753,
+            -31.788
+          ],
+          "openness": 0.724,
+          "nOpen": 7,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0268",
+              "distM": 0.0,
+              "lengthM": 0.152,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0374",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0423",
+              "distM": 0.0,
+              "lengthM": 0.654,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1713",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1844",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0099",
+          "centroid": [
+            -33.355,
+            -31.788
+          ],
+          "openness": 0.787,
+          "nOpen": 7,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-1714",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0375",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0425",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1845",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0100",
+          "centroid": [
+            -24.956,
+            -31.788
+          ],
+          "openness": 0.815,
+          "nOpen": 7,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0376",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-1715",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0426",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1846",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0102",
+          "centroid": [
+            -16.558,
+            -31.788
+          ],
+          "openness": 1.0,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 4,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0989",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0377",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0976",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1848",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1717",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-0427",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0104",
+          "centroid": [
+            -41.753,
+            -40.183
+          ],
+          "openness": 1.0,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 4,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0900",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0434",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1212",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-0343",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1720",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 3
+            },
+            {
+              "id": "F1-W-1850",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0105",
+          "centroid": [
+            -33.355,
+            -40.183
+          ],
+          "openness": 0.686,
+          "nOpen": 6,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0435",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1851",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-1722",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0108",
+          "centroid": [
+            -49.497,
+            -14.991
+          ],
+          "openness": 0.675,
+          "nOpen": 6,
+          "closedRatio": 0.045,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-1805",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1570",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-1674",
+              "distM": 0.0,
+              "lengthM": 0.709,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-1575",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0111",
+          "centroid": [
+            -41.753,
+            -48.581
+          ],
+          "openness": 1.0,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0901",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0658",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1213",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1726",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1857",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0662",
+              "distM": 0.0,
+              "lengthM": 0.501,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0115",
+          "centroid": [
+            -50.148,
+            -40.183
+          ],
+          "openness": 0.813,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 4,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0938",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-1728",
+              "distM": 0.0,
+              "lengthM": 0.7,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0433",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-1353",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-1859",
+              "distM": 0.0,
+              "lengthM": 0.7,
+              "quadrant": 3
+            }
+          ]
+        },
+        {
+          "id": "F1-C-0116",
+          "centroid": [
+            -50.148,
+            -48.581
+          ],
+          "openness": 1.0,
+          "nOpen": 8,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F1-W-0939",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 0
+            },
+            {
+              "id": "F1-W-0657",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-2298",
+              "distM": 0.0,
+              "lengthM": 0.7,
+              "quadrant": 1
+            },
+            {
+              "id": "F1-W-0661",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-1354",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 2
+            },
+            {
+              "id": "F1-W-2014",
+              "distM": 0.0,
+              "lengthM": 0.7,
+              "quadrant": 2
+            }
+          ]
+        }
+      ],
+      "rejectedColumns": [
+        {
+          "id": "F1-C-0001",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0002",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0003",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0004",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0005",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0006",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0007",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0008",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0009",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0010",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0011",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0012",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0013",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0014",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0015",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0016",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0017",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0018",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0019",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0020",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0021",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0022",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0023",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0024",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0026",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0028",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0030",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0031",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0032",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0033",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0034",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0035",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0036",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0037",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0039",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0040",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0041",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0042",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0043",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0044",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0045",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0046",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0047",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0048",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0049",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0050",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0051",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0052",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0053",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0054",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0055",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0056",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0057",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0058",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0059",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0060",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0061",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0062",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0063",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0064",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0065",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0066",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0067",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0068",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0069",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0070",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0071",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0072",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0073",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0074",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0075",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0076",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0077",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0078",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0079",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0080",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0081",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0082",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0083",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0084",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0085",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0086",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0087",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0088",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0089",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0090",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0091",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0092",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0093",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0094",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0095",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0096",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0097",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0101",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0103",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0106",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0107",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0109",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0110",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0112",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0113",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0114",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0117",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0118",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0119",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0120",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0121",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0122",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0123",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0124",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0125",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0126",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0127",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0128",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0129",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0130",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0131",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0132",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0133",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0134",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0135",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F1-C-0136",
+          "reason": "openness_low"
+        }
+      ],
+      "wrapWallSegments": 69,
+      "wrappedColumns": 14
+    },
+    "2": {
+      "totalColumns": 84,
+      "openColumns": [
+        {
+          "id": "F2-C-0067",
+          "centroid": [
+            -49.497,
+            1.803
+          ],
+          "openness": 0.707,
+          "nOpen": 6,
+          "closedRatio": 0.0,
+          "wrapped": true,
+          "quadrantCount": 3,
+          "wrapWalls": [
+            {
+              "id": "F2-W-1933",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 1
+            },
+            {
+              "id": "F2-W-0244",
+              "distM": 0.0,
+              "lengthM": 1.149,
+              "quadrant": 2
+            },
+            {
+              "id": "F2-W-1120",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 2
+            },
+            {
+              "id": "F2-W-1014",
+              "distM": 0.0,
+              "lengthM": 0.495,
+              "quadrant": 3
+            },
+            {
+              "id": "F2-W-1853",
+              "distM": 0.0,
+              "lengthM": 0.705,
+              "quadrant": 3
+            }
+          ]
+        }
+      ],
+      "rejectedColumns": [
+        {
+          "id": "F2-C-0001",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0002",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0003",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0004",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0005",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0006",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0007",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0008",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0009",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0010",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0011",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0012",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0013",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0014",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0015",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0016",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0017",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0018",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0019",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0020",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0021",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0022",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0023",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0024",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0025",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0026",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0027",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0028",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0029",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0030",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0031",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0032",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0033",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0034",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0035",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0036",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0037",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0038",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0039",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0040",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0041",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0042",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0043",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0044",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0045",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0046",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0047",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0048",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0049",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0050",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0051",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0052",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0053",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0054",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0055",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0056",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0057",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0058",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0059",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0060",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0061",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0062",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0063",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0064",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0065",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0066",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0068",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0069",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0070",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0071",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0072",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0073",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0074",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0075",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0076",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0077",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0078",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0079",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0080",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0081",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0082",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0083",
+          "reason": "openness_low"
+        },
+        {
+          "id": "F2-C-0084",
+          "reason": "openness_low"
+        }
+      ],
+      "wrapWallSegments": 5,
+      "wrappedColumns": 1
+    }
+  }
+}

@@ -33,6 +33,7 @@ result/*
 !result/floor_layout_v9_interactive.html
 !result/fingerprint_grid.json
 !result/skeleton_manual_parsed.json
+!result/open_column_wraps.json
 
 # Jupyter
 .ipynb_checkpoints/
