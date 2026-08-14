@@ -313,6 +313,16 @@ var SEARCH_TYPE_CN = {
 };
 var SEARCH_INDEX = null;
 
+// 判定元素所属方案（全局 / 测试路线）。信标/指纹/三点覆盖均包在 <g class="mode-xxx"> 内；
+// 非方案类图层（房间/墙体等）无 mode 包裹，返回 null（始终参与搜索，不随方案切换变化）。
+function srSchemeOf(el) {
+  if (el.closest) {
+    if (el.closest('.mode-route')) return 'route';
+    if (el.closest('.mode-global')) return 'global';
+  }
+  return null;
+}
+
 function srBuildIndex() {
   if (SEARCH_INDEX) return SEARCH_INDEX;
   var idx = [];
@@ -339,7 +349,8 @@ function srBuildIndex() {
     idx.push({
       el: el, layer: layer, text: parts.join(' '),
       disp: title || (raw.id || ''),
-      id: raw.id || '', rid: rid || ''
+      id: raw.id || '', rid: rid || '',
+      scheme: srSchemeOf(el)
     });
   });
   SEARCH_INDEX = idx;
@@ -387,6 +398,8 @@ function srRun(q, dropdown) {
     var s = srScore(q, idx[i].text);
     if (s > 0) scored.push({ e: idx[i], s: s });
   }
+  // 仅保留当前可见方案的元素：信标/指纹/三点覆盖按 CUR_MODE 过滤，避免两套方案混杂
+  scored = scored.filter(function (it) { return !it.e.scheme || it.e.scheme === CUR_MODE; });
   scored.sort(function (a, b) { return b.s - a.s; });
   scored = scored.slice(0, 12);
   if (!scored.length) {
