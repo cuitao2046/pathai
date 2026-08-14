@@ -336,6 +336,432 @@ function exportAnnoOverrides(){
     return tpl.replace('__CONSTS__', consts)
 
 
+def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_params):
+    """生成「人工部署信标」交互脚本（独立 <script>，普通字符串，花括号为字面量）。
+
+    与 build_anno_script 同构：通过 __CONSTS__ 占位符注入坐标变换常量
+    （DEPLOY_GEOX，独立副本不依赖 anno 脚本的 GEOX）与人工部署默认参数
+    （DEPLOY_DEFAULTS，新增信标沿用方案默认字段）。
+
+    浏览器端能力（受浏览器沙箱约束，导出走 Blob + a.download）：
+      1. 部署模式：点击地图空白处新增信标（BK-M-{层}-{序号:03d}），落点即进入拖拽；
+      2. 任意模式下：按住信标拖拽移动，松手把新米制坐标写回 data-info（坐标行）；
+      3. 导出：把内存中的全局模式信标（含新增/移动后坐标）组装为
+         {beacons:[...], summary:{total, byFloor, bySemantic, byMount}} 下载为
+         ble_deployment.json（用户保存到 result/ 目录）。
+    """
+    floor_keys_js = json.dumps([str(k) for k in sorted_floors], ensure_ascii=False)
+    defaults_js = json.dumps(default_params, ensure_ascii=False)
+    consts = (
+        "var DEPLOY_GEOX = {ox:%r, oy:%r, scale:7.0, marginX:50, marginY:30, "
+        "titleH:46, perFloor:%d, nFloors:%d, floorKeys:%s};\n"
+        "var DEPLOY_DEFAULTS = %s;"
+        % (min_x, max_y, svh_per_floor, len(sorted_floors), floor_keys_js, defaults_js)
+    )
+    tpl = '''<script>
+// ===== 人工部署信标：拖拽移动 / 点选新增 / 导出 ble_deployment.json =====
+// 独立 <script>，与「区域标注」同级。坐标反变换常量经下方占位符注入。
+__CONSTS__
+
+var DEPLOY_MODE = false;
+var DEPLOY_COLOR = '#00695C';        // 人工部署信标（semanticTag=manual_deploy）颜色
+var DEPLOY_BEACONS = [];             // 内存中的全局模式信标记录（含新增/移动后的 coordinates）
+var DEPLOY_NEXT_SEQ = {};            // floor -> 下一可用序号（BK-M-{floor}-{seq:03d}）
+var deployDrag = null;               // 当前拖拽中的信标 <g>
+var deployDragMoved = false;         // 本次拖拽是否已超过点击阈值（4px）
+var deployDragStartSvg = null;       // 拖拽起点（SVG 用户空间）
+var deployDragBase = null;           // 拖拽起点的 circle cx/cy
+var deployLastDragMoved = false;     // 上一次 mouseup 是否发生拖拽（抑制松手后的 click 详情）
+var deployClickStart = null;         // 部署模式下点击空白处的候选 SVG 点
+var deployClickMoved = false;        // 候选点击是否已移动超过阈值
+
+function deployHint(m){ var h=document.getElementById('deploy-hint'); if(h) h.textContent=m; }
+function deployList(m){ var h=document.getElementById('deploy-list'); if(h) h.textContent=m; }
+function deployIdOf(g){
+  try { var d = JSON.parse(g.getAttribute('data-info')); return d.id || ''; } catch(e){ return ''; }
+}
+// SVG 用户空间 -> 米制局部坐标（与 Python tosvg 反变换一致；独立实现不依赖 anno 脚本）
+function deploySvg2geo(sx, sy){
+  var i = Math.min(DEPLOY_GEOX.nFloors-1, Math.max(0, Math.floor(sy / DEPLOY_GEOX.perFloor)));
+  var fk = DEPLOY_GEOX.floorKeys[i];
+  var gx = (sx - DEPLOY_GEOX.marginX) / DEPLOY_GEOX.scale + DEPLOY_GEOX.ox;
+  var gy = DEPLOY_GEOX.oy - (sy - i*DEPLOY_GEOX.perFloor - DEPLOY_GEOX.titleH - DEPLOY_GEOX.marginY) / DEPLOY_GEOX.scale;
+  return {floor: fk, x: gx, y: gy};
+}
+// 屏幕坐标 -> SVG 用户空间（含缩放/平移 CSS transform）
+function deployClientToSvg(cx, cy){
+  var pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+  var m = svg.getScreenCTM(); if(!m) return {x:cx, y:cy};
+  var p = pt.matrixTransform(m.inverse());
+  return {x: p.x, y: p.y};
+}
+// 解析 data-info.b 信标记录；旧 HTML 无 b 时从 detail rows 兜底重建
+function deployRecordFromDetail(info, g){
+  if (!info || !info.detail) return null;
+  var rows = {};
+  (info.detail.rows || []).forEach(function(r){ if (r && r[0]) rows[String(r[0])] = r[1]; });
+  var floor = g.getAttribute('data-floor') || '';
+  var bid = info.id || ('BK-M-' + floor + '-001');
+  var coordinates = [0, 0];
+  var circle = g.querySelector('circle');
+  if (circle) {
+    var cx = parseFloat(circle.getAttribute('cx')), cy = parseFloat(circle.getAttribute('cy'));
+    if (isFinite(cx) && isFinite(cy)) {
+      var geo = deploySvg2geo(cx, cy);
+      coordinates = [geo.x, geo.y];
+    }
+  }
+  return {
+    beaconId: bid,
+    uuid: rows['UUID'] || DEPLOY_DEFAULTS.uuid,
+    major: rows['Major'] != null ? Number(rows['Major']) : DEPLOY_DEFAULTS.major,
+    minor: rows['Minor'] != null ? Number(rows['Minor']) : 1,
+    coordinates: coordinates,
+    floor: parseInt(floor, 10) || 1,
+    locationDesc: rows['安装位置'] || ('人工部署 ' + floor + 'F'),
+    mountType: rows['安装方式'] || 'wall',
+    installHeight: rows['安装高度'] ? parseFloat(rows['安装高度']) : DEPLOY_DEFAULTS.installHeight,
+    txPower: rows['发射功率'] ? parseFloat(rows['发射功率']) : DEPLOY_DEFAULTS.txPower,
+    broadcastInterval: rows['广播间隔'] ? parseFloat(rows['广播间隔']) : DEPLOY_DEFAULTS.broadcastInterval,
+    batteryModel: rows['电池型号'] || DEPLOY_DEFAULTS.batteryModel,
+    expectedLifespan: rows['预期寿命'] ? parseFloat(rows['预期寿命']) : DEPLOY_DEFAULTS.expectedLifespan,
+    semanticTag: rows['语义标签'] || 'manual_deploy',
+    sourceNodeId: rows['来源节点'] || '',
+    sourceNodeType: '',
+    riskLevel: 1.0,
+    snapDist_m: rows['吸附偏移'] ? parseFloat(rows['吸附偏移']) : 0.0,
+    subType: rows['类型/方向'] ? String(rows['类型/方向']).split('/')[0] : ''
+  };
+}
+// 收集全局模式信标（解析 data-info.b；同时缓存每层 BK-M-* 最大序号）
+function deployCollectBeacons(){
+  DEPLOY_BEACONS = [];
+  DEPLOY_NEXT_SEQ = {};
+  document.querySelectorAll('.layer_beacon[data-mode="global"]').forEach(function(g){
+    var info = null;
+    try { info = JSON.parse(g.getAttribute('data-info')); } catch(e) {}
+    var rec = (info && info.b) ? info.b : deployRecordFromDetail(info, g);
+    if (!rec) return;
+    rec.coordinates = [Number(rec.coordinates[0]), Number(rec.coordinates[1])];
+    DEPLOY_BEACONS.push({el: g, info: info, b: rec});
+    var m = /^BK-M-(\\d+)-(\\d+)$/.exec(String(rec.beaconId || ''));
+    if (m) {
+      var seq = parseInt(m[2], 10);
+      var fk2 = String(g.getAttribute('data-floor') != null ? g.getAttribute('data-floor') : rec.floor);
+      if (!(fk2 in DEPLOY_NEXT_SEQ) || seq >= DEPLOY_NEXT_SEQ[fk2]) DEPLOY_NEXT_SEQ[fk2] = seq + 1;
+    }
+  });
+  deployList('已加载 ' + DEPLOY_BEACONS.length + ' 个全局信标（可拖拽移动；部署模式下点击空白新增）');
+}
+// 找当前楼层的 mode-global 组（新增信标挂入，保持图层开关/模式切换语义）；缺失时补建
+function deployFloorGroup(fk){
+  var g = document.querySelector('.mode-global[data-floor="' + fk + '"]');
+  if (g) return g;
+  var NS = 'http://www.w3.org/2000/svg';
+  g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'mode-global');
+  g.setAttribute('data-floor', String(fk));
+  svg.appendChild(g);
+  return g;
+}
+// 构造信标 <g>（circle + text，与 Python render_scheme_group 视觉一致）
+function deployCreateBeaconEl(rec, fk){
+  var NS = 'http://www.w3.org/2000/svg';
+  var g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'layer_beacon');
+  g.setAttribute('data-floor', String(fk));
+  g.setAttribute('data-mode', 'global');
+  g.setAttribute('data-info', JSON.stringify(deployBuildInfo(rec)));
+  var geo = rec.coordinates;
+  var sx = DEPLOY_GEOX.marginX + (geo[0] - DEPLOY_GEOX.ox) * DEPLOY_GEOX.scale;
+  var fi = DEPLOY_GEOX.floorKeys.indexOf(String(fk));
+  var sy = fi * DEPLOY_GEOX.perFloor + DEPLOY_GEOX.titleH + DEPLOY_GEOX.marginY + (DEPLOY_GEOX.oy - geo[1]) * DEPLOY_GEOX.scale;
+  var c = document.createElementNS(NS, 'circle');
+  c.setAttribute('cx', sx.toFixed(1)); c.setAttribute('cy', sy.toFixed(1));
+  c.setAttribute('r', 3.2);
+  c.setAttribute('fill', DEPLOY_COLOR);
+  c.setAttribute('fill-opacity', '0.9');
+  c.setAttribute('stroke', '#ffffff'); c.setAttribute('stroke-width', '0.5');
+  g.appendChild(c);
+  var t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', (sx + 4).toFixed(1)); t.setAttribute('y', (sy + 1.5).toFixed(1));
+  t.setAttribute('font-size', '4.5'); t.setAttribute('fill', DEPLOY_COLOR); t.setAttribute('opacity', '0.95');
+  t.textContent = rec.beaconId;
+  g.appendChild(t);
+  return g;
+}
+// 构造信标 data-info（含完整记录 b，供导出/坐标写回；与 Python info_attr 语义一致）
+function deployBuildInfo(rec){
+  var bid = rec.beaconId;
+  var rows = [
+    ['信标 ID', bid],
+    ['语义标签', rec.semanticTag || 'manual_deploy'],
+    ['UUID', rec.uuid || ''],
+    ['Major', rec.major != null ? rec.major : ''],
+    ['Minor', rec.minor != null ? rec.minor : ''],
+    ['楼层', (rec.floor != null ? rec.floor : '?') + 'F'],
+    ['安装位置', rec.locationDesc || ''],
+    ['安装方式', rec.mountType || ''],
+    ['吸附偏移', (rec.snapDist_m != null ? rec.snapDist_m : 0) + ' m'],
+    ['类型/方向', [rec.subType, rec.direction].filter(Boolean).join('/') || '—'],
+    ['发射功率', (rec.txPower != null ? rec.txPower : '') + ' dBm'],
+    ['广播间隔', (rec.broadcastInterval != null ? rec.broadcastInterval : '') + ' ms'],
+    ['安装高度', (rec.installHeight != null ? rec.installHeight : '') + ' m'],
+    ['电池型号', rec.batteryModel || ''],
+    ['预期寿命', rec.expectedLifespan ? rec.expectedLifespan + ' 年' : ''],
+    ['来源节点', rec.sourceNodeId || ''],
+    ['坐标', '(' + rec.coordinates[0].toFixed(2) + ', ' + rec.coordinates[1].toFixed(2) + ')']
+  ];
+  return {
+    tip: '信标 ' + bid + '\\\\n语义：' + (rec.semanticTag || 'manual_deploy') + ' · ' + rec.floor + 'F',
+    detail: {title: '信标 ' + bid, rows: rows},
+    kind: 'beacon',
+    id: bid,
+    b: rec
+  };
+}
+// 拖拽结束时把新坐标写回 data-info 的「坐标」行（无则追加）
+function deployUpdateInfo(entry, x, y){
+  var info = entry.info;
+  if (!info) return;
+  if (!info.detail) info.detail = {title: info.id || '信标', rows: []};
+  var rows = info.detail.rows;
+  var idx = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && String(rows[i][0]).indexOf('坐标') !== -1) { idx = i; break; }
+  }
+  var val = '(' + x.toFixed(2) + ', ' + y.toFixed(2) + ')';
+  if (idx >= 0) rows[idx][1] = val;
+  else rows.push(['坐标', val]);
+  entry.el.setAttribute('data-info', JSON.stringify(info));
+}
+// 当前层下一可用序号（BK-M-{floor}-{seq:03d}，seq 为该层最大编号+1）
+function deployNextSeq(fk){
+  if (DEPLOY_NEXT_SEQ[fk] == null) {
+    var max = 0;
+    DEPLOY_BEACONS.forEach(function(en){
+      var m = /^BK-M-(\\d+)-(\\d+)$/.exec(String(en.b.beaconId || ''));
+      if (m && parseInt(m[1], 10) === parseInt(fk, 10)) max = Math.max(max, parseInt(m[2], 10));
+    });
+    DEPLOY_NEXT_SEQ[fk] = max + 1;
+  }
+  return DEPLOY_NEXT_SEQ[fk]++;
+}
+// 部署模式：点击地图空白处新增信标（落点立即进入拖拽）
+function deployAddBeacon(sp){
+  var geo = deploySvg2geo(sp.x, sp.y);
+  var fk = geo.floor;
+  var seq = deployNextSeq(fk);
+  var bid = 'BK-M-' + fk + '-' + ('000' + seq).slice(-3);
+  var x = Math.round(geo.x * 100) / 100;
+  var y = Math.round(geo.y * 100) / 100;
+  var rec = {
+    beaconId: bid,
+    uuid: DEPLOY_DEFAULTS.uuid,
+    major: DEPLOY_DEFAULTS.major,
+    minor: parseInt(String(fk), 10) * 10000 + seq,
+    coordinates: [x, y],
+    floor: parseInt(fk, 10),
+    locationDesc: '人工部署 ' + fk + 'F（' + x + ', ' + y + '）',
+    mountType: 'wall',
+    installHeight: DEPLOY_DEFAULTS.installHeight,
+    txPower: DEPLOY_DEFAULTS.txPower,
+    broadcastInterval: DEPLOY_DEFAULTS.broadcastInterval,
+    batteryModel: DEPLOY_DEFAULTS.batteryModel,
+    expectedLifespan: DEPLOY_DEFAULTS.expectedLifespan,
+    semanticTag: 'manual_deploy',
+    sourceNodeId: '',
+    sourceNodeType: '',
+    riskLevel: 1.0,
+    snapDist_m: 0.0,
+    subType: 'manual_deploy'
+  };
+  var g = deployCreateBeaconEl(rec, fk);
+  g.classList.add('deploy-selected');   // 新增后立即处于「选中/可拖拽」状态
+  var group = deployFloorGroup(fk);
+  group.appendChild(g);
+  var entry = {el: g, info: deployBuildInfo(rec), b: rec};
+  DEPLOY_BEACONS.push(entry);
+  deployHint('已新增信标 ' + bid + '（' + x + ', ' + y + '）· ' + fk + 'F，可立即拖拽调整位置');
+  return entry;
+}
+function deployToggleMode(){
+  DEPLOY_MODE = !DEPLOY_MODE;
+  window.deployMode = DEPLOY_MODE;
+  var btn = document.getElementById('btn-deploy-toggle');
+  if (btn) {
+    btn.textContent = DEPLOY_MODE ? '退出部署模式' : '进入部署模式';
+    btn.classList.toggle('active', DEPLOY_MODE);
+  }
+  wrapper.style.cursor = DEPLOY_MODE ? 'crosshair' : '';
+  deployHint(DEPLOY_MODE
+    ? '部署模式：点击地图空白处新增信标（BK-M-{层}-{序号}），拖拽可移动；退出后仍可拖拽移动。'
+    : '已退出部署模式（拖拽移动信标仍可用）。');
+}
+// ---- 拖拽移动（任意模式可用）：按下选中 -> 拖动更新 circle/text -> 松手写回米制坐标 ----
+function deployStartDrag(e, g){
+  var c = g.querySelector('circle');
+  if (!c) return;
+  deployDrag = g;
+  deployDragMoved = false;
+  deployDragStartSvg = deployClientToSvg(e.clientX, e.clientY);
+  deployDragBase = { cx: parseFloat(c.getAttribute('cx')), cy: parseFloat(c.getAttribute('cy')) };
+  g.classList.add('deploy-selected');
+  e.preventDefault(); e.stopPropagation();
+}
+function deployMoveDrag(e){
+  if (!deployDrag) return;
+  var sp = deployClientToSvg(e.clientX, e.clientY);
+  var dx = sp.x - deployDragStartSvg.x;
+  var dy = sp.y - deployDragStartSvg.y;
+  if (!deployDragMoved && Math.hypot(dx, dy) < 4) return;  // 未超阈值：视为点击（选中）
+  deployDragMoved = true;
+  var nx = deployDragBase.cx + dx;
+  var ny = deployDragBase.cy + dy;
+  var c = deployDrag.querySelector('circle');
+  var t = deployDrag.querySelector('text');
+  if (c) { c.setAttribute('cx', nx.toFixed(1)); c.setAttribute('cy', ny.toFixed(1)); }
+  if (t) { t.setAttribute('x', (nx + 4).toFixed(1)); t.setAttribute('y', (ny + 1.5).toFixed(1)); }
+}
+function deployEndDrag(e){
+  if (!deployDrag) return;
+  var g = deployDrag;
+  deployDrag = null;
+  if (deployDragMoved) {
+    deployLastDragMoved = true;   // 抑制松手后的 click 选中详情（点击与拖拽区分）
+    var c = g.querySelector('circle');
+    var nx = parseFloat(c.getAttribute('cx')), ny = parseFloat(c.getAttribute('cy'));
+    var geo = deploySvg2geo(nx, ny);
+    var x = Math.round(geo.x * 100) / 100;
+    var y = Math.round(geo.y * 100) / 100;
+    var fk = g.getAttribute('data-floor');
+    var bid = deployIdOf(g);
+    var entry = null;
+    for (var i = 0; i < DEPLOY_BEACONS.length; i++) {
+      if (DEPLOY_BEACONS[i].el === g) { entry = DEPLOY_BEACONS[i]; break; }
+    }
+    if (entry) {
+      entry.b.coordinates = [x, y];
+      deployUpdateInfo(entry, x, y);
+    } else {
+      // 路线模式信标：仅更新 DOM/data-info 坐标行（不纳入导出）
+      var info = null;
+      try { info = JSON.parse(g.getAttribute('data-info')); } catch(err) {}
+      if (info) {
+        if (info.b) info.b.coordinates = [x, y];
+        deployUpdateInfo({el: g, info: info}, x, y);
+      }
+    }
+    deployHint('已移动信标 ' + bid + ' → (' + x + ', ' + y + ') · ' + fk + 'F');
+  } else {
+    deployHint('已选中信标，可按住拖拽移动位置；部署模式下点击空白处新增。');
+  }
+  deployDragStartSvg = null;
+  deployDragBase = null;
+}
+// ---- 导出：组装与部署方案同构 JSON（beacons + summary），Blob + a.download 下载 ----
+// 关键边界：浏览器沙箱无法直接写磁盘，用户把下载的 ble_deployment.json 保存到 result/ 目录。
+function deployExport(){
+  var beacons = [];
+  DEPLOY_BEACONS.forEach(function(entry){
+    beacons.push(JSON.parse(JSON.stringify(entry.b)));  // 深拷贝快照
+  });
+  if (!beacons.length) {
+    alert('当前全局方案没有信标可导出。请先加载 ble_deployment.json，或进入部署模式点击地图新增信标。');
+    return;
+  }
+  var byFloor = {}, bySemantic = {}, byMount = {};
+  beacons.forEach(function(b){
+    var fk = String(b.floor);
+    byFloor[fk] = (byFloor[fk] || 0) + 1;
+    var sem = b.semanticTag || 'unknown';
+    bySemantic[sem] = (bySemantic[sem] || 0) + 1;
+    var mt = b.mountType || 'unknown';
+    byMount[mt] = (byMount[mt] || 0) + 1;
+  });
+  var payload = {
+    schemaVersion: '1.0',
+    generatedBy: 'pathai-manual-deploy',
+    generatedAt: new Date().toISOString(),
+    beacons: beacons,
+    summary: { total: beacons.length, byFloor: byFloor, bySemantic: bySemantic, byMount: byMount }
+  };
+  var blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'ble_deployment.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  deployList('已导出 ' + beacons.length + ' 个信标 -> ble_deployment.json');
+  deployHint('已导出 ble_deployment.json，请保存到 result/ 目录（浏览器沙箱无法直接写磁盘）。');
+}
+// ---- 事件接线（capture 优先于主脚本 app.js 的 bubble 处理）----
+svg.addEventListener('mousedown', function(e){
+  deployLastDragMoved = false;
+  document.querySelectorAll('.layer_beacon.deploy-selected').forEach(function(x){ x.classList.remove('deploy-selected'); });
+  var t = e.target && e.target.closest ? e.target.closest('.layer_beacon') : null;
+  if (t) { deployStartDrag(e, t); return; }
+  if (DEPLOY_MODE) {
+    // 部署模式：点击空白处新增信标（按下即记录候选点，并禁用画布平移）
+    deployClickStart = deployClientToSvg(e.clientX, e.clientY);
+    deployClickMoved = false;
+    e.preventDefault(); e.stopPropagation();
+    return;
+  }
+}, true);
+document.addEventListener('mousemove', function(e){
+  deployMoveDrag(e);
+  if (DEPLOY_MODE && deployClickStart && !deployDrag) {
+    var sp = deployClientToSvg(e.clientX, e.clientY);
+    if (Math.hypot(sp.x - deployClickStart.x, sp.y - deployClickStart.y) > 4) deployClickMoved = true;
+  }
+});
+document.addEventListener('mouseup', function(e){
+  deployEndDrag(e);
+  if (DEPLOY_MODE && deployClickStart && !deployDragMoved && !deployClickMoved) {
+    var sp = deployClientToSvg(e.clientX, e.clientY);
+    var t = e.target && e.target.closest ? e.target.closest('[data-info]') : null;
+    if (!t) deployAddBeacon(sp);   // 点击空白处新增信标
+  }
+  deployClickStart = null;
+  deployClickMoved = false;
+});
+svg.addEventListener('click', function(e){
+  if (deployLastDragMoved) {
+    deployLastDragMoved = false;
+    e.stopPropagation(); e.preventDefault();   // 拖拽松手后的 click 不再触发详情
+    return;
+  }
+}, true);
+
+deployCollectBeacons();
+</script>'''
+    return tpl.replace('__CONSTS__', consts)
+
+
+def merge_deploy_defaults(defaults, src):
+    """从信标方案 JSON（顶层 uuid + defaultParams）合并人工部署默认值。
+
+    src 可为 None；已有值仅在 src 提供对应字段时覆盖（不删除 defaults 既有键）。
+    """
+    if not src:
+        return
+    if src.get("uuid"):
+        defaults["uuid"] = src["uuid"]
+    dp = src.get("defaultParams") or {}
+    if dp.get("installHeightWall"):
+        defaults["installHeight"] = dp["installHeightWall"]
+    if dp.get("broadcastInterval"):
+        defaults["broadcastInterval"] = dp["broadcastInterval"]
+    if dp.get("batteryModel"):
+        defaults["batteryModel"] = dp["batteryModel"]
+    if dp.get("expectedLifespanYears"):
+        defaults["expectedLifespan"] = dp["expectedLifespanYears"]
+    tps = dp.get("txPowerBySemantic") or {}
+    if tps.get("intersection"):
+        defaults["txPower"] = tps["intersection"]
+
+
 # ---- 三点定位覆盖（Trilateration coverage）无线模型 ----
 # 与 src/tools/analyze_trilateration_coverage.py 同口径：射线穿墙 RSSI 衰减判定可见信标数，
 # 每个指纹点需 >=3 个可见信标方可三点定位。覆盖随 --beacons 信标方案动态变化。
@@ -443,6 +869,8 @@ def main():
     _a.add_argument("--beacons-routes", default=None, help="测试路线信标部署方案 JSON（缺省自动探测 *_routes.json）")
     _a.add_argument("--fingerprint-routes", default=None, help="测试路线指纹采集网格 JSON（缺省自动探测 fingerprint_grid_routes.json）")
     _a.add_argument("--out", default=HTML_OUT, help="输出 HTML 路径")
+    _a.add_argument("--no-ble-deploy", action="store_true",
+                    help="跳过 result/ble_deployment.json 优先加载（QA 回归旧逻辑）")
     _args = _a.parse_args()
     geo = json.load(open(_args.geo, encoding="utf-8"))
     node_lookup = build_node_lookup(geo)
@@ -472,6 +900,7 @@ def main():
 
     # 信标部署方案（两套：全局 + 测试路线）
     beacon_floors = {}
+    bc_data = None
     bc_path = Path(_args.beacons) if _args.beacons else (geo_dir / "beacon_deployment_plan.json")
     if bc_path.exists():
         try:
@@ -485,6 +914,7 @@ def main():
     else:
         print("  [hint] 未找到 beacon_deployment_plan.json，可先运行 gen_beacon_plan.py")
     beacon_floors_routes = {}
+    bc_r_data = None
     bc_r_path = Path(_args.beacons_routes) if _args.beacons_routes else (geo_dir / "beacon_deployment_plan_trilateration_routes.json")
     if bc_r_path.exists():
         try:
@@ -495,6 +925,40 @@ def main():
                   f"{len(bc_r_data.get('beacons', []))} 个信标")
         except Exception as e:
             print("  [warn] 读取路线信标方案失败：", e)
+
+    # 人工部署方案优先加载：result/ble_deployment.json 存在且非空 beacons 列表时，
+    # 作为全局模式（beacon_floors）的唯一信标来源（路线模式保持独立）。
+    # --no-ble-deploy 可跳过检测（QA 回归旧逻辑）。
+    _ble_data = None
+    if not _args.no_ble_deploy:
+        _ble_path = geo_dir / "ble_deployment.json"
+        if _ble_path.exists():
+            try:
+                _ble_data = json.load(open(_ble_path, encoding="utf-8"))
+                _ble_beacons = _ble_data.get("beacons") or []
+                if _ble_beacons:
+                    beacon_floors = {}
+                    for _b in _ble_beacons:
+                        beacon_floors.setdefault(str(_b.get("floor")), []).append(_b)
+                    print(f"  [info] 加载人工部署方案 ble_deployment.json: {len(_ble_beacons)} 个信标")
+                else:
+                    print("  [warn] ble_deployment.json 存在但 beacons 为空，忽略并沿用旧逻辑")
+            except Exception as e:
+                print("  [warn] 读取 ble_deployment.json 失败：", e)
+
+    # 人工部署信标默认参数：新增信标沿用方案默认（顶层 uuid + defaultParams），
+    # 优先级 ble_deployment > 路线方案 > 内置兜底。
+    deploy_defaults = {
+        "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+        "major": 1,
+        "installHeight": 2.2,
+        "txPower": -10,
+        "broadcastInterval": 300,
+        "batteryModel": "CR2477",
+        "expectedLifespan": 5,
+    }
+    merge_deploy_defaults(deploy_defaults, bc_r_data)
+    merge_deploy_defaults(deploy_defaults, _ble_data)
 
     # 柱开放度分析（open_column_wraps.json，由 detect_open_column_wraps.py 生成）：
     # 开放柱 openColumns / 被拒柱 rejectedColumns 均按柱 id 并入 col_open 字典
@@ -1417,7 +1881,7 @@ def main():
             if not bc_fk:
                 return
             hide = ' style="display:none"' if mode == "route" else ""
-            parts.append(f'<g class="mode-{mode}"{hide}>\n')
+            parts.append(f'<g class="mode-{mode}" data-floor="{fk}"{hide}>\n')
             # 指纹采集点
             if fp_fd:
                 n_fp = 0
@@ -1507,7 +1971,7 @@ def main():
                     ("预期寿命", f"{b.get('expectedLifespan')} 年" if b.get("expectedLifespan") else ""),
                     ("来源节点", b.get("sourceNodeId", "")),
                 ]}
-                attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid})
+                attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid, "b": b})
                 parts.append(
                     f'<g class="layer_beacon" data-floor="{fk}" data-mode="{mode}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
@@ -1774,6 +2238,9 @@ def main():
     # 注入「区域标注」交互脚本（独立 <script>，含坐标反变换常量）
     anno_script = build_anno_script(min_x, max_y, svh_per_floor, sorted_floors)
     out_html = out_html.replace("</body></html>", anno_script + "\n</body></html>")
+    # 注入「人工部署信标」交互脚本（独立 <script>，紧随 anno_script；含 DEPLOY_GEOX/DEPLOY_DEFAULTS）
+    deploy_script = build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, deploy_defaults)
+    out_html = out_html.replace("</body></html>", deploy_script + "\n</body></html>")
 
     with open(_args.out, "w", encoding="utf-8") as f:
         f.write(out_html)
