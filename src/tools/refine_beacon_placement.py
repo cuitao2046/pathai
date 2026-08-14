@@ -34,7 +34,8 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
 用法:
   python src/tools/refine_beacon_placement.py                                    # 全楼方案
   python src/tools/refine_beacon_placement.py --plan result/beacon_deployment_plan_trilateration_routes.json \
-      --target result/fingerprint_grid_routes.json --out result/beacon_deployment_plan_trilateration_routes_refined.json
+      --target result/fingerprint_grid_routes.json --route-mask 6.0 \
+      --out result/beacon_deployment_plan_trilateration_routes_refined.json     # 路线方案(掩码6m)
   python src/tools/refine_beacon_placement.py --review-only                       # 只评审不修改
 """
 from __future__ import annotations
@@ -71,6 +72,9 @@ WALL_SNAP_MAX = 3.0       # 悬空修复/补点允许吸附的最近墙搜索半
 ENCLOSED_EDGE = 0.3       # 封闭空间判定的边缘容差(m): 越过此深度视为进入室内
 MIN_SPACING = 1.5         # 新增信标与既有信标最小间距(m), 防重合堆积
 EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(共线)
+ROUTE_MASK_M = 6.0        # 路线掩码半径(m): 补点候选距最近路线指纹点须 <= 此值
+                          # (与 debug/check_beacon_7rules.py 的 ROUTE_TOL 同口径,
+                          #  满足「针对测试线路, 不相关空间不部署信标」规则)
 NN_TARGET = 3.5           # 均匀性目标间距(m)
 NN_MIN = 2.0              # 过近阈值: 低于则视为堆积
 NN_MAX = 7.0              # 过疏阈值: 高于则考虑补点
@@ -107,10 +111,11 @@ def nearest_wall(model, pt, maxd=2.0):
 class FloorModel:
     """单楼层几何: 墙/真墙角/柱体/走廊 + 目标采样点 + 信标可见性缓存。"""
 
-    def __init__(self, geo_floor, plan_beacons, target=None, seed=0):
+    def __init__(self, geo_floor, plan_beacons, target=None, seed=0, route_mask_m=0.0):
         fg = geo_floor["geometry"]
         self.fg = fg
         self.rng = random.Random(seed)
+        self.route_mask_m = route_mask_m
         # 墙
         self.segs, self.atten = [], []
         for w in fg["walls"]:
@@ -159,6 +164,11 @@ class FloorModel:
             union = unary_union(polys)
             self.pts = self._sample_pts(union, GRID)
         self.ptree = STRtree([Point(x, y) for (x, y) in self.pts])
+        # 路线掩码树: 路线方案(--route-mask>0)下, 补点候选必须距最近路线
+        # 指纹点 <= route_mask_m, 杜绝「与测试线路无关空间」被补点。
+        self.route_tree = None
+        if self.route_mask_m > 0 and target is not None:
+            self.route_tree = STRtree([Point(x, y) for (x, y) in self.pts])
         # 信标
         self.beacons = [(b[0], b[1]) for b in plan_beacons]
         # 可见性缓存: (x,y) -> set(beacon_idx)
@@ -353,6 +363,15 @@ class FloorModel:
         return (self.corner_clear(x, y) and self.obstacle_clear(x, y)
                 and self.enclosed_clear(x, y))
 
+    def in_route_mask(self, x, y):
+        """路线掩码判定: 路线方案下, 点距最近路线指纹点须 <= route_mask_m。
+        非路线方案(route_tree 为 None)一律放行。"""
+        if self.route_tree is None:
+            return True
+        i = self.route_tree.nearest(Point(x, y))
+        n = self.route_tree.geometries[i]
+        return math.hypot(x - n.x, y - n.y) <= self.route_mask_m
+
     def nn_dist(self, idx):
         """除 idx 外的最近邻距离。"""
         ox, oy = self.beacons[idx]
@@ -457,7 +476,7 @@ class FloorModel:
         }
 
 
-def build_model(geo, plan, fl, target=None, seed=0):
+def build_model(geo, plan, fl, target=None, seed=0, route_mask_m=0.0):
     fdict = geo["floors"][fl]
     beacons = [(b["coordinates"][0], b["coordinates"][1])
                for b in plan["beacons"] if str(b["floor"]) == fl]
@@ -467,7 +486,7 @@ def build_model(geo, plan, fl, target=None, seed=0):
         if tgt is not None:
             tgt = [(p["coordinates"][0], p["coordinates"][1]) for p in tgt
                    if "coordinates" in p]
-    return FloorModel(fdict, beacons, target=tgt, seed=seed)
+    return FloorModel(fdict, beacons, target=tgt, seed=seed, route_mask_m=route_mask_m)
 
 
 def relax_pass(model, round_i):
@@ -545,6 +564,9 @@ def relax_pass(model, round_i):
         valid = []
         for (x, y) in cands:
             if not model.valid_pos(x, y):
+                continue
+            # 路线掩码: 优化性移动不得把信标移出测试路线相关空间
+            if not model.in_route_mask(x, y):
                 continue
             if orig_wall <= 0.5 and model.wall_dist(x, y) > 0.5:
                 continue
@@ -959,6 +981,10 @@ def _unified_candidates(model, missing, degen_pts, degen_tree):
         key = (round(pt[0], 2), round(pt[1], 2))
         if key in seen or gain <= 0:
             return
+        # 路线掩码(方案A): 补点候选必须落在测试路线附近(<=ROUTE_MASK_M),
+        # 过滤掉「与测试线路无关空间」的 R1/R3/R4/柱面候选。
+        if not model.in_route_mask(pt[0], pt[1]):
+            return
         seen.add(key)
         cands.append((pt[0], pt[1], gain))
 
@@ -1154,6 +1180,9 @@ def main():
     ap.add_argument("--review-only", action="store_true", help="只评审不修改")
     ap.add_argument("--max-new", type=int, default=MAX_NEW, help="允许新增信标上限")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--route-mask", type=float, default=0.0, metavar="M",
+                    help="路线掩码半径(m): 路线方案(--target)下, 补点候选须距最近"
+                         "路线指纹点 <=M(默认 0=不启用; 与检查器 ROUTE_TOL 同口径用 6.0)")
     args = ap.parse_args()
 
     plan_path = Path(args.plan)
@@ -1169,13 +1198,15 @@ def main():
     review = {"inputPlan": plan_path.name,
               "target": Path(args.target).name if args.target else "walkable-grid-1m",
               "params": {"cornerClear": CORNER_CLEAR, "obstacleClear": OBST_CLEAR,
-                         "triMinArea": EPS_AREA, "nnTarget": NN_TARGET, "nnMax": NN_MAX},
+                         "triMinArea": EPS_AREA, "nnTarget": NN_TARGET, "nnMax": NN_MAX,
+                         "routeMaskM": args.route_mask},
               "floors": [], "newBeacons": 0}
 
     refined_plan = json.loads(json.dumps(plan))
     for fl in ["1", "2"]:
         print(f"\n===== Floor {fl} =====", flush=True)
-        model = build_model(geo, plan, fl, target, seed=args.seed)
+        model = build_model(geo, plan, fl, target, seed=args.seed,
+                            route_mask_m=args.route_mask)
         before = model.review()
         print("基线:", json.dumps(before, ensure_ascii=False), flush=True)
 
