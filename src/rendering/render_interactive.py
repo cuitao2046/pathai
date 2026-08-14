@@ -719,14 +719,22 @@ document.addEventListener('mousemove', function(e){
 document.addEventListener('mouseup', function(e){
   deployEndDrag(e);
   if (DEPLOY_MODE && deployClickStart && !deployDragMoved && !deployClickMoved) {
+    // 部署模式：点击任意位置（房间/墙体/走廊/空白）都新增信标。
+    // 点击信标本身不会走到这里：mousedown capture 已把信标拦截进拖拽分支
+    // （deployStartDrag 设置 deployDrag，且不设置 deployClickStart），
+    // 因此 mouseup 不会误新增。
     var sp = deployClientToSvg(e.clientX, e.clientY);
-    var t = e.target && e.target.closest ? e.target.closest('[data-info]') : null;
-    if (!t) deployAddBeacon(sp);   // 点击空白处新增信标
+    deployAddBeacon(sp);
   }
   deployClickStart = null;
   deployClickMoved = false;
 });
 svg.addEventListener('click', function(e){
+  if (DEPLOY_MODE) {
+    // 部署模式下点击=新增信标（或按住信标=拖拽），不触发任何要素详情
+    e.stopPropagation(); e.preventDefault();
+    return;
+  }
   if (deployLastDragMoved) {
     deployLastDragMoved = false;
     e.stopPropagation(); e.preventDefault();   // 拖拽松手后的 click 不再触发详情
