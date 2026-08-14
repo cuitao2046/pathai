@@ -36,6 +36,9 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
   python src/tools/refine_beacon_placement.py --plan result/beacon_deployment_plan_trilateration_routes.json \
       --target result/fingerprint_grid_routes.json --route-mask 6.0 \
       --out result/beacon_deployment_plan_trilateration_routes_refined.json     # 路线方案(掩码6m)
+  python src/tools/refine_beacon_placement.py --plan result/beacon_deployment_plan_trilateration_routes.json \
+      --target result/fingerprint_grid_routes.json --route-spaces \
+      --out result/beacon_deployment_plan_trilateration_routes_refined.json     # 路线方案(空间掩码)
   python src/tools/refine_beacon_placement.py --review-only                       # 只评审不修改
 """
 from __future__ import annotations
@@ -75,6 +78,11 @@ EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(�
 ROUTE_MASK_M = 6.0        # 路线掩码半径(m): 补点候选距最近路线指纹点须 <= 此值
                           # (与 debug/check_beacon_7rules.py 的 ROUTE_TOL 同口径,
                           #  满足「针对测试线路, 不相关空间不部署信标」规则)
+ROUTE_SPACE_TOL = 0.25    # 路线空间掩码贴墙容差(m): 候选点距路线经过的公共空间
+                          # 多边形 <= 此值视为「在该空间墙面/柱面上」(贴墙投影
+                          # 允许略出多边形边界)
+OPEN_SPACE_TYPES = {"corridor", "lobby", "activity", "atrium",
+                    "elevator_lobby", "stair_lobby"}
 NN_TARGET = 3.5           # 均匀性目标间距(m)
 NN_MIN = 2.0              # 过近阈值: 低于则视为堆积
 NN_MAX = 7.0              # 过疏阈值: 高于则考虑补点
@@ -111,7 +119,8 @@ def nearest_wall(model, pt, maxd=2.0):
 class FloorModel:
     """单楼层几何: 墙/真墙角/柱体/走廊 + 目标采样点 + 信标可见性缓存。"""
 
-    def __init__(self, geo_floor, plan_beacons, target=None, seed=0, route_mask_m=0.0):
+    def __init__(self, geo_floor, plan_beacons, target=None, seed=0,
+                 route_mask_m=0.0, route_spaces=None):
         fg = geo_floor["geometry"]
         self.fg = fg
         self.rng = random.Random(seed)
@@ -169,6 +178,10 @@ class FloorModel:
         self.route_tree = None
         if self.route_mask_m > 0 and target is not None:
             self.route_tree = STRtree([Point(x, y) for (x, y) in self.pts])
+        # 路线空间掩码(方案B): 路线经过的公共空间(走廊/大厅/门厅等)多边形列表,
+        # 补点候选须落在这组多边形内(距多边形 <= ROUTE_SPACE_TOL 视为在墙面上)。
+        self.route_spaces = route_spaces or []
+        self.route_space_union = unary_union(self.route_spaces) if self.route_spaces else None
         # 信标
         self.beacons = [(b[0], b[1]) for b in plan_beacons]
         # 可见性缓存: (x,y) -> set(beacon_idx)
@@ -364,9 +377,18 @@ class FloorModel:
                 and self.enclosed_clear(x, y))
 
     def in_route_mask(self, x, y):
-        """路线掩码判定: 路线方案下, 点距最近路线指纹点须 <= route_mask_m。
-        非路线方案(route_tree 为 None)一律放行。"""
-        if self.route_tree is None:
+        """路线掩码判定:
+        1) 空间掩码(--route-spaces): 点落在「路线经过的公共空间」多边形内
+           (距多边形 <= ROUTE_SPACE_TOL, 兼容墙面投影/贴墙点略出边界)。
+        2) 距离掩码(--route-mask): 点距最近路线指纹点 <= route_mask_m。
+        同时启用时取并集(放宽): 空间内 或 6m 缓冲内均放行;
+        都未启用(全楼方案)一律放行。"""
+        if self.route_space_union is not None:
+            if self.route_space_union.distance(Point(x, y)) <= ROUTE_SPACE_TOL:
+                return True
+            if self.route_tree is None:
+                return False
+        elif self.route_tree is None:
             return True
         i = self.route_tree.nearest(Point(x, y))
         n = self.route_tree.geometries[i]
@@ -476,7 +498,40 @@ class FloorModel:
         }
 
 
-def build_model(geo, plan, fl, target=None, seed=0, route_mask_m=0.0):
+def route_spaces_of(geo, fl, target):
+    """找出测试路线经过的公共空间(走廊/大厅/门厅/电梯厅/楼梯厅/活动区等):
+    取该层所有 OPEN_SPACE_TYPES 房间多边形中, 与任一路线指纹点相交(内含点)者。
+    返回 (多边形列表, 命中空间信息列表), 供 --route-spaces 掩码使用。"""
+    fg = geo["floors"][fl]["geometry"]
+    tgt = (target or {}).get("floors", {}).get(fl, {}).get("points", None)
+    if not tgt:
+        return [], []
+    pts = [Point(p["coordinates"][0], p["coordinates"][1]) for p in tgt
+           if "coordinates" in p]
+    if not pts:
+        return [], []
+    ptree = STRtree(pts)
+    polys, infos = [], []
+    for f in fg["rooms"]:
+        pr = f.get("properties", {})
+        t = pr.get("type") or pr.get("roomType") or ""
+        if t not in OPEN_SPACE_TYPES:
+            continue
+        g = f.get("geometry") or {}
+        if g.get("type") != "Polygon":
+            continue
+        poly = shape(g)
+        if poly.is_empty or not poly.is_valid:
+            continue
+        if len(ptree.query(poly)) == 0:
+            continue
+        polys.append(poly)
+        infos.append((f.get("id"), t, round(poly.area, 1),
+                      len(ptree.query(poly))))
+    return polys, infos
+
+
+def build_model(geo, plan, fl, target=None, seed=0, route_mask_m=0.0, route_spaces=None):
     fdict = geo["floors"][fl]
     beacons = [(b["coordinates"][0], b["coordinates"][1])
                for b in plan["beacons"] if str(b["floor"]) == fl]
@@ -486,7 +541,8 @@ def build_model(geo, plan, fl, target=None, seed=0, route_mask_m=0.0):
         if tgt is not None:
             tgt = [(p["coordinates"][0], p["coordinates"][1]) for p in tgt
                    if "coordinates" in p]
-    return FloorModel(fdict, beacons, target=tgt, seed=seed, route_mask_m=route_mask_m)
+    return FloorModel(fdict, beacons, target=tgt, seed=seed,
+                      route_mask_m=route_mask_m, route_spaces=route_spaces)
 
 
 def relax_pass(model, round_i):
@@ -1183,6 +1239,11 @@ def main():
     ap.add_argument("--route-mask", type=float, default=0.0, metavar="M",
                     help="路线掩码半径(m): 路线方案(--target)下, 补点候选须距最近"
                          "路线指纹点 <=M(默认 0=不启用; 与检查器 ROUTE_TOL 同口径用 6.0)")
+    ap.add_argument("--route-spaces", action="store_true",
+                    help="路线空间掩码: 补点候选须落在「测试路线经过的公共空间"
+                         "(走廊/大厅/门厅/电梯厅/楼梯厅/活动区)」多边形内(贴墙"
+                         "容差 ROUTE_SPACE_TOL), 比 --route-mask 的圆缓冲更大"
+                         "更贴合空间语义; 启用时优先于 --route-mask")
     args = ap.parse_args()
 
     plan_path = Path(args.plan)
@@ -1195,18 +1256,31 @@ def main():
     else:
         out_path = plan_path.with_name(plan_path.stem + "_refined.json")
 
+    # 路线空间掩码: 计算每层「路线经过的公共空间」多边形(仅 --route-spaces 时)
+    route_spaces = {}
+    spaces_info = {}
+    if args.route_spaces and target is not None:
+        for fl in ["1", "2"]:
+            polys, infos = route_spaces_of(geo, fl, target)
+            route_spaces[fl] = polys
+            spaces_info[fl] = infos
+            print(f"F{fl} 路线经过的公共空间: {len(polys)} 个"
+                  + (f" {infos}" if infos else ""), flush=True)
+
     review = {"inputPlan": plan_path.name,
               "target": Path(args.target).name if args.target else "walkable-grid-1m",
               "params": {"cornerClear": CORNER_CLEAR, "obstacleClear": OBST_CLEAR,
                          "triMinArea": EPS_AREA, "nnTarget": NN_TARGET, "nnMax": NN_MAX,
-                         "routeMaskM": args.route_mask},
+                         "routeMaskM": args.route_mask,
+                         "routeSpaces": args.route_spaces},
               "floors": [], "newBeacons": 0}
 
     refined_plan = json.loads(json.dumps(plan))
     for fl in ["1", "2"]:
         print(f"\n===== Floor {fl} =====", flush=True)
         model = build_model(geo, plan, fl, target, seed=args.seed,
-                            route_mask_m=args.route_mask)
+                            route_mask_m=args.route_mask,
+                            route_spaces=route_spaces.get(fl))
         before = model.review()
         print("基线:", json.dumps(before, ensure_ascii=False), flush=True)
 
