@@ -496,6 +496,30 @@ def main():
         except Exception as e:
             print("  [warn] 读取路线信标方案失败：", e)
 
+    # 柱开放度分析（open_column_wraps.json，由 detect_open_column_wraps.py 生成）：
+    # 开放柱 openColumns / 被拒柱 rejectedColumns 均按柱 id 并入 col_open 字典
+    # （open 标记 _status="open"，rejected 标记 _status="rejected"），
+    # 供柱详情面板展示 openness / nOpen / closedRatio 与判定；缺省自动探测，不强加参数。
+    col_open = {}
+    oc_path = geo_dir / "open_column_wraps.json"
+    if oc_path.exists():
+        try:
+            _oc_data = json.load(open(oc_path, encoding="utf-8"))
+            for _, _oc_fd in _oc_data.get("floors", {}).items():
+                for _oc in _oc_fd.get("openColumns", []):
+                    _entry = dict(_oc)
+                    _entry["_status"] = "open"
+                    col_open[_oc["id"]] = _entry
+                for _rc in _oc_fd.get("rejectedColumns", []):
+                    _entry = dict(_rc)
+                    _entry["_status"] = "rejected"
+                    col_open[_rc["id"]] = _entry
+            print(f"  [info] 柱开放度 {oc_path.name}: {len(col_open)} 个柱")
+        except Exception as e:
+            print("  [warn] 读取柱开放度分析失败：", e)
+    else:
+        print("  [hint] 未找到 open_column_wraps.json，可先运行 detect_open_column_wraps.py")
+
     # ---- 全局范围（所有楼层共用变换，便于跨层对齐） ----
     min_x, min_y = float("inf"), float("inf")
     max_x, max_y = float("-inf"), float("-inf")
@@ -1035,6 +1059,23 @@ def main():
                 ("类型", "结构柱"),
                 ("楼层", f"{fk}F"),
             ]}
+            # 开放度信息（按柱 id 关联 open_column_wraps.json；无记录时仅追加占位行）
+            _ocd = col_open.get(_colid)
+            if _ocd is None:
+                _coldet["rows"].append(("开放度 openness", "—（未分析）"))
+            else:
+                _reason_cn = {"openness_low": "开放度不足", "rays_low": "有效射线不足"}
+                if _ocd.get("_status", "") == "open":
+                    _judge = "开放柱（信标候选）"
+                else:
+                    _judge = _reason_cn.get(_ocd.get("reason", ""),
+                                            _ocd.get("reason") or "—")
+                _coldet["rows"] += [
+                    ("开放度 openness", f"{float(_ocd.get('openness', 0.0)):.3f}"),
+                    ("开放扇区 nOpen", str(int(_ocd.get("nOpen", 0)))),
+                    ("封闭比 closedRatio", f"{float(_ocd.get('closedRatio', 0.0)):.3f}"),
+                    ("判定", _judge),
+                ]
             _colattr = info_attr({"tip": _coltip, "detail": _coldet, "kind": "column"},
                                  floor=floor, coll="columns", pid=_colid, store="geometry", key="id")
             parts.append(f'<g class="layer_column" {_colattr}>'
