@@ -2,7 +2,7 @@
   "venueId": "school-building-01",
   "venueName": "初中学部1#教学楼",
   "version": "9.0.0",
-  "generatedAt": "2026-08-14 12:05",
+  "generatedAt": "2026-08-14 16:02",
   "params": {
     "r": 1.0,
     "opennessMin": 0.6,
@@ -384,519 +384,906 @@
       "rejectedColumns": [
         {
           "id": "F1-C-0001",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.193
         },
         {
           "id": "F1-C-0002",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.196
         },
         {
           "id": "F1-C-0003",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.166
         },
         {
           "id": "F1-C-0004",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.204
         },
         {
           "id": "F1-C-0005",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0006",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.184
         },
         {
           "id": "F1-C-0007",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.183
         },
         {
           "id": "F1-C-0008",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0009",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0010",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0011",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0012",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.432
         },
         {
           "id": "F1-C-0013",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.434
         },
         {
           "id": "F1-C-0014",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0015",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.432
         },
         {
           "id": "F1-C-0016",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.434
         },
         {
           "id": "F1-C-0017",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.189
         },
         {
           "id": "F1-C-0018",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.31
         },
         {
           "id": "F1-C-0019",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.15
         },
         {
           "id": "F1-C-0020",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.35,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0021",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0022",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.396,
+          "nOpen": 0,
+          "closedRatio": 0.171
         },
         {
           "id": "F1-C-0023",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.261,
+          "nOpen": 0,
+          "closedRatio": 0.336
         },
         {
           "id": "F1-C-0024",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.275,
+          "nOpen": 0,
+          "closedRatio": 0.478
         },
         {
           "id": "F1-C-0026",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0027",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.615,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0028",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.355,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0030",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0031",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.543,
+          "nOpen": 0,
+          "closedRatio": 0.243
         },
         {
           "id": "F1-C-0032",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.303,
+          "nOpen": 0,
+          "closedRatio": 0.5
         },
         {
           "id": "F1-C-0033",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.168
         },
         {
           "id": "F1-C-0034",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0035",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.345
         },
         {
           "id": "F1-C-0036",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.12
         },
         {
           "id": "F1-C-0037",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.574,
+          "nOpen": 1,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0038",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.828,
+          "nOpen": 2,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0039",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.583,
+          "nOpen": 4,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0040",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0041",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.241,
+          "nOpen": 0,
+          "closedRatio": 0.488
         },
         {
           "id": "F1-C-0042",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.136,
+          "nOpen": 0,
+          "closedRatio": 0.613
         },
         {
           "id": "F1-C-0043",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.476,
+          "nOpen": 0,
+          "closedRatio": 0.158
         },
         {
           "id": "F1-C-0044",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.248,
+          "nOpen": 0,
+          "closedRatio": 0.417
         },
         {
           "id": "F1-C-0045",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.357
         },
         {
           "id": "F1-C-0046",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.106,
+          "nOpen": 0,
+          "closedRatio": 0.172
         },
         {
           "id": "F1-C-0047",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.28,
+          "nOpen": 0,
+          "closedRatio": 0.539
         },
         {
           "id": "F1-C-0048",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.543,
+          "nOpen": 0,
+          "closedRatio": 0.249
         },
         {
           "id": "F1-C-0049",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.287,
+          "nOpen": 0,
+          "closedRatio": 0.572
         },
         {
           "id": "F1-C-0050",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.364,
+          "nOpen": 0,
+          "closedRatio": 0.248
         },
         {
           "id": "F1-C-0051",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.351,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0052",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0053",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.375,
+          "nOpen": 3,
+          "closedRatio": 0.435
         },
         {
           "id": "F1-C-0054",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.308
         },
         {
           "id": "F1-C-0055",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.181,
+          "nOpen": 0,
+          "closedRatio": 0.288
         },
         {
           "id": "F1-C-0056",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.375,
+          "nOpen": 3,
+          "closedRatio": 0.428
         },
         {
           "id": "F1-C-0057",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.309
         },
         {
           "id": "F1-C-0058",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.156
         },
         {
           "id": "F1-C-0059",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.153
         },
         {
           "id": "F1-C-0060",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.124
         },
         {
           "id": "F1-C-0061",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.114,
+          "nOpen": 0,
+          "closedRatio": 0.173
         },
         {
           "id": "F1-C-0062",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.285,
+          "nOpen": 0,
+          "closedRatio": 0.518
         },
         {
           "id": "F1-C-0063",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.189
         },
         {
           "id": "F1-C-0064",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.417
         },
         {
           "id": "F1-C-0065",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.179
         },
         {
           "id": "F1-C-0066",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.31
         },
         {
           "id": "F1-C-0067",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.049,
+          "nOpen": 0,
+          "closedRatio": 0.153
         },
         {
           "id": "F1-C-0068",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.141
         },
         {
           "id": "F1-C-0069",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.142
         },
         {
           "id": "F1-C-0070",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.098,
+          "nOpen": 0,
+          "closedRatio": 0.156
         },
         {
           "id": "F1-C-0071",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.26,
+          "nOpen": 0,
+          "closedRatio": 0.138
         },
         {
           "id": "F1-C-0072",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.278,
+          "nOpen": 0,
+          "closedRatio": 0.283
         },
         {
           "id": "F1-C-0073",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.376,
+          "nOpen": 3,
+          "closedRatio": 0.425
         },
         {
           "id": "F1-C-0074",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.335
         },
         {
           "id": "F1-C-0075",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.293,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0076",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.355,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0077",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.375,
+          "nOpen": 3,
+          "closedRatio": 0.427
         },
         {
           "id": "F1-C-0078",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.338
         },
         {
           "id": "F1-C-0079",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.262,
+          "nOpen": 0,
+          "closedRatio": 0.13
         },
         {
           "id": "F1-C-0080",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.595,
+          "nOpen": 3,
+          "closedRatio": 0.229
         },
         {
           "id": "F1-C-0081",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.319,
+          "nOpen": 0,
+          "closedRatio": 0.525
         },
         {
           "id": "F1-C-0082",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.105
         },
         {
           "id": "F1-C-0083",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.565,
+          "nOpen": 3,
+          "closedRatio": 0.651
         },
         {
           "id": "F1-C-0084",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.435,
+          "nOpen": 4,
+          "closedRatio": 0.595
         },
         {
           "id": "F1-C-0085",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.099,
+          "nOpen": 0,
+          "closedRatio": 0.157
         },
         {
           "id": "F1-C-0086",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.252,
+          "nOpen": 0,
+          "closedRatio": 0.312
         },
         {
           "id": "F1-C-0087",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.177
         },
         {
           "id": "F1-C-0088",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.312
         },
         {
           "id": "F1-C-0089",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.288,
+          "nOpen": 3,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0090",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.508,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0091",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0092",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0093",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0094",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.287
         },
         {
           "id": "F1-C-0095",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.595
         },
         {
           "id": "F1-C-0096",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.362,
+          "nOpen": 0,
+          "closedRatio": 0.287
         },
         {
           "id": "F1-C-0097",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.362,
+          "nOpen": 0,
+          "closedRatio": 0.48
         },
         {
           "id": "F1-C-0098",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.724,
+          "nOpen": 2,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0099",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.787,
+          "nOpen": 2,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0100",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.815,
+          "nOpen": 2,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0101",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0103",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.48
         },
         {
           "id": "F1-C-0105",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.686,
+          "nOpen": 1,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0106",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.53,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0107",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.53,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0108",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.675,
+          "nOpen": 1,
+          "closedRatio": 0.045
         },
         {
           "id": "F1-C-0109",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.571,
+          "nOpen": 5,
+          "closedRatio": 0.12
         },
         {
           "id": "F1-C-0110",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.521,
+          "nOpen": 3,
+          "closedRatio": 0.058
         },
         {
           "id": "F1-C-0112",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.523,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0113",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.387,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0114",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.522,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0117",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.304,
+          "nOpen": 3,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0118",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0119",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.543,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0120",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.433,
+          "nOpen": 4,
+          "closedRatio": 0.612
         },
         {
           "id": "F1-C-0121",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.384,
+          "nOpen": 1,
+          "closedRatio": 0.442
         },
         {
           "id": "F1-C-0122",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.474,
+          "nOpen": 4,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0123",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.095
         },
         {
           "id": "F1-C-0124",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.432,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0125",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.355
         },
         {
           "id": "F1-C-0126",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.349
         },
         {
           "id": "F1-C-0127",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.351
         },
         {
           "id": "F1-C-0128",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.149,
+          "nOpen": 0,
+          "closedRatio": 0.414
         },
         {
           "id": "F1-C-0129",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.366
         },
         {
           "id": "F1-C-0130",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.299,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F1-C-0131",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.013,
+          "nOpen": 0,
+          "closedRatio": 0.561
         },
         {
           "id": "F1-C-0132",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.105,
+          "nOpen": 0,
+          "closedRatio": 0.555
         },
         {
           "id": "F1-C-0133",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.01,
+          "nOpen": 0,
+          "closedRatio": 0.588
         },
         {
           "id": "F1-C-0134",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.167,
+          "nOpen": 0,
+          "closedRatio": 0.317
         },
         {
           "id": "F1-C-0135",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.012,
+          "nOpen": 0,
+          "closedRatio": 0.306
         },
         {
           "id": "F1-C-0136",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.384,
+          "nOpen": 0,
+          "closedRatio": 0.417
         }
       ],
       "wrapWallSegments": 40,
@@ -908,339 +1295,591 @@
       "rejectedColumns": [
         {
           "id": "F2-C-0001",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.209
         },
         {
           "id": "F2-C-0002",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.344
         },
         {
           "id": "F2-C-0003",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.332
         },
         {
           "id": "F2-C-0004",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.192,
+          "nOpen": 0,
+          "closedRatio": 0.121
         },
         {
           "id": "F2-C-0005",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.157
         },
         {
           "id": "F2-C-0006",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.109,
+          "nOpen": 0,
+          "closedRatio": 0.168
         },
         {
           "id": "F2-C-0007",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.262,
+          "nOpen": 0,
+          "closedRatio": 0.33
         },
         {
           "id": "F2-C-0008",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.42,
+          "nOpen": 0,
+          "closedRatio": 0.422
         },
         {
           "id": "F2-C-0009",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.144,
+          "nOpen": 2,
+          "closedRatio": 0.691
         },
         {
           "id": "F2-C-0010",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.439
         },
         {
           "id": "F2-C-0011",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.411,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0012",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.31,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0013",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 1.0
         },
         {
           "id": "F2-C-0014",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.43
         },
         {
           "id": "F2-C-0015",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.288,
+          "nOpen": 1,
+          "closedRatio": 0.216
         },
         {
           "id": "F2-C-0016",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.142,
+          "nOpen": 2,
+          "closedRatio": 0.688
         },
         {
           "id": "F2-C-0017",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.429
         },
         {
           "id": "F2-C-0018",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0019",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.115
         },
         {
           "id": "F2-C-0020",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.146
         },
         {
           "id": "F2-C-0021",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.178,
+          "nOpen": 2,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0022",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.405,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0023",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0024",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.376
         },
         {
           "id": "F2-C-0025",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.549,
+          "nOpen": 3,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0026",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.114,
+          "nOpen": 0,
+          "closedRatio": 0.426
         },
         {
           "id": "F2-C-0027",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.303
         },
         {
           "id": "F2-C-0028",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.355
         },
         {
           "id": "F2-C-0029",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.157
         },
         {
           "id": "F2-C-0030",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.434,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0031",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.285,
+          "nOpen": 0,
+          "closedRatio": 0.569
         },
         {
           "id": "F2-C-0032",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.417,
+          "nOpen": 0,
+          "closedRatio": 0.331
         },
         {
           "id": "F2-C-0033",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.377,
+          "nOpen": 3,
+          "closedRatio": 0.425
         },
         {
           "id": "F2-C-0034",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.382
         },
         {
           "id": "F2-C-0035",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.417,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0036",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.118,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0037",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.376,
+          "nOpen": 3,
+          "closedRatio": 0.436
         },
         {
           "id": "F2-C-0038",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.387
         },
         {
           "id": "F2-C-0039",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.287,
+          "nOpen": 0,
+          "closedRatio": 0.366
         },
         {
           "id": "F2-C-0040",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.375,
+          "nOpen": 3,
+          "closedRatio": 0.431
         },
         {
           "id": "F2-C-0041",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.381
         },
         {
           "id": "F2-C-0042",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.169
         },
         {
           "id": "F2-C-0043",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.178
         },
         {
           "id": "F2-C-0044",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.145
         },
         {
           "id": "F2-C-0045",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.113,
+          "nOpen": 0,
+          "closedRatio": 0.175
         },
         {
           "id": "F2-C-0046",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.278,
+          "nOpen": 0,
+          "closedRatio": 0.531
         },
         {
           "id": "F2-C-0047",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.211
         },
         {
           "id": "F2-C-0048",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.441
         },
         {
           "id": "F2-C-0049",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.23
         },
         {
           "id": "F2-C-0050",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.39
         },
         {
           "id": "F2-C-0051",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.375
         },
         {
           "id": "F2-C-0052",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.166
         },
         {
           "id": "F2-C-0053",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.186
         },
         {
           "id": "F2-C-0054",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.113,
+          "nOpen": 0,
+          "closedRatio": 0.171
         },
         {
           "id": "F2-C-0055",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.257,
+          "nOpen": 0,
+          "closedRatio": 0.128
         },
         {
           "id": "F2-C-0056",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.42,
+          "nOpen": 0,
+          "closedRatio": 0.423
         },
         {
           "id": "F2-C-0057",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.709
         },
         {
           "id": "F2-C-0058",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.429
         },
         {
           "id": "F2-C-0059",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.403,
+          "nOpen": 5,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0060",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.114,
+          "nOpen": 0,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0061",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.863
         },
         {
           "id": "F2-C-0062",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.431
         },
         {
           "id": "F2-C-0063",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.293,
+          "nOpen": 0,
+          "closedRatio": 0.348
         },
         {
           "id": "F2-C-0064",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.595,
+          "nOpen": 3,
+          "closedRatio": 0.257
         },
         {
           "id": "F2-C-0065",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.164,
+          "nOpen": 0,
+          "closedRatio": 0.232
         },
         {
           "id": "F2-C-0066",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.105
         },
         {
           "id": "F2-C-0067",
-          "reason": "rays_low"
+          "reason": "rays_low",
+          "openness": 0.707,
+          "nOpen": 4,
+          "closedRatio": 0.0
         },
         {
           "id": "F2-C-0068",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.276,
+          "nOpen": 3,
+          "closedRatio": 0.111
         },
         {
           "id": "F2-C-0069",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.112,
+          "nOpen": 0,
+          "closedRatio": 0.169
         },
         {
           "id": "F2-C-0070",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.274,
+          "nOpen": 0,
+          "closedRatio": 0.503
         },
         {
           "id": "F2-C-0071",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.21
         },
         {
           "id": "F2-C-0072",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.394
         },
         {
           "id": "F2-C-0073",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.363
         },
         {
           "id": "F2-C-0074",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.363
         },
         {
           "id": "F2-C-0075",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.362
         },
         {
           "id": "F2-C-0076",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.381
         },
         {
           "id": "F2-C-0077",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.0,
+          "nOpen": 0,
+          "closedRatio": 0.348
         },
         {
           "id": "F2-C-0078",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.022,
+          "nOpen": 0,
+          "closedRatio": 0.349
         },
         {
           "id": "F2-C-0079",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.047,
+          "nOpen": 0,
+          "closedRatio": 0.676
         },
         {
           "id": "F2-C-0080",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.047,
+          "nOpen": 0,
+          "closedRatio": 0.667
         },
         {
           "id": "F2-C-0081",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.015,
+          "nOpen": 0,
+          "closedRatio": 0.605
         },
         {
           "id": "F2-C-0082",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.015,
+          "nOpen": 0,
+          "closedRatio": 0.367
         },
         {
           "id": "F2-C-0083",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.015,
+          "nOpen": 0,
+          "closedRatio": 0.677
         },
         {
           "id": "F2-C-0084",
-          "reason": "openness_low"
+          "reason": "openness_low",
+          "openness": 0.048,
+          "nOpen": 0,
+          "closedRatio": 0.725
         }
       ],
       "wrapWallSegments": 0,

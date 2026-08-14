@@ -239,7 +239,10 @@ def classify_floor(fdict, params, floor_label, debug=False):
         annulus = c.buffer(params["r"]).difference(c.buffer(0.05))
         a_a = annulus.area
         if a_a <= 1e-12:
-            rejected.append({"id": cid, "reason": "openness_low"})
+            # 退化柱(环形探测区面积≈0): openness/closed_ratio 无意义,
+            # 按与 openColumns 相同的字段名输出 0 值诊断字段。
+            rejected.append({"id": cid, "reason": "openness_low",
+                             "openness": 0.0, "nOpen": 0, "closedRatio": 0.0})
             col_roles[cid] = "enclosed"
             continue
         a_o = annulus.intersection(O).area if O is not None else 0.0
@@ -275,7 +278,10 @@ def classify_floor(fdict, params, floor_label, debug=False):
                 reason = "rays_low"
             else:
                 reason = "closed_ratio_high"
-            rejected.append({"id": cid, "reason": reason})
+            rejected.append({"id": cid, "reason": reason,
+                             "openness": round(openness, 3),
+                             "nOpen": n_open,
+                             "closedRatio": round(closed_ratio, 3)})
             col_roles[cid] = "enclosed"
             continue
 
