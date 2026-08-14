@@ -6,8 +6,9 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
 目标: 让部署真正满足 4 条质量规则(评审发现原方案由贪心补点生成, 未强制这些约束):
   R1 左右两侧分开部署  —— 每条走廊沿长轴两侧各 >=1 个 wall 信标, 缺侧补点
   R2 避开墙角/障碍物   —— 信标距真墙角(非共线墙交点) >= 0.8m; 距柱体 >= 0.5m
-  R3 三角部署          —— 每个覆盖点的 3 个最近可见信标非共线(最小三角面积 >= 0.6 m^2),
-                          对退化点定向补点打破共线
+  R3 三角部署          —— 每个覆盖点的 3 个最近可见信标非退化(GDOP <= GDOP_MAX 且
+                          目标不超出三角形最近边 D_OUT_MAX), 对退化点定向补点把
+                          目标包进三角形(向目标外扩方向的对侧走廊墙投影)
   R4 部署均匀          —— Lloyd 式原位松弛 + 间距过大处补点, NN 间距 CV 尽量 < 0.5
 
 硬约束(不可破坏): 每个目标采样点的可见信标数 >= 3 不下降。
@@ -74,7 +75,9 @@ COL_MOUNT_TOL = 0.06      # 柱面挂载容差(m): 距柱 <= 此值视为「挂�
 WALL_SNAP_MAX = 3.0       # 悬空修复/补点允许吸附的最近墙搜索半径(m)
 ENCLOSED_EDGE = 0.3       # 封闭空间判定的边缘容差(m): 越过此深度视为进入室内
 MIN_SPACING = 1.5         # 新增信标与既有信标最小间距(m), 防重合堆积
-EPS_AREA = 0.6            # 三点三角面积(m^2)下限, 低于视为退化(共线)
+EPS_AREA = 0.6            # 兼容旧判据(三角面积 m^2), 实际已由 GDOP/外扩判据取代
+GDOP_MAX = 3.0            # 退化判据: 2D 三边测量 GDOP 上限, 超过视为退化
+D_OUT_MAX = 1.0           # 退化判据: 目标到 3 信标三角形最近边距离上限(m), 超过视为退化(外扩)
 ROUTE_MASK_M = 6.0        # 路线掩码半径(m): 补点候选距最近路线指纹点须 <= 此值
                           # (与 debug/check_beacon_7rules.py 的 ROUTE_TOL 同口径,
                           #  满足「针对测试线路, 不相关空间不部署信标」规则)
@@ -90,6 +93,9 @@ NN_MAX = 7.0              # 过疏阈值: 高于则考虑补点
 W_CORR = 12.0             # R1: 消除一条缺侧走廊的收益(硬要求, 权重最高)
 W_TRI = 1.0               # R3: 修复一个退化采样点的收益
 W_GAP = 3.0               # R4: 削减 1m 超长间距的收益(12.6m 空档收益 16.8 > R1, 优先二分)
+GDOP_FIX_BONUS = 12.0     # R3 垂直互补: 每修复 1 个当前 GDOP>3 退化点的额外收益,
+                          # 使"近共线同墙"的 GDOP 修复优先于单条 R1 缺侧(12), 避免被
+                          # 走廊/间距候选挤掉导致 GDOP>3 迟迟无法打破
 RELAX_STEP = 0.3          # 原位松弛候选步长(m)
 RELAX_R = 0.6             # 原位松弛候选半径(m)
 SLIDE_STEP = 0.3          # 沿墙滑动步长(m)
@@ -101,6 +107,56 @@ MAX_NEW = 40              # 允许新增信标上限(统一代价补点总量封
 
 def tri_area(a, b, c):
     return abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2.0
+
+
+def gdop2d(p, b1, b2, b3):
+    """2D 三边测量 GDOP = sqrt(trace((H^T H)^-1)), H=3x2 方向余弦矩阵。
+    理论下界 1.155(等边三角+目标在内部); 共线返回 999。"""
+    a11 = a12 = a22 = 0.0
+    for b in (b1, b2, b3):
+        dx, dy = b[0] - p[0], b[1] - p[1]
+        d = math.hypot(dx, dy)
+        if d < 1e-6:
+            return 999.0
+        cx, cy = dx / d, dy / d
+        a11 += cx * cx
+        a12 += cx * cy
+        a22 += cy * cy
+    det = a11 * a22 - a12 * a12
+    return math.sqrt((a11 + a22) / det) if det > 1e-12 else 999.0
+
+
+def _sign_tri(p1, p2, p3):
+    return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
+
+
+def in_triangle(p, a, b, c):
+    """目标 p 是否在三角形 a,b,c 内(含边界)"""
+    d1, d2, d3 = _sign_tri(p, a, b), _sign_tri(p, b, c), _sign_tri(p, c, a)
+    return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+
+
+def _dist_pt_seg(p, a, b):
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy
+    t = 0 if L2 < 1e-12 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / L2))
+    cx, cy = ax + t * dx, ay + t * dy
+    return math.hypot(px - cx, py - cy)
+
+
+def tri_out_dist(p, a, b, c):
+    """目标到三角形最近边距离: 三角形内返回 0, 外则返回最近边距离(m)"""
+    if in_triangle(p, a, b, c):
+        return 0.0
+    return min(_dist_pt_seg(p, a, b), _dist_pt_seg(p, b, c), _dist_pt_seg(p, c, a))
+
+
+def is_degenerate(p, b1, b2, b3):
+    """新退化判据: GDOP > GDOP_MAX 或 外扩距离 > D_OUT_MAX"""
+    return gdop2d(p, b1, b2, b3) > GDOP_MAX or tri_out_dist(p, b1, b2, b3) > D_OUT_MAX
 
 
 def nearest_wall(model, pt, maxd=2.0):
@@ -433,7 +489,8 @@ class FloorModel:
 
     # ---------- 退化点(三角) ----------
     def degen_points(self, rebuild=False):
-        """返回当前退化采样点坐标列表(缓存)。退化 = 3 最近可见信标三角面积 < EPS_AREA。"""
+        """返回当前退化采样点坐标列表(缓存)。退化 = 3 最近可见信标 GDOP > GDOP_MAX
+        或 目标外扩(到三角形最近边距离) > D_OUT_MAX。"""
         if self._degen_idx is None or rebuild:
             idxs = []
             for i, (x, y) in enumerate(self.pts):
@@ -442,8 +499,8 @@ class FloorModel:
                     continue
                 vis3 = sorted(s, key=lambda k: math.hypot(
                     self.beacons[k][0] - x, self.beacons[k][1] - y))[:3]
-                if tri_area(self.beacons[vis3[0]], self.beacons[vis3[1]],
-                            self.beacons[vis3[2]]) < EPS_AREA:
+                if is_degenerate((x, y), self.beacons[vis3[0]],
+                                 self.beacons[vis3[1]], self.beacons[vis3[2]]):
                     idxs.append(i)
             self._degen_idx = idxs
         return [self.pts[i] for i in self._degen_idx]
@@ -998,9 +1055,9 @@ def _gap_gain(model, pt):
 
 
 def _tri_gain_exact(model, degen_pts, degen_tree, pt):
-    """R3 分量: 候选加入后能修复(打破共线)的退化采样点数, 精确评估。
+    """R3 分量: 候选加入后能修复(打破退化)的退化采样点数, 精确评估。
     仅查询 TRI_GAIN_R 半径内的退化点; 候选须比退化点当前第 3 近信标更近
-    才进入 top3, 且新三角面积 >= EPS_AREA 才视为修复。"""
+    才进入 top3, 且新构型 GDOP 与外扩达标(非退化)才视为修复。"""
     if degen_tree is None:
         return 0.0
     bx, by = pt
@@ -1016,15 +1073,45 @@ def _tri_gain_exact(model, degen_pts, degen_tree, pt):
             continue
         vis3 = sorted(s, key=lambda k: math.hypot(
             model.beacons[k][0] - px, model.beacons[k][1] - py))[:3]
-        if tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]],
-                    model.beacons[vis3[2]]) >= EPS_AREA:
+        if not is_degenerate((px, py), model.beacons[vis3[0]],
+                             model.beacons[vis3[1]], model.beacons[vis3[2]]):
             continue
         if math.hypot(bx - px, by - py) >= math.hypot(
                 model.beacons[vis3[2]][0] - px, model.beacons[vis3[2]][1] - py):
             continue
-        if tri_area(model.beacons[vis3[0]], model.beacons[vis3[1]], pt) >= EPS_AREA:
+        if not is_degenerate((px, py), model.beacons[vis3[0]],
+                             model.beacons[vis3[1]], pt):
             gain += W_TRI
     return gain
+
+
+def _gdop_fix_gain(model, degen_pts, degen_tree, pt):
+    """R3 垂直互补辅助: 候选加入后能把『当前 GDOP>3』退化点修到 GDOP<=GDOP_MAX 的个数。
+    与 _tri_gain_exact 同构, 仅限定 GDOP 维度(近共线同墙场景), 用于给垂直候选
+    加 GDOP_FIX_BONUS 优先级, 保证 GDOP>3 修复不被走廊/间距候选挤掉。"""
+    if degen_tree is None:
+        return 0.0
+    bx, by = pt
+    nn_idx = degen_tree.query_nearest(Point(bx, by))
+    if not (nn_idx.size and math.hypot(bx - degen_pts[nn_idx[0]][0],
+                                       by - degen_pts[nn_idx[0]][1]) <= TRI_GAIN_R):
+        return 0.0
+    cnt = 0
+    for hit in degen_tree.query(Point(bx, by).buffer(TRI_GAIN_R)):
+        px, py = degen_pts[hit]
+        s = model.cache[(px, py)]
+        if len(s) < 3:
+            continue
+        vis3 = sorted(s, key=lambda k: math.hypot(
+            model.beacons[k][0] - px, model.beacons[k][1] - py))[:3]
+        b0, b1, b2 = (model.beacons[k] for k in vis3)
+        if gdop2d((px, py), b0, b1, b2) <= GDOP_MAX:
+            continue
+        if math.hypot(bx - px, by - py) >= math.hypot(b2[0] - px, b2[1] - py):
+            continue
+        if gdop2d((px, py), b0, b1, pt) <= GDOP_MAX:
+            cnt += 1
+    return cnt
 
 
 def _unified_candidates(model, missing, degen_pts, degen_tree):
@@ -1073,20 +1160,21 @@ def _unified_candidates(model, missing, degen_pts, degen_tree):
                     and model.valid_pos(*q)):
                 continue
             push(q, W_CORR + _gap_gain(model, q))
-    # B. R3: 退化点垂直方向候选(精确评估修复数)
+    # B. R3: 退化点向三角形外扩方向候选(把目标包进三角形, 吸附对侧走廊墙)
     for (x, y) in degen_pts:
         s = model.cache[(x, y)]
         if len(s) < 3:
             continue
         vis3 = sorted(s, key=lambda k: math.hypot(
             model.beacons[k][0] - x, model.beacons[k][1] - y))[:3]
-        b0, b1 = model.beacons[vis3[0]], model.beacons[vis3[1]]
-        dx, dy = b1[0] - b0[0], b1[1] - b0[1]
+        b0, b1, b2 = [model.beacons[k] for k in vis3]
+        gx, gy = (b0[0] + b1[0] + b2[0]) / 3.0, (b0[1] + b1[1] + b2[1]) / 3.0
+        dx, dy = x - gx, y - gy
         dlen = math.hypot(dx, dy) or 1e-9
-        nx, ny = -dy / dlen, dx / dlen
-        for sgn in (-1, 1):
-            qx, qy = x + nx * 3.0 * sgn, y + ny * 3.0 * sgn
-            w, wd = nearest_wall(model, (qx, qy), maxd=2.0)
+        ux, uy = dx / dlen, dy / dlen
+        for dist_m in (2.0, 3.5, 5.0):
+            qx, qy = x + ux * dist_m, y + uy * dist_m
+            w, wd = nearest_wall(model, (qx, qy), maxd=2.5)
             if w is None:
                 continue
             proj = w.interpolate(w.project(Point(qx, qy)))
@@ -1095,6 +1183,24 @@ def _unified_candidates(model, missing, degen_pts, degen_tree):
             push((proj.x, proj.y),
                  _tri_gain_exact(model, degen_pts, degen_tree, (proj.x, proj.y))
                  + _gap_gain(model, (proj.x, proj.y)))
+        # B2. 垂直互补: 2 最近信标连线法向多档投影墙(打破近共线同墙, 覆盖外扩够不到的 GDOP>3)
+        b0, b1 = model.beacons[vis3[0]], model.beacons[vis3[1]]
+        dx, dy = b1[0] - b0[0], b1[1] - b0[1]
+        dlen = math.hypot(dx, dy) or 1e-9
+        nx, ny = -dy / dlen, dx / dlen
+        for dist_m in (2.0, 3.5, 5.0):
+            for sgn in (-1, 1):
+                qx, qy = x + nx * dist_m * sgn, y + ny * dist_m * sgn
+                w, wd = nearest_wall(model, (qx, qy), maxd=3.0)
+                if w is None:
+                    continue
+                proj = w.interpolate(w.project(Point(qx, qy)))
+                if not model.valid_pos(proj.x, proj.y):
+                    continue
+                push((proj.x, proj.y),
+                     _tri_gain_exact(model, degen_pts, degen_tree, (proj.x, proj.y))
+                     + GDOP_FIX_BONUS * _gdop_fix_gain(model, degen_pts, degen_tree, (proj.x, proj.y))
+                     + _gap_gain(model, (proj.x, proj.y)))
     # C. R4: 超长间距最大者的中点沿墙滑动(每个 gap 提供若干贴墙偏移候选)
     gap_order = sorted(range(len(model.beacons)),
                        key=lambda i: model.nn_dist(i), reverse=True)

@@ -160,7 +160,7 @@
 
 现有 `EPS_AREA = 0.6` 退化点判据（33 个退化点）仅命中 GDOP>3 的 22 个点中的 **2 个**——面积判据抓得住"三角形面积塌陷"，抓不住"**目标在三角形外**"造成的 GDOP 恶化。
 
-**建议（后续独立分支实施）**：退化判据升级为 **GDOP > 3** 或「目标在三角形内」检查，替换面积判据。
+**建议（已由 `feat-gdop-criterion` 实施，2026-08-14）**：退化判据升级为 **GDOP > 3** 或「目标到三角形最近边外扩 > 1m」检查，替换面积判据（`is_degenerate = gdop2d > GDOP_MAX(3.0) or tri_out_dist > D_OUT_MAX(1.0)`）。补点策略同步改造：B 段退化点向三角形外扩方向（质心反向 2.0/3.5/5.0m）投影对侧走廊墙 + B2 垂直互补（2 最近信标连线法向 ±2.0/3.5/5.0m，带 `GDOP_FIX_BONUS=12.0` 优先修复近共线同墙的 GDOP>3 退化点）。满配额 110 信标方案（F1 93/F2 17）：退化点 256（GDOP>3 13、外扩 243）、pct_ge3 96.02%，QA 三方独立复算一致。剩余 GDOP>3 9 点为几何硬限制（紧贴单侧墙+3 信标近共线，垂直方向 3-7m 无合法墙面），需现场评估替代布点。
 
 ---
 
@@ -235,7 +235,7 @@
 | 1 | 主方案维持 `--route-mask 6.0`（74 信标），`--route-spaces` 保留为可选 | ✅ 已实现 / 已实验确认 |
 | 2 | 信标部署验收增加高/底比约束：**最小 0.20（保守 0.25），< 0.05 禁用** | 📋 已写入 08 §2.3 |
 | 3 | 验收覆盖口径以 `refine --review-only` 为准（F1 92.61% / F2 86.11%），probe 折算口径仅参考 | 📋 已写入 08 §4.4 |
-| 4 | 退化点判据从 `EPS_AREA` 升级为 GDOP>3 / 三角形内检查 | ⏳ 待独立分支实施 |
+| 4 | 退化点判据从 `EPS_AREA` 升级为 GDOP>3 / 三角形内检查 | ✅ 已实施（feat-gdop-criterion，满配额 110 信标：退化 256、GDOP>3 13、pct_ge3 96.02%） |
 | 5 | 2m 精度 @ σ=1.5m 无解：要么校准降低 σ_range ≤ 1.06m，要么加密信标 | 📋 方案层已记录 |
 | 6 | 降噪方案：RSSI 中值滤波 N≤3 + 位置域 KF + 走廊中轴线投影（σ_pos 预期 2m → ~1m） | ⏳ 待独立分支实施（feat-rssi-median / feat-kalman-filter） |
 
@@ -247,11 +247,15 @@
 # 路线三点定位基础方案（60 信标）
 python -m src.tools.gen_trilateration_plan_routes
 
-# refined 补点（路线掩码 6m）→ 74 信标
+# refined 补点（路线掩码 6m）→ 满配额 110 信标（F1 93/F2 17）
+# 默认 --max-new（50）；预算内档 --max-new 25 → 85 信标（GDOP>3 18）
 python -m src.tools.refine_beacon_placement \
   --plan result/beacon_deployment_plan_trilateration_routes.json \
   --target result/fingerprint_grid_routes.json \
   --route-mask 6.0
+
+# 三档方案独立复算/验证（QA 脚本，debug/ 不入库）
+python debug/qa_gdop_independent.py --plan result/beacon_deployment_plan_trilateration_routes_refined.json
 
 # 7 规则合规复检（重点看 [7] 路线外 = 0）
 python debug/check_beacon_7rules.py
