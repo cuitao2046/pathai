@@ -34,6 +34,7 @@ result/*
 !result/fingerprint_grid.json
 !result/skeleton_manual_parsed.json
 !result/open_column_wraps.json
+!result/ble_deployment.json
 
 # Jupyter
 .ipynb_checkpoints/
