@@ -346,9 +346,12 @@ def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_para
     浏览器端能力（受浏览器沙箱约束，导出走 Blob + a.download）：
       1. 部署模式：点击地图空白处新增信标（BK-M-{层}-{序号:03d}），落点即进入拖拽；
       2. 任意模式下：按住信标拖拽移动，松手把新米制坐标写回 data-info（坐标行）；
-      3. 导出：把内存中的全局模式信标（含新增/移动后坐标）组装为
+      3. 导出：把内存中的测试路线模式信标（含新增/移动后坐标）组装为
          {beacons:[...], summary:{total, byFloor, bySemantic, byMount}} 下载为
          ble_deployment.json（用户保存到 result/ 目录）。
+
+    人工部署只针对测试路线方案：进入部署模式自动切到「测试路线」方案（route），
+    新增信标挂入 .mode-route 组；全局方案（beacon_floors）完全不受影响。
     """
     floor_keys_js = json.dumps([str(k) for k in sorted_floors], ensure_ascii=False)
     defaults_js = json.dumps(default_params, ensure_ascii=False)
@@ -359,13 +362,13 @@ def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_para
         % (min_x, max_y, svh_per_floor, len(sorted_floors), floor_keys_js, defaults_js)
     )
     tpl = '''<script>
-// ===== 人工部署信标：拖拽移动 / 点选新增 / 导出 ble_deployment.json =====
+// ===== 人工部署信标（测试路线）：拖拽移动 / 点选新增 / 导出 ble_deployment.json =====
 // 独立 <script>，与「区域标注」同级。坐标反变换常量经下方占位符注入。
 __CONSTS__
 
 var DEPLOY_MODE = false;
 var DEPLOY_COLOR = '#00695C';        // 人工部署信标（semanticTag=manual_deploy）颜色
-var DEPLOY_BEACONS = [];             // 内存中的全局模式信标记录（含新增/移动后的 coordinates）
+var DEPLOY_BEACONS = [];             // 内存中的测试路线模式信标记录（含新增/移动后的 coordinates）
 var DEPLOY_NEXT_SEQ = {};            // floor -> 下一可用序号（BK-M-{floor}-{seq:03d}）
 var deployDrag = null;               // 当前拖拽中的信标 <g>
 var deployDragMoved = false;         // 本次拖拽是否已超过点击阈值（4px）
@@ -433,11 +436,11 @@ function deployRecordFromDetail(info, g){
     subType: rows['类型/方向'] ? String(rows['类型/方向']).split('/')[0] : ''
   };
 }
-// 收集全局模式信标（解析 data-info.b；同时缓存每层 BK-M-* 最大序号）
+// 收集测试路线模式信标（解析 data-info.b；同时缓存每层 BK-M-* 最大序号）
 function deployCollectBeacons(){
   DEPLOY_BEACONS = [];
   DEPLOY_NEXT_SEQ = {};
-  document.querySelectorAll('.layer_beacon[data-mode="global"]').forEach(function(g){
+  document.querySelectorAll('.layer_beacon[data-mode="route"]').forEach(function(g){
     var info = null;
     try { info = JSON.parse(g.getAttribute('data-info')); } catch(e) {}
     var rec = (info && info.b) ? info.b : deployRecordFromDetail(info, g);
@@ -451,15 +454,15 @@ function deployCollectBeacons(){
       if (!(fk2 in DEPLOY_NEXT_SEQ) || seq >= DEPLOY_NEXT_SEQ[fk2]) DEPLOY_NEXT_SEQ[fk2] = seq + 1;
     }
   });
-  deployList('已加载 ' + DEPLOY_BEACONS.length + ' 个全局信标（可拖拽移动；部署模式下点击空白新增）');
+  deployList('已加载 ' + DEPLOY_BEACONS.length + ' 个测试路线信标（可拖拽移动；部署模式下点击空白新增）');
 }
-// 找当前楼层的 mode-global 组（新增信标挂入，保持图层开关/模式切换语义）；缺失时补建
+// 找当前楼层的 mode-route 组（新增信标挂入，保持图层开关/模式切换语义）；缺失时补建
 function deployFloorGroup(fk){
-  var g = document.querySelector('.mode-global[data-floor="' + fk + '"]');
+  var g = document.querySelector('.mode-route[data-floor="' + fk + '"]');
   if (g) return g;
   var NS = 'http://www.w3.org/2000/svg';
   g = document.createElementNS(NS, 'g');
-  g.setAttribute('class', 'mode-global');
+  g.setAttribute('class', 'mode-route');
   g.setAttribute('data-floor', String(fk));
   svg.appendChild(g);
   return g;
@@ -470,7 +473,7 @@ function deployCreateBeaconEl(rec, fk){
   var g = document.createElementNS(NS, 'g');
   g.setAttribute('class', 'layer_beacon');
   g.setAttribute('data-floor', String(fk));
-  g.setAttribute('data-mode', 'global');
+  g.setAttribute('data-mode', 'route');
   g.setAttribute('data-info', JSON.stringify(deployBuildInfo(rec)));
   var geo = rec.coordinates;
   var sx = DEPLOY_GEOX.marginX + (geo[0] - DEPLOY_GEOX.ox) * DEPLOY_GEOX.scale;
@@ -594,9 +597,19 @@ function deployToggleMode(){
     btn.classList.toggle('active', DEPLOY_MODE);
   }
   wrapper.style.cursor = DEPLOY_MODE ? 'crosshair' : '';
-  deployHint(DEPLOY_MODE
-    ? '部署模式：点击地图空白处新增信标（BK-M-{层}-{序号}），拖拽可移动；退出后仍可拖拽移动。'
-    : '已退出部署模式（拖拽移动信标仍可用）。');
+  if (DEPLOY_MODE) {
+    // 人工部署只针对测试路线方案：进入部署模式自动切到「测试路线」，
+    // 保证 .mode-route 组（默认隐藏）可见，新增/拖拽的信标可被看到。
+    if (typeof window.setMode === 'function') {
+      setMode('route');
+    } else {
+      document.querySelectorAll('.mode-route').forEach(function(el){ el.style.display = ''; });
+      document.querySelectorAll('.mode-global').forEach(function(el){ el.style.display = 'none'; });
+    }
+    deployHint('部署模式（测试路线）：点击地图空白处新增测试路线信标（BK-M-{层}-{序号}），拖拽可移动；退出后仍可拖拽移动。');
+  } else {
+    deployHint('已退出部署模式（拖拽移动信标仍可用）。当前为测试路线方案，可点击右上角「全局」切回全局方案。');
+  }
 }
 // ---- 拖拽移动（任意模式可用）：按下选中 -> 拖动更新 circle/text -> 松手写回米制坐标 ----
 function deployStartDrag(e, g){
@@ -644,7 +657,7 @@ function deployEndDrag(e){
       entry.b.coordinates = [x, y];
       deployUpdateInfo(entry, x, y);
     } else {
-      // 路线模式信标：仅更新 DOM/data-info 坐标行（不纳入导出）
+      // 全局模式信标：仅更新 DOM/data-info 坐标行（人工部署只针对测试路线，不纳入导出）
       var info = null;
       try { info = JSON.parse(g.getAttribute('data-info')); } catch(err) {}
       if (info) {
@@ -661,13 +674,14 @@ function deployEndDrag(e){
 }
 // ---- 导出：组装与部署方案同构 JSON（beacons + summary），Blob + a.download 下载 ----
 // 关键边界：浏览器沙箱无法直接写磁盘，用户把下载的 ble_deployment.json 保存到 result/ 目录。
+// 导出语义为「测试路线人工部署方案」：DEPLOY_BEACONS 收集的是 route 模式信标。
 function deployExport(){
   var beacons = [];
   DEPLOY_BEACONS.forEach(function(entry){
     beacons.push(JSON.parse(JSON.stringify(entry.b)));  // 深拷贝快照
   });
   if (!beacons.length) {
-    alert('当前全局方案没有信标可导出。请先加载 ble_deployment.json，或进入部署模式点击地图新增信标。');
+    alert('当前测试路线方案没有信标可导出。请先加载 ble_deployment.json，或进入部署模式点击地图新增测试路线信标。');
     return;
   }
   var byFloor = {}, bySemantic = {}, byMount = {};
@@ -692,8 +706,8 @@ function deployExport(){
   a.href = url; a.download = 'ble_deployment.json';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
-  deployList('已导出 ' + beacons.length + ' 个信标 -> ble_deployment.json');
-  deployHint('已导出 ble_deployment.json，请保存到 result/ 目录（浏览器沙箱无法直接写磁盘）。');
+  deployList('已导出 ' + beacons.length + ' 个测试路线信标 -> ble_deployment.json');
+  deployHint('已导出 ble_deployment.json（测试路线人工部署方案），请保存到 result/ 目录（浏览器沙箱无法直接写磁盘）。');
 }
 // ---- 事件接线（capture 优先于主脚本 app.js 的 bubble 处理）----
 svg.addEventListener('mousedown', function(e){
@@ -935,7 +949,7 @@ def main():
             print("  [warn] 读取路线信标方案失败：", e)
 
     # 人工部署方案优先加载：result/ble_deployment.json 存在且非空 beacons 列表时，
-    # 作为全局模式（beacon_floors）的唯一信标来源（路线模式保持独立）。
+    # 作为「测试路线模式」（beacon_floors_routes）的唯一信标来源（全局模式保持独立）。
     # --no-ble-deploy 可跳过检测（QA 回归旧逻辑）。
     _ble_data = None
     if not _args.no_ble_deploy:
@@ -945,10 +959,11 @@ def main():
                 _ble_data = json.load(open(_ble_path, encoding="utf-8"))
                 _ble_beacons = _ble_data.get("beacons") or []
                 if _ble_beacons:
-                    beacon_floors = {}
+                    beacon_floors_routes = {}
                     for _b in _ble_beacons:
-                        beacon_floors.setdefault(str(_b.get("floor")), []).append(_b)
-                    print(f"  [info] 加载人工部署方案 ble_deployment.json: {len(_ble_beacons)} 个信标")
+                        beacon_floors_routes.setdefault(str(_b.get("floor")), []).append(_b)
+                    print(f"  [info] 加载人工部署方案 ble_deployment.json（测试路线）: "
+                          f"{len(_ble_beacons)} 个信标")
                 else:
                     print("  [warn] ble_deployment.json 存在但 beacons 为空，忽略并沿用旧逻辑")
             except Exception as e:
