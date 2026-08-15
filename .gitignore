@@ -36,6 +36,8 @@ result/*
 !result/open_column_wraps.json
 !result/ble_deployment.json
 !result/fingerprint_valid_region.json
+!result/fingerprint_coverage_compare.html
+!result/fingerprint_coverage_compare.json
 
 # Jupyter
 .ipynb_checkpoints/
