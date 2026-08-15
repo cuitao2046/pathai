@@ -273,8 +273,9 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 <div id="deploy-bar">
   <b>测试路线人工部署信标</b>
   <button type="button" id="btn-deploy-toggle" onclick="deployToggleMode()">进入部署模式</button>
-  <button type="button" onclick="deployExport()" title="导出当前测试路线信标状态（含新增/移动后坐标）为 ble_deployment.json">导出部署方案(JSON)</button>
-  <span class="hint" id="deploy-hint">进入部署模式后自动切到「测试路线」方案，点击地图空白处新增测试路线信标；任意模式下可直接拖拽信标移动位置；导出后请保存到 result/ 目录。</span>
+  <button type="button" id="btn-deploy-delete" onclick="deployDeleteSelected()" title="删除当前选中的测试路线信标（也可按 Delete 键）" disabled>删除选中信标</button>
+  <button type="button" onclick="deployExport()" title="导出当前测试路线信标状态（含新增/删除/移动后坐标）为 ble_deployment.json">导出部署方案(JSON)</button>
+  <span class="hint" id="deploy-hint">进入部署模式后自动切到「测试路线」方案，点击地图空白处新增测试路线信标；点击信标选中（橙色高亮），再点「删除选中信标」或按 Delete 键删除；任意模式下可直接拖拽信标移动位置；导出后请保存到 result/ 目录。</span>
   <span class="result" id="deploy-list"></span>
 </div>
 <div id="svg-container">

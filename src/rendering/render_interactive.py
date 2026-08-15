@@ -346,7 +346,9 @@ def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_para
     浏览器端能力（受浏览器沙箱约束，导出走 Blob + a.download）：
       1. 部署模式：点击地图空白处新增信标（BK-M-{层}-{序号:03d}），落点即进入拖拽；
       2. 任意模式下：按住信标拖拽移动，松手把新米制坐标写回 data-info（坐标行）；
-      3. 导出：把内存中的测试路线模式信标（含新增/移动后坐标）组装为
+      3. 选中/删除：点击信标选中（橙色高亮），点「删除选中信标」按钮或按 Delete/Backspace
+         键删除（confirm 防误删），删除结果随导出持久化；
+      4. 导出：把内存中的测试路线模式信标（含新增/删除/移动后坐标）组装为
          {beacons:[...], summary:{total, byFloor, bySemantic, byMount}} 下载为
          ble_deployment.json（用户保存到 result/ 目录）。
 
@@ -377,6 +379,7 @@ var deployDragBase = null;           // 拖拽起点的 circle cx/cy
 var deployLastDragMoved = false;     // 上一次 mouseup 是否发生拖拽（抑制松手后的 click 详情）
 var deployClickStart = null;         // 部署模式下点击空白处的候选 SVG 点
 var deployClickMoved = false;        // 候选点击是否已移动超过阈值
+var deploySelected = null;           // 当前选中的信标 entry（{el, info, b}），供删除/高亮
 
 function deployHint(m){ var h=document.getElementById('deploy-hint'); if(h) h.textContent=m; }
 function deployList(m){ var h=document.getElementById('deploy-list'); if(h) h.textContent=m; }
@@ -454,7 +457,8 @@ function deployCollectBeacons(){
       if (!(fk2 in DEPLOY_NEXT_SEQ) || seq >= DEPLOY_NEXT_SEQ[fk2]) DEPLOY_NEXT_SEQ[fk2] = seq + 1;
     }
   });
-  deployList('已加载 ' + DEPLOY_BEACONS.length + ' 个测试路线信标（可拖拽移动；部署模式下点击空白新增）');
+  deployList('已加载 ' + DEPLOY_BEACONS.length + ' 个测试路线信标（可拖拽移动；点击选中后按 Delete 键删除；部署模式下点击空白新增）');
+  deploySyncDeleteBtn();   // 初始无选中，删除按钮置灰
 }
 // 找当前楼层的 mode-route 组（新增信标挂入，保持图层开关/模式切换语义）；缺失时补建
 function deployFloorGroup(fk){
@@ -550,6 +554,42 @@ function deployNextSeq(fk){
   }
   return DEPLOY_NEXT_SEQ[fk]++;
 }
+// ---- 选中/删除：点击信标选中（橙色高亮），删除选中信标（按钮或 Delete/Backspace 键）----
+function deploySyncDeleteBtn(){
+  var btn = document.getElementById('btn-deploy-delete');
+  if (btn) btn.disabled = !deploySelected;
+}
+function deploySelectEntry(entry){
+  if (deploySelected && deploySelected.el) deploySelected.el.classList.remove('deploy-selected');
+  deploySelected = entry;
+  if (entry && entry.el) entry.el.classList.add('deploy-selected');
+  deploySyncDeleteBtn();
+}
+function deployClearSelection(){
+  deploySelectEntry(null);
+}
+function deploySelectByEl(g){
+  for (var i = 0; i < DEPLOY_BEACONS.length; i++) {
+    if (DEPLOY_BEACONS[i].el === g) { deploySelectEntry(DEPLOY_BEACONS[i]); return; }
+  }
+  deploySelectEntry(null);
+}
+function deployDeleteSelected(){
+  if (!deploySelected) {
+    deployHint('未选中信标：请先点击一个测试路线信标（橙色高亮），再点「删除选中信标」或按 Delete 键。');
+    return;
+  }
+  var entry = deploySelected;
+  var bid = (entry.b && entry.b.beaconId) || deployIdOf(entry.el) || '?';
+  var fk = entry.el.getAttribute('data-floor') || '';
+  if (!window.confirm('确定删除信标 ' + bid + '（' + fk + 'F）？\\n删除后需重新「导出部署方案(JSON)」保存到 result/ble_deployment.json 才会生效。')) return;
+  var idx = DEPLOY_BEACONS.indexOf(entry);
+  if (idx >= 0) DEPLOY_BEACONS.splice(idx, 1);
+  if (entry.el && entry.el.parentNode) entry.el.parentNode.removeChild(entry.el);
+  deployClearSelection();
+  deployList('当前测试路线信标 ' + DEPLOY_BEACONS.length + ' 个（已删除 ' + bid + '，重新导出后生效）');
+  deployHint('已删除信标 ' + bid + '（' + fk + 'F）。点「导出部署方案(JSON)」保存删除结果。');
+}
 // 部署模式：点击地图空白处新增信标（落点立即进入拖拽）
 function deployAddBeacon(sp){
   var geo = deploySvg2geo(sp.x, sp.y);
@@ -580,12 +620,12 @@ function deployAddBeacon(sp){
     subType: 'manual_deploy'
   };
   var g = deployCreateBeaconEl(rec, fk);
-  g.classList.add('deploy-selected');   // 新增后立即处于「选中/可拖拽」状态
   var group = deployFloorGroup(fk);
   group.appendChild(g);
   var entry = {el: g, info: deployBuildInfo(rec), b: rec};
   DEPLOY_BEACONS.push(entry);
-  deployHint('已新增信标 ' + bid + '（' + x + ', ' + y + '）· ' + fk + 'F，可立即拖拽调整位置');
+  deploySelectEntry(entry);            // 新增后立即选中（橙色高亮），可拖拽调整或 Delete 删除
+  deployHint('已新增信标 ' + bid + '（' + x + ', ' + y + '）· ' + fk + 'F，可立即拖拽调整位置，或按 Delete 键删除');
   return entry;
 }
 function deployToggleMode(){
@@ -606,9 +646,10 @@ function deployToggleMode(){
       document.querySelectorAll('.mode-route').forEach(function(el){ el.style.display = ''; });
       document.querySelectorAll('.mode-global').forEach(function(el){ el.style.display = 'none'; });
     }
-    deployHint('部署模式（测试路线）：点击地图空白处新增测试路线信标（BK-M-{层}-{序号}），拖拽可移动；退出后仍可拖拽移动。');
+    deployHint('部署模式（测试路线）：点击地图空白处新增测试路线信标（BK-M-{层}-{序号}），拖拽可移动；点击信标选中后按 Delete 键删除；退出后仍可拖拽移动/选中删除。');
   } else {
-    deployHint('已退出部署模式（拖拽移动信标仍可用）。当前为测试路线方案，可点击右上角「全局」切回全局方案。');
+    deployClearSelection();            // 退出部署模式清空选中态
+    deployHint('已退出部署模式（拖拽移动信标仍可用；点击信标选中后可按 Delete 键删除）。当前为测试路线方案，可点击右上角「全局」切回全局方案。');
   }
 }
 // ---- 拖拽移动（任意模式可用）：按下选中 -> 拖动更新 circle/text -> 松手写回米制坐标 ----
@@ -619,7 +660,7 @@ function deployStartDrag(e, g){
   deployDragMoved = false;
   deployDragStartSvg = deployClientToSvg(e.clientX, e.clientY);
   deployDragBase = { cx: parseFloat(c.getAttribute('cx')), cy: parseFloat(c.getAttribute('cy')) };
-  g.classList.add('deploy-selected');
+  deploySelectByEl(g);                 // 按下即选中（橙色高亮），松手未移动=点击选中，可删除
   e.preventDefault(); e.stopPropagation();
 }
 function deployMoveDrag(e){
@@ -667,7 +708,7 @@ function deployEndDrag(e){
     }
     deployHint('已移动信标 ' + bid + ' → (' + x + ', ' + y + ') · ' + fk + 'F');
   } else {
-    deployHint('已选中信标，可按住拖拽移动位置；部署模式下点击空白处新增。');
+    deployHint('已选中信标 ' + (deployIdOf(g) || '') + '，可按住拖拽移动位置；按 Delete 键或点「删除选中信标」删除。');
   }
   deployDragStartSvg = null;
   deployDragBase = null;
@@ -712,7 +753,7 @@ function deployExport(){
 // ---- 事件接线（capture 优先于主脚本 app.js 的 bubble 处理）----
 svg.addEventListener('mousedown', function(e){
   deployLastDragMoved = false;
-  document.querySelectorAll('.layer_beacon.deploy-selected').forEach(function(x){ x.classList.remove('deploy-selected'); });
+  deployClearSelection();
   var t = e.target && e.target.closest ? e.target.closest('.layer_beacon') : null;
   if (t) { deployStartDrag(e, t); return; }
   if (DEPLOY_MODE) {
@@ -755,6 +796,16 @@ svg.addEventListener('click', function(e){
     return;
   }
 }, true);
+// 键盘删除：选中信标后按 Delete / Backspace 删除（输入框聚焦时不响应）
+document.addEventListener('keydown', function(e){
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  var tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (!deploySelected) return;
+  e.preventDefault();
+  e.stopPropagation();
+  deployDeleteSelected();
+});
 
 deployCollectBeacons();
 </script>'''
