@@ -35,6 +35,7 @@ result/*
 !result/skeleton_manual_parsed.json
 !result/open_column_wraps.json
 !result/ble_deployment.json
+!result/fingerprint_valid_region.json
 
 # Jupyter
 .ipynb_checkpoints/
