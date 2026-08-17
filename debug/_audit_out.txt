@@ -1,0 +1,122 @@
+============================================================================================================
+信标部署语义审计（61 信标）—— locationDesc/sourceNodeId vs 坐标地图语义
+============================================================================================================
+ID            F  srcType       src   srcD snap  plDsnapOKroomType     stair elev eDoor  判定/说明
+------------------------------------------------------------------------------------------------------------
+BK-01-001     1  facility      elevator_door   OK  1.3    01.3   BAD         corridor  6.1   1.3  0.4     MATCH
+BK-01-004     1  doorway       base    OK  0.0    00.0   OK          corridor  9.4  13.7  13.9    MATCH
+BK-01-005     1  intersection  base    OK  1.2 1.351.2   OK          corridor  6.1  17.3  16.5    MATCH
+BK-01-006     1  intersection  base    OK  2.0 1.342.0   BAD         corridor  8.4   3.6  2.8     MATCH
+BK-01-007     1  intersection  base    OK  1.5 1.481.5   OK          corridor  6.6  14.0  14.5    MATCH
+BK-01-008     1  intersection  base  DIFF 38.2 1.5938.2  BAD          lobby 16.6  28.9  28.2    MATCH
+BK-01-009     1  intersection  base    OK  0.9 0.860.9   OK          elevator_lobby  8.1   1.2  0.2     MATCH
+BK-01-010     1  intersection  base    OK  1.6 1.581.6   OK          corridor  6.7   4.7  3.7     MATCH
+BK-01-011     1  intersection  base    OK  1.3 1.261.3   OK          corridor  2.2   7.8  6.7     MATCH
+BK-01-012     1  intersection  base    OK  4.6 4.644.6   OK           lobby 10.9  26.3  25.1    MATCH
+BK-01-013     1  intersection  base    OK  2.3 2.252.3   OK          corridor 14.2  21.4  20.4    MATCH
+BK-01-014     1  intersection  base    OK  2.6 2.362.6   OK          corridor 12.3  23.7  22.6    MATCH
+BK-01-015     1  intersection  base    OK  2.3 1.942.3   OK           lobby 18.9  34.3  33.2    MATCH
+BK-01-016     1  intersection  base    OK  2.0  2.22.0   OK          corridor 11.5  20.5  19.8    MATCH
+BK-01-017     1  intersection  base    OK  1.2 1.221.2   OK          corridor  7.6   3.3  2.7     MATCH
+BK-01-018     1  intersection  base    OK  2.2 1.222.2   BAD         corridor 11.1   5.4  5.8     MATCH
+BK-01-019     1  intersection  base    OK  2.5 1.282.5   BAD         corridor 12.4   7.7  7.7     MATCH
+BK-01-020     1  intersection  base    OK  1.3 1.281.3   OK          corridor  7.3   8.8  9.4     MATCH
+BK-01-021     1  intersection  base  DIFF 13.9 2.7213.9  BAD         corridor  9.1  16.2  15.0    MATCH
+BK-01-022     1  intersection  base    OK  1.8 1.841.8   OK          corridor  5.7   6.9  5.8     MATCH
+BK-01-023     1  intersection  dir     OK  3.0 1.691.7   OK          corridor  7.2  14.7  14.0    MATCH
+BK-01-024     1  intersection  dir     OK  1.5 1.291.3   OK          corridor  8.4   5.7  4.8     MATCH
+BK-01-025     1  intersection  dir     OK  2.0 1.261.3   OK          corridor  5.1   5.1  4.0     MATCH
+BK-01-027     1  intersection  dir     OK  8.2 6.626.4   OK          corridor 10.3   7.6  6.9     MATCH
+BK-01-028     1  intersection  dir     OK  2.1 1.241.2   OK          corridor  4.2   4.2  3.2     MATCH
+BK-01-030     1  intersection  dir     OK  3.5 2.482.5   OK          corridor  6.5   8.4  7.3     MATCH
+BK-01-031     1  intersection  dir     OK  5.6 3.763.6   OK          corridor  6.4  13.6  12.6    MATCH
+BK-01-032     1  intersection  dir   DIFF 13.4  2.811.5  BAD          lobby 12.6  31.8  30.6    MATCH
+BK-01-033     1  intersection  dir   DIFF  6.9 1.835.8   BAD          lobby 13.2  32.5  31.3    MATCH
+BK-01-034     1  intersection  dir     OK  4.2 3.653.6   OK           lobby 15.1  29.8  28.6    MATCH
+BK-01-035     1  intersection  dir     OK  3.5 2.912.9   OK          corridor 15.8  20.1  19.2    MATCH
+BK-01-036     1  intersection  dir     OK  5.0 3.573.4   OK          corridor  7.4  14.2  13.3    MATCH
+BK-01-038     1  route_corridorfill     -    - 2.423.4   BAD         activity 11.8  14.1  13.1    CHECK
+BK-01-039     1  route_corridorfill     -    - 2.332.3   OK          corridor 13.8  20.9  20.0    MATCH
+BK-01-040     1  route_corridorfill     -    -  2.42.4   OK          corridor 14.9  22.3  21.1    MATCH
+BK-01-041     1  route_corridorfill     -    -  2.22.1   OK           lobby 18.8  35.6  35.1    MATCH
+BK-01-042     1  route_corridorfill     -    -  2.72.3   OK           lobby 16.0  30.8  30.3    MATCH
+BK-01-043     1  route_corridorfill     -    - 2.492.2   OK           lobby 15.2  26.7  26.2    MATCH
+BK-01-044     1  route_corridorfill     -    - 0.710.8   OK          corridor  5.7  11.1  10.4    MATCH
+BK-TR-F1-001  1  route_fill    fill     -    - 3.020.0   BAD         corridor  7.4   9.8  9.1     MATCH
+BK-TR-F1-002  1  route_fill    fill     -    - 0.580.4   OK          corridor  8.3  20.0  19.3    MATCH
+BK-TR-F1-003  1  route_fill    fill     -    - 0.5561.0  BAD              -  4.6  21.2  20.0    CHECK
+BK-TR-F1-004  1  route_fill    fill     -    - 0.555.8   BAD         corridor 11.3  11.2  11.2    MATCH
+BK-TR-F1-005  1  route_fill    fill     -    - 0.5531.7  BAD         corridor  3.0  14.1  13.2    MATCH
+BK-TR-F1-007  1  route_fill    fill     -    - 2.840.3   BAD         stair_lobby  4.2  24.6  23.5    CHECK
+BK-TR-F1-008  1  route_fill    fill     -    - 0.852.7   BAD         corridor  4.0   4.6  3.4     MATCH
+BK-M-1-001    1  -             manual_deploy    -    -    0-     BAD         corridor 12.2   4.2  4.9     CHECK
+BK-M-1-002    1  -             manual_deploy    -    -    0-     BAD         activity  8.9  16.1  14.9    CHECK
+BK-M-1-003    1  -             manual_deploy    -    -    0-     BAD         activity 12.2  16.7  15.7    CHECK
+BK-M-1-004    1  -             manual_deploy    -    -    0-     BAD         corridor  5.1   9.6  8.6     CHECK
+BK-M-1-005    1  -             manual_deploy    -    -    0-     BAD         corridor 10.6   8.9  8.2     CHECK
+BK-M-1-006    1  -             manual_deploy    -    -    0-     BAD         corridor  9.0   2.2  2.5     CHECK
+BK-02-001     2  facility      elevator_door   OK  1.4    01.4   BAD         corridor  6.6   1.4  0.4     MATCH
+BK-02-002     2  doorway       base    OK  0.0    00.0   OK          corridor  7.8   8.2  7.1     MATCH
+BK-02-003     2  intersection  base    OK  1.7 1.691.7   OK          corridor  4.5   5.1  4.0     MATCH
+BK-02-004     2  intersection  dir     OK  1.8 1.221.2   OK          corridor  7.1   3.5  2.5     MATCH
+BK-TR-F2-001  2  route_fill    fill     -    - 0.250.0   OK          corridor  7.3   1.7  0.9     MATCH
+BK-TR-F2-002  2  route_fill    fill     -    - 0.924.6   BAD         corridor  4.9   3.8  2.8     MATCH
+BK-TR-F2-003  2  route_fill    fill     -    -  0.30.0   OK          corridor  5.4   7.6  6.4     MATCH
+BK-M-2-001    2  -             manual_deploy    -    -    0-     BAD         corridor  9.0   5.3  4.7     CHECK
+BK-M-2-002    2  -             manual_deploy    -    -    0-     BAD         corridor  6.7   5.9  4.9     CHECK
+------------------------------------------------------------------------------------------------------------
+判定汇总: MATCH=50  CHECK=11  MISMATCH=0  NODESC=0
+未命中任何房间的信标: ['BK-TR-F1-003']
+
+== 硬伤：坐标↔规划/吸附字段矛盾（>5m 且 snap 对不上）== 7 个
+  BK-01-008: coords↔planned=38.2m snap=1.59
+  BK-01-021: coords↔planned=13.9m snap=2.72
+  BK-01-032: coords↔planned=11.5m snap=2.8
+  BK-01-033: coords↔planned=5.8m snap=1.83
+  BK-TR-F1-003: coords↔planned=61.0m snap=0.55
+  BK-TR-F1-004: coords↔planned=5.8m snap=0.55
+  BK-TR-F1-005: coords↔planned=31.7m snap=0.55
+
+== 声明交叉口号 ≠ 实际最近交叉口号 == 12 个
+  BK-01-008: 声明=交叉口11 实际最近=交叉口55@5.1m
+  BK-01-014: 声明=交叉口45 实际最近=交叉口46@1.1m
+  BK-01-018: 声明=交叉口63 实际最近=交叉口65@1.7m
+  BK-01-019: 声明=交叉口65 实际最近=交叉口66@1.4m
+  BK-01-021: 声明=交叉口71 实际最近=交叉口45@5.3m
+  BK-01-022: 声明=交叉口78 实际最近=交叉口77@1.5m
+  BK-01-027: 声明=交叉口12 实际最近=交叉口5@2.8m
+  BK-01-030: 声明=交叉口30 实际最近=交叉口3@3.4m
+  BK-01-031: 声明=交叉口37 实际最近=交叉口17@2.7m
+  BK-01-032: 声明=交叉口45 实际最近=交叉口53@4.3m
+  BK-01-033: 声明=交叉口47 实际最近=交叉口53@4.9m
+  BK-01-035: 声明=交叉口71 实际最近=交叉口33@2.1m
+
+== 楼梯语义区信标（距楼梯≤6.0m 或命中 staircase/stair_lobby）==: 13 个
+  BK-01-011      房间=corridor       楼梯距离=2.2m
+  BK-01-022      房间=corridor       楼梯距离=5.7m
+  BK-01-025      房间=corridor       楼梯距离=5.1m
+  BK-01-028      房间=corridor       楼梯距离=4.2m
+  BK-01-044      房间=corridor       楼梯距离=5.7m
+  BK-TR-F1-003   房间=-              楼梯距离=4.6m
+  BK-TR-F1-005   房间=corridor       楼梯距离=3.0m
+  BK-TR-F1-007   房间=stair_lobby    楼梯距离=4.2m
+  BK-TR-F1-008   房间=corridor       楼梯距离=4.0m
+  BK-M-1-004     房间=corridor       楼梯距离=5.1m
+  BK-02-003      房间=corridor       楼梯距离=4.5m
+  BK-TR-F2-002   房间=corridor       楼梯距离=4.9m
+  BK-TR-F2-003   房间=corridor       楼梯距离=5.4m
+  [盲区] F1 楼梯 F1-ST-0002 (II-B1-02#ST) 周边 6.0m 无信标
+  [盲区] F1 楼梯 F1-ST-0004 (II-B2-01#ST) 周边 6.0m 无信标
+  [盲区] F1 楼梯 F1-ST-0005 (II-B2-02#ST) 周边 6.0m 无信标
+  [盲区] F1 楼梯 F1-ST-0007 (II-B3-02#ST) 周边 6.0m 无信标
+  [盲区] F1 楼梯 F1-ST-0008 (II-B3-03#ST) 周边 6.0m 无信标
+  [盲区] F1 楼梯 F1-ST-0010 (II-B4-02#ST) 周边 6.0m 无信标
+  [盲区] F1 电梯 F1-EL-0002 (II-02#EL) 周边 5.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0002 (II-B1-02#ST) 周边 6.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0003 (II-B1-03#ST) 周边 6.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0004 (II-B2-01#ST) 周边 6.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0005 (II-B2-02#ST) 周边 6.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0006 (II-B3-01#ST) 周边 6.0m 无信标
+  [盲区] F2 楼梯 F2-ST-0007 (II-B3-02#ST) 周边 6.0m 无信标
+  [盲区] F2 电梯 F2-EL-0002 (II-02#EL) 周边 5.0m 无信标
+  [盲区] F2 电梯 F2-EL-0003 (II-03#EL) 周边 5.0m 无信标
