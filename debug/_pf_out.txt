@@ -1,0 +1,24 @@
+[prep] 2172 pts, 12.8s
+沿主走廊轨迹 38 步；PDR 步长误差 5%；观测 sigma=0.45m；粒子=1000；走廊半宽=1.5m
+
+配置                                                        中位     P95   <=1m%       末步
+=====================================================================================
+纯 PDR（无 BLE 校正，仅地图约束）                                  0.50m   0.94m  100.0%    0.99m
+PDR+PF+BLE 紧耦合  sigma_theta=0.5deg  acc=87%            0.56m   1.00m   94.7%    0.99m
+PDR+PF+BLE 紧耦合  sigma_theta=0.5deg  acc=95%            0.22m   0.51m  100.0%    0.50m
+PDR+PF+BLE 紧耦合  sigma_theta=0.5deg  acc=97%            0.19m   0.35m  100.0%    0.35m
+PDR+PF+BLE 紧耦合  sigma_theta=0.5deg  acc=100%           0.18m   0.30m  100.0%    0.22m
+PDR+PF+BLE 紧耦合  sigma_theta=1.0deg  acc=87%            0.59m   0.84m  100.0%    0.60m
+PDR+PF+BLE 紧耦合  sigma_theta=1.0deg  acc=95%            0.23m   0.52m  100.0%    0.49m
+PDR+PF+BLE 紧耦合  sigma_theta=1.0deg  acc=97%            0.20m   0.36m  100.0%    0.28m
+PDR+PF+BLE 紧耦合  sigma_theta=1.0deg  acc=100%           0.22m   0.31m  100.0%    0.31m
+PDR+PF+BLE 紧耦合  sigma_theta=2.0deg  acc=87%            0.54m   0.85m   97.4%    0.96m
+PDR+PF+BLE 紧耦合  sigma_theta=2.0deg  acc=95%            0.24m   0.53m  100.0%    0.32m
+PDR+PF+BLE 紧耦合  sigma_theta=2.0deg  acc=97%            0.20m   0.51m  100.0%    0.29m
+PDR+PF+BLE 紧耦合  sigma_theta=2.0deg  acc=100%           0.17m   0.30m  100.0%    0.22m
+PDR+PF+BLE 紧耦合  sigma_theta=3.0deg  acc=87%            0.52m   0.78m  100.0%    0.75m
+PDR+PF+BLE 紧耦合  sigma_theta=3.0deg  acc=95%            0.23m   0.55m  100.0%    0.41m
+PDR+PF+BLE 紧耦合  sigma_theta=3.0deg  acc=97%            0.18m   0.41m  100.0%    0.19m
+PDR+PF+BLE 紧耦合  sigma_theta=3.0deg  acc=100%           0.16m   0.29m  100.0%    0.22m
+
+单步 PF（1000 粒子 x 5 信标）：似然+重采样 0.29ms （+1 次 ray-cast 分类 ~1ms）→ 100Hz IMU 步进预算 10ms 内，近实时达标
