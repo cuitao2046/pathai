@@ -32,6 +32,7 @@ result/*
 !result/*.geojson
 !result/floor_layout_v9_interactive.html
 !result/fingerprint_grid.json
+!result/fingerprint_grid_routes.json
 !result/skeleton_manual_parsed.json
 !result/open_column_wraps.json
 !result/ble_deployment.json
