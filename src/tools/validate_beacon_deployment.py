@@ -7,21 +7,21 @@
   - result/school_building_01_map_v9.geojson       （v9 楼层拓扑/房间/楼梯）
 
 校验规则（阈值常量见下方 T_*/ROOM_BUF，可调）：
-  R1 [ERROR] sourceNodeId 非空 且 coords↔sourceNodeId 距离 > T_SRC_DRIFT，
-             且 snapDist_m 与实际偏移不一致（规划信标漂移；snap 容差 SNAP_TOL）
-  R2 [ERROR] plannedCoordinates 非空 且 coords↔plannedCoordinates 距离 > T_PLANNED_DRIFT，
-             且 snapDist_m 与实际偏移不一致（planned 脱节；snap 容差 SNAP_TOL）
-  R3 [WARN ] sourceNodeType='manual_adjusted' 或 subType='manual_deploy' 的信标，
-             plannedCoordinates 必须存在且与 coordinates 距离 ≤ T_PLANNED_SYNC_TOL
-             （人工信标坐标同步；缺失/超差提示「人工信标坐标未同步」）
+  R1 [ERROR] sourceNodeId 非空 → coords↔sourceNodeId 距离 > T_SRC_DRIFT（部署真值偏离
+             拓扑归属节点；阈值与吸附阈值一致，杜绝「10m 吸附 5m 归属」被 snap 豁免掩盖）
   R4 [WARN ] 距最近楼梯 ≤ T_STAIR 或命中 staircase/stair_lobby 房间的信标，
              locationDesc/subType 缺少楼梯关键词（楼梯口语义缺失）
   R5 [ERROR] 缺失 beaconId / coordinates / floor 任一必填字段
 
-注：R1/R2 附加 snapDist_m 一致性门槛，与 debug/audit_beacon_semantics.py 的硬伤判定一致
-    （snap≈coords↔planned 视为有意吸附偏移，不算漂移，如 BK-01-027/031）。
+注：方案 B 单坐标 schema（2026-08-20 起）：coordinates 为唯一真值，
+    plannedCoordinates/snapDist_m 字段已废弃 → R2（planned 脱节）/ R3（人工信标同步）
+    一并删除；R1 改为直接比较 coords↔sourceNodeId（不再有 snap_ok 豁免——
+    旧逻辑 planned:=coords 后 snap_ok 恒真，5m 级归属永远查不出来）。
 
-输出：逐条明细 `[R1][ERROR] BK-01-008: coords↔sourceNodeId=38.19m` + 汇总计数；
+注：R1 阈值与渲染图 deployResnap 吸附阈值（3m）一致，保证「渲染图重吸附后的信标
+    必然通过校验」与「超过吸附范围的漂移必然报错」双向闭环。
+
+输出：逐条明细 `[R1][ERROR] BK-01-008: coords↔sourceNodeId=5.06m` + 汇总计数；
       任一 ERROR → exit code 1，否则 exit 0。
 
 判定逻辑参照 debug/audit_beacon_semantics.py 的 room_of / nearest_dist（0.5m 房间命中缓冲）。
@@ -40,15 +40,9 @@ from shapely.geometry import Point, Polygon
 from shapely.strtree import STRtree
 
 # ---------- 阈值常量（可调） ----------
-T_SRC_DRIFT = 5.0        # R1：coords↔sourceNodeId 允许最大距离（m）
-T_PLANNED_DRIFT = 5.0    # R2：coords↔plannedCoordinates 允许最大距离（m）
-SNAP_TOL = 0.5           # R1/R2：snapDist_m 与实际偏移距离的一致性容差（m）
-                         #   —— 与 debug/audit_beacon_semantics.py 硬伤判定一致：
-                         #   距离超阈值且 snapDist_m 对不上才算「漂移/脱节」硬伤；
-                         #   若 snapDist_m≈coords↔planned（人为记录的吸附偏移），
-                         #   视为有意放置，不算漂移（如 BK-01-027/031）。
+T_SRC_DRIFT = 3.0        # R1：coords↔sourceNodeId 允许最大距离（m），与吸附阈值一致
+                         #   —— 渲染图 deployResnap ≤3m 类型加权吸附；超过 3m 归属视为漂移
 T_STAIR = 6.0            # R4：距最近楼梯判定阈值（m）
-T_PLANNED_SYNC_TOL = 0.5 # R3：人工信标 plannedCoordinates 与 coordinates 的同步容差（m）
 ROOM_BUF = 0.5           # 房间命中缓冲（墙上安装点落多边形边界）
 STAIR_ROOM_TYPES = ("staircase", "stair_lobby")   # R4：楼梯语义房间类型
 STAIR_KEYWORDS = ("楼梯", "staircase", "stair", "ST-")  # R4：楼梯关键词（大小写不敏感）
@@ -113,17 +107,6 @@ def _num(v):
     return f
 
 
-def _snap_consistent(beacon, planned_d):
-    """snapDist_m 是否与实际偏移距离一致（参照 audit_beacon_semantics 的 snap_ok 判定）。"""
-    snap = beacon.get("snapDist_m")
-    if planned_d is None or snap is None:
-        return False
-    try:
-        return abs(planned_d - float(snap)) <= SNAP_TOL
-    except (TypeError, ValueError):
-        return False
-
-
 def _has_stair_keyword(beacon):
     """locationDesc/subType 是否含楼梯关键词（大小写不敏感）。"""
     text = " ".join(str(beacon.get(k) or "") for k in ("locationDesc", "subType"))
@@ -153,39 +136,18 @@ def validate_beacon(beacon, ctx):
         return out  # 必填字段缺失/非法时后续几何校验无意义，直接返回
 
     p = Point(_num(coords[0]), _num(coords[1]))
-    planned = beacon.get("plannedCoordinates")
-    planned_d = p.distance(Point(_num(planned[0]), _num(planned[1]))) if planned is not None else None
-    snap_ok = _snap_consistent(beacon, planned_d)
 
-    # R1：sourceNodeId 非空 → coords↔源节点距离（且 snapDist_m 对不上才算漂移硬伤）
+    # R1：sourceNodeId 非空 → coords↔源节点距离（直接比较，无 snap 豁免）
+    #     —— 方案 B 单坐标 schema 下 coordinates 为唯一真值，超过吸附阈值即漂移
     sid = beacon.get("sourceNodeId") or ""
     if sid:
         node = nodes.get(sid)
         if node is not None:
             d = p.distance(Point(node["coordinates"]))
-            if d > T_SRC_DRIFT and not snap_ok:
+            if d > T_SRC_DRIFT:
                 out.append(("R1", "ERROR",
-                            f"coords↔sourceNodeId={d:.2f}m（> {T_SRC_DRIFT}m，规划信标漂移）"))
+                            f"coords↔sourceNodeId={d:.2f}m（> {T_SRC_DRIFT}m，部署真值偏离归属节点）"))
         # sourceNodeId 在拓扑中缺失：不属 R1 定义范围，跳过（由语义审计另行核验）
-
-    # R2：plannedCoordinates 非空 → coords↔planned 距离（且 snapDist_m 对不上才算脱节硬伤）
-    if planned is not None:
-        if planned_d > T_PLANNED_DRIFT and not snap_ok:
-            out.append(("R2", "ERROR",
-                        f"coords↔plannedCoordinates={planned_d:.2f}m（> {T_PLANNED_DRIFT}m，planned 脱节）"))
-
-    # R3：人工调整/人工部署信标 → plannedCoordinates 必须存在且与 coordinates 同步（≤0.5m）。
-    #     （方案 B 新语义：渲染图移动/新增信标后 planned 跟随新坐标，不再置空 null；
-    #       人工信标未同步（缺失或超差）提示「人工信标坐标未同步」）
-    is_manual = (beacon.get("sourceNodeType") == "manual_adjusted"
-                 or beacon.get("subType") == "manual_deploy")
-    if is_manual:
-        if planned is None:
-            out.append(("R3", "WARN",
-                        "人工信标坐标未同步（plannedCoordinates 缺失）"))
-        elif planned_d > T_PLANNED_SYNC_TOL:
-            out.append(("R3", "WARN",
-                        f"人工信标坐标未同步（coords↔plannedCoordinates={planned_d:.2f}m > {T_PLANNED_SYNC_TOL}m）"))
 
     # R4：楼梯语义区（距楼梯 ≤ T_STAIR 或命中 staircase/stair_lobby）→ 声明缺楼梯关键词
     r = room_of(p, rooms, tree) if rooms is not None else None
@@ -232,7 +194,7 @@ def main() -> int:
 
     print("-" * 70)
     print(f"汇总: 共 {len(beacons)} 枚信标")
-    for rule in ("R1", "R2", "R3", "R4", "R5"):
+    for rule in ("R1", "R4", "R5"):
         parts = [f"{lv}={by_rule.get(rule, {}).get(lv, 0)}" for lv in ("ERROR", "WARN")]
         print(f"  {rule}: " + " | ".join(parts))
     print(f"合计: ERROR={counts['ERROR']}  WARN={counts['WARN']}")

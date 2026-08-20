@@ -354,13 +354,14 @@ def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_para
          {beacons:[...], summary:{total, byFloor, bySemantic, byMount}} 下载为
          ble_deployment.json（用户保存到 result/ 目录）。
 
-    坐标同步语义（方案 B）：
-      - 拖拽结束 / 新增落点后，plannedCoordinates 同步为新坐标（不再置空 null）；
-      - 同时执行 deployResnap 重吸附：同层 TOPO_NODES 最近节点（≤10m，intersection/
-        doorway）命中 → sourceNodeId/sourceNodeType/snapDist_m/locationDesc 归属该节点；
-        未命中 → manual_adjusted 人工调整语义；
-      - 原规划信标被拖走时备份 originalSourceNodeId/originalLocationDesc，并追加
-        「· 原规划: …」追溯。
+    坐标同步语义（方案 B · 单坐标 schema）：
+      - coordinates 为唯一真值：拖拽结束 / 新增落点后仅写回 coordinates；
+        plannedCoordinates/snapDist_m 字段已废弃（加载时防御性剥离）。
+      - 首次拖走规划信标时备份 originalSourceNodeId/originalLocationDesc 与
+        originalPlannedCoordinates（=最初坐标），并追加「· 原规划: …」追溯；
+      - deployResnap 重吸附（≤3m，类型加权）：facility 类（电梯/楼梯口）不参与；
+        先在同类型节点中找 ≤3m 最近（保持语义），未命中再兜底任意类型 ≤3m；
+        均未命中 → manual_adjusted 人工调整语义。
 
     人工部署只针对测试路线方案：进入部署模式自动切到「测试路线」方案（route），
     新增信标挂入 .mode-route 组；全局方案（beacon_floors）完全不受影响。
@@ -448,7 +449,6 @@ function deployRecordFromDetail(info, g){
     sourceNodeId: rows['来源节点'] || '',
     sourceNodeType: '',
     riskLevel: 1.0,
-    snapDist_m: rows['吸附偏移'] ? parseFloat(rows['吸附偏移']) : 0.0,
     subType: rows['类型/方向'] ? String(rows['类型/方向']).split('/')[0] : ''
   };
 }
@@ -462,6 +462,17 @@ function deployCollectBeacons(){
     var rec = (info && info.b) ? info.b : deployRecordFromDetail(info, g);
     if (!rec) return;
     rec.coordinates = [Number(rec.coordinates[0]), Number(rec.coordinates[1])];
+    // 方案 B 单坐标 schema 防御性收敛：剥离旧 plannedCoordinates/snapDist_m；
+    // 旧 planned ≠ coords 的转为 originalPlannedCoordinates（历史位置追溯，供 QA 审计）
+    if (rec.plannedCoordinates) {
+      if (!rec.originalPlannedCoordinates &&
+          (Number(rec.plannedCoordinates[0]) !== Number(rec.coordinates[0]) ||
+           Number(rec.plannedCoordinates[1]) !== Number(rec.coordinates[1]))) {
+        rec.originalPlannedCoordinates = [Number(rec.plannedCoordinates[0]), Number(rec.plannedCoordinates[1])];
+      }
+      delete rec.plannedCoordinates;
+    }
+    delete rec.snapDist_m;
     DEPLOY_BEACONS.push({el: g, info: info, b: rec});
     var m = /^BK-M-(\\d+)-(\\d+)$/.exec(String(rec.beaconId || ''));
     if (m) {
@@ -522,7 +533,6 @@ function deployBuildInfo(rec){
     ['楼层', (rec.floor != null ? rec.floor : '?') + 'F'],
     ['安装位置', rec.locationDesc || ''],
     ['安装方式', rec.mountType || ''],
-    ['吸附偏移', (rec.snapDist_m != null ? rec.snapDist_m : 0) + ' m'],
     ['类型/方向', [rec.subType, rec.direction].filter(Boolean).join('/') || '—'],
     ['发射功率', (rec.txPower != null ? rec.txPower : '') + ' dBm'],
     ['广播间隔', (rec.broadcastInterval != null ? rec.broadcastInterval : '') + ' ms'],
@@ -532,6 +542,11 @@ function deployBuildInfo(rec){
     ['来源节点', rec.sourceNodeId || ''],
     ['坐标', '(' + rec.coordinates[0].toFixed(2) + ', ' + rec.coordinates[1].toFixed(2) + ')']
   ];
+  if (rec.originalPlannedCoordinates) {
+    rows.splice(rows.length - 1, 0,
+      ['原始坐标', '(' + Number(rec.originalPlannedCoordinates[0]).toFixed(2) + ', ' +
+                  Number(rec.originalPlannedCoordinates[1]).toFixed(2) + ')']);
+  }
   return {
     tip: '信标 ' + bid + '\\\\n语义：' + (rec.semanticTag || 'manual_deploy') + ' · ' + rec.floor + 'F',
     detail: {title: '信标 ' + bid, rows: rows},
@@ -540,31 +555,40 @@ function deployBuildInfo(rec){
     b: rec
   };
 }
-// 重吸附：拖拽结束 / 新增落点后，把信标语义归属到同层最近拓扑节点（intersection/doorway，≤10m）。
-// 命中 → sourceNodeId/sourceNodeType/locationDesc 同步为该节点，snapDist_m=0
-//        （planned 已同步=coords → coords↔planned 偏移为 0，符合部署 schema 语义，
-//         并与校验器 R1/R2 的 snapDist_m 一致性门槛一致：若记录最近距离 5~10m，
-//         在 R1/R2 逻辑不变下会触发 R1 ERROR）；未命中 → manual_adjusted。
+// 重吸附：拖拽结束 / 新增落点后，把信标语义归属到同层最近拓扑节点（intersection/doorway，≤3m）。
+// 命中 → sourceNodeId/sourceNodeType/locationDesc 同步为该节点；未命中 → manual_adjusted。
+// 规则（方案 B 单坐标 schema + 3m 阈值）：
+//   - facility/facility_entrance 类（电梯口/楼梯口等设施归属）不参与重吸附，保持语义归属；
+//   - 类型加权：先在同类型节点（保持 sourceNodeType 语义）中找 ≤3m 最近；
+//     同类型未命中再兜底任意类型 ≤3m 最近（语义可能变化，如交叉口→门口）；
+//   - 均未命中 → manual_adjusted（sourceNodeId=''，走廊中间/孤立点正确落空）。
 function deployResnap(entry, x, y, fk){
   var b = entry.b;
   var nodes = TOPO_NODES[String(fk)] || [];
-  var best = null, bestD = Infinity;
+  if (b.sourceNodeType === 'facility' || b.sourceNodeType === 'facility_entrance') {
+    return;  // 设施语义信标（电梯/楼梯口）保持归属，仅坐标更新
+  }
+  var prevType = b.sourceNodeType;
+  var bestSame = null, bestSameD = Infinity;  // 同类型候选（保持语义）
+  var bestAny = null, bestAnyD = Infinity;    // 任意类型候选（兜底）
   for (var i = 0; i < nodes.length; i++) {
     var n = nodes[i];
     var dx = n.coordinates[0] - x, dy = n.coordinates[1] - y;
     var d = Math.sqrt(dx * dx + dy * dy);
-    if (d < bestD) { bestD = d; best = n; }
+    if (prevType === n.type && d < bestSameD) { bestSameD = d; bestSame = n; }
+    if (d < bestAnyD) { bestAnyD = d; bestAny = n; }
   }
-  if (best && bestD <= 10.0) {
+  var best = null, bestD = Infinity;
+  if (bestSame && bestSameD <= 3.0) { best = bestSame; bestD = bestSameD; }
+  else if (bestAny && bestAnyD <= 3.0) { best = bestAny; bestD = bestAnyD; }
+  if (best) {
     b.sourceNodeId = best.id;
     b.sourceNodeType = best.type;
-    b.snapDist_m = 0;
     var sem = (best.type === 'doorway') ? '门口' : '交叉口';
     b.locationDesc = String(fk) + 'F ' + sem + '（' + (best.label || best.id) + '）';
   } else {
     b.sourceNodeId = '';
     b.sourceNodeType = 'manual_adjusted';
-    b.snapDist_m = 0;
     b.locationDesc = '人工调整 ' + String(fk) + 'F（' + x + ', ' + y + '）';
   }
 }
@@ -645,7 +669,6 @@ function deployAddBeacon(sp){
     major: DEPLOY_DEFAULTS.major,
     minor: parseInt(String(fk), 10) * 10000 + seq,
     coordinates: [x, y],
-    plannedCoordinates: [x, y],
     floor: parseInt(fk, 10),
     locationDesc: '人工部署 ' + fk + 'F（' + x + ', ' + y + '）',
     mountType: 'wall',
@@ -658,7 +681,6 @@ function deployAddBeacon(sp){
     sourceNodeId: '',
     sourceNodeType: '',
     riskLevel: 1.0,
-    snapDist_m: 0.0,
     subType: 'manual_deploy'
   };
   var g = deployCreateBeaconEl(rec, fk);
@@ -666,7 +688,7 @@ function deployAddBeacon(sp){
   group.appendChild(g);
   var entry = {el: g, info: deployBuildInfo(rec), b: rec};
   DEPLOY_BEACONS.push(entry);
-  // 新增落点重吸附：落在交叉口/门口附近（≤10m）时归属该节点（planned 已同步=坐标）
+  // 新增落点重吸附：落在交叉口/门口附近（≤3m，类型加权）时归属该节点；未命中 → manual_adjusted
   deployResnap(entry, x, y, fk);
   entry.info = deployBuildInfo(entry.b);
   entry.el.setAttribute('data-info', JSON.stringify(entry.info));
@@ -741,20 +763,19 @@ function deployEndDrag(e){
       if (DEPLOY_BEACONS[i].el === g) { entry = DEPLOY_BEACONS[i]; break; }
     }
     if (entry) {
-      entry.b.coordinates = [x, y];
-      // —— 坐标同步（方案 B）：planned 跟随新坐标（替代置空 null）；
-      //    语义归属由 deployResnap 重吸附（≤10m 最近节点；未命中 → manual_adjusted）——
-      // 首次拖走规划信标：备份原规划字段（保留最初归属，供「· 原规划: …」追溯）
+      // —— 坐标同步（方案 B 单坐标 schema）：coordinates 为唯一真值；
+      //    语义归属由 deployResnap 重吸附（≤3m 类型加权；未命中 → manual_adjusted）——
+      // 首次拖走规划信标：备份原归属与最初坐标（保留最早位置，供「原始坐标/· 原规划」追溯）
       if (entry.b.sourceNodeId && !entry.b.originalSourceNodeId) {
         entry.b.originalSourceNodeId = entry.b.sourceNodeId;
         entry.b.originalSourceNodeType = entry.b.sourceNodeType || '';
         entry.b.originalLocationDesc = entry.b.locationDesc || '';
-        if (entry.b.plannedCoordinates) {
-          entry.b.originalPlannedCoordinates = entry.b.plannedCoordinates.slice();
-        }
       }
-      entry.b.plannedCoordinates = [x, y];
-      // 重吸附最近拓扑节点（≤10m；未命中 → sourceNodeId='' / manual_adjusted）
+      if (!entry.b.originalPlannedCoordinates && entry.b.coordinates) {
+        entry.b.originalPlannedCoordinates = entry.b.coordinates.slice();
+      }
+      entry.b.coordinates = [x, y];
+      // 重吸附最近拓扑节点（≤3m 类型加权；未命中 → sourceNodeId='' / manual_adjusted）
       deployResnap(entry, x, y, fk);
       // 原规划信标拖走后追加「· 原规划: …」追溯（多次拖拽仍保留最初归属）
       if (entry.b.originalLocationDesc) {
@@ -2102,7 +2123,6 @@ def main():
                     ("楼层", f"{b.get('floor')}F"),
                     ("安装位置", b.get("locationDesc", "")),
                     ("安装方式", b.get("mountType", "")),
-                    ("吸附偏移", f"{b.get('snapDist_m', 0)} m"),
                     ("类型/方向", "/".join(filter(None, [b.get("subType", ""), b.get("direction", "")])) or "—"),
                     ("发射功率", f"{b.get('txPower')} dBm"),
                     ("广播间隔", f"{b.get('broadcastInterval')} ms"),
@@ -2111,6 +2131,10 @@ def main():
                     ("预期寿命", f"{b.get('expectedLifespan')} 年" if b.get("expectedLifespan") else ""),
                     ("来源节点", b.get("sourceNodeId", "")),
                 ]}
+                if b.get("originalPlannedCoordinates"):
+                    _op = b["originalPlannedCoordinates"]
+                    det["rows"].insert(-1, ("原始坐标",
+                        f"({float(_op[0]):.2f}, {float(_op[1]):.2f})"))
                 attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid, "b": b})
                 parts.append(
                     f'<g class="layer_beacon" data-floor="{fk}" data-mode="{mode}" {attr}>'

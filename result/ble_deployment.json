@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "generatedBy": "pathai-manual-deploy",
-  "generatedAt": "2026-08-20T03:57:42.522Z",
+  "generatedAt": "2026-08-20T07:16:00.644Z",
   "beacons": [
     {
       "beaconId": "BK-01-001",
@@ -11,10 +11,6 @@
       "coordinates": [
         -30.25,
         -75.08
-      ],
-      "plannedCoordinates": [
-        -28.955,
-        -74.887
       ],
       "floor": 1,
       "locationDesc": "1F 电梯口（II-01#EL）· 门套或呼梯板旁",
@@ -29,8 +25,11 @@
       "sourceNodeId": "F1-TF-0011",
       "sourceNodeType": "facility",
       "riskLevel": 1,
-      "snapDist_m": 0,
-      "subType": "elevator_door"
+      "subType": "elevator_door",
+      "originalPlannedCoordinates": [
+        -28.955,
+        -74.887
+      ]
     },
     {
       "beaconId": "BK-01-004",
@@ -38,10 +37,6 @@
       "major": 1,
       "minor": 10104,
       "coordinates": [
-        -18.777,
-        -83.987
-      ],
-      "plannedCoordinates": [
         -18.777,
         -83.987
       ],
@@ -58,7 +53,6 @@
       "sourceNodeId": "F1-TD-0065",
       "sourceNodeType": "doorway",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "adjacentRooms": [
         "F1-RM-0036",
         "F1-CR-0056"
@@ -74,10 +68,6 @@
         -36.91,
         -59.51
       ],
-      "plannedCoordinates": [
-        -35.85,
-        -59.048
-      ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口2）",
       "mountType": "wall",
@@ -91,8 +81,11 @@
       "sourceNodeId": "F1-TI-0023",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.35,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -35.85,
+        -59.048
+      ]
     },
     {
       "beaconId": "BK-01-006",
@@ -102,10 +95,6 @@
       "coordinates": [
         -37.95,
         5.52
-      ],
-      "plannedCoordinates": [
-        -39.706,
-        4.544
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口3）",
@@ -120,8 +109,11 @@
       "sourceNodeId": "F1-TI-0099",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.34,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -39.706,
+        4.544
+      ]
     },
     {
       "beaconId": "BK-01-007",
@@ -131,10 +123,6 @@
       "coordinates": [
         -16.811,
         -81.924
-      ],
-      "plannedCoordinates": [
-        -18.171,
-        -81.343
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口7）",
@@ -149,8 +137,11 @@
       "sourceNodeId": "F1-TI-0149",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.48,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -18.171,
+        -81.343
+      ]
     },
     {
       "beaconId": "BK-01-008",
@@ -161,12 +152,8 @@
         -41.01,
         -48.57
       ],
-      "plannedCoordinates": [
-        -41.01,
-        -48.57
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口55） · 原: 交叉口11",
+      "locationDesc": "人工调整 1F（-41.01, -48.57）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -175,11 +162,13 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0265",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "",
+      "sourceNodeType": "manual_adjusted",
       "riskLevel": 0.5,
-      "snapDist_m": 0,
-      "subType": "base"
+      "subType": "base",
+      "originalSourceNodeId": "F1-TI-0265",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口55） · 原: 交叉口11"
     },
     {
       "beaconId": "BK-01-009",
@@ -189,10 +178,6 @@
       "coordinates": [
         -38.499,
         9.368
-      ],
-      "plannedCoordinates": [
-        -39.332,
-        9.16
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口15）",
@@ -207,8 +192,11 @@
       "sourceNodeId": "F1-TI-0199",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 0.86,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -39.332,
+        9.16
+      ]
     },
     {
       "beaconId": "BK-01-010",
@@ -218,10 +206,6 @@
       "coordinates": [
         -41.299,
         11.547
-      ],
-      "plannedCoordinates": [
-        -39.794,
-        12.039
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口21）",
@@ -236,8 +220,11 @@
       "sourceNodeId": "F1-TI-0221",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.58,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -39.794,
+        12.039
+      ]
     },
     {
       "beaconId": "BK-01-011",
@@ -247,10 +234,6 @@
       "coordinates": [
         -44.436,
         5.802
-      ],
-      "plannedCoordinates": [
-        -44.436,
-        4.539
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口30）",
@@ -265,8 +248,11 @@
       "sourceNodeId": "F1-TI-0235",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.26,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -44.436,
+        4.539
+      ]
     },
     {
       "beaconId": "BK-01-012",
@@ -277,12 +263,8 @@
         -42.004,
         -32.038
       ],
-      "plannedCoordinates": [
-        -45.066,
-        -35.523
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口31）",
+      "locationDesc": "1F 门口（防火门）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -291,11 +273,17 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0236",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "F1-TD-0109",
+      "sourceNodeType": "doorway",
       "riskLevel": 0.5,
-      "snapDist_m": 4.64,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -45.066,
+        -35.523
+      ],
+      "originalSourceNodeId": "F1-TI-0236",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口31）"
     },
     {
       "beaconId": "BK-01-013",
@@ -304,10 +292,6 @@
       "minor": 10113,
       "coordinates": [
         -42.004,
-        -20.461
-      ],
-      "plannedCoordinates": [
-        -44.258,
         -20.461
       ],
       "floor": 1,
@@ -323,8 +307,11 @@
       "sourceNodeId": "F1-TI-0242",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.25,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -44.258,
+        -20.461
+      ]
     },
     {
       "beaconId": "BK-01-014",
@@ -334,10 +321,6 @@
       "coordinates": [
         -42.22,
         -27.63
-      ],
-      "plannedCoordinates": [
-        -44.562,
-        -26.593
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口45）",
@@ -352,8 +335,11 @@
       "sourceNodeId": "F1-TI-0255",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.36,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -44.562,
+        -26.593
+      ]
     },
     {
       "beaconId": "BK-01-015",
@@ -363,10 +349,6 @@
       "coordinates": [
         -33.91,
         -34.44
-      ],
-      "plannedCoordinates": [
-        -35.811,
-        -35.732
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口47）",
@@ -381,8 +363,11 @@
       "sourceNodeId": "F1-TI-0257",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.94,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -35.811,
+        -35.732
+      ]
     },
     {
       "beaconId": "BK-01-016",
@@ -392,10 +377,6 @@
       "coordinates": [
         -33.86,
         -55.03
-      ],
-      "plannedCoordinates": [
-        -35.805,
-        -54.747
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口57）",
@@ -410,8 +391,11 @@
       "sourceNodeId": "F1-TI-0267",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.2,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -35.805,
+        -54.747
+      ]
     },
     {
       "beaconId": "BK-01-017",
@@ -421,10 +405,6 @@
       "coordinates": [
         -29.019,
         -78.169
-      ],
-      "plannedCoordinates": [
-        -29.019,
-        -79.39
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口61）",
@@ -439,8 +419,11 @@
       "sourceNodeId": "F1-TI-0273",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.22,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -29.019,
+        -79.39
+      ]
     },
     {
       "beaconId": "BK-01-018",
@@ -450,10 +433,6 @@
       "coordinates": [
         -24.65,
         -78.17
-      ],
-      "plannedCoordinates": [
-        -26.491,
-        -79.39
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口63）",
@@ -468,8 +447,11 @@
       "sourceNodeId": "F1-TI-0275",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.22,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -26.491,
+        -79.39
+      ]
     },
     {
       "beaconId": "BK-01-019",
@@ -479,10 +461,6 @@
       "coordinates": [
         -24.89,
         -81.48
-      ],
-      "plannedCoordinates": [
-        -23.484,
-        -79.39
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口65）",
@@ -497,8 +475,11 @@
       "sourceNodeId": "F1-TI-0277",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.28,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -23.484,
+        -79.39
+      ]
     },
     {
       "beaconId": "BK-01-020",
@@ -508,10 +489,6 @@
       "coordinates": [
         -20.805,
         -78.169
-      ],
-      "plannedCoordinates": [
-        -20.805,
-        -79.45
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口67）",
@@ -526,8 +503,11 @@
       "sourceNodeId": "F1-TI-0279",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.28,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -20.805,
+        -79.45
+      ]
     },
     {
       "beaconId": "BK-01-021",
@@ -538,12 +518,8 @@
         -49.71,
         -25.45
       ],
-      "plannedCoordinates": [
-        -49.71,
-        -25.45
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口45） · 原: 交叉口71",
+      "locationDesc": "1F 门口（防火门）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -552,11 +528,13 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0255",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "F1-TD-0100",
+      "sourceNodeType": "doorway",
       "riskLevel": 0.5,
-      "snapDist_m": 0,
-      "subType": "base"
+      "subType": "base",
+      "originalSourceNodeId": "F1-TI-0255",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口45） · 原: 交叉口71"
     },
     {
       "beaconId": "BK-01-022",
@@ -566,10 +544,6 @@
       "coordinates": [
         -32.907,
         -80.569
-      ],
-      "plannedCoordinates": [
-        -31.468,
-        -79.426
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口78）",
@@ -584,8 +558,11 @@
       "sourceNodeId": "F1-TI-0311",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.84,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -31.468,
+        -79.426
+      ]
     },
     {
       "beaconId": "BK-01-023",
@@ -594,10 +571,6 @@
       "minor": 10123,
       "coordinates": [
         -33.605,
-        -60.969
-      ],
-      "plannedCoordinates": [
-        -35.292,
         -60.969
       ],
       "floor": 1,
@@ -613,9 +586,12 @@
       "sourceNodeId": "F1-TI-0023",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.69,
       "subType": "dir",
-      "direction": "南"
+      "direction": "南",
+      "originalPlannedCoordinates": [
+        -35.292,
+        -60.969
+      ]
     },
     {
       "beaconId": "BK-01-024",
@@ -625,10 +601,6 @@
       "coordinates": [
         -38.58,
         3.56
-      ],
-      "plannedCoordinates": [
-        -37.707,
-        4.49
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口3 · 东向）",
@@ -643,9 +615,12 @@
       "sourceNodeId": "F1-TI-0099",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.29,
       "subType": "dir",
-      "direction": "东"
+      "direction": "东",
+      "originalPlannedCoordinates": [
+        -37.707,
+        4.49
+      ]
     },
     {
       "beaconId": "BK-01-025",
@@ -655,10 +630,6 @@
       "coordinates": [
         -41.299,
         5.802
-      ],
-      "plannedCoordinates": [
-        -41.361,
-        4.542
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口3 · 西向）",
@@ -673,9 +644,12 @@
       "sourceNodeId": "F1-TI-0099",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.26,
       "subType": "dir",
-      "direction": "西"
+      "direction": "西",
+      "originalPlannedCoordinates": [
+        -41.361,
+        4.542
+      ]
     },
     {
       "beaconId": "BK-01-027",
@@ -686,12 +660,8 @@
         -40.95,
         15.82
       ],
-      "plannedCoordinates": [
-        -34.68,
-        17.282
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口12 · 南向）",
+      "locationDesc": "1F 交叉口（交叉口5）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -700,12 +670,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0180",
+      "sourceNodeId": "F1-TI-0121",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 6.62,
       "subType": "dir",
-      "direction": "南"
+      "direction": "南",
+      "originalPlannedCoordinates": [
+        -34.68,
+        17.282
+      ],
+      "originalSourceNodeId": "F1-TI-0180",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口12 · 南向）"
     },
     {
       "beaconId": "BK-01-028",
@@ -715,10 +691,6 @@
       "coordinates": [
         -32.907,
         -73.523
-      ],
-      "plannedCoordinates": [
-        -31.818,
-        -72.925
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（交叉口19 · 北向）",
@@ -733,9 +705,12 @@
       "sourceNodeId": "F1-TI-0208",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.24,
       "subType": "dir",
-      "direction": "北"
+      "direction": "北",
+      "originalPlannedCoordinates": [
+        -31.818,
+        -72.925
+      ]
     },
     {
       "beaconId": "BK-01-030",
@@ -746,12 +721,8 @@
         -42.006,
         2.048
       ],
-      "plannedCoordinates": [
-        -44.433,
-        2.539
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口30 · 南向）",
+      "locationDesc": "1F 门口（普通门）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -760,12 +731,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0235",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "F1-TD-0009",
+      "sourceNodeType": "doorway",
       "riskLevel": 0.5,
-      "snapDist_m": 2.48,
       "subType": "dir",
-      "direction": "南"
+      "direction": "南",
+      "originalPlannedCoordinates": [
+        -44.433,
+        2.539
+      ],
+      "originalSourceNodeId": "F1-TI-0235",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口30 · 南向）"
     },
     {
       "beaconId": "BK-01-031",
@@ -776,12 +753,8 @@
         -49.65,
         -19.04
       ],
-      "plannedCoordinates": [
-        -46.254,
-        -20.328
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口37 · 西向）",
+      "locationDesc": "1F 交叉口（交叉口17）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -790,12 +763,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0242",
+      "sourceNodeId": "F1-TI-0204",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 3.76,
       "subType": "dir",
-      "direction": "西"
+      "direction": "西",
+      "originalPlannedCoordinates": [
+        -46.254,
+        -20.328
+      ],
+      "originalSourceNodeId": "F1-TI-0242",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口37 · 西向）"
     },
     {
       "beaconId": "BK-01-032",
@@ -806,12 +785,8 @@
         -41.55,
         -39.64
       ],
-      "plannedCoordinates": [
-        -41.55,
-        -39.64
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口53） · 原: 交叉口45 · 南向",
+      "locationDesc": "人工调整 1F（-41.55, -39.64）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -820,12 +795,14 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0263",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "",
+      "sourceNodeType": "manual_adjusted",
       "riskLevel": 0.5,
-      "snapDist_m": 0,
       "subType": "dir",
-      "direction": "南"
+      "direction": "南",
+      "originalSourceNodeId": "F1-TI-0263",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口45 · 南向"
     },
     {
       "beaconId": "BK-01-033",
@@ -836,12 +813,8 @@
         -41.11,
         -40.18
       ],
-      "plannedCoordinates": [
-        -41.11,
-        -40.18
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口53） · 原: 交叉口47 · 南向",
+      "locationDesc": "人工调整 1F（-41.11, -40.18）",
       "mountType": "door_frame",
       "installHeight": 2.2,
       "txPower": -10,
@@ -850,12 +823,14 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0263",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "",
+      "sourceNodeType": "manual_adjusted",
       "riskLevel": 0.5,
-      "snapDist_m": 0,
       "subType": "dir",
-      "direction": "南"
+      "direction": "南",
+      "originalSourceNodeId": "F1-TI-0263",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口47 · 南向"
     },
     {
       "beaconId": "BK-01-034",
@@ -866,12 +841,8 @@
         -37.81,
         -32.038
       ],
-      "plannedCoordinates": [
-        -37.81,
-        -35.687
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口47 · 西向）",
+      "locationDesc": "1F 门口（防火门）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -880,12 +851,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0257",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "F1-TD-0108",
+      "sourceNodeType": "doorway",
       "riskLevel": 0.5,
-      "snapDist_m": 3.65,
       "subType": "dir",
-      "direction": "西"
+      "direction": "西",
+      "originalPlannedCoordinates": [
+        -37.81,
+        -35.687
+      ],
+      "originalSourceNodeId": "F1-TI-0257",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口47 · 西向）"
     },
     {
       "beaconId": "BK-01-035",
@@ -896,12 +873,8 @@
         -41.502,
         -10.558
       ],
-      "plannedCoordinates": [
-        -44.414,
-        -10.558
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口71 · 北向）",
+      "locationDesc": "1F 交叉口（交叉口33）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -910,12 +883,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0287",
+      "sourceNodeId": "F1-TI-0238",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.91,
       "subType": "dir",
-      "direction": "北"
+      "direction": "北",
+      "originalPlannedCoordinates": [
+        -44.414,
+        -10.558
+      ],
+      "originalSourceNodeId": "F1-TI-0287",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口71 · 北向）"
     },
     {
       "beaconId": "BK-01-036",
@@ -926,12 +905,8 @@
         -48.76,
         -15
       ],
-      "plannedCoordinates": [
-        -46.411,
-        -12.571
-      ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口71 · 西向）",
+      "locationDesc": "人工调整 1F（-48.76, -15.0）",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -940,12 +915,18 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0287",
-      "sourceNodeType": "intersection",
+      "sourceNodeId": "",
+      "sourceNodeType": "manual_adjusted",
       "riskLevel": 0.5,
-      "snapDist_m": 3.57,
       "subType": "dir",
-      "direction": "西"
+      "direction": "西",
+      "originalPlannedCoordinates": [
+        -46.411,
+        -12.571
+      ],
+      "originalSourceNodeId": "F1-TI-0287",
+      "originalSourceNodeType": "intersection",
+      "originalLocationDesc": "1F 交叉口（交叉口71 · 西向）"
     },
     {
       "beaconId": "BK-01-038",
@@ -956,10 +937,6 @@
         -42.35,
         -4.14
       ],
-      "plannedCoordinates": [
-        -44.419,
-        -6.859
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -973,8 +950,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.42,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -44.419,
+        -6.859
+      ]
     },
     {
       "beaconId": "BK-01-039",
@@ -985,10 +965,6 @@
         -42.004,
         -16.509
       ],
-      "plannedCoordinates": [
-        -44.335,
-        -16.509
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1002,8 +978,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.33,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -44.335,
+        -16.509
+      ]
     },
     {
       "beaconId": "BK-01-040",
@@ -1014,10 +993,6 @@
         -42.008,
         -23.636
       ],
-      "plannedCoordinates": [
-        -44.41,
-        -23.527
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1031,8 +1006,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.4,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -44.41,
+        -23.527
+      ]
     },
     {
       "beaconId": "BK-01-041",
@@ -1043,10 +1021,6 @@
         -33.92,
         -39.6
       ],
-      "plannedCoordinates": [
-        -35.809,
-        -40.486
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1060,8 +1034,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.2,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -35.809,
+        -40.486
+      ]
     },
     {
       "beaconId": "BK-01-042",
@@ -1072,10 +1049,6 @@
         -33.64,
         -44.41
       ],
-      "plannedCoordinates": [
-        -35.808,
-        -45.239
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1089,8 +1062,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.7,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -35.808,
+        -45.239
+      ]
     },
     {
       "beaconId": "BK-01-043",
@@ -1101,10 +1077,6 @@
         -34.09,
         -48.65
       ],
-      "plannedCoordinates": [
-        -35.806,
-        -49.993
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1118,8 +1090,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 2.49,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -35.806,
+        -49.993
+      ]
     },
     {
       "beaconId": "BK-01-044",
@@ -1130,10 +1105,6 @@
         -33.78,
         -64.84
       ],
-      "plannedCoordinates": [
-        -34.32,
-        -64.314
-      ],
       "floor": 1,
       "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）",
       "mountType": "wall",
@@ -1147,8 +1118,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_corridor",
       "riskLevel": 0.3,
-      "snapDist_m": 0.71,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -34.32,
+        -64.314
+      ]
     },
     {
       "beaconId": "BK-TR-F1-001",
@@ -1156,10 +1130,6 @@
       "major": 1,
       "minor": 10149,
       "coordinates": [
-        -32.065,
-        -65.62562968261719
-      ],
-      "plannedCoordinates": [
         -32.065,
         -65.62562968261719
       ],
@@ -1175,7 +1145,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 3.02,
       "subType": "fill"
     },
     {
@@ -1187,10 +1156,6 @@
         -37.81,
         -56.91
       ],
-      "plannedCoordinates": [
-        -38.065,
-        -57.22722516601563
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1203,8 +1168,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.58,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -38.065,
+        -57.22722516601563
+      ]
     },
     {
       "beaconId": "BK-TR-F1-003",
@@ -1215,10 +1183,6 @@
         -48.74,
         -31.8
       ],
-      "plannedCoordinates": [
-        -48.74,
-        -31.8
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1231,7 +1195,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0,
       "subType": "fill"
     },
     {
@@ -1243,10 +1206,6 @@
         -22.06,
         -83.68
       ],
-      "plannedCoordinates": [
-        -22.06,
-        -83.68
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1259,7 +1218,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0,
       "subType": "fill"
     },
     {
@@ -1271,10 +1229,6 @@
         -37.02,
         -63.33
       ],
-      "plannedCoordinates": [
-        -37.02,
-        -63.33
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1287,7 +1241,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0,
       "subType": "fill"
     },
     {
@@ -1299,10 +1252,6 @@
         -49.64,
         -36.77
       ],
-      "plannedCoordinates": [
-        -49.90057387451171,
-        -36.644000000000005
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1315,8 +1264,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 2.84,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -49.90057387451171,
+        -36.644000000000005
+      ]
     },
     {
       "beaconId": "BK-TR-F1-008",
@@ -1327,10 +1279,6 @@
         -32.65,
         -77.64
       ],
-      "plannedCoordinates": [
-        -30.107508066406247,
-        -76.6
-      ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1343,8 +1291,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.85,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -30.107508066406247,
+        -76.6
+      ]
     },
     {
       "beaconId": "BK-M-1-001",
@@ -1367,7 +1318,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1391,7 +1341,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1415,7 +1364,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1439,7 +1387,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1463,7 +1410,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1487,7 +1433,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1498,10 +1443,6 @@
       "coordinates": [
         -30.31,
         -75.1
-      ],
-      "plannedCoordinates": [
-        -28.955,
-        -74.887
       ],
       "floor": 2,
       "locationDesc": "2F 电梯口（II-01#EL）· 门套或呼梯板旁",
@@ -1516,8 +1457,11 @@
       "sourceNodeId": "F2-TF-0008",
       "sourceNodeType": "facility",
       "riskLevel": 1,
-      "snapDist_m": 0,
-      "subType": "elevator_door"
+      "subType": "elevator_door",
+      "originalPlannedCoordinates": [
+        -28.955,
+        -74.887
+      ]
     },
     {
       "beaconId": "BK-02-002",
@@ -1525,10 +1469,6 @@
       "major": 2,
       "minor": 10146,
       "coordinates": [
-        -32.379,
-        -82.318
-      ],
-      "plannedCoordinates": [
         -32.379,
         -82.318
       ],
@@ -1545,7 +1485,6 @@
       "sourceNodeId": "F2-TD-0028",
       "sourceNodeType": "doorway",
       "riskLevel": 2,
-      "snapDist_m": 0,
       "adjacentRooms": [
         "F2-RM-0018",
         "F2-CR-0047"
@@ -1561,10 +1500,6 @@
         -32.907,
         -78.169
       ],
-      "plannedCoordinates": [
-        -31.591,
-        -79.236
-      ],
       "floor": 2,
       "locationDesc": "2F 交叉口（交叉口12）",
       "mountType": "wall",
@@ -1578,8 +1513,11 @@
       "sourceNodeId": "F2-TI-0084",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.69,
-      "subType": "base"
+      "subType": "base",
+      "originalPlannedCoordinates": [
+        -31.591,
+        -79.236
+      ]
     },
     {
       "beaconId": "BK-02-004",
@@ -1589,10 +1527,6 @@
       "coordinates": [
         -30.108,
         -78.169
-      ],
-      "plannedCoordinates": [
-        -29.591,
-        -79.271
       ],
       "floor": 2,
       "locationDesc": "2F 交叉口（交叉口12 · 东向）",
@@ -1607,9 +1541,12 @@
       "sourceNodeId": "F2-TI-0084",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.22,
       "subType": "dir",
-      "direction": "东"
+      "direction": "东",
+      "originalPlannedCoordinates": [
+        -29.591,
+        -79.271
+      ]
     },
     {
       "beaconId": "BK-TR-F2-001",
@@ -1617,10 +1554,6 @@
       "major": 2,
       "minor": 10158,
       "coordinates": [
-        -29.998,
-        -73.52254323242188
-      ],
-      "plannedCoordinates": [
         -29.998,
         -73.52254323242188
       ],
@@ -1636,7 +1569,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.25,
       "subType": "fill"
     },
     {
@@ -1648,10 +1580,6 @@
         -32.52,
         -73.7
       ],
-      "plannedCoordinates": [
-        -27.955,
-        -73.52254323242188
-      ],
       "floor": 2,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1664,8 +1592,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.92,
-      "subType": "fill"
+      "subType": "fill",
+      "originalPlannedCoordinates": [
+        -27.955,
+        -73.52254323242188
+      ]
     },
     {
       "beaconId": "BK-TR-F2-003",
@@ -1676,10 +1607,6 @@
         -33.998,
         -80.56882064941406
       ],
-      "plannedCoordinates": [
-        -33.998,
-        -80.56882064941406
-      ],
       "floor": 2,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
       "mountType": "wall",
@@ -1692,7 +1619,6 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.3,
       "subType": "fill"
     },
     {
@@ -1716,7 +1642,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     },
     {
@@ -1740,7 +1665,6 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "snapDist_m": 0,
       "subType": "manual_deploy"
     }
   ],
