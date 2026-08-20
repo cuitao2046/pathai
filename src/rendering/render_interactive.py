@@ -604,6 +604,7 @@ function deployAddBeacon(sp){
     major: DEPLOY_DEFAULTS.major,
     minor: parseInt(String(fk), 10) * 10000 + seq,
     coordinates: [x, y],
+    plannedCoordinates: null,
     floor: parseInt(fk, 10),
     locationDesc: '人工部署 ' + fk + 'F（' + x + ', ' + y + '）',
     mountType: 'wall',
@@ -696,7 +697,24 @@ function deployEndDrag(e){
     }
     if (entry) {
       entry.b.coordinates = [x, y];
-      deployUpdateInfo(entry, x, y);
+      // —— 人工调整语义同步（审计 BUG 修复）：规划信标被拖走 → 原规划字段备份后置空，
+      //    标记 manual_adjusted；原本就是 BK-M-* 人工信标 → 仅更新坐标与位置描述 ——
+      if (entry.b.sourceNodeId) {
+        entry.b.originalSourceNodeId = entry.b.sourceNodeId;
+        entry.b.originalSourceNodeType = entry.b.sourceNodeType || '';
+        entry.b.originalLocationDesc = entry.b.locationDesc || '';
+        entry.b.sourceNodeId = '';
+        entry.b.sourceNodeType = 'manual_adjusted';
+        entry.b.plannedCoordinates = null;
+        entry.b.snapDist_m = 0;
+      }
+      // locationDesc 统一「人工调整」口径：有原描述则追加保留（规划信标用「原规划」字样）
+      var oldDesc = entry.b.originalLocationDesc || entry.b.locationDesc || '';
+      entry.b.locationDesc = '人工调整 ' + fk + 'F（' + x + ', ' + y + '）'
+        + (oldDesc ? (entry.b.originalLocationDesc ? ' · 原规划: ' : ' · 原描述: ') + oldDesc : '');
+      // 重建 info（保证 info 面板与 b 完全一致），并同步 DOM data-info（参考 deployUpdateInfo 写法）
+      entry.info = deployBuildInfo(entry.b);
+      entry.el.setAttribute('data-info', JSON.stringify(entry.info));
     } else {
       // 全局模式信标：仅更新 DOM/data-info 坐标行（人工部署只针对测试路线，不纳入导出）
       var info = null;
