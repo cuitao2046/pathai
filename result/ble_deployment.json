@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "generatedBy": "pathai-manual-deploy",
-  "generatedAt": "2026-08-15T14:38:35.464Z",
+  "generatedAt": "2026-08-20T03:57:42.522Z",
   "beacons": [
     {
       "beaconId": "BK-01-001",
@@ -162,11 +162,11 @@
         -48.57
       ],
       "plannedCoordinates": [
-        -18.212,
-        -79.211
+        -41.01,
+        -48.57
       ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口11）",
+      "locationDesc": "1F 交叉口（交叉口55） · 原: 交叉口11",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -175,10 +175,10 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0168",
+      "sourceNodeId": "F1-TI-0265",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.59,
+      "snapDist_m": 0,
       "subType": "base"
     },
     {
@@ -539,11 +539,11 @@
         -25.45
       ],
       "plannedCoordinates": [
-        -44.411,
-        -12.558
+        -49.71,
+        -25.45
       ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口71）",
+      "locationDesc": "1F 交叉口（交叉口45） · 原: 交叉口71",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -552,10 +552,10 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0287",
+      "sourceNodeId": "F1-TI-0255",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.72,
+      "snapDist_m": 0,
       "subType": "base"
     },
     {
@@ -807,11 +807,11 @@
         -39.64
       ],
       "plannedCoordinates": [
-        -44.675,
-        -28.59
+        -41.55,
+        -39.64
       ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口45 · 南向）",
+      "locationDesc": "1F 交叉口（交叉口53） · 原: 交叉口45 · 南向",
       "mountType": "wall",
       "installHeight": 2.2,
       "txPower": -10,
@@ -820,10 +820,10 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0255",
+      "sourceNodeId": "F1-TI-0263",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 2.8,
+      "snapDist_m": 0,
       "subType": "dir",
       "direction": "南"
     },
@@ -837,11 +837,11 @@
         -40.18
       ],
       "plannedCoordinates": [
-        -35.81,
-        -37.732
+        -41.11,
+        -40.18
       ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（交叉口47 · 南向）",
+      "locationDesc": "1F 交叉口（交叉口53） · 原: 交叉口47 · 南向",
       "mountType": "door_frame",
       "installHeight": 2.2,
       "txPower": -10,
@@ -850,10 +850,10 @@
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
       "installDate": "2026-08-14",
-      "sourceNodeId": "F1-TI-0257",
+      "sourceNodeId": "F1-TI-0263",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
-      "snapDist_m": 1.83,
+      "snapDist_m": 0,
       "subType": "dir",
       "direction": "南"
     },
@@ -1216,8 +1216,8 @@
         -31.8
       ],
       "plannedCoordinates": [
-        -16.611660324707014,
-        -83.644
+        -48.74,
+        -31.8
       ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
@@ -1231,7 +1231,7 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.55,
+      "snapDist_m": 0,
       "subType": "fill"
     },
     {
@@ -1244,8 +1244,8 @@
         -83.68
       ],
       "plannedCoordinates": [
-        -16.611660324707014,
-        -85.644
+        -22.06,
+        -83.68
       ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
@@ -1259,7 +1259,7 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.55,
+      "snapDist_m": 0,
       "subType": "fill"
     },
     {
@@ -1272,8 +1272,8 @@
         -63.33
       ],
       "plannedCoordinates": [
-        -16.611660324707014,
-        -87.644
+        -37.02,
+        -63.33
       ],
       "floor": 1,
       "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.2m, 非天花板)",
@@ -1287,7 +1287,7 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "snapDist_m": 0.55,
+      "snapDist_m": 0,
       "subType": "fill"
     },
     {

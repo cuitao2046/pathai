@@ -336,12 +336,14 @@ function exportAnnoOverrides(){
     return tpl.replace('__CONSTS__', consts)
 
 
-def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_params):
+def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_params, topo_nodes):
     """生成「人工部署信标」交互脚本（独立 <script>，普通字符串，花括号为字面量）。
 
     与 build_anno_script 同构：通过 __CONSTS__ 占位符注入坐标变换常量
-    （DEPLOY_GEOX，独立副本不依赖 anno 脚本的 GEOX）与人工部署默认参数
-    （DEPLOY_DEFAULTS，新增信标沿用方案默认字段）。
+    （DEPLOY_GEOX，独立副本不依赖 anno 脚本的 GEOX）、人工部署默认参数
+    （DEPLOY_DEFAULTS，新增信标沿用方案默认字段）与同层拓扑节点表
+    （TOPO_NODES = {floor: [{id, label, type, coordinates:[x,y]}, ...]}，仅
+    intersection/doorway 两类，供拖拽/新增后重吸附归属语义）。
 
     浏览器端能力（受浏览器沙箱约束，导出走 Blob + a.download）：
       1. 部署模式：点击地图空白处新增信标（BK-M-{层}-{序号:03d}），落点即进入拖拽；
@@ -352,16 +354,27 @@ def build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, default_para
          {beacons:[...], summary:{total, byFloor, bySemantic, byMount}} 下载为
          ble_deployment.json（用户保存到 result/ 目录）。
 
+    坐标同步语义（方案 B）：
+      - 拖拽结束 / 新增落点后，plannedCoordinates 同步为新坐标（不再置空 null）；
+      - 同时执行 deployResnap 重吸附：同层 TOPO_NODES 最近节点（≤10m，intersection/
+        doorway）命中 → sourceNodeId/sourceNodeType/snapDist_m/locationDesc 归属该节点；
+        未命中 → manual_adjusted 人工调整语义；
+      - 原规划信标被拖走时备份 originalSourceNodeId/originalLocationDesc，并追加
+        「· 原规划: …」追溯。
+
     人工部署只针对测试路线方案：进入部署模式自动切到「测试路线」方案（route），
     新增信标挂入 .mode-route 组；全局方案（beacon_floors）完全不受影响。
     """
     floor_keys_js = json.dumps([str(k) for k in sorted_floors], ensure_ascii=False)
     defaults_js = json.dumps(default_params, ensure_ascii=False)
+    topo_nodes_js = json.dumps(topo_nodes, ensure_ascii=False)
     consts = (
         "var DEPLOY_GEOX = {ox:%r, oy:%r, scale:7.0, marginX:50, marginY:30, "
         "titleH:46, perFloor:%d, nFloors:%d, floorKeys:%s};\n"
-        "var DEPLOY_DEFAULTS = %s;"
-        % (min_x, max_y, svh_per_floor, len(sorted_floors), floor_keys_js, defaults_js)
+        "var DEPLOY_DEFAULTS = %s;\n"
+        "var TOPO_NODES = %s;"
+        % (min_x, max_y, svh_per_floor, len(sorted_floors), floor_keys_js,
+           defaults_js, topo_nodes_js)
     )
     tpl = '''<script>
 // ===== 人工部署信标（测试路线）：拖拽移动 / 点选新增 / 导出 ble_deployment.json =====
@@ -527,6 +540,34 @@ function deployBuildInfo(rec){
     b: rec
   };
 }
+// 重吸附：拖拽结束 / 新增落点后，把信标语义归属到同层最近拓扑节点（intersection/doorway，≤10m）。
+// 命中 → sourceNodeId/sourceNodeType/locationDesc 同步为该节点，snapDist_m=0
+//        （planned 已同步=coords → coords↔planned 偏移为 0，符合部署 schema 语义，
+//         并与校验器 R1/R2 的 snapDist_m 一致性门槛一致：若记录最近距离 5~10m，
+//         在 R1/R2 逻辑不变下会触发 R1 ERROR）；未命中 → manual_adjusted。
+function deployResnap(entry, x, y, fk){
+  var b = entry.b;
+  var nodes = TOPO_NODES[String(fk)] || [];
+  var best = null, bestD = Infinity;
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    var dx = n.coordinates[0] - x, dy = n.coordinates[1] - y;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  if (best && bestD <= 10.0) {
+    b.sourceNodeId = best.id;
+    b.sourceNodeType = best.type;
+    b.snapDist_m = 0;
+    var sem = (best.type === 'doorway') ? '门口' : '交叉口';
+    b.locationDesc = String(fk) + 'F ' + sem + '（' + (best.label || best.id) + '）';
+  } else {
+    b.sourceNodeId = '';
+    b.sourceNodeType = 'manual_adjusted';
+    b.snapDist_m = 0;
+    b.locationDesc = '人工调整 ' + String(fk) + 'F（' + x + ', ' + y + '）';
+  }
+}
 // 拖拽结束时把新坐标写回 data-info 的「坐标」行（无则追加）
 function deployUpdateInfo(entry, x, y){
   var info = entry.info;
@@ -604,7 +645,7 @@ function deployAddBeacon(sp){
     major: DEPLOY_DEFAULTS.major,
     minor: parseInt(String(fk), 10) * 10000 + seq,
     coordinates: [x, y],
-    plannedCoordinates: null,
+    plannedCoordinates: [x, y],
     floor: parseInt(fk, 10),
     locationDesc: '人工部署 ' + fk + 'F（' + x + ', ' + y + '）',
     mountType: 'wall',
@@ -625,6 +666,10 @@ function deployAddBeacon(sp){
   group.appendChild(g);
   var entry = {el: g, info: deployBuildInfo(rec), b: rec};
   DEPLOY_BEACONS.push(entry);
+  // 新增落点重吸附：落在交叉口/门口附近（≤10m）时归属该节点（planned 已同步=坐标）
+  deployResnap(entry, x, y, fk);
+  entry.info = deployBuildInfo(entry.b);
+  entry.el.setAttribute('data-info', JSON.stringify(entry.info));
   deploySelectEntry(entry);            // 新增后立即选中（橙色高亮），可拖拽调整或 Delete 删除
   deployHint('已新增信标 ' + bid + '（' + x + ', ' + y + '）· ' + fk + 'F，可立即拖拽调整位置，或按 Delete 键删除');
   return entry;
@@ -697,21 +742,24 @@ function deployEndDrag(e){
     }
     if (entry) {
       entry.b.coordinates = [x, y];
-      // —— 人工调整语义同步（审计 BUG 修复）：规划信标被拖走 → 原规划字段备份后置空，
-      //    标记 manual_adjusted；原本就是 BK-M-* 人工信标 → 仅更新坐标与位置描述 ——
-      if (entry.b.sourceNodeId) {
+      // —— 坐标同步（方案 B）：planned 跟随新坐标（替代置空 null）；
+      //    语义归属由 deployResnap 重吸附（≤10m 最近节点；未命中 → manual_adjusted）——
+      // 首次拖走规划信标：备份原规划字段（保留最初归属，供「· 原规划: …」追溯）
+      if (entry.b.sourceNodeId && !entry.b.originalSourceNodeId) {
         entry.b.originalSourceNodeId = entry.b.sourceNodeId;
         entry.b.originalSourceNodeType = entry.b.sourceNodeType || '';
         entry.b.originalLocationDesc = entry.b.locationDesc || '';
-        entry.b.sourceNodeId = '';
-        entry.b.sourceNodeType = 'manual_adjusted';
-        entry.b.plannedCoordinates = null;
-        entry.b.snapDist_m = 0;
+        if (entry.b.plannedCoordinates) {
+          entry.b.originalPlannedCoordinates = entry.b.plannedCoordinates.slice();
+        }
       }
-      // locationDesc 统一「人工调整」口径：有原描述则追加保留（规划信标用「原规划」字样）
-      var oldDesc = entry.b.originalLocationDesc || entry.b.locationDesc || '';
-      entry.b.locationDesc = '人工调整 ' + fk + 'F（' + x + ', ' + y + '）'
-        + (oldDesc ? (entry.b.originalLocationDesc ? ' · 原规划: ' : ' · 原描述: ') + oldDesc : '');
+      entry.b.plannedCoordinates = [x, y];
+      // 重吸附最近拓扑节点（≤10m；未命中 → sourceNodeId='' / manual_adjusted）
+      deployResnap(entry, x, y, fk);
+      // 原规划信标拖走后追加「· 原规划: …」追溯（多次拖拽仍保留最初归属）
+      if (entry.b.originalLocationDesc) {
+        entry.b.locationDesc = entry.b.locationDesc + ' · 原规划: ' + entry.b.originalLocationDesc;
+      }
       // 重建 info（保证 info 面板与 b 完全一致），并同步 DOM data-info（参考 deployUpdateInfo 写法）
       entry.info = deployBuildInfo(entry.b);
       entry.el.setAttribute('data-info', JSON.stringify(entry.info));
@@ -2330,8 +2378,23 @@ def main():
     # 注入「区域标注」交互脚本（独立 <script>，含坐标反变换常量）
     anno_script = build_anno_script(min_x, max_y, svh_per_floor, sorted_floors)
     out_html = out_html.replace("</body></html>", anno_script + "\n</body></html>")
-    # 注入「人工部署信标」交互脚本（独立 <script>，紧随 anno_script；含 DEPLOY_GEOX/DEPLOY_DEFAULTS）
-    deploy_script = build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors, deploy_defaults)
+    # 注入「人工部署信标」交互脚本（独立 <script>，紧随 anno_script；含 DEPLOY_GEOX/DEPLOY_DEFAULTS/TOPO_NODES）
+    # TOPO_NODES：同层拓扑节点表（仅 intersection/doorway 两类，供拖拽/新增重吸附归属语义）
+    topo_nodes = {}
+    for _fk in sorted_floors:
+        _fd = geo["floors"][_fk]
+        _lst = []
+        for _n in (_fd.get("topology") or {}).get("nodes") or []:
+            if _n.get("type") in ("intersection", "doorway"):
+                _lst.append({
+                    "id": _n["id"],
+                    "label": _n.get("label") or "",
+                    "type": _n.get("type"),
+                    "coordinates": [float(_n["coordinates"][0]), float(_n["coordinates"][1])],
+                })
+        topo_nodes[str(_fk)] = _lst
+    deploy_script = build_deploy_script(min_x, max_y, svh_per_floor, sorted_floors,
+                                        deploy_defaults, topo_nodes)
     out_html = out_html.replace("</body></html>", deploy_script + "\n</body></html>")
 
     with open(_args.out, "w", encoding="utf-8") as f:

@@ -12,7 +12,8 @@
   R2 [ERROR] plannedCoordinates 非空 且 coords↔plannedCoordinates 距离 > T_PLANNED_DRIFT，
              且 snapDist_m 与实际偏移不一致（planned 脱节；snap 容差 SNAP_TOL）
   R3 [WARN ] sourceNodeType='manual_adjusted' 或 subType='manual_deploy' 的信标，
-             plannedCoordinates 应为 null（人工调整/人工部署一致性）
+             plannedCoordinates 必须存在且与 coordinates 距离 ≤ T_PLANNED_SYNC_TOL
+             （人工信标坐标同步；缺失/超差提示「人工信标坐标未同步」）
   R4 [WARN ] 距最近楼梯 ≤ T_STAIR 或命中 staircase/stair_lobby 房间的信标，
              locationDesc/subType 缺少楼梯关键词（楼梯口语义缺失）
   R5 [ERROR] 缺失 beaconId / coordinates / floor 任一必填字段
@@ -47,6 +48,7 @@ SNAP_TOL = 0.5           # R1/R2：snapDist_m 与实际偏移距离的一致性�
                          #   若 snapDist_m≈coords↔planned（人为记录的吸附偏移），
                          #   视为有意放置，不算漂移（如 BK-01-027/031）。
 T_STAIR = 6.0            # R4：距最近楼梯判定阈值（m）
+T_PLANNED_SYNC_TOL = 0.5 # R3：人工信标 plannedCoordinates 与 coordinates 的同步容差（m）
 ROOM_BUF = 0.5           # 房间命中缓冲（墙上安装点落多边形边界）
 STAIR_ROOM_TYPES = ("staircase", "stair_lobby")   # R4：楼梯语义房间类型
 STAIR_KEYWORDS = ("楼梯", "staircase", "stair", "ST-")  # R4：楼梯关键词（大小写不敏感）
@@ -172,12 +174,18 @@ def validate_beacon(beacon, ctx):
             out.append(("R2", "ERROR",
                         f"coords↔plannedCoordinates={planned_d:.2f}m（> {T_PLANNED_DRIFT}m，planned 脱节）"))
 
-    # R3：人工调整/人工部署信标 → plannedCoordinates 应为 null
+    # R3：人工调整/人工部署信标 → plannedCoordinates 必须存在且与 coordinates 同步（≤0.5m）。
+    #     （方案 B 新语义：渲染图移动/新增信标后 planned 跟随新坐标，不再置空 null；
+    #       人工信标未同步（缺失或超差）提示「人工信标坐标未同步」）
     is_manual = (beacon.get("sourceNodeType") == "manual_adjusted"
                  or beacon.get("subType") == "manual_deploy")
-    if is_manual and beacon.get("plannedCoordinates") is not None:
-        out.append(("R3", "WARN",
-                    "人工信标 plannedCoordinates 应为 null（当前非空，一致性风险）"))
+    if is_manual:
+        if planned is None:
+            out.append(("R3", "WARN",
+                        "人工信标坐标未同步（plannedCoordinates 缺失）"))
+        elif planned_d > T_PLANNED_SYNC_TOL:
+            out.append(("R3", "WARN",
+                        f"人工信标坐标未同步（coords↔plannedCoordinates={planned_d:.2f}m > {T_PLANNED_SYNC_TOL}m）"))
 
     # R4：楼梯语义区（距楼梯 ≤ T_STAIR 或命中 staircase/stair_lobby）→ 声明缺楼梯关键词
     r = room_of(p, rooms, tree) if rooms is not None else None
