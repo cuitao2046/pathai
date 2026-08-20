@@ -1302,7 +1302,7 @@ def main():
                 ("长度", f"{_flen} m"),
                 ("楼层", f"{fk}F"),
             ]}
-            attr = info_attr({"tip": tip, "detail": det, "kind": "skeleton", "id": _fid})
+            attr = info_attr({"tip": tip, "detail": det, "kind": "skeleton", "id": f"{fk}-{_fid}"})
             parts.append(
                 f'<g class="layer_skeleton" {attr}>'
                 f'<polyline class="vis" points="{pts}"/>'
@@ -1331,7 +1331,10 @@ def main():
                 _rows.append(("标签", n["label"]))
             det = {"title": n.get("label") or "骨架交叉口", "rows": _rows}
             tip = f"骨架交叉口 {_nid}\\n类型：{_rt_cn}"
-            attr = info_attr({"tip": tip, "detail": det, "id": _nid, "kind": "node"})
+            # skeleton_node 与 topo_node 同源（均来自 topo intersection 节点，id 形如 F1-TIxxx），
+            # 但分属两个图层，若顶层 id 相同会撞车。此处加 SKN- 前缀独立命名空间，
+            # detail 中仍保留真实节点 id（link_obj 跳转用真实 id）。
+            attr = info_attr({"tip": tip, "detail": det, "id": ("SKN-" + _nid) if _nid else "", "kind": "node"})
             parts.append(
                 f'<g class="layer_skeleton_node" {attr}>'
                 f'<circle class="vis" cx="{sx}" cy="{sy}" r="2.2"/>'
@@ -1570,7 +1573,8 @@ def main():
             ]}
             parts.append(
                 f'<g class="layer_wall" {info_attr({"id": _wid, "tip": wtip, "detail": wdet, "kind": "wall"}, floor=floor, coll="walls", pid=_wid, store="geometry", key="id")}>'
-                f'<path d="M {x1} {y1} L {x2} {y2}"/></g>\n'
+                f'<path class="vis" d="M {x1} {y1} L {x2} {y2}"/>'
+                f'<path class="hit" d="M {x1} {y1} L {x2} {y2}"/></g>\n'
             )
 
         # 3. 窗户段
@@ -1586,9 +1590,11 @@ def main():
                 ("长度", f"{_wnlen} m"),
                 ("楼层", f"{fk}F"),
             ]}
-            _wnattr = info_attr({"tip": _wntip, "detail": _wndet, "kind": "window"})
+            _wnattr = info_attr({"id": _wnid, "tip": _wntip, "detail": _wndet, "kind": "window"},
+                                floor=floor, coll="windows", pid=_wnid, store="geometry", key="id")
             parts.append(f'<g class="layer_window" {_wnattr}>'
-                         f'<path d="M {x1} {y1} L {x2} {y2}"/></g>\n')
+                         f'<path class="vis" d="M {x1} {y1} L {x2} {y2}"/>'
+                         f'<path class="hit" d="M {x1} {y1} L {x2} {y2}"/></g>\n')
 
         # 4. 楼梯
         for st in geom.get("stairs", []):
@@ -1906,8 +1912,10 @@ def main():
                     f'<circle cx="{sx}" cy="{sy}" r="4.2" fill="{color}" opacity="0.9"/></g>\n'
                 )
                 if label_n:
+                    # 标签 <g> 不再携带 data-info：图标 circle 已承载点击详情，
+                    # 避免图标与标签两个 <g> 共享同一 id 造成 data-info id 重复
                     parts.append(
-                        f'<g class="layer_topo_node" {attr}><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
+                        f'<g class="layer_topo_node"><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
                         f'font-size="5" fill="{color}">{label_n}</text></g>\n'
                     )
             elif ntype == "facility_entrance":
@@ -1919,8 +1927,9 @@ def main():
                     f'<polygon points="{tri}" fill="{NODE_COLORS["facility_entrance"]}" opacity="0.9"/></g>\n'
                 )
                 if label_n:
+                    # 标签 <g> 不携带 data-info（同 facility）：图标 triangle 已承载点击详情
                     parts.append(
-                        f'<g class="layer_topo_node" {attr}><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
+                        f'<g class="layer_topo_node"><text x="{float(sx)+6:.1f}" y="{float(sy)+3:.1f}" '
                         f'font-size="5" fill="{NODE_COLORS["facility_entrance"]}">{label_n}</text></g>\n'
                     )
             else:

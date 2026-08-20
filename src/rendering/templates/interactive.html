@@ -17,15 +17,17 @@ svg { display: block; background: #fff; }
 .layer_room polygon { opacity: 0.55; cursor: pointer; }
 .layer_lobby_elevator polygon, .layer_lobby_stair polygon { opacity: 0.85; cursor: pointer; }
 .layer_corridor polygon, .layer_lobby polygon, .layer_activity polygon, .layer_atrium polygon { opacity: 0.55; cursor: pointer; }
-.layer_wall path { stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; }
+.layer_wall path.vis { stroke: #333; stroke-width: 0.8; fill: none; stroke-linecap: round; pointer-events: none; }
+.layer_wall path.hit { stroke: transparent; stroke-width: 8; fill: none; pointer-events: stroke; cursor: pointer; }
 .layer_building_outline polygon { fill: none; stroke: #222; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
 .layer_building_outline polygon:hover { stroke-width: 2.6; }
-.layer_window path { stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; cursor: pointer; }
-.layer_window path:hover { stroke-width: 3; }
+.layer_window path.vis { stroke: #81D4FA; stroke-width: 0.9; fill: none; stroke-dasharray: 4,2; pointer-events: none; cursor: pointer; }
+.layer_window path.vis:hover { stroke-width: 3; }
+.layer_window path.hit { stroke: transparent; stroke-width: 8; fill: none; pointer-events: stroke; cursor: pointer; }
 .layer_stairs polygon { opacity: 0.6; cursor: pointer; }
 .layer_elevator polygon { opacity: 0.6; cursor: pointer; }
 .layer_elevator_door * { cursor: pointer; }
-.layer_column polygon { fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; }
+.layer_column polygon { fill: #B0BEC5; stroke: #78909C; stroke-width: 0.3; opacity: 0.7; cursor: pointer; }
 .layer_walkable polygon { fill: #A5D6A7; stroke: #43A047; stroke-width: 0.4; opacity: 0.35; cursor: pointer; }
 .layer_walkable polygon:hover { stroke-width: 1.4; }
 /* 骨架段：可见线不拦截事件，透明命中线捕获点击（点击任意位置都有详情） */
