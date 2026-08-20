@@ -152,6 +152,19 @@ def info_attr(d, floor=None, coll=None, pid=None, store=None, key=None):
     return "data-info='" + s + "'"
 
 
+def _cov_id(fp_id):
+    """三点定位「覆盖点」独立命名空间（与「指纹采集点」FP-* 区分）。
+
+    覆盖层每个点位与某个指纹采集点 1:1 对应，但二者语义不同
+    （指纹采样位置 vs 可见信标可视性评估），故改用 CV- 前缀保留映射：
+        FP-1-R001 -> CV-1-R001
+    避免「三点定位覆盖」与「指纹网格」图层点位 id 同名（点击详情无法区分）。
+    """
+    if not fp_id:
+        return ""
+    return ("CV" + fp_id[2:]) if str(fp_id).startswith("FP") else f"CV-{fp_id}"
+
+
 def link_obj(tid, text=None):
     """构造「可点击 ID 链接对象」：JS 端 renderCell 识别 _l 字段，
     渲染为点击后居中定位到对应 SVG 元素的超链接。tid 为目标要素/节点 ID。"""
@@ -2087,15 +2100,20 @@ def main():
                                 beacon_contrib[f"{mode}:{bid}"].append([round(cx, 2), round(cy, 2)])
                     col = COV_COLORS.get(min(vis, 3), "#43A047")
                     ok = vis >= 3
+                    fp_id = p.get("id", "")
+                    cov_id = _cov_id(fp_id)
                     tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
-                    det = {"title": f"指纹点 {p.get('id','')} 覆盖", "rows": [
+                    det = {"title": f"覆盖点 {cov_id}", "rows": [
+                        ("覆盖点 ID", cov_id),
+                        ("源指纹点", fp_id or "—"),
                         ("楼层", f"{p.get('floor','?')}F"),
                         ("可见信标数", str(vis)),
                         ("三点定位", "可" if ok else "不足（需≥3）"),
                         ("覆盖信标", "、".join(vis_ids) if vis_ids else "—"),
                     ]}
                     attr = info_attr({"tip": tip, "detail": det, "kind": "coverage",
-                                      "id": p.get("id", ""), "covBeacons": vis_ids})
+                                      "id": cov_id, "sourceFingerprintId": fp_id,
+                                      "covBeacons": vis_ids})
                     parts.append(
                         f'<g class="layer_coverage" style="display:none" data-mode="{mode}" {attr}>'
                         f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '
