@@ -52,6 +52,10 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 .layer_lobby_elevator text, .layer_lobby_stair text, .layer_infrastructure text,
 .layer_stairs text, .layer_elevator text, .layer_topo_node text, .layer_crossfloor text { pointer-events: auto; cursor: pointer; }
 .selected { stroke: #FFC107 !important; stroke-width: 2.4 !important; }
+/* 选中高亮的粗描边不作用于文字标签：小字号 text 继承 2.4 描边会被糊成色块。
+   受影响：信标/拓扑节点/房间/楼梯/电梯/风险点/地面材质/跨层连接等所有带 label 且可被选中的要素。
+   几何图形（circle/rect/polygon/path）仍按各自规则正常高亮。 */
+.selected text { stroke: none !important; }
 /* 点击拓扑节点时被选中节点 / 相连边高亮（直接作用于几何图形，确保可见） */
 .layer_topo_node.selected circle, .layer_topo_node.selected rect, .layer_topo_node.selected polygon { stroke: #FFC107 !important; stroke-width: 2.6 !important; }
 .layer_topo_edge.selected path, .layer_topo_edge_titi.selected path { stroke: #FFC107 !important; stroke-width: 2.2 !important; opacity: 0.95 !important; stroke-dasharray: none !important; }
