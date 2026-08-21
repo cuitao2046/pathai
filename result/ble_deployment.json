@@ -29,6 +29,10 @@
       "originalPlannedCoordinates": [
         -28.955,
         -74.887
+      ],
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-RM-0066"
       ]
     },
     {
@@ -54,8 +58,11 @@
       "sourceNodeType": "doorway",
       "riskLevel": 1,
       "adjacentRooms": [
+        "F1-CR-0056",
+        "F1-CR-0055",
         "F1-RM-0036",
-        "F1-CR-0056"
+        "F1-RM-0031",
+        "F1-LB-0057"
       ],
       "subType": "base"
     },
@@ -85,6 +92,11 @@
       "originalPlannedCoordinates": [
         -35.85,
         -59.048
+      ],
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-CR-0062",
+        "F1-STL-10"
       ]
     },
     {
@@ -113,6 +125,10 @@
       "originalPlannedCoordinates": [
         -39.706,
         4.544
+      ],
+      "adjacentRooms": [
+        "F1-CR-0051",
+        "F1-RM-0018"
       ]
     },
     {
@@ -141,6 +157,12 @@
       "originalPlannedCoordinates": [
         -18.171,
         -81.343
+      ],
+      "adjacentRooms": [
+        "F1-CR-0056",
+        "F1-LB-0057",
+        "F1-RM-0036",
+        "F1-CR-0055"
       ]
     },
     {
@@ -168,7 +190,10 @@
       "subType": "base",
       "originalSourceNodeId": "F1-TI-0265",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口55） · 原: 交叉口11"
+      "originalLocationDesc": "1F 交叉口（交叉口55） · 原: 交叉口11",
+      "adjacentRooms": [
+        "F1-LB-0049"
+      ]
     },
     {
       "beaconId": "BK-01-009",
@@ -196,6 +221,11 @@
       "originalPlannedCoordinates": [
         -39.332,
         9.16
+      ],
+      "adjacentRooms": [
+        "F1-ELL-05",
+        "F1-CR-0051",
+        "F1-CR-0050"
       ]
     },
     {
@@ -224,6 +254,11 @@
       "originalPlannedCoordinates": [
         -39.794,
         12.039
+      ],
+      "adjacentRooms": [
+        "F1-CR-0050",
+        "F1-RM-0016",
+        "F1-ELL-05"
       ]
     },
     {
@@ -252,6 +287,14 @@
       "originalPlannedCoordinates": [
         -44.436,
         4.539
+      ],
+      "adjacentRooms": [
+        "F1-CR-0051",
+        "F1-RM-0017",
+        "F1-RM-0068",
+        "F1-AC-0046",
+        "F1-AC-0047",
+        "F1-STL-03"
       ]
     },
     {
@@ -283,7 +326,11 @@
       ],
       "originalSourceNodeId": "F1-TI-0236",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口31）"
+      "originalLocationDesc": "1F 交叉口（交叉口31）",
+      "adjacentRooms": [
+        "F1-LB-0049",
+        "F1-CR-0048"
+      ]
     },
     {
       "beaconId": "BK-01-013",
@@ -311,6 +358,10 @@
       "originalPlannedCoordinates": [
         -44.258,
         -20.461
+      ],
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0050"
       ]
     },
     {
@@ -339,6 +390,10 @@
       "originalPlannedCoordinates": [
         -44.562,
         -26.593
+      ],
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0050"
       ]
     },
     {
@@ -367,6 +422,9 @@
       "originalPlannedCoordinates": [
         -35.811,
         -35.732
+      ],
+      "adjacentRooms": [
+        "F1-LB-0049"
       ]
     },
     {
@@ -395,6 +453,10 @@
       "originalPlannedCoordinates": [
         -35.805,
         -54.747
+      ],
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-LB-0049"
       ]
     },
     {
@@ -423,6 +485,10 @@
       "originalPlannedCoordinates": [
         -29.019,
         -79.39
+      ],
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-CR-0055"
       ]
     },
     {
@@ -451,6 +517,12 @@
       "originalPlannedCoordinates": [
         -26.491,
         -79.39
+      ],
+      "adjacentRooms": [
+        "F1-CR-0055",
+        "F1-RM-0026",
+        "F1-CR-0056",
+        "F1-CR-0053"
       ]
     },
     {
@@ -479,6 +551,11 @@
       "originalPlannedCoordinates": [
         -23.484,
         -79.39
+      ],
+      "adjacentRooms": [
+        "F1-CR-0055",
+        "F1-RM-0027",
+        "F1-RM-0024"
       ]
     },
     {
@@ -507,6 +584,11 @@
       "originalPlannedCoordinates": [
         -20.805,
         -79.45
+      ],
+      "adjacentRooms": [
+        "F1-CR-0056",
+        "F1-CR-0055",
+        "F1-RM-0026"
       ]
     },
     {
@@ -534,7 +616,11 @@
       "subType": "base",
       "originalSourceNodeId": "F1-TI-0255",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口45） · 原: 交叉口71"
+      "originalLocationDesc": "1F 交叉口（交叉口45） · 原: 交叉口71",
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0013"
+      ]
     },
     {
       "beaconId": "BK-01-022",
@@ -562,6 +648,11 @@
       "originalPlannedCoordinates": [
         -31.468,
         -79.426
+      ],
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-RM-0019",
+        "F1-RM-0066"
       ]
     },
     {
@@ -591,6 +682,9 @@
       "originalPlannedCoordinates": [
         -35.292,
         -60.969
+      ],
+      "adjacentRooms": [
+        "F1-CR-0052"
       ]
     },
     {
@@ -620,6 +714,10 @@
       "originalPlannedCoordinates": [
         -37.707,
         4.49
+      ],
+      "adjacentRooms": [
+        "F1-CR-0051",
+        "F1-RM-0018"
       ]
     },
     {
@@ -649,6 +747,12 @@
       "originalPlannedCoordinates": [
         -41.361,
         4.542
+      ],
+      "adjacentRooms": [
+        "F1-CR-0051",
+        "F1-RM-0017",
+        "F1-ELL-05",
+        "F1-RM-0018"
       ]
     },
     {
@@ -681,7 +785,11 @@
       ],
       "originalSourceNodeId": "F1-TI-0180",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口12 · 南向）"
+      "originalLocationDesc": "1F 交叉口（交叉口12 · 南向）",
+      "adjacentRooms": [
+        "F1-CR-0050",
+        "F1-RM-0016"
+      ]
     },
     {
       "beaconId": "BK-01-028",
@@ -710,6 +818,11 @@
       "originalPlannedCoordinates": [
         -31.818,
         -72.925
+      ],
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-RM-0066",
+        "F1-CR-0052"
       ]
     },
     {
@@ -742,7 +855,12 @@
       ],
       "originalSourceNodeId": "F1-TI-0235",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口30 · 南向）"
+      "originalLocationDesc": "1F 交叉口（交叉口30 · 南向）",
+      "adjacentRooms": [
+        "F1-CR-0051",
+        "F1-RM-0018",
+        "F1-AC-0046"
+      ]
     },
     {
       "beaconId": "BK-01-031",
@@ -774,7 +892,11 @@
       ],
       "originalSourceNodeId": "F1-TI-0242",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口37 · 西向）"
+      "originalLocationDesc": "1F 交叉口（交叉口37 · 西向）",
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0012"
+      ]
     },
     {
       "beaconId": "BK-01-032",
@@ -802,7 +924,10 @@
       "direction": "南",
       "originalSourceNodeId": "F1-TI-0263",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口45 · 南向"
+      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口45 · 南向",
+      "adjacentRooms": [
+        "F1-LB-0049"
+      ]
     },
     {
       "beaconId": "BK-01-033",
@@ -830,7 +955,10 @@
       "direction": "南",
       "originalSourceNodeId": "F1-TI-0263",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口47 · 南向"
+      "originalLocationDesc": "1F 交叉口（交叉口53） · 原: 交叉口47 · 南向",
+      "adjacentRooms": [
+        "F1-LB-0049"
+      ]
     },
     {
       "beaconId": "BK-01-034",
@@ -862,7 +990,10 @@
       ],
       "originalSourceNodeId": "F1-TI-0257",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口47 · 西向）"
+      "originalLocationDesc": "1F 交叉口（交叉口47 · 西向）",
+      "adjacentRooms": [
+        "F1-LB-0049"
+      ]
     },
     {
       "beaconId": "BK-01-035",
@@ -894,7 +1025,11 @@
       ],
       "originalSourceNodeId": "F1-TI-0287",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口71 · 北向）"
+      "originalLocationDesc": "1F 交叉口（交叉口71 · 北向）",
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-AC-0046"
+      ]
     },
     {
       "beaconId": "BK-01-036",
@@ -926,7 +1061,11 @@
       ],
       "originalSourceNodeId": "F1-TI-0287",
       "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（交叉口71 · 西向）"
+      "originalLocationDesc": "1F 交叉口（交叉口71 · 西向）",
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0012"
+      ]
     },
     {
       "beaconId": "BK-01-038",
@@ -954,6 +1093,10 @@
       "originalPlannedCoordinates": [
         -44.419,
         -6.859
+      ],
+      "adjacentRooms": [
+        "F1-AC-0046",
+        "F1-RM-0018"
       ]
     },
     {
@@ -982,6 +1125,10 @@
       "originalPlannedCoordinates": [
         -44.335,
         -16.509
+      ],
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0050"
       ]
     },
     {
@@ -1010,6 +1157,10 @@
       "originalPlannedCoordinates": [
         -44.41,
         -23.527
+      ],
+      "adjacentRooms": [
+        "F1-CR-0048",
+        "F1-RM-0050"
       ]
     },
     {
@@ -1038,6 +1189,9 @@
       "originalPlannedCoordinates": [
         -35.809,
         -40.486
+      ],
+      "adjacentRooms": [
+        "F1-LB-0049"
       ]
     },
     {
@@ -1066,6 +1220,9 @@
       "originalPlannedCoordinates": [
         -35.808,
         -45.239
+      ],
+      "adjacentRooms": [
+        "F1-LB-0049"
       ]
     },
     {
@@ -1094,6 +1251,9 @@
       "originalPlannedCoordinates": [
         -35.806,
         -49.993
+      ],
+      "adjacentRooms": [
+        "F1-LB-0049"
       ]
     },
     {
@@ -1122,6 +1282,10 @@
       "originalPlannedCoordinates": [
         -34.32,
         -64.314
+      ],
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-RM-0023"
       ]
     },
     {
@@ -1145,7 +1309,11 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-RM-0023"
+      ]
     },
     {
       "beaconId": "BK-TR-F1-002",
@@ -1172,6 +1340,12 @@
       "originalPlannedCoordinates": [
         -38.065,
         -57.22722516601563
+      ],
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-CR-0062",
+        "F1-LB-0049",
+        "F1-STL-10"
       ]
     },
     {
@@ -1195,7 +1369,14 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F1-LB-0049",
+        "F1-STL-04",
+        "F1-RM-0064",
+        "F1-CR-0048",
+        "F1-RM-0013"
+      ]
     },
     {
       "beaconId": "BK-TR-F1-004",
@@ -1218,7 +1399,14 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F1-CR-0055",
+        "F1-RM-0031",
+        "F1-RM-0027",
+        "F1-CR-0056",
+        "F1-RM-0036"
+      ]
     },
     {
       "beaconId": "BK-TR-F1-005",
@@ -1241,7 +1429,10 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F1-CR-0052"
+      ]
     },
     {
       "beaconId": "BK-TR-F1-007",
@@ -1268,6 +1459,11 @@
       "originalPlannedCoordinates": [
         -49.90057387451171,
         -36.644000000000005
+      ],
+      "adjacentRooms": [
+        "F1-STL-04",
+        "F1-LB-0049",
+        "F1-RM-0064"
       ]
     },
     {
@@ -1295,6 +1491,10 @@
       "originalPlannedCoordinates": [
         -30.107508066406247,
         -76.6
+      ],
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-RM-0066"
       ]
     },
     {
@@ -1318,7 +1518,12 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-CR-0050",
+        "F1-CR-0054",
+        "F1-ELL-05"
+      ]
     },
     {
       "beaconId": "BK-M-1-002",
@@ -1341,7 +1546,12 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-AC-0047",
+        "F1-RM-0014",
+        "F1-AC-0046"
+      ]
     },
     {
       "beaconId": "BK-M-1-003",
@@ -1364,7 +1574,12 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-AC-0047",
+        "F1-AC-0046",
+        "F1-RM-0014"
+      ]
     },
     {
       "beaconId": "BK-M-1-004",
@@ -1387,7 +1602,11 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-CR-0052",
+        "F1-CR-0053"
+      ]
     },
     {
       "beaconId": "BK-M-1-005",
@@ -1410,7 +1629,14 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-CR-0055",
+        "F1-RM-0022",
+        "F1-RM-0020",
+        "F1-RM-0024",
+        "F1-CR-0053"
+      ]
     },
     {
       "beaconId": "BK-M-1-006",
@@ -1433,7 +1659,11 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F1-CR-0053",
+        "F1-CR-0056"
+      ]
     },
     {
       "beaconId": "BK-02-001",
@@ -1461,6 +1691,12 @@
       "originalPlannedCoordinates": [
         -28.955,
         -74.887
+      ],
+      "adjacentRooms": [
+        "F2-CR-0046",
+        "F2-CR-0047",
+        "F2-STL-06",
+        "F2-RM-0052"
       ]
     },
     {
@@ -1486,8 +1722,10 @@
       "sourceNodeType": "doorway",
       "riskLevel": 2,
       "adjacentRooms": [
+        "F2-CR-0047",
         "F2-RM-0018",
-        "F2-CR-0047"
+        "F2-RM-0020",
+        "F2-STL-06"
       ],
       "subType": "base"
     },
@@ -1517,6 +1755,13 @@
       "originalPlannedCoordinates": [
         -31.591,
         -79.236
+      ],
+      "adjacentRooms": [
+        "F2-CR-0047",
+        "F2-STL-06",
+        "F2-CR-0046",
+        "F2-RM-0052",
+        "F2-RM-0018"
       ]
     },
     {
@@ -1546,6 +1791,11 @@
       "originalPlannedCoordinates": [
         -29.591,
         -79.271
+      ],
+      "adjacentRooms": [
+        "F2-CR-0047",
+        "F2-STL-06",
+        "F2-CR-0046"
       ]
     },
     {
@@ -1569,7 +1819,10 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F2-CR-0046"
+      ]
     },
     {
       "beaconId": "BK-TR-F2-002",
@@ -1596,6 +1849,10 @@
       "originalPlannedCoordinates": [
         -27.955,
         -73.52254323242188
+      ],
+      "adjacentRooms": [
+        "F2-CR-0046",
+        "F2-RM-0052"
       ]
     },
     {
@@ -1619,7 +1876,14 @@
       "sourceNodeId": null,
       "sourceNodeType": "route_fill",
       "riskLevel": "low",
-      "subType": "fill"
+      "subType": "fill",
+      "adjacentRooms": [
+        "F2-CR-0047",
+        "F2-RM-0018",
+        "F2-STL-06",
+        "F2-RM-0052",
+        "F2-CR-0046"
+      ]
     },
     {
       "beaconId": "BK-M-2-001",
@@ -1642,7 +1906,12 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F2-CR-0047",
+        "F2-RM-0020",
+        "F2-STL-06"
+      ]
     },
     {
       "beaconId": "BK-M-2-002",
@@ -1665,7 +1934,10 @@
       "sourceNodeId": "",
       "sourceNodeType": "",
       "riskLevel": 1,
-      "subType": "manual_deploy"
+      "subType": "manual_deploy",
+      "adjacentRooms": [
+        "F2-CR-0046"
+      ]
     }
   ],
   "summary": {

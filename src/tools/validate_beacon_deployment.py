@@ -12,6 +12,8 @@
   R4 [WARN ] 距最近楼梯 ≤ T_STAIR 或命中 staircase/stair_lobby 房间的信标，
              locationDesc/subType 缺少楼梯关键词（楼梯口语义缺失）
   R5 [ERROR] 缺失 beaconId / coordinates / floor 任一必填字段
+  R6 [ERROR] 信标坐标 ADJ_RADIUS 内的房间须全部录入 adjacentRooms
+             （L4 相邻房间语义完整性，与 inject_adjacent_rooms.py 同半径）
 
 注：方案 B 单坐标 schema（2026-08-20 起）：coordinates 为唯一真值，
     plannedCoordinates/snapDist_m 字段已废弃 → R2（planned 脱节）/ R3（人工信标同步）
@@ -47,6 +49,8 @@ ROOM_BUF = 0.5           # 房间命中缓冲（墙上安装点落多边形边�
 STAIR_ROOM_TYPES = ("staircase", "stair_lobby")   # R4：楼梯语义房间类型
 STAIR_KEYWORDS = ("楼梯", "staircase", "stair", "ST-")  # R4：楼梯关键词（大小写不敏感）
 REQUIRED_FIELDS = ("beaconId", "coordinates", "floor")  # R5：必填字段
+ADJ_RADIUS = 3.0        # R6：相邻房间判定半径（m），与 inject_adjacent_rooms.py 一致
+                         #   —— 注入后的数据必然通过 R6，几何相邻却漏录则报错
 
 # ---------- 路径推导（项目惯例：基于 __file__，不 hardcode） ----------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -159,6 +163,16 @@ def validate_beacon(beacon, ctx):
         out.append(("R4", "WARN",
                     f"楼梯口语义缺失（{hit}，locationDesc/subType 无楼梯关键词）"))
 
+    # R6：几何相邻房间须全部录入 adjacentRooms（L4 相邻房间语义完整性；
+    #     半径与 inject_adjacent_rooms.py 一致，保证注入后的数据必然通过此校验）
+    adj = set(beacon.get("adjacentRooms") or [])
+    missing = [r["id"] for r in rooms
+               if r["poly"].distance(p) <= ADJ_RADIUS and r["id"] not in adj]
+    if missing:
+        shown = ", ".join(missing[:5]) + ("..." if len(missing) > 5 else "")
+        out.append(("R6", "ERROR",
+                    f"几何相邻房间未录入 adjacentRooms（缺 {len(missing)} 个: {shown}）"))
+
     return out
 
 
@@ -194,7 +208,7 @@ def main() -> int:
 
     print("-" * 70)
     print(f"汇总: 共 {len(beacons)} 枚信标")
-    for rule in ("R1", "R4", "R5"):
+    for rule in ("R1", "R4", "R5", "R6"):
         parts = [f"{lv}={by_rule.get(rule, {}).get(lv, 0)}" for lv in ("ERROR", "WARN")]
         print(f"  {rule}: " + " | ".join(parts))
     print(f"合计: ERROR={counts['ERROR']}  WARN={counts['WARN']}")

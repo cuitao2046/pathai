@@ -2063,6 +2063,12 @@ def main():
             """渲染一套方案（指纹+覆盖+信标），包进 <g class="mode-xxx"> 供模式开关显隐。"""
             if not bc_fk:
                 return
+            # 房间 id -> 名称 映射（用于信标相邻房间语义展示，L4 adjacentRooms）
+            room_labels = {}
+            for _fk in geo["floors"]:
+                for _r in geo["floors"][_fk]["geometry"].get("rooms", []):
+                    _p = _r["properties"]
+                    room_labels[_p.get("roomId") or _r["id"]] = _p.get("label", "")
             hide = ' style="display:none"' if mode == "route" else ""
             parts.append(f'<g class="mode-{mode}" data-floor="{fk}"{hide}>\n')
             # 指纹采集点
@@ -2157,6 +2163,9 @@ def main():
                     ("电池型号", b.get("batteryModel", "")),
                     ("预期寿命", f"{b.get('expectedLifespan')} 年" if b.get("expectedLifespan") else ""),
                     ("来源节点", b.get("sourceNodeId", "")),
+                    ("相邻房间", ", ".join(
+                        f"{room_labels.get(rid, rid)}（{rid}）"
+                        for rid in b.get("adjacentRooms", [])) or "—"),
                 ]}
                 if b.get("originalPlannedCoordinates"):
                     _op = b["originalPlannedCoordinates"]
