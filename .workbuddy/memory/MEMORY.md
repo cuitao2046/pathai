@@ -27,7 +27,7 @@
 - ⚠️ **push 凭据（2026-08-14）**：SSH 通道 = `~/.ssh/config` Host `github-cuitao`（IdentityFile `~/.ssh/id_ed25519`，id_rsa_cuitao 已删、id_rsa 不行）；**remote 必须 `git@github-cuitao:cuitao2046/pathai.git`**；clone https 后第一件事 `git remote set-url origin` 换回 SSH。
 - ⚠️ **手动骨架优先**：skeleton_manual_parsed.json 存在则跳过中轴提取；**必须 git add+commit 入库**，严禁 `git checkout <旧提交> -- 该文件` 回退（渲染缺矩形先查工作区）。重生成：`python src/tools/import_manual_skeleton.py --input "C:/.../*.svg"`。
 - ⚠️ geojson 陷阱：房间类型在 **`type`** 字段（非 roomType，由中间变量映射）。
-- ⚠️ **git 目录误删 bug（2026-08-14，checkout+cherry-pick 双触发）**：切分支/删除目录内大量文件时可能误删整个父目录（实测 docs/debug 62 文件、debug 37/41）；对象库完好，`git checkout -- .` / `git checkout HEAD -- <目录>` 可恢复；操作后立即 `git status` 自检。规避：优先 cherry-pick 而非 rebase。
+- ⚠️ **git 目录误删 bug（2026-08-14 首现，2026-08-27 复发）**：切分支/删除目录内大量文件时可能误删整个父目录，**且会连目录内 untracked 文件一并删除且不可恢复**（2026-08-27 实测：`.workbuddy/memory/` 整目录被删，15 个 tracked 日志 + 1 个 untracked 的当日 `2026-08-27.md` 全失；tracked 用 `git checkout HEAD -- <目录>` 可恢复，untracked 永久丢失）。对象库仅保护 tracked。规避：①切分支前 `git add`+`commit` 所有 memory 日志；②或 `git stash -u` 保护 untracked；③操作后**立即 `git status` 自检**，发现 deleted 立刻 `git checkout HEAD -- <目录>` 恢复；④优先 cherry-pick 而非 rebase。
 - `.workbuddy/memory/` 与 skeleton_manual_parsed.json 随仓库同步；result/ 其余产物为可复现渲染输出按铁律提交。⚠️ 编辑 .gitignore 后务必 git add 再 commit。
 
 ## 提交工作流（铁律）
