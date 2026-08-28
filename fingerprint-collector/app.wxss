@@ -1,0 +1,55 @@
+/* app.wxss — 全局样式 */
+page {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --primary: #2563eb;
+  --primary-d: #1d4ed8;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --danger: #dc2626;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 28rpx;
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+
+.container { padding: 24rpx; }
+.card {
+  background: var(--card);
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.06);
+}
+.title { font-size: 32rpx; font-weight: 600; margin-bottom: 12rpx; }
+.subtitle { font-size: 24rpx; color: var(--muted); }
+.row { display: flex; align-items: center; justify-content: space-between; padding: 12rpx 0; }
+.row + .row { border-top: 1rpx solid #eef0f3; }
+
+.btn {
+  display: flex; align-items: center; justify-content: center;
+  height: 88rpx; border-radius: 12rpx; font-size: 30rpx; color: #fff;
+  background: var(--primary); margin: 12rpx 0;
+}
+.btn:active { background: var(--primary-d); }
+.btn.ghost { background: #eef2ff; color: var(--primary); }
+.btn.ok { background: var(--ok); }
+.btn.warn { background: var(--warn); }
+.btn.danger { background: var(--danger); }
+.btn[disabled] { background: #cbd5e1; color: #f8fafc; }
+
+.badge {
+  display: inline-block; min-width: 32rpx; padding: 2rpx 12rpx;
+  border-radius: 999rpx; font-size: 22rpx; color: #fff; background: var(--muted);
+}
+.badge.ok { background: var(--ok); }
+.badge.primary { background: var(--primary); }
+
+.tag { display:inline-block; padding: 2rpx 10rpx; border-radius: 8rpx; font-size: 22rpx; background:#eef2ff; color: var(--primary); }
+.tag.safe { background:#fef3c7; color: var(--warn); }
+
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 24rpx; }
+.muted { color: var(--muted); }
+.scrollbox { max-height: 60vh; }

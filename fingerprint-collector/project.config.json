@@ -1,0 +1,21 @@
+{
+  "description": "室内导航 BLE 指纹库采集小程序 - pathai fingerprint-collector",
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "bigPackageSizeSupport": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.4.0",
+  "appid": "wxREPLACE_WITH_YOUR_APPID",
+  "projectname": "fingerprint-collector",
+  "condition": {}
+}

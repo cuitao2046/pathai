@@ -1,0 +1,71 @@
+<view class="container">
+  <view class="card">
+    <view class="title">分区管理</view>
+    <view class="subtitle">每个分区指定一个参考锚点，分区内采集指纹坐标均相对该锚点计算</view>
+  </view>
+
+  <view wx:if="{{zones.length===0}}" class="card empty">尚未定义分区，点击下方「新增分区」开始。</view>
+
+  <view wx:for="{{zones}}" wx:key="zoneId" class="card zone">
+    <view class="zone-head">
+      <view>
+        <text class="zone-name">{{item.name}}</text>
+        <text class="badge primary">F{{item.floor}}</text>
+      </view>
+      <text class="mono zone-id">{{item.zoneId}}</text>
+    </view>
+    <view class="row"><text>参考锚点</text><text class="muted">{{item.anchorLabel}}</text></view>
+    <view class="row"><text>锚点坐标</text><text class="mono">({{item.abs[0]}}, {{item.abs[1]}})</text></view>
+    <view class="row">
+      <text>已采样本</text>
+      <text class="badge ok">{{item.recordCount}}</text>
+      <text>覆盖点</text>
+      <text class="badge">{{item.fpCount}}</text>
+    </view>
+    <view class="zone-ops">
+      <view class="btn ghost sm" data-id="{{item.zoneId}}" bindtap="openEdit">编辑</view>
+      <view class="btn ghost sm danger" data-id="{{item.zoneId}}" bindtap="removeZone">删除</view>
+    </view>
+  </view>
+
+  <view class="btn ok" bindtap="openAdd">+ 新增分区</view>
+
+  <!-- 新增/编辑表单 -->
+  <view wx:if="{{showForm}}" class="mask">
+    <view class="sheet">
+      <view class="sheet-title">{{mode==='edit' ? '编辑分区' : '新增分区'}}</view>
+
+      <view class="form-row">
+        <text class="form-label">分区名称</text>
+        <input class="op-input" placeholder="如 1F-东区走廊" value="{{formName}}" bindinput="onFormName" />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">楼层</text>
+        <view class="ds-row">
+          <view class="btn ghost sm {{formFloor===1?'on':''}}" data-f="1" bindtap="onFloor">1 层</view>
+          <view class="btn ghost sm {{formFloor===2?'on':''}}" data-f="2" bindtap="onFloor">2 层</view>
+        </view>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">参考锚点元素</text>
+        <input class="op-input" placeholder="搜索锚点（信标/拓扑节点 id 或名称）" value="{{anchorSearch}}" bindinput="onAnchorSearch" />
+        <view wx:if="{{formAnchor}}" class="anchor-picked">已选：{{formAnchor.label}}</view>
+        <view wx:else class="anchor-hint">请从下方候选中选择一个参考锚点</view>
+        <scroll-view class="anchor-list" scroll-y wx:if="{{anchorCandidates.length}}">
+          <view wx:for="{{anchorCandidates}}" wx:key="id" class="anchor-item" data-idx="{{index}}" bindtap="pickAnchor">
+            <text class="mono">{{item.label}}</text>
+            <text class="muted mono">({{item.abs[0]}}, {{item.abs[1]}})</text>
+          </view>
+        </scroll-view>
+        <view wx:else class="empty sm">无匹配锚点</view>
+      </view>
+
+      <view class="sheet-ops">
+        <view class="btn ghost" bindtap="closeForm">取消</view>
+        <view class="btn ok" bindtap="saveZone">保存分区</view>
+      </view>
+    </view>
+  </view>
+</view>

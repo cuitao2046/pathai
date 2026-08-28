@@ -1,0 +1,53 @@
+<view class="container">
+  <view class="card">
+    <view class="title">{{fp.id}}</view>
+    <view class="subtitle mono">F{{fp.floor}} · ({{fp.coordinates[0]}}, {{fp.coordinates[1]}})</view>
+    <view class="row">
+      <text>区域类型</text>
+      <text class="tag {{fp.regionType==='safe'?'safe':''}}">{{fp.regionType==='safe'?'安全节点加密区':'普通区'}}</text>
+    </view>
+    <view class="row">
+      <text>已采集样本</text>
+      <text class="badge ok">{{sampleCount}} 次</text>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">采集分区</view>
+    <picker mode="selector" range="{{zoneRange}}" value="{{zoneIndex}}" bindchange="onZoneChange">
+      <view class="picker">{{zoneRange[zoneIndex]}}</view>
+    </picker>
+    <block wx:if="{{currentZone}}">
+      <view class="row"><text>参考锚点</text><text class="muted">{{currentZone.anchor.anchorLabel}}</text></view>
+      <view class="row"><text>锚点坐标</text><text class="mono">({{currentZone.anchor.abs[0]}}, {{currentZone.anchor.abs[1]}})</text></view>
+      <view class="row">
+        <text>本点相对坐标</text>
+        <text class="mono rel">{{relPreview[0]}}, {{relPreview[1]}}</text>
+      </view>
+      <view class="hint">本点指纹坐标将相对锚点存储（绝对坐标亦保留）。</view>
+    </block>
+    <view wx:else class="hint">未选分区：指纹以绝对坐标存储。</view>
+  </view>
+
+  <view class="card">
+    <view class="row">
+      <text class="title" style="margin:0">实时信标</text>
+      <text class="muted">{{scanning ? '扫描中 '+lastUpdate : '已停止'}}</text>
+    </view>
+    <view wx:if="{{errMsg}}" class="err">{{errMsg}}</view>
+    <scroll-view class="scrollbox" scroll-y wx:if="{{beacons.length}}">
+      <view wx:for="{{beacons}}" wx:key="minor" class="bk">
+        <view class="bk-top">
+          <text class="mono">M{{item.major}}:{{item.minor}}</text>
+          <text class="rssi {{item.rssi > -70 ? 'strong' : (item.rssi > -85 ? 'mid' : 'weak')}}">{{item.rssi}} dBm</text>
+        </view>
+        <view class="muted mono">dist {{item.accuracy != null ? item.accuracy+'m' : '—'}} · tx {{item.txPower != null ? item.txPower : '—'}}</view>
+      </view>
+    </scroll-view>
+    <view wx:else class="empty">{{scanning ? '等待信标广播…' : '点击「开始扫描」'}}</view>
+  </view>
+
+  <view class="btn {{scanning ? 'warn' : 'ok'}}" bindtap="toggleScan">{{scanning ? '停止扫描' : '开始扫描'}}</view>
+  <view class="btn" bindtap="capture">采集此点指纹（快照当前信标）</view>
+  <view class="btn ghost" bindtap="goBack">完成并返回</view>
+</view>

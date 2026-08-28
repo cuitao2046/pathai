@@ -1,0 +1,22 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/points/points",
+    "pages/collect/collect",
+    "pages/zones/zones",
+    "pages/export/export"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#1f2937",
+    "navigationBarTitleText": "指纹采集",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f3f4f6"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于记录采集点的楼层平面位置（可选）"
+    }
+  }
+}

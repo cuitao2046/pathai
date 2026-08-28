@@ -1,0 +1,29 @@
+<view class="container">
+  <view class="card">
+    <view class="title">选择采集点</view>
+    <view class="subtitle">{{datasetLabel}} · 共 {{total}} 个点（已采集置顶）</view>
+    <view class="search">
+      <input placeholder="搜索 FP 编号 / 关联节点" value="{{keyword}}" bindinput="onSearch" />
+    </view>
+    <view class="chips">
+      <view class="chip {{floorFilter==='all'?'on':''}}" data-f="all" bindtap="onFloor">全部</view>
+      <view class="chip {{floorFilter==='1'?'on':''}}" data-f="1" bindtap="onFloor">1F</view>
+      <view class="chip {{floorFilter==='2'?'on':''}}" data-f="2" bindtap="onFloor">2F</view>
+    </view>
+  </view>
+
+  <scroll-view class="scrollbox" scroll-y>
+    <view wx:for="{{filtered}}" wx:key="id" class="pt" bindtap="tapPoint" data-id="{{item.id}}">
+      <view class="pt-main">
+        <text class="pt-id">{{item.id}}</text>
+        <text class="tag {{item.regionType==='safe'?'safe':''}}">{{item.regionType==='safe'?'安全加密':'普通'}}</text>
+        <text class="muted mono">F{{item.floor}} ({{item.coordinates[0]}}, {{item.coordinates[1]}})</text>
+      </view>
+      <view class="pt-right">
+        <text wx:if="{{collectedSet[item.id]}}" class="badge ok">{{collectedSet[item.id]}} 次</text>
+        <text wx:else class="badge">未采</text>
+      </view>
+    </view>
+    <view wx:if="{{filtered.length===0}}" class="empty">无匹配点</view>
+  </scroll-view>
+</view>

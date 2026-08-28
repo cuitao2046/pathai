@@ -1,0 +1,11 @@
+.op-input {
+  margin-top: 12rpx;
+  height: 76rpx;
+  border: 1rpx solid #d1d5db;
+  border-radius: 10rpx;
+  padding: 0 20rpx;
+  background: #fff;
+}
+.ds-row { display: flex; gap: 16rpx; margin-top: 12rpx; }
+.ds-row .btn { flex: 1; height: 76rpx; margin: 0; font-size: 26rpx; }
+.btn.ghost.on { background: var(--primary); color: #fff; }

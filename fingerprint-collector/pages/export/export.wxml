@@ -1,0 +1,43 @@
+<view class="container">
+  <view class="card">
+    <view class="title">导出概览</view>
+    <view class="row"><text>数据集</text><text class="badge primary">{{datasetLabel}}</text></view>
+    <view class="row"><text>采集人</text><text class="muted">{{operator || '未填写'}}</text></view>
+    <view class="row"><text>已采集点数</text><text class="badge ok">{{stats.fpCount}}</text></view>
+    <view class="row"><text>样本总数</text><text class="badge">{{stats.recordCount}}</text></view>
+    <view class="row"><text>信标样本合计</text><text class="muted">{{stats.beaconSampleSum}}</text></view>
+    <view class="row"><text>当前导出范围</text><text class="badge primary">{{scopeText}}</text></view>
+  </view>
+
+  <view class="card">
+    <view class="title">选择分区（多选，留空=全部）</view>
+    <view wx:if="{{zones.length===0}}" class="empty sm">尚未定义分区。可到「分区管理」创建，或用下方「导出全部」。</view>
+    <view wx:for="{{zones}}" wx:key="zoneId" class="zone-item" data-id="{{item.zoneId}}" bindtap="toggleZone">
+      <view class="chk {{item.selected ? 'on' : ''}}">{{item.selected ? '✓' : ''}}</view>
+      <view class="zone-meta">
+        <text class="zone-name">{{item.name}} <text class="badge primary">F{{item.floor}}</text></text>
+        <text class="muted sm">{{item.zoneId}} · {{item.recordCount}} 样本 / {{item.fpCount}} 点</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">最近 50 条记录</view>
+    <view wx:for="{{records}}" wx:key="collectedAt" class="rec">
+      <text class="mono">{{item.fpId}} #{{item.captureIndex}}</text>
+      <text class="muted">· {{item.beaconCount}} 信标 · {{item.collectedAt}}</text>
+      <text wx:if="{{item.zoneId}}" class="tag">区{{item.zoneId}}</text>
+    </view>
+    <view wx:if="{{records.length===0}}" class="empty">暂无记录</view>
+  </view>
+
+  <view class="card">
+    <view class="title">导出 JSON 预览（当前范围：{{scopeText}}）</view>
+    <scroll-view class="scrollbox preview" scroll-y><text class="mono">{{preview}}</text></scroll-view>
+  </view>
+
+  <view class="btn ok" bindtap="doExportSelected">导出选中分区 JSON</view>
+  <view class="btn" bindtap="doExportAll">导出全部 JSON</view>
+  <view class="btn ghost" bindtap="copyJson">仅复制 JSON 到剪贴板</view>
+  <view wx:if="{{exportedPath}}" class="path mono">文件：{{exportedPath}}</view>
+</view>

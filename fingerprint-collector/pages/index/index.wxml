@@ -1,0 +1,35 @@
+<view class="container">
+  <view class="card">
+    <view class="title">指纹采集 · {{venueName}}</view>
+    <view class="subtitle mono">venueId: {{venueId}}</view>
+  </view>
+
+  <view class="card">
+    <view class="title">采集人</view>
+    <input class="op-input" placeholder="输入采集人姓名 / 工号" value="{{operator}}" bindinput="onOperatorInput" />
+  </view>
+
+  <view class="card">
+    <view class="title">采集网格</view>
+    <view class="row">
+      <text>当前数据集</text>
+      <text class="badge primary">{{datasetLabel}}</text>
+    </view>
+    <view class="ds-row">
+      <view class="btn ghost {{dataset==='route'?'on':''}}" data-ds="route" bindtap="onDatasetChange">路线网格(1m)</view>
+      <view class="btn ghost {{dataset==='full'?'on':''}}" data-ds="full" bindtap="onDatasetChange">全楼网格(2m)</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">采集进度</view>
+    <view class="row"><text>数据集总点数</text><text class="badge">{{totalPoints}}</text></view>
+    <view class="row"><text>已采集点数</text><text class="badge ok">{{collectedFp}}</text></view>
+    <view class="row"><text>已采样本数</text><text class="badge">{{sampleCount}}</text></view>
+  </view>
+
+  <view class="btn ok" bindtap="goPoints">① 选点并开始采集</view>
+  <view class="btn" bindtap="goZones">② 分区管理（{{zoneCount}}）</view>
+  <view class="btn" bindtap="goExport">③ 复核并导出 JSON</view>
+  <view class="btn danger" bindtap="clearAll">清空全部数据</view>
+</view>

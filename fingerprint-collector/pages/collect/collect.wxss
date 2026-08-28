@@ -1,0 +1,11 @@
+.err { color: var(--danger); font-size: 24rpx; margin: 8rpx 0; }
+.bk { padding: 14rpx 18rpx; background: #f8fafc; border-radius: 10rpx; margin-bottom: 10rpx; }
+.bk-top { display: flex; justify-content: space-between; align-items: center; }
+.rssi { font-weight: 600; }
+.rssi.strong { color: var(--ok); }
+.rssi.mid { color: var(--warn); }
+.rssi.weak { color: var(--danger); }
+.empty { text-align: center; color: var(--muted); padding: 30rpx; }
+.picker { margin-top: 12rpx; padding: 18rpx 20rpx; background: #fff; border: 1rpx solid #d1d5db; border-radius: 10rpx; font-size: 28rpx; }
+.rel { color: #047857; font-weight: 600; }
+.hint { margin-top: 10rpx; color: var(--muted); font-size: 22rpx; }
