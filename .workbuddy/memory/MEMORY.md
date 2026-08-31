@@ -28,6 +28,7 @@
 - ⚠️ **手动骨架优先**：skeleton_manual_parsed.json 存在则跳过中轴提取；**必须 git add+commit 入库**，严禁 `git checkout <旧提交> -- 该文件` 回退（渲染缺矩形先查工作区）。重生成：`python src/tools/import_manual_skeleton.py --input "C:/.../*.svg"`。
 - ⚠️ geojson 陷阱：房间类型在 **`type`** 字段（非 roomType，由中间变量映射）。
 - ⚠️ **git 目录误删 bug（2026-08-14 首现，2026-08-27 复发）**：切分支/删除目录内大量文件时可能误删整个父目录，**且会连目录内 untracked 文件一并删除且不可恢复**（2026-08-27 实测：`.workbuddy/memory/` 整目录被删，15 个 tracked 日志 + 1 个 untracked 的当日 `2026-08-27.md` 全失；tracked 用 `git checkout HEAD -- <目录>` 可恢复，untracked 永久丢失）。对象库仅保护 tracked。规避：①切分支前 `git add`+`commit` 所有 memory 日志；②或 `git stash -u` 保护 untracked；③操作后**立即 `git status` 自检**，发现 deleted 立刻 `git checkout HEAD -- <目录>` 恢复；④优先 cherry-pick 而非 rebase；⑤rebase 同样触发该 bug（2026-08-28 实测），且误删范围含**任意 tracked 目录**（如 fingerprint-collector/）而非仅 memory——checkout/rebase 后须 `git checkout -- .` 全面恢复所有 tracked 文件，只恢复 .workbuddy/memory/ 不够。
+- ⚠️ **远端跟踪引用不落盘（2026-08-31 实测）**：沙箱 git 的 `fetch` 能连远端（github-cuitao 可达）且报 `[new branch]`，但 `origin/master` 远端跟踪引用**写不进 `.git/refs/remotes/origin/` 与 `.git/packed-refs`**（同类文件系统脆弱性），致 `rev-parse origin/master` 报"未知引用"、误判未同步。**正确校验法：用 `git ls-remote origin <branch>` 直接问远端返回的真实 commit 哈希，与本地 `git rev-parse <branch>` 比对**——已验证 53f54bf 两端一致即确属已同步。勿依赖本地 `origin/*` 引用判定。
 - `.workbuddy/memory/` 与 skeleton_manual_parsed.json 随仓库同步；result/ 其余产物为可复现渲染输出按铁律提交。⚠️ 编辑 .gitignore 后务必 git add 再 commit。
 
 ## 提交工作流（铁律）
