@@ -26,6 +26,7 @@
 - ⚠️ 远端跟踪引用不落盘：校验同步用 git ls-remote origin <branch> 比对哈希，勿依赖 origin/*。
 - .workbuddy/memory/ 与 skeleton_manual_parsed.json 随仓库同步；编辑 .gitignore 后务必 add+commit。
 - ⚠️ 本机执行环境：Bash PATH 间歇损坏→切 Python；PowerShell stdout 不回显、Remove-Item 静默失败；跑脚本/回归用 venv `…binaries/python/envs/default/Scripts/python.exe`（含 shapely/nx；托管 3.13.12 无 shapely，跑回归会假失败）；看输出让脚本写 UTF-8 文件再 Read；删文件用 python -c os.remove。
+- ⚠️ **并行 Edit 同一文件会竞态（2026-09-21 实测）**：同一消息里对同一文件的多个 Edit 调用并行执行、last-writer-wins，只有最后 1 个生效（其余静默丢失但各返回成功）。**同一文件的多处修改必须串行（分多条消息）或用带命中断言的 Python 脚本一次完成**；批量文档修改一律走断言脚本。
 
 ## 提交工作流（铁律）
 - 铁律0：禁 master 直接开发。分支→commit→push→人工校验→FF 合入→推 master→删分支（本地 -d + 远端 --delete）。
