@@ -1,66 +1,44 @@
 # PathAI 项目长期记忆（精炼版）
 
 ## 定位
-初中学部 1# 教学楼 1~2 层室内导航（视障核心用户）。CAD PDF→GeoJSON→交互 HTML 全链路。设计文档 docs/（8 篇）。
+初中学部 1# 教学楼 1~2 层室内导航（视障核心用户）。CAD PDF→GeoJSON→交互 HTML 全链路。设计文档 docs/（21+ 篇，01~21 + CAD 根文档）。
 
-## 代码（src/ 正式脚本 12 个）
-- `parse_cad_pdf.py`：主解析器。OCG 矢量→标定(SCALE=0.0529 m/pt, 原点(2019.1,1154.8)pt, Y翻转, set_rotation(0))→墙体矢量化→房间识别(栅格+形态学+分水岭+标签)→门洞识别(window摆弧/DOOR_FIRE/DK笔画)→门归属→GeoJSON。
-- `topology.py`+`skeleton/pipeline.py`：**实际拓扑由 pipeline.build_skeleton_topology 生成**（手动骨架优先取 `result/skeleton_manual_parsed.json` 跳过中轴），topology.build_floor_topology 仅回退；改拓扑须两处同步。
-- 门节点(TD) v9 规则：同物理开口门按 center_m(0.8m)+投影坐标(1.0m)两次合并为 TD；仅归属≥1封闭房间建 TD；`validate_geojson.py` 校验「每 TR 须有 TR↔TD 边」。
-- `render_interactive.py`：自包含交互 HTML(result/floor_layout_v9_interactive.html)。图层开关/缩放平移/悬停点击详情/楼层跳转/拓扑联动高亮/导出 SVG/边编辑写回/门编号 TD-xxxx/前端 Dijkstra(对齐 route_rules)。
-- `render_map.py`：GeoJSON→PNG。`validate_geojson.py`：QA，核心指标"无门封闭房间数=0"。
-- `route_rules.py`：`DOOR_PENALTY={swing:0,fire:0.5,opening:1}`；三层回退(最佳门→所有门→穿墙 wall_fallback)；盲模式剔盲区/禁楼梯跨层；无门卫生间虚拟穿墙边 XR-TW；`validate_wall_crossing` 豁免 doorway/facility 相邻段。
-- `fix_wall_crossing.py`：栅格 A* 清洗（walkable 薄隔墙跨接，当前数据收益有限）；`fix_crossing_edges.py`：穿封闭房间/管井边绕行。
-- `merge_manual_edges.py`/`generate_fingerprint_grid.py`/`export_skeleton_template.py`/`import_manual_skeleton.py`/`apply_manual_skeleton.py`/`apply_room_overrides.py`：手动边/指纹网格/手工骨架闭环/房间属性覆盖。
+## 代码（src/ 模块化，61 个 .py）
+结构：common/（constants.py 单一真值源：SCALE=0.0529、DOOR_PENALTY={swing:0,fire:0.5,opening:1}、DOOR_DEFAULT_PENALTY=9）/ parsing / geometry / semantics / skeleton / topology / rendering / qa / io / tools（~26 脚本）。
+- 解析主链：OCG 矢量→标定(SCALE=0.0529 m/pt, 原点(2019.1,1154.8)pt, Y翻转)→墙体矢量化→房间识别→门洞识别→门归属→GeoJSON。
+- **实际拓扑由 skeleton/pipeline.build_skeleton_topology 生成**（手动骨架优先取 result/skeleton_manual_parsed.json 跳过中轴），topology.build_floor_topology 仅回退；改拓扑须两处同步。
+- 门节点(TD) v9：同物理开口门按 center_m(0.8m)+投影坐标(1.0m) 两次合并；仅归属≥1封闭房间建 TD；validate_geojson 校验「每 TR 须有 TR↔TD 边」。
+- route_rules.py：受限 Dijkstra+三层回退(最佳门→所有门→wall_fallback)；盲模式剔盲区/禁楼梯跨层；validate_wall_crossing 豁免 doorway/facility 相邻段。
+- render_interactive.py 自包含交互 HTML；render_map.py→PNG；validate_geojson.py QA（核心指标无门封闭房间=0）。
 
 ## 当前进展（v9.0.0, 2026-09-21 实测）
-房间 136（F1 81/F2 55）；门 208（F1 132/F2 76）；墙 4442 段；柱 220；拓扑节点 465（F1 284/F2 181）、边 592；跨层边 10(楼梯7+电梯3)；骨架线 F1 59/F2 48；walkable F1 31/F2 16；指纹网格 **1434 全楼 / 647 路线**（F1 611/F2 36）；riskNodes F1 68/F2 41。QA PASS。合班 F1-RM-0050 211.9m²(98.9%)。信标：**现行台账 61 枚**（wall 54/door_frame 7；−10dBm/300ms/2.2m/CR2477），647 路线点 ≥3 可见覆盖 97.7%。route-mask 6m 与 GDOP 分析系 **74 枚方案态**（docs/13，含 4.5 σ 传播链与降噪方案⏳待实施）。
+房间 136（F1 81/F2 55）；门 208；墙 4442；柱 220；拓扑节点 465、边 592；跨层边 10(楼梯7+电梯3)；骨架线 F1 59/F2 48；walkable F1 31/F2 16；指纹网格 1434 全楼 / 647 路线（F1 611/F2 36）；riskNodes F1 68/F2 41。QA PASS。信标现行台账 61 枚（F1 52/F2 9，wall 54/door_frame 7；−10dBm/300ms/CR2477），647 路线点 ≥3 可见覆盖 97.7%（F1 97.55/F2 100）；纯三点退化点 21.3%（138/647）。74 枚 route-mask/GDOP 系方案态（docs/13）。两条基准路线：1F 音乐教室→组织办公 140.4m（同层）、教师办公室 F1→历史教室 F2 146.3m（跨层经电梯）。
 
 ## 关键约定
-- 正式脚本仅 src/，调试脚本 debug/，根目录不留 .py。
-- 路径基于 `__file__` 推导，不 hardcode。
-- networkx 3.6 在 Py3.14 有 dataclasses bug，需 configs.py Config 补显式 `__init__`。
-- ⚠️ **门不做合并（用户明确 2026-08-09）**：同一物理开口只允许一扇门，禁止 dedupe_doorways(13pt)/_merge_nearby_doors(0.8m/1.0m) 三处合并（parse_cad_pdf / skeleton/pipeline / topology）——合并混叠 rooms 归属（如 F2-TD-0010 ['F2-CR-0042','F2-RM-0005']）。
-- 卫生间防火门丢弃；卫生间/楼梯间摆弧门(kind∈swing/fire 且 DK<14pt)重分类 opening(F1=4/F2=4)。
-- 门洞(opening)=window 层 DK 笔画；几何优先级 ①DK<13pt 真实轴 ②50pt 内墙缝 ③吸附墙(~1.6m)。
-- ⚠️ `_heban_real_polygon` 陷阱：cv2.floodFill 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
-- ⚠️ **push 凭据（2026-08-14）**：SSH 通道 = `~/.ssh/config` Host `github-cuitao`（IdentityFile `~/.ssh/id_ed25519`，id_rsa_cuitao 已删、id_rsa 不行）；**remote 必须 `git@github-cuitao:cuitao2046/pathai.git`**；clone https 后第一件事 `git remote set-url origin` 换回 SSH。
-- ⚠️ **手动骨架优先**：skeleton_manual_parsed.json 存在则跳过中轴提取；**必须 git add+commit 入库**，严禁 `git checkout <旧提交> -- 该文件` 回退（渲染缺矩形先查工作区）。重生成：`python src/tools/import_manual_skeleton.py --input "C:/.../*.svg"`。
-- ⚠️ **geojson 房间类型字段分两层**（`src/io/geojson_writer.py:969` 需求⑳+1）：`type` 是**粗粒度**（功能房间统一 `room`；公共/设施型保持 corridor/staircase/stair_lobby/toilet/lobby/elevator_lobby/infrastructure），`roomType` 与 `roomSubType` 同值且为**细粒度用途**（classroom/office/equipment…）；`semantic.rooms[]` **只有 `type` + `roomSubType`（无 `roomType`）**，`roomSubType` 仅功能房间有值、其余 null。读用途用 `geometry.rooms[].properties.roomType`，读语义粗类用 `semantic.rooms[].type`。
-- ⚠️ **git 目录误删 bug（2026-08-14 首现，2026-08-27 复发）**：切分支/删除目录内大量文件时可能误删整个父目录，**且会连目录内 untracked 文件一并删除且不可恢复**（2026-08-27 实测：`.workbuddy/memory/` 整目录被删，15 个 tracked 日志 + 1 个 untracked 的当日 `2026-08-27.md` 全失；tracked 用 `git checkout HEAD -- <目录>` 可恢复，untracked 永久丢失）。对象库仅保护 tracked。规避：①切分支前 `git add`+`commit` 所有 memory 日志；②或 `git stash -u` 保护 untracked；③操作后**立即 `git status` 自检**，发现 deleted 立刻 `git checkout HEAD -- <目录>` 恢复；④优先 cherry-pick 而非 rebase；⑤rebase 同样触发该 bug（2026-08-28 实测），且误删范围含**任意 tracked 目录**（如 fingerprint-collector/）而非仅 memory——checkout/rebase 后须 `git checkout -- .` 全面恢复所有 tracked 文件，只恢复 .workbuddy/memory/ 不够。
-- ⚠️ **远端跟踪引用不落盘（2026-08-31 实测）**：沙箱 git 的 `fetch` 能连远端（github-cuitao 可达）且报 `[new branch]`，但 `origin/master` 远端跟踪引用**写不进 `.git/refs/remotes/origin/` 与 `.git/packed-refs`**（同类文件系统脆弱性），致 `rev-parse origin/master` 报"未知引用"、误判未同步。**正确校验法：用 `git ls-remote origin <branch>` 直接问远端返回的真实 commit 哈希，与本地 `git rev-parse <branch>` 比对**——已验证 53f54bf 两端一致即确属已同步。勿依赖本地 `origin/*` 引用判定。
-- `.workbuddy/memory/` 与 skeleton_manual_parsed.json 随仓库同步；result/ 其余产物为可复现渲染输出按铁律提交。⚠️ 编辑 .gitignore 后务必 git add 再 commit。
-- ⚠️ **本机脚本执行环境（2026-09-15/21 实测，重要）**：① **Bash 工具 PATH 间歇性损坏**（`dirname: command not found`、`cd: null directory`，`rm` 经 safe-delete shim 也失败且静默）——能跑就直接用，报该错立刻切 Python；② **PowerShell stdout 不回显**（只显示 "Command completed"），且 **`Remove-Item` 会静默失败**（`-LiteralPath` 单文件也不删）；③ PowerShell `*>` 重定向产物是 **UTF-16**，Read 报 "Cannot display content of binary file"。**可靠套路**：跑脚本用托管 venv `C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe`（Windows 是 `Scripts/` 不是 `bin/`）；要看输出就让脚本自己 `Path.write_text(..., encoding='utf-8')` 写文件再 Read；**删文件用 `python -c "import os,glob; [os.remove(f) for f in glob.glob('...')]"`**。
+- 正式脚本仅 src/，调试 debug/，根目录不留 .py；路径基于 __file__ 推导。
+- ⚠️ **门不做合并（2026-08-09 用户明确）**：同一物理开口只允许一扇门，禁止三处合并逻辑（parse_cad_pdf / skeleton/pipeline / topology）。
+- 卫生间防火门丢弃；卫生间/楼梯间摆弧门(DK<14pt)重分类 opening(F1=4/F2=4)。门洞=window 层 DK 笔画，优先级 ①DK<13pt 真实轴 ②50pt 内墙缝 ③吸附墙(~1.6m)。
+- ⚠️ cv2.floodFill 陷阱：newVal 写回图像、mask 只置1，取填充区须 图像==newVal。
+- ⚠️ push 凭据：SSH = ~/.ssh/config Host github-cuitao（id_ed25519）；remote 必须 git@github-cuitao:cuitao2046/pathai.git。
+- ⚠️ 手动骨架优先：skeleton_manual_parsed.json 存在则跳过中轴；必须入库，严禁 checkout 旧提交回退；重生成用 src/tools/import_manual_skeleton.py。
+- ⚠️ geojson 房间类型两层：geometry.rooms[].properties.type=粗粒度(room/corridor/…)，roomType/roomSubType=细粒度同值；semantic.rooms[] 只有 type+roomSubType（无 roomType）。
+- ⚠️ git 目录误删 bug（checkout/rebase 触发，连 untracked 一并删且不可恢复）：操作后立即 git status 自检、deleted 用 git checkout HEAD -- 恢复（须 checkout -- . 全面恢复）；优先 cherry-pick；切分支前 commit 或 stash -u 保护。
+- ⚠️ 远端跟踪引用不落盘：校验同步用 git ls-remote origin <branch> 比对哈希，勿依赖 origin/*。
+- .workbuddy/memory/ 与 skeleton_manual_parsed.json 随仓库同步；编辑 .gitignore 后务必 add+commit。
+- ⚠️ 本机执行环境：Bash PATH 间歇损坏→切 Python；PowerShell stdout 不回显、Remove-Item 静默失败；跑脚本/回归用 venv `…binaries/python/envs/default/Scripts/python.exe`（含 shapely/nx；托管 3.13.12 无 shapely，跑回归会假失败）；看输出让脚本写 UTF-8 文件再 Read；删文件用 python -c os.remove。
 
 ## 提交工作流（铁律）
-- **铁律 0（2026-08-09 起）**：禁止直接在 master 工作。流程：最新 master 切分支→开发+当日日志→commit(禁--force)→push→人工校验→FF 合入 master→推 master→**默认删已合入分支**（本地 branch -d + 远端 push --delete + fetch --prune）。
-- ⚠️ **分支名禁含斜杠/反斜杠（无条件）**：沙箱 .git/refs/heads/ 写入带斜杠名会静默失败成 unborn 分支、git add 误暂存全树。一律连字符：feature-xxx。禁止 mkdir -p hack。
-- **铁律 0b（2026-08-10 起）**：一个分支只含一个需求，无关改动必须另开分支；误堆叠用 reset --hard 摘除 + 新分支 cherry-pick 迁走。
-- **铁律 0c（2026-08-20 用户明确）**：**开发严禁顺带修改不相关代码**。一个提交/分支只动与本次需求直接相关的文件与逻辑；**渲染产物（HTML/PNG 等）由对应生成脚本重新生成属正常再生、不算越界，但不得在生成脚本或源文件里夹带无关改动**；发现需要改的不相关代码→必须另开分支/提交，绝不混入当前需求。每次提交前自查 `git diff --stat` 确认无无关文件入栈。
-- 每次功能/优化完成必做：①成果追加 .workbuddy/memory/YYYY-MM-DD.md（append-only）②push（沙箱无凭据时明确告知"待 push"+commit 清单，不得静默跳过）。
-- ✅ 用户已采纳（2026-08-12）：**禁止双会话并行直推 master**（触发反复 rebase 冲突）。
-- ✅ **多需求积压时用「堆叠分支」而非各自从 master 起 + rebase（2026-09-21 采纳）**：工作区常一次积压多个需求的未提交改动（如同时有"采购预算"+"文档 review"），需按 0b 拆开时——① 不要把多个需求各自从 master 起分支（第二个 FF 必失败、只能 rebase，而 rebase 会触发上面的误删 bug）；② 改为**堆叠**：分支1 基于 master、分支2 基于分支1 的 tip、分支3 基于分支2，各分支 `git add` 只加本需求路径；③ 入 master 时按堆叠顺序逐个 FF，全程零 rebase/零冲突。④ 配套自检：每次 `git checkout -b` 前后 `git status --porcelain` 必须**完全一致**（防误删）；提交前校验"全部暂存文件均属本次路径范围"（⚠️ 目录条目会展开为多个文件，**不能用暂存数 == 路径数**校验，要用前缀归属校验）。⑤ 提醒：堆叠时"只合其中一支"做不到——分支 N 的前置分支必然一同入栈，须提前告知用户。
-- ✅ **未跟踪文件的 FF 合入前置处理（2026-09-21 实测，可复用）**：safe-merge 脚本硬性要求 `git status --porcelain` 为空，但本项目**长期有 9 个故意不入库的未跟踪文件**（根目录调研 PDF、`docs/reference/信标SDK.zip`、`.ble_refine_*.json`）。正确做法：① 先在**仓库外**做全量备份（`E:\code\_pathai_untracked_backup_20260921\`，copy2 保 mtime，逐一比对大小）；② 把路径追加到 **`.git/info/exclude`**（本地、不入库、不动文件本体）让 status 变空 → 跑 safe-merge → **finally 里把 exclude 还原为原内容**；③ 事后按"合入前快照"比对未跟踪文件数量与大小，并在最后 `git status` 复查。**不要**用"把文件移出仓库再搬回"当主方案——一旦脚本中途异常，文件会停在"已移出未还原"状态（本次首版脚本即因把隔离循环写在 try 之外而中断）。
-- ⚠️ **git 运维三个环境坑（2026-09-21 实测）**：① **`shutil.copy2` 覆盖只读目标会 `PermissionError`**（信标SDK.zip 自带只读，备份副本继承只读，二次覆盖失败）→ 覆盖前 `os.chmod(dst, stat.S_IWRITE | stat.S_IREAD)`，**别用 `0o644`**（Windows 下无效）；② **路径分隔符必须规范化**：`git ls-files` 输出 `/`、`os.path.relpath` 在 Windows 返回 `\`，直接做集合 `in` 判断会全部不匹配（本次因此误判"文件全丢"并尝试覆盖已存在文件）→ 统一 `.replace('\\','/')` 再比；③ **工具可能重试执行同一脚本**：本次 `git commit` 脚本被跑两遍——第一遍成功建了 `40e93a9`，第二遍因无暂存内容而打印 "nothing added to commit" 并返回 rc=1。**判读结果一律以 `git log`/`git reflog`/`git status` 为准，不看退出码**。
-- **master 现状（2026-09-21）**：`40e93a9`（本地 == 远端，`git ls-remote` 校验）；远端 `refs/heads/` 仅 master；`tracked 255 文件 / 磁盘缺失 0`。当日合入序：`8a1ee21` → `1042549`（reference-archive）→ `d1cc213`（budget-docs）→ `d5f3766`（docs-consistency）→ `40e93a9`（楼梯口径澄清）。
+- 铁律0：禁 master 直接开发。分支→commit→push→人工校验→FF 合入→推 master→删分支（本地 -d + 远端 --delete）。
+- 分支名禁斜杠（unborn 分支陷阱）；铁律0b 一分支一需求；铁律0c 禁顺带改无关代码，提交前 git diff --stat 自查。
+- ✅ 堆叠分支（2026-09-21 采纳）：多需求积压时分支1基于 master、分支2基于分支1 tip…按序 FF，零 rebase；checkout -b 前后 status --porcelain 必须完全一致；暂存校验用路径前缀归属（目录条目展开多文件，不能数数）。
+- ✅ 未跟踪文件 FF 前置（2026-09-21 实测）：仓库外备份→路径写入 .git/info/exclude 让 status 变空→safe-merge→finally 还原 exclude→事后比对大小。勿用移出搬回。坑：copy2 覆盖只读先 chmod S_IWRITE；git 路径 / 与 Windows \ 须统一 replace 后比对；工具会重试执行同一脚本——判读以 git log/reflog/status 为准，不看退出码。
+- master 现状（2026-09-21 下午）：`1fefb32`（==远端，ls-remote 校验），远端仅 master。当日合入序：8a1ee21→1042549→d1cc213→d5f3766→40e93a9→1fefb32。
 
 ## 已知限制
-1. 少量标签未匹配多边形(音乐/书法/美术等孤儿门 F1 61/F2 17)；卫生间多边形只覆盖盥洗走道区。
-2. 走廊骨架为简化模型，未重建 v7 式 700 边中轴路网。
-3. 门仅 Point+width_m，无铰链/朝向。
-4. DK 遮挡/贴墙过滤误删(F1剔49/F2剔26)仍漏检。
-5. CAD 标签包围盒误识别为房间；render 用 `_is_label_bbox`(面积<6m²且长宽比≥1.5)过滤。
-6. 开放/封闭空间分治(`OPEN_SPACE_TYPES={corridor,lobby,activity,atrium,elevator_lobby,stair_lobby}`，topology.py:38)，开放空间建 intersection 节点，不得合并。
-7. 穿墙均为 walkable 薄隔墙跨接「桥边回退」（数据质量问题，独立修复），路由层已保证 0 可避免穿墙。
-
-## 方案迭代历史（详见各日 .md）
-| 日期 | 标题 | 要点 |
-|---|---|---|
-| 2026-08-10 | 合班射线投票 v2 | `_heban_real_polygon_v2` 语义种子+射线投票→211.9m²(98.9%)，零重叠、正确门关联 |
-| 2026-08-09 | 手动骨架入库+路由三层落地 | pipeline 手动骨架优先；新建 route_rules.py 三规则+三层回退；前端 Dijkstra 对齐；验证全绿 |
-| 2026-08-08 | 骨架手动标注闭环+导航绕行 | export/import/apply 骨架；fix_crossing_edges 绕行；门编号 TD-xxxx；src 扩至 12 |
-| 2026-08-07 | 走廊/教室重叠修复+空间块回滚 | `_resolve_open_closed_overlaps` 取差 F1-CR-0048 565.5→192.6m²；空间分解/分类/图层回滚 |
-| 2026-08-14 | route-mask 路线掩码+GDOP 分析 | 74 信标(95→74)，[7]违规 21→0；GDOP×高/底：最小 0.20(保守0.25)，<0.05 禁用；docs/13 落地 4.5 σ 传播链+降噪方案 |
+孤儿门标签未匹配(F1 61/F2 17)；卫生间多边形只覆盖盥洗区；骨架为简化模型；门无铰链/朝向；DK 漏检；CAD 标签包围盒误识别(render 用 _is_label_bbox 过滤)；OPEN_SPACE_TYPES 开放空间建 intersection 不合并；穿墙均为桥边回退（数据质量，独立修复）。
 
 ## 失败实验速记
-虚线墙=短段+大间隙→无条件30pt桥接；真墙=2px单线→不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(外开门)；DK 是 window 层矢量笔画非文本层；shapely 宽可见图 O(n²) 大数据错误→numpy 栅格 A*。
+虚线墙=短段+大间隙→30pt桥接；真墙=2px单线不能开运算去薄墙；LABEL_SKIP_RE 不含"出入口"；arc_mid 非万能(外开门)；DK 是 window 层矢量笔画；shapely 宽可见图 O(n²)→numpy 栅格 A*。
+
+## 方案迭代历史
+详见各日 .md（合班射线投票 v2、手动骨架+路由三层、route-mask+GDOP 等）。
