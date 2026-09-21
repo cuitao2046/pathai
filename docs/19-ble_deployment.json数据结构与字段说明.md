@@ -1,7 +1,8 @@
 # `result/ble_deployment.json` 数据结构与字段说明
 
-> 文档版本：1.0 ｜ 对应数据版本：`schemaVersion 1.0`，61 信标（P0 密度修复前基线，commit `88c3549` 状态）
+> 文档版本：1.1 ｜ 对应数据版本：`schemaVersion 1.0`，**61 信标**（现行台账，`fix-rollback-ble-61` 回滚后状态）
 > 生成方式：`generatedBy = "pathai-manual-deploy"`，经 `render_interactive.py` 部署模式拖拽/点选导出，由人工确认后入库 `result/`。
+> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）。
 
 ## 1. 文件定位
 
@@ -28,16 +29,16 @@
 
 ## 3. 单信标字段（Beacon 对象）
 
-> 出现率：`61/61` 为全部信标必填；标注 `n/61` 的为可选字段（仅部分信标含）。
+> 出现率：`61/61` 为全部信标均含该**键**；标注 `n/61` 的为仅部分信标含该键。注意：部分字段键虽存在但值为**空串**（如 `sourceNodeId` 有 29 枚为空串、`sourceNodeType` 有 8 枚为空串），见各条说明。
 
 ### 3.1 标识与协议字段
 
 | 字段 | 类型 | 必填 | 含义 / 取值 |
 |---|---|---|---|
-| `beaconId` | string | ✅ | 信标唯一编号，格式 `BK-{floor:02d}-{seq:03d}`，如 `BK-01-001` |
+| `beaconId` | string | ✅ | 信标唯一编号。实际存在三种形态：`BK-01-xxx`（F1 顺序位，39 枚）、`BK-02-xxx`（F2，4 枚）、`BK-TR-F1-xxx` / `BK-TR-F2-xxx`（测试路线补点，7+3 枚）、`BK-M-1-xxx` / `BK-M-2-xxx`（人工部署，6+2 枚） |
 | `uuid` | string | ✅ | iBeacon UUID，全楼统一 `B9407F30-F5F8-466E-AFF9-25556B57FE6D` |
-| `major` | number | ✅ | iBeacon major（方案/楼层标识），当前 `1` 或 `2` |
-| `minor` | number | ✅ | iBeacon minor（信标序号），`10101` 起递增 |
+| `major` | number | ✅ | iBeacon major：实测 `1`（54 枚）/ `2`（7 枚）。**注意 major 不完全等于楼层**——`major=1` 覆盖 F1 全部 52 枚 + F2 的 2 枚，`major=2` 的 7 枚全在 F2；判楼层应以 `floor` 字段为准 |
+| `minor` | number | ✅ | iBeacon minor（信标序号），实测区间 `10001` ~ `20002`（万位对应 major） |
 | `coordinates` | array\<number,2\> | ✅ | 平面坐标 `[x, y]`（米，同源 geojson 坐标系） |
 
 ### 3.2 部署位置与安装参数
@@ -63,10 +64,10 @@
 |---|---|---|---|
 | `semanticTag` | string | ✅ | L2 布点大类：`trilateration_route_base`（路线基线，43）/ `trilateration_route_fill`（密度填补，10）/ `manual_deploy`（人工补点，8） |
 | `subType` | string | ✅ | 细分类型：`base`(21) / `fill`(17) / `dir`(13) / `manual_deploy`(8) / `elevator_door`(2) |
-| `sourceNodeId` | string | ✅ | 挂靠的地图拓扑节点 ID（geojson `topology.nodes`），如 `F1-TF-0011`、`F1-TI-0023` |
-| `sourceNodeType` | string | ✅ | 来源节点类型：`intersection`(24) / `route_fill`(10) / `route_corridor`(7) / `doorway`(6) / `manual_adjusted`(4) / `facility`(2) / `""`(8，manual_deploy 无挂靠) |
+| `sourceNodeId` | string | 61/61（**其中 29 枚为空串**） | 挂靠的地图拓扑节点 ID（geojson `topology.nodes`），如 `F1-TF-0011`、`F1-TI-0023`。**空串表示无节点挂靠**（含人工部署 `BK-M-*` 8 枚、测试路线补点 `BK-TR-*`、部分微调后脱离节点的补点），消费方须容错 |
+| `sourceNodeType` | string | 61/61（**其中 8 枚为空串**） | 来源节点类型：`intersection`(24) / `route_fill`(10) / `route_corridor`(7) / `doorway`(6) / `manual_adjusted`(4) / `facility`(2) / `""`(8) |
 | `adjacentRooms` | array\<string\> | ✅ | 相邻房间 ID 列表（R6 校验要求门口/交叉口信标必填），如 `["F1-CR-0053","F1-RM-0066"]` |
-| `riskLevel` | number\|string | ✅ | 定位风险等级：`low` / `0.3` / `0.5` / `1` / `2`（数值越大风险越高） |
+| `riskLevel` | number\|string | ✅ | 定位风险等级：`low`(10) / `0.3`(7) / `0.5`(32) / `1`(11) / `2`(1)（数值越大风险越高） |
 
 ### 3.4 审计回溯字段（可选，微调/复核用）
 
@@ -75,7 +76,7 @@
 | `originalPlannedCoordinates` | array\<number,2\> | 41/61 | 审计回溯用的原始规划坐标（人工微调前的位置） |
 | `originalSourceNodeId` | string | 11/61 | 原始来源拓扑节点 ID（位置微调后节点变更时记录） |
 | `originalSourceNodeType` | string | 11/61 | 原始来源节点类型 |
-| `originalLocationDesc` | string | 11/61 | 原始位置描述，含 `原:` 前缀，如 `1F 交叉口（交叉口55） · 原: 交叉口11` |
+| `originalLocationDesc` | string | 11/61 | 原始位置描述。**并非全部含 `原:` 前缀**：实测 11 枚中仅 4 枚含（如 `1F 交叉口（交叉口55） · 原: 交叉口11`），其余 7 枚为 `1F 交叉口（交叉口31）`、`1F 交叉口（交叉口12 · 南向）` 这类无 `原:` 的形态（记录的是重编号后的描述） |
 
 ## 4. `summary` 统计汇总
 

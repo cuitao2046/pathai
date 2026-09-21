@@ -1,5 +1,8 @@
 # PathAI 室内导航系统 · 公共空间识别方案
 
+> ⚠️ **方案状态：早期提案（已废弃）**。本方案（GPT 七阶段设想）已被 `docs/11-公共空间识别方案-最终版.md` 取代；其技术设想也被实际实现部分否决——骨架改为「人工 SVG 标注优先」、未重建 ~700 边中轴路网、文中模块路径（`indoor_navigation/.../public_space/candidate_detector.py`、`graph_builder.py` 等）与实际不符。
+> 请以 `docs/11` + 根目录 `CAD图纸关键元素识别方案.md` + `docs/20-CAD图纸数字化地图生成方案.md` 为权威基线。
+
 > **相比房间识别，公共空间识别对于室内导航实际上更加重要。** 本方案采用 CAD 语义 + 几何拓扑 + 计算几何（Graph Geometry）的方法，自动从建筑施工图中提取公共空间拓扑图，这是 MIT、CMU、ETH、Autodesk、IndoorGML 等室内地图构建系统普遍采用的技术路线。
 
 ---
@@ -62,6 +65,8 @@ Room → Door → Corridor Graph → Lobby → Stair/Elevator → Lobby → Corr
 ---
 
 ## 三、公共空间五种类型
+
+> 📌 开放空间类型集合（与现行实现对齐）：实际开放空间类型为 `{"corridor", "lobby", "activity", "atrium"}`（另含语义房间类型 `elevator_lobby` / `stair_lobby`）。本文的 `Hall` 对应实际 `activity`/`atrium`，`Elevator/Stair Lobby` 对应 `elevator_lobby`/`stair_lobby`。
 
 | 类型 | 英文名 | 说明 | 处理方式 |
 |------|--------|------|---------|
@@ -510,6 +515,8 @@ Room101 → Door → CorridorNode1 → CorridorNode2 → Lobby
 ---
 
 ## 九、推荐软件架构
+
+> ⚠️ 本节为**历史设想（未按此实现）**：文中 `indoor_navigation/.../public_space/candidate_detector.py`、`graph_builder.py`、`medial_axis.py`、`junction_detector.py`、`door_projection.py` 等路径在现行仓库中均不存在（全仓库 grep 0 命中）。实际模块见根目录 `CAD图纸关键元素识别方案.md`，公共空间分解现由 `src/io/geojson_writer.py` + `src/skeleton/` 承担；骨架为人工 SVG 标注优先。
 
 ```text
 indoor_navigation/

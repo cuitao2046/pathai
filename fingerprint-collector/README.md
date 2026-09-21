@@ -16,7 +16,7 @@ fingerprint-collector/
 ├── sitemap.json
 ├── data/
 │   ├── fingerprint_grid.js            # AUTO-GENERATED：FP 网格扁平模块（全楼1434 + 路线647）
-│   └── reference_elements.js          # AUTO-GENERATED：锚点候选（信标98 + 拓扑节点465），供分区选锚点
+│   └── reference_elements.js          # AUTO-GENERATED：锚点候选（信标61 + 拓扑节点465 = 526），供分区选锚点
 ├── utils/
 │   ├── beacon.js                      # iBeacon 扫描封装（wx.startBeaconDiscovery + onBeaconUpdate）
 │   ├── fpstore.js                     # 采集记录存储 / 会话 / 导出 JSON（支持按区导出）
@@ -107,7 +107,8 @@ fingerprint-collector/
 ## 4.5 分区采集（Zone-based Collection）
 
 - **目的**：大场地分片作业，单个分区用「锚点 + 相对坐标」描述，降低对全局绝对坐标精度的依赖，也便于把坐标对齐到分区内已知参考物。
-- **锚点来源**：`data/reference_elements.js`（由 `tools/gen_reference_elements.py` 生成），汇集**信标（98）**与**拓扑节点（全楼 465）**的绝对坐标，三者与 FP 网格同一坐标系。
+- **锚点来源**：`data/reference_elements.js`（由 `tools/gen_reference_elements.py` 生成），汇集**信标（现行台账 61 枚）**与**拓扑节点（全楼 465）**的绝对坐标，合计 526 个候选，与 FP 网格同一坐标系。
+  > ⚠️ 该文件为快照，需在信标台账（`result/ble_deployment.json`）或地图（`result/school_building_01_map_v9.geojson`）更新后重跑 `tools/gen_reference_elements.py` 刷新。
 - **相对坐标计算**：`rel = 采集点绝对坐标 − 锚点绝对坐标`（平面偏移，同坐标系）。采集页实时预览，导出时随记录写入 `relCoordinates`。
 - **按区导出**：导出页可多选分区；导出 JSON 的 `records` 仅含选中分区内的样本，并附带 `zones` 元信息（锚点 id/类型/坐标），下游可据此把相对坐标还原为绝对坐标。
 

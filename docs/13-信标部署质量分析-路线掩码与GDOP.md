@@ -253,6 +253,10 @@
 
 ## 七、复现命令
 
+> ⚠️ **复现前提（2026-09-21 核对）**
+> 1. **数据口径**：本文分析对象为**方案态的 74 信标 refined 方案**（沿路线、含路线掩码补点），与现行部署台账 `result/ble_deployment.json`（**61 枚**，F1 52 / F2 9）**不是同一套数据**。本文结论用于说明方法论与质量判据，现行部署的覆盖结论见 `result/beacon_deployment_evaluation.json` 与 `docs/17` §8。
+> 2. **依赖产物**：下列命令的中间产物（`result/beacon_deployment_plan_trilateration_routes.json`、`..._refined.json`）与临时分析脚本（`debug/_gdop_analysis.py`、`debug/_tri_metrics.json`）**均不在当前仓库**（按约定临时产物不入库）。要复现需先按顺序重跑生成链。
+
 ```bash
 # 路线三点定位基础方案（60 信标）
 python -m src.tools.gen_trilateration_plan_routes
@@ -270,12 +274,14 @@ python debug/qa_gdop_independent.py --plan result/beacon_deployment_plan_trilate
 # 7 规则合规复检（重点看 [7] 路线外 = 0）
 python debug/check_beacon_7rules.py
 
-# GDOP/σ 分析（临时工具，不入库；输出 debug/_tri_gdop.json）
+# GDOP/σ 分析（临时工具，需先还原 debug/_gdop_analysis.py；输出 debug/_tri_gdop.json）
 python debug/_gdop_analysis.py
 
 # 高/底比与 GDOP 分桶明细（695 条 [floor, base, h, ratio]）
 # 见 debug/_tri_metrics.json（由临时统计脚本生成）
 ```
+
+> 现行信标台账的合规检查请直接用 `src/tools/validate_beacon_deployment.py`（R1/R4/R5/R6，现行 ERROR=0 / WARN=13）。
 
 ---
 

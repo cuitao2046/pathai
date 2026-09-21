@@ -13,8 +13,8 @@
 - `fix_wall_crossing.py`：栅格 A* 清洗（walkable 薄隔墙跨接，当前数据收益有限）；`fix_crossing_edges.py`：穿封闭房间/管井边绕行。
 - `merge_manual_edges.py`/`generate_fingerprint_grid.py`/`export_skeleton_template.py`/`import_manual_skeleton.py`/`apply_manual_skeleton.py`/`apply_room_overrides.py`：手动边/指纹网格/手工骨架闭环/房间属性覆盖。
 
-## 当前进展（v9, 2026-08-10）
-房间 F1 81/F2 55；门 F1 132/F2 76；墙 4442 段；跨层边10(楼梯7+电梯3)；合班 F1-RM-0050 211.9m²(98.9%)；骨架 TI F1 63/F2 64；walkable F1 31/F2 16；指纹点 F1 975/F2 467。QA PASS。信标：route-mask 6m 方案 74 信标；GDOP 推荐最小高/底 0.20(保守0.25)、<0.05 禁用、退化判据 GDOP>3（docs/13，含 4.5 σ 传播链与降噪方案⏳待实施）。
+## 当前进展（v9.0.0, 2026-09-21 实测）
+房间 136（F1 81/F2 55）；门 208（F1 132/F2 76）；墙 4442 段；柱 220；拓扑节点 465（F1 284/F2 181）、边 592；跨层边 10(楼梯7+电梯3)；骨架线 F1 59/F2 48；walkable F1 31/F2 16；指纹网格 **1434 全楼 / 647 路线**（F1 611/F2 36）；riskNodes F1 68/F2 41。QA PASS。合班 F1-RM-0050 211.9m²(98.9%)。信标：**现行台账 61 枚**（wall 54/door_frame 7；−10dBm/300ms/2.2m/CR2477），647 路线点 ≥3 可见覆盖 97.7%。route-mask 6m 与 GDOP 分析系 **74 枚方案态**（docs/13，含 4.5 σ 传播链与降噪方案⏳待实施）。
 
 ## 关键约定
 - 正式脚本仅 src/，调试脚本 debug/，根目录不留 .py。
@@ -26,10 +26,11 @@
 - ⚠️ `_heban_real_polygon` 陷阱：cv2.floodFill 把 newVal 写回**图像**、mask 只置1，取填充区须 `图像==newVal`。
 - ⚠️ **push 凭据（2026-08-14）**：SSH 通道 = `~/.ssh/config` Host `github-cuitao`（IdentityFile `~/.ssh/id_ed25519`，id_rsa_cuitao 已删、id_rsa 不行）；**remote 必须 `git@github-cuitao:cuitao2046/pathai.git`**；clone https 后第一件事 `git remote set-url origin` 换回 SSH。
 - ⚠️ **手动骨架优先**：skeleton_manual_parsed.json 存在则跳过中轴提取；**必须 git add+commit 入库**，严禁 `git checkout <旧提交> -- 该文件` 回退（渲染缺矩形先查工作区）。重生成：`python src/tools/import_manual_skeleton.py --input "C:/.../*.svg"`。
-- ⚠️ geojson 陷阱：房间类型在 **`type`** 字段（非 roomType，由中间变量映射）。
+- ⚠️ **geojson 房间类型字段分两层**（`src/io/geojson_writer.py:969` 需求⑳+1）：`type` 是**粗粒度**（功能房间统一 `room`；公共/设施型保持 corridor/staircase/stair_lobby/toilet/lobby/elevator_lobby/infrastructure），`roomType` 与 `roomSubType` 同值且为**细粒度用途**（classroom/office/equipment…）；`semantic.rooms[]` **只有 `type` + `roomSubType`（无 `roomType`）**，`roomSubType` 仅功能房间有值、其余 null。读用途用 `geometry.rooms[].properties.roomType`，读语义粗类用 `semantic.rooms[].type`。
 - ⚠️ **git 目录误删 bug（2026-08-14 首现，2026-08-27 复发）**：切分支/删除目录内大量文件时可能误删整个父目录，**且会连目录内 untracked 文件一并删除且不可恢复**（2026-08-27 实测：`.workbuddy/memory/` 整目录被删，15 个 tracked 日志 + 1 个 untracked 的当日 `2026-08-27.md` 全失；tracked 用 `git checkout HEAD -- <目录>` 可恢复，untracked 永久丢失）。对象库仅保护 tracked。规避：①切分支前 `git add`+`commit` 所有 memory 日志；②或 `git stash -u` 保护 untracked；③操作后**立即 `git status` 自检**，发现 deleted 立刻 `git checkout HEAD -- <目录>` 恢复；④优先 cherry-pick 而非 rebase；⑤rebase 同样触发该 bug（2026-08-28 实测），且误删范围含**任意 tracked 目录**（如 fingerprint-collector/）而非仅 memory——checkout/rebase 后须 `git checkout -- .` 全面恢复所有 tracked 文件，只恢复 .workbuddy/memory/ 不够。
 - ⚠️ **远端跟踪引用不落盘（2026-08-31 实测）**：沙箱 git 的 `fetch` 能连远端（github-cuitao 可达）且报 `[new branch]`，但 `origin/master` 远端跟踪引用**写不进 `.git/refs/remotes/origin/` 与 `.git/packed-refs`**（同类文件系统脆弱性），致 `rev-parse origin/master` 报"未知引用"、误判未同步。**正确校验法：用 `git ls-remote origin <branch>` 直接问远端返回的真实 commit 哈希，与本地 `git rev-parse <branch>` 比对**——已验证 53f54bf 两端一致即确属已同步。勿依赖本地 `origin/*` 引用判定。
 - `.workbuddy/memory/` 与 skeleton_manual_parsed.json 随仓库同步；result/ 其余产物为可复现渲染输出按铁律提交。⚠️ 编辑 .gitignore 后务必 git add 再 commit。
+- ⚠️ **本机脚本执行环境（2026-09-15/21 实测，重要）**：① **Bash 工具 PATH 间歇性损坏**（`dirname: command not found`、`cd: null directory`，`rm` 经 safe-delete shim 也失败且静默）——能跑就直接用，报该错立刻切 Python；② **PowerShell stdout 不回显**（只显示 "Command completed"），且 **`Remove-Item` 会静默失败**（`-LiteralPath` 单文件也不删）；③ PowerShell `*>` 重定向产物是 **UTF-16**，Read 报 "Cannot display content of binary file"。**可靠套路**：跑脚本用托管 venv `C:/Users/Administrator/.workbuddy/binaries/python/envs/default/Scripts/python.exe`（Windows 是 `Scripts/` 不是 `bin/`）；要看输出就让脚本自己 `Path.write_text(..., encoding='utf-8')` 写文件再 Read；**删文件用 `python -c "import os,glob; [os.remove(f) for f in glob.glob('...')]"`**。
 
 ## 提交工作流（铁律）
 - **铁律 0（2026-08-09 起）**：禁止直接在 master 工作。流程：最新 master 切分支→开发+当日日志→commit(禁--force)→push→人工校验→FF 合入 master→推 master→**默认删已合入分支**（本地 branch -d + 远端 push --delete + fetch --prune）。
@@ -45,7 +46,7 @@
 3. 门仅 Point+width_m，无铰链/朝向。
 4. DK 遮挡/贴墙过滤误删(F1剔49/F2剔26)仍漏检。
 5. CAD 标签包围盒误识别为房间；render 用 `_is_label_bbox`(面积<6m²且长宽比≥1.5)过滤。
-6. 开放/封闭空间分治(OPEN_SPACE_TYPES={corridor,lobby,activity,atrium})，开放空间建 intersection 节点，不得合并。
+6. 开放/封闭空间分治(`OPEN_SPACE_TYPES={corridor,lobby,activity,atrium,elevator_lobby,stair_lobby}`，topology.py:38)，开放空间建 intersection 节点，不得合并。
 7. 穿墙均为 walkable 薄隔墙跨接「桥边回退」（数据质量问题，独立修复），路由层已保证 0 可避免穿墙。
 
 ## 方案迭代历史（详见各日 .md）

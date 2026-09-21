@@ -2,8 +2,8 @@
 
 > 以 `A20-002/003-II-初中学部 1# 教学楼首层/二层平面图`（BIAD 导出 PDF）为例，总结从 CAD 矢量 PDF 中识别**墙体、封闭空间（房间）、门洞、窗、楼梯/电梯/柱**等关键元素并生成楼层 GeoJSON 的完整技术方案。
 >
-> 实现代码：`src/parse_cad_pdf.py`（解析）、`src/render_map.py`（渲染）、`src/validate_geojson.py`（QA）、`src/topology.py`（第五章导航拓扑建模）。
-> 输出：`result/school_building_01_map_v9.geojson`（含 geometry / semantic / topology / accessibility / crossFloorEdges）、`result/map_render_f{1,2}*.png` 及 `*_topology.png`。
+> 实现代码：`src/parsing/parse_cad_pdf.py`（解析）、`src/render_map.py`（渲染）、`src/qa/validate_geojson.py`（QA）、`src/skeleton/pipeline.py`（`build_skeleton_topology`，T8 替代逻辑）、`src/topology/topology.py`（`build_floor_topology`，仅回退）、`src/io/geojson_writer.py`（组装与 Walkable/开放空间分治）。
+> 输出：`result/school_building_01_map_v9.geojson`（每层六图层 geometry / semantic / topology / skeleton / walkable_regions / accessibility，跨层边在顶层 `crossFloorEdges`）、`result/map_render_f{1,2}*.png` 及 `*_topology.png`。
 
 ---
 
@@ -203,7 +203,7 @@ window 层混有三类元素，需先分流：
 
 ### 6.5.3 独立出入口节点
 
-凡是语义为出入口但**未匹配到房间多边形**的标签（门厅、人防主出入口、无障碍出入口等），不作为房间处理，而是直接作为 `facility_entrance` 拓扑节点接入（见 §9.4），保证建筑出入口在导航图中可被寻路到达。F1 生成 15 个此类节点。
+凡是语义为出入口但**未匹配到房间多边形**的标签（门厅、人防主出入口、无障碍出入口等），不作为房间处理，而是直接作为 `facility_entrance` 拓扑节点接入（见 §9.4/§9.5），保证建筑出入口在导航图中可被寻路到达。F1 实测生成 8 个此类节点（F2 为 0，见 §9.4 节点类型表）。
 
 > **关键坑**：`LABEL_SKIP_RE` 的黑名单**不能**包含 `出入口`，否则 `人防主出入口`/`无障碍出入口`/`门厅` 会被排除、无法识别；同时 `LABEL_MIN_SIZE` 须降到 9.5pt 才能捕获窄长标签（§5.4）。
 
@@ -243,13 +243,14 @@ window 层混有三类元素，需先分流：
 
 ```
 venueId / venueName / version / coordinateSystem=local_meters / scale / origin
-floors: { "1": { geometry, semantic, topology, accessibility }, "2": {...} }
-crossFloorEdges: [...]
+floors: { "1": { geometry, semantic, topology, skeleton, walkable_regions, accessibility },
+          "2": { ... 同六图层 ... } }
+crossFloorEdges: [...]   # 注意：跨层边位于顶层，不在各楼层对象内
 ```
 
 - `geometry`：walls（LineString）、rooms（Polygon + roomType/label/centroid）、doors（Point + doorType/width_m/rooms[]）、stairs、elevators、columns、windowSegments（+length_m）；
-- `semantic.rooms`：id/type/label/centroid/public/accessible（roomType 由 `ROOM_TYPE_RULES` 关键词表归类：卫生间→toilet、教室→classroom、井→shaft …）；
-- `topology`：房间节点 ↔ 门节点星形边（含 distance/estimatedTime/无障碍标志）；
+- `semantic.rooms`：id/type/roomSubType/label/centroid/geometryId/public/accessible/hasIndependentEntrance/floor（**无 `roomType` 字段**；`roomType` 只出现在 `geometry.rooms[].properties` 与拓扑节点上，两者同源，由 `ROOM_TYPE_RULES` 关键词表归类：卫生间→toilet、教室→classroom、管井→infrastructure …）；
+- `topology`：nodes（type 为全拼 `room`/`doorway`/`intersection`/`facility`/`facility_entrance`，缩写仅在 id 中）+ edges（`distance`/`estimatedTime`/`accessibilityLevel`/`riskLevel`/`walkable`/`wheelchairAccessible`/`blindAccessible`）；
 - `accessibility`：电梯无障碍节点、楼梯风险节点。
 
 ### 9.2 渲染 `render_map.py`
@@ -262,17 +263,21 @@ GeoJSON → 每层平面图 PNG：房间按 roomType pastel 配色，标签锚�
 
 ### 9.4 拓扑图建模（对齐 `docs/03-地图构建指南.md` 第五章）
 
-由独立模块 `src/topology.py` 依据第五章规范生成节点与边，每个楼层 `topology` 含 `nodes` / `edges`，跨层边置于根 `crossFloorEdges`。
+> ⚠️ **本节描述「质心兜底拓扑」`src/topology/topology.py` 的 `build_floor_topology`**：它在**手绘骨架缺失时**作为回退路径使用，节点依质心/就近规则生成。现行 v9 生产地图实际由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology`（T8 替代逻辑，人工 SVG 标注优先）生成，见 §9.5。下表「数量」为**实测 v9 生产值**（读 `result/school_building_01_map_v9.geojson` 各层 `topology.nodes` 按 `type` 统计，非质心兜底模型的理论值）。
 
-**节点类型（5.1）**
+每个楼层 `topology` 含 `nodes` / `edges`，跨层边置于根 `crossFloorEdges`。
 
-| 类型 | 生成规则 | 数量（F1 / F2） |
+**节点类型（实测 v9 生产值）**
+
+| 类型 | 生成规则（生产 v9） | 数量（F1 / F2，实测） |
 |---|---|---|
-| `room` | 每个封闭房间一个，坐标取质心 | 30 / 19 |
-| `doorway` | 每个门洞一个，连接两侧空间；`label` 按 kind 取 门/防火门/通道 | 83 / 62 |
-| `intersection` | 每条走廊一个交叉口节点（质心），走廊骨架锚点 | 2 / 2 |
-| `facility` | 每个楼梯口（`facilityType=staircase`，盲/轮椅均不可达）/ 电梯口（`elevator`，可达） | 13 / 10 |
-| `facility_entrance` | 未匹配房间多边形但语义为出入口的标签（门厅/人防主出入口/无障碍出入口…） | 15 / 0 |
+| `room` | 每个封闭房间一个，坐标取质心（`TR`） | 50 / 39 |
+| `doorway` | 每个门洞一个，连接两侧空间；`label` 按 kind 取 门/防火门/通道（`TD`） | 135 / 79 |
+| `intersection` | 骨架交叉口节点（`TI`，人工 SVG 标注优先、自动中轴兜底） | 78 / 53 |
+| `facility` | 每个楼梯口（`facilityType=staircase`，盲/轮椅均不可达）/ 电梯口（`elevator`，可达）（`TF`） | 13 / 10 |
+| `facility_entrance` | 未匹配房间多边形但语义为出入口的标签（门厅/人防主出入口/无障碍出入口…）（`TEN`） | 8 / 0 |
+
+> 合计：`room` 89 / `doorway` 214 / `facility` 23 / `facility_entrance` 8 / `intersection` 131 = **节点 465**；边 **F1 350 / F2 242 = 592**。跨层边顶层 10 条（楼梯 7 + 电梯 3）。
 
 **边属性（5.2）**：`distance`（米）、`estimatedTime`（视障步速 `BLIND_WALK_SPEED=0.8 m/s`）、`accessibilityLevel`（0 平直 / 2 含门槛/坡度 / 999 含楼梯对视障禁用）、`riskLevel`（0.5 普通走廊 / 5 玻璃门 / 10 楼梯口）、`walkable`、`wheelchairAccessible`、`blindAccessible`。
 
@@ -285,7 +290,21 @@ GeoJSON → 每层平面图 PNG：房间按 roomType pastel 配色，标签锚�
 
 **跨楼层边（5.3，`crossFloorEdges`）**：按图纸井道编号配对（`FACILITY_CODE_RE` 匹配 `II-xx#ST`/`II-xx#EL`，几何中心 <3.5m 仅作无编号兜底），每条边带 `code` 与 `matchedBy: code|geometry`。楼梯 `a=999 / r=10 / 距离=楼层高差 4.2m / 轮椅否 / 盲否`；电梯 `a=0 / r=1 / 均可达`。当前 1F↔2F 共 10 条（楼梯 7 + 电梯 3，全部 `matchedBy:code`）。
 
-> 节点 id 规范 `N{floor}-{kind}{idx}`（如 `N1-ST001` 楼梯接入、`N1-EL003` 电梯接入、`N1-I705` 交叉口、`N1-D208` 门口），边 id `E{floor}-{from}-{to}`，跨层 `CF-{ST/EL}-{idx}`。
+> 注：上述 1–5 为「质心兜底拓扑」的边构建规则。生产骨架拓扑（`build_skeleton_topology`）在此基础上额外包含 **TI↔TI 骨架段边**（由手绘/自动骨架生成），门（TD）就近接入最近 TI，走廊连通性由 TI 网络承担。
+
+> 节点 id 规范（实测 v9）：`F{floor}-{TYPE_ABBR}-{seq:04d}`，如 `F1-TI-0023`（交叉口）、`F1-TD-0001`（门口）、`F1-TR-0016`（房间节点）、`F1-TF-0001`（设施）、`F1-TEN-0001`（出入口）、`FX-XE-0001`（跨层边）。缩写仅作 id 后缀，`type` 字段为全拼（`intersection`/`doorway`/`room`/`facility`/`facility_entrance`）。旧文档的 `N{floor}-{kind}{idx}`（如 `N1-I705`）与实产不符，已废弃。
+
+---
+
+## 9.5 实际生产的骨架拓扑（`build_skeleton_topology`）
+
+现行 v9 的拓扑并非由 §9.4 的质心兜底模型生产，而是由 `src/skeleton/pipeline.py` 的 `build_skeleton_topology`（docstring 标注为 T8 替代逻辑）生成：
+
+- **人工 SVG 标注优先**：若 `result/skeleton_manual_parsed.json` 存在（由 `src/tools/import_manual_skeleton.py` 从渲染页导出的 SVG 红线解析而来，当前该文件生效），`build_skeleton_topology` 直接采用人工标出的 TI 节点与骨架线，**跳过自动中轴提取**（`src/skeleton/medial_axis.py`）。原因：开放空间中轴提取对墙体毛刺极敏感，人工 30 分钟标注优于反复调参；自动中轴仅作无手绘骨架时的兜底。
+- **TI 合并**：`_merge_nearby_ti_nodes` 将半径内邻近的 TI 节点合并为一个簇，重算距离/预估时间，保证图连通性并使 TI 与图节点 1:1 对齐（走廊连通性由 TI↔TI 承担，TD 连最近 TI 接入路网）。
+- **门独立成 TD**：每扇门独立生成 `doorway` 节点（TD），不做合并（用户明确约定）。
+- **F2 软桥保连通**：`src/topology/topology.py` 的 `bridge_disconnected_components`（默认 `max_bridge_dist_m=120`、`bridges_per_island=2`）为断开的连通分量补软桥边，确保各层（尤其 F2）导航图连通。
+- **简化骨架模型（已知限制）**：当前为简化骨架，**未重建 v7 式 ~700 边中轴路网**（详见 §11.3）。
 
 ---
 
@@ -315,7 +334,7 @@ GeoJSON → 每层平面图 PNG：房间按 roomType pastel 配色，标签锚�
 
 1. 少量真实房间标签未匹配到多边形（F1 音乐教室×2、心理辅导室、学生社团活动区、门厅；F2 药品室、教师办公区等），对应门成为孤儿门（F1 16 / F2 6）；
 2. 卫生间多边形只覆盖盥洗走道区（门归属已正确，面积偏小）；
-3. 拓扑已具备完整节点类型（房间/门口/走廊交叉口/设施/出入口）与属性完整边，并生成 8 条跨层边；但走廊骨架仍为"每走廊 1 个交叉口节点 + 就近连门"的简化模型，未重建 v7 式 700 边中轴路网；
+3. 拓扑已具备完整节点类型（房间/门口/走廊交叉口/设施/出入口）与属性完整边，跨层边 10 条；走廊骨架仍为**简化模型**（人工 SVG 标注优先，实测 TI 节点 F1 78 / F2 53，未重建 v7 式 700 边中轴路网），与 §9.4/§9.5 一致；
 4. 门仅输出 Point + width_m（对齐 v7），未输出铰链/朝向；`opening` 门洞以几何中心替代 `arc_mid`，渲染以符号表达（绿色空心菱形）而非真实门板朝向；
 5. 无摆弧门洞依赖"墙缝几何 + window 层字形块确认"，对字形块缺失或被家具线遮挡的洞口可能漏检（F1 7 / F2 5 个已检出的为确信样本）。
 

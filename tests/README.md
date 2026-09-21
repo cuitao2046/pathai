@@ -19,7 +19,9 @@ python -m unittest discover -s tests -v
 | `test_geojson_golden.py` | 静态 golden | 结果文件 SHA-256 + 统计断言（复用 validate_geojson 口径） |
 | `test_parsing_result_golden.py` | 静态 golden | 解析结果结构指纹（节点/边/门/房间/骨架/可步行区 id 集合、拓扑连接、跨层边清单）+ 引用完整性不变量 |
 | `test_invariants.py` | 静态 | 门不合并 / 跨层边特殊值 / 常量无重复定义 |
+| `test_route_rules_consistency.py` | 对拍 | 路由规则唯一来源对拍：`build_path_rules_js()` 序列化值与 constants 相等；复刻前端 JS Dijkstra 与后端 RouteGraph 逐条对拍（同层/跨层 × normal/blind/wheelchair）；扫描确认 JS 不内嵌常量 |
 | `test_pipeline_golden.py` | 全链路 | 重跑 CAD PDF 解析管线对比统计与结构指纹；缺 shapely/pikepdf 时自动跳过 |
+| `testutil.py` | 辅助 | 公共路径常量与 JSON 加载（非测试用例，不被 discover 收集） |
 | `golden_stats.json` | 参照 | 基线统计值 + 源文件 SHA-256 |
 | `parsing_result_golden.json` | 参照 | 基线结构指纹 + 源文件 SHA-256 |
 

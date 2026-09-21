@@ -157,7 +157,7 @@ CAD 里**没有"房间"这个对象**，房间是墙体围合出来的空白区�
 
 在几何之上附加**导航所需的语义**：
 
-- **房间类型**（`roomType`）：room（普通房间）、corridor、staircase、stair_lobby、toilet、lobby、infrastructure（管井等）、elevator_lobby 等。
+- **房间类型**分两层：粗粒度 `type`（功能房间统一 `room`；公共/设施型为 `corridor`、`staircase`、`stair_lobby`、`toilet`、`lobby`、`infrastructure`、`elevator_lobby`），细分用途在 `roomType` / `roomSubType`（`classroom`、`office`、`equipment` …）。
 - **门属性**：`doorType`（swing/fire/opening）、`width_m`、`openDirection`、`hingeSide`、`swingIntoRoom`、`wheelchairAccessible`、`hasThreshold`、`isGlass`、`isAutomatic`。
 - **无障碍属性**：风险节点（`riskNodes`，F1 68 / F2 41）、电梯、坡道、盲道、地面材质变化。
   > 本套施工图**无无障碍设计专篇图层**，坡道/盲道/地面材质三类数据缺失，已显式标记 `surveyRequired`，需现场勘测补齐。

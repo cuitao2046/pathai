@@ -4,8 +4,9 @@
 在地图上的语义（房间类型 / 楼梯 / 电梯 / 门 / 交叉口）是否一致。
 
 核验四层：
-  A. 源节点一致性：sourceNodeId 是否存在于对应楼层 topology.nodes？节点坐标 ↔ 信标坐标
-     距离是否 ≈ snapDist_m？sourceNodeType 是否与节点实际 type 一致？
+  A. 源节点一致性：sourceNodeId 是否存在于对应楼层 topology.nodes？信标坐标与挂靠节点坐标
+     是否贴近（≤2m）？sourceNodeType 是否与节点实际 type 一致？
+     （注：原 plannedCoordinates / snapDist_m 字段已废弃，现用 originalPlannedCoordinates）
   B. 坐标地图语义：信标坐标命中哪个房间（type=corridor/staircase/stair_lobby/elevator_lobby/
      lobby/toilet/room/infrastructure）；到最近楼梯/电梯/电梯门/TD门/TI交叉口的距离。
   C. 声明 vs 实际匹配：locationDesc/subType/sourceNodeType 关键词 vs 实际语义
@@ -156,17 +157,19 @@ def main():
         p = Point(x["coordinates"])
         r, ds, de, ded = describe_actual(p, ctx)
         # A. 源节点核验
+        # 注：旧字段 plannedCoordinates / snapDist_m 已由 originalPlannedCoordinates 取代并移除，
+        #     本审计按现行 schema 判定（见 docs/19 §3.4）。
         sid = x.get("sourceNodeId") or ""
         src_ok, src_d = "-", None
-        pl = x.get("plannedCoordinates")
+        pl = x.get("originalPlannedCoordinates")
         pl_d = p.distance(Point(pl)) if pl else None
-        snap = x.get("snapDist_m") or 0
-        snap_ok = "OK" if (pl_d is not None and abs(pl_d - snap) <= 0.5) else "BAD"
+        snap = x.get("snapDist_m")
+        snap_ok = "-" if snap is None else ("OK" if (pl_d is not None and abs(pl_d - snap) <= 0.5) else "BAD")
         if sid:
             n = nodes.get(sid)
             if n:
                 src_d = p.distance(Point(n["coordinates"]))
-                src_ok = "OK" if abs(src_d - snap) <= 2.0 else "DIFF"
+                src_ok = "OK" if src_d <= 2.0 else "DIFF"
             else:
                 src_ok = "缺失"
         rtype = r["roomType"] if r else "-"
@@ -177,9 +180,9 @@ def main():
             stair_adj.append((x["beaconId"], rtype, f"{ds:.1f}m" if ds is not None else "-"))
         if r is None:
             no_room.append(x["beaconId"])
-        # 硬伤：coords 与 planned/snap 矛盾（>5m 且 snap 对不上）
-        if pl_d is not None and pl_d > 5.0 and snap_ok == "BAD":
-            coord_anom.append((x["beaconId"], f"coords↔planned={pl_d:.1f}m snap={snap}"))
+        # 硬伤：coords 与原始规划坐标偏离 >5m
+        if pl_d is not None and pl_d > 5.0:
+            coord_anom.append((x["beaconId"], f"coords↔originalPlanned={pl_d:.1f}m"))
         # 交叉口号声明 vs 实际最近 TI 号
         m = __import__("re").search(r"交叉口(\d+)", x.get("locationDesc", "") or "")
         if m:
@@ -191,7 +194,7 @@ def main():
                     cross_mis.append((x["beaconId"], f"声明=交叉口{m.group(1)} 实际最近={lbl}@{d_ti:.1f}m"))
         rows.append((x["beaconId"], fl, x.get("sourceNodeType") or "-", x.get("subType") or "-",
                      src_ok, f"{src_d:.1f}" if src_d is not None else "-",
-                     f"{snap}", f"{pl_d:.1f}" if pl_d is not None else "-", snap_ok,
+                     f"{snap if snap is not None else '-'}", f"{pl_d:.1f}" if pl_d is not None else "-", snap_ok,
                      rtype, f"{ds:.1f}" if ds is not None else "-",
                      f"{de:.1f}" if de is not None else "-",
                      f"{ded:.1f}" if ded is not None else "-",
