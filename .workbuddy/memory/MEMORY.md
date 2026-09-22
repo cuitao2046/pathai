@@ -32,8 +32,8 @@
 - 铁律0：禁 master 直接开发。分支→commit→push→人工校验→FF 合入→推 master→删分支（本地 -d + 远端 --delete）。
 - 分支名禁斜杠（unborn 分支陷阱）；铁律0b 一分支一需求；铁律0c 禁顺带改无关代码，提交前 git diff --stat 自查。
 - ✅ 堆叠分支（2026-09-21 采纳）：多需求积压时分支1基于 master、分支2基于分支1 tip…按序 FF，零 rebase；checkout -b 前后 status --porcelain 必须完全一致；暂存校验用路径前缀归属（目录条目展开多文件，不能数数）。
-- ✅ 未跟踪文件 FF 前置（2026-09-21 实测）：仓库外备份→路径写入 .git/info/exclude 让 status 变空→safe-merge→finally 还原 exclude→事后比对大小。勿用移出搬回。坑：copy2 覆盖只读先 chmod S_IWRITE；git 路径 / 与 Windows \ 须统一 replace 后比对；工具会重试执行同一脚本——判读以 git log/reflog/status 为准，不看退出码。
-- master 现状（2026-09-21 下午）：`1fefb32`（==远端，ls-remote 校验），远端仅 master。当日合入序：8a1ee21→1042549→d1cc213→d5f3766→40e93a9→1fefb32。
+- ✅ 未跟踪文件 FF 前置（2026-09-21 实测）：仓库外备份→路径写入 .git/info/exclude 让 status 变空→safe-merge→finally 还原 exclude→事后比对大小。勿用移出搬回。坑：copy2 覆盖只读先 chmod S_IWRITE；git 路径 / 与 Windows \ 须统一 replace 后比对；工具会重试执行同一脚本——判读以 git log/reflog/status 为准，不看退出码；git ls-files 默认 quotepath=true 会给含空格/中文文件名加引号+八进制转义（备份脚本拼路径必炸），须加 -c core.quotepath=false。
+- master 现状（2026-09-22 上午）：`fd4358f`（==远端，ls-remote 校验），远端仅 master。09-21 下午至 09-22 合入序：…→1fefb32→f989a5b→aa7ef31→e9c8d08→fd4358f（A4 三脚架改云腾 VT-7008，预算联动：A 614/固定项 794/档1 方案I 3,989）。
 
 ## 已知限制
 孤儿门标签未匹配(F1 61/F2 17)；卫生间多边形只覆盖盥洗区；骨架为简化模型；门无铰链/朝向；DK 漏检；CAD 标签包围盒误识别(render 用 _is_label_bbox 过滤)；OPEN_SPACE_TYPES 开放空间建 intersection 不合并；穿墙均为桥边回退（数据质量，独立修复）。
