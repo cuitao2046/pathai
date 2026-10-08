@@ -10,7 +10,7 @@ PathAI - CAD 平面图 (PDF) -> GeoJSON 解析器
 2. window 图层中剔除非窗口线条；窗口编号标识以矢量曲线或 text 文本形式存储，
    二者均会提取（DK 编号优先正则匹配 text 实体，不足时由矢量笔画识别补充）。
 3. 门洞元素部署在 window 图层（普通门）与 DOOR_FIRE 图层（防火门）；
-   每个门洞只保留一扇门（同一门洞识别出多扇门时去重）。
+   每个识别出的门对象独立保留，不按位置或几何相似度合并。
 4. 封闭空间（教室、卫生间等）通过墙体线多边形化识别，并关联其所有门洞。
 
 坐标系：局部米制坐标系（与 school_building_01_map_v7.geojson 一致），
@@ -164,12 +164,6 @@ LAYERS_ANNO_EXCLUDE = ("AXIS", "A-ANNO-150-TXT", "A-ANNO-LEVL", "A-ANNO-TTLB",
 TINY_STROKE = 8.0            # <0.5m 的短线，候选标识glyph
 CONNECTOR_SNAP = 1.5         # 窗端头连接线吸附
 WINDOW_GROUP_GAP = 6.0       # 窗平行线组内垂直间距上限
-DOOR_CLUSTER_PERP = 6.0      # 门洞线段聚类垂直间距
-DOOR_CLUSTER_AXIS_GAP = 6.0  # 门洞线段聚类轴向间隙
-# 摆弧门去重"中心距守卫"：同一门的多段弧中心几乎重合(<此值)才视为同门；
-# 相邻两房间的门中心通常相隔 ≥ 门宽(>20pt)，用此守卫避免被叶段投影间隙误并。
-# 取值与 dedupe_doorways 的 MERGE_PT(13) 同量级，保证 detect_doors 与全局去重一致。
-DOOR_CLUSTER_CENTER_PT = 14.0
 MIN_DOOR_WIDTH_PT = 9.0      # 房间门最小宽度（≈0.48m），更小的为厕位/器具弧
 WALL_SNAP = 0.8              # 墙线端点吸附网格
 GRID_QUANT = 1.0             # 端点量化网格(pt)，消除 CAD 线端点微小间隙
@@ -180,7 +174,7 @@ OPENING_FLANK_MIN_PT = 18.0  # 开口两侧墙段最小长度（短于该值视�
 OPENING_CODE_NEAR_PT = 60.0  # DK 矢量编号块到开口中心的最近距离（CAD 标签常贴墙体外侧，宽容）
 DEFAULT_OPENING_WIDTH_PT = 30.0  # 无墙缝可量时门洞默认宽度（≈1.0m，落在 [MIN,MAX] 区间内）
 DK_SNAP_WALL_PT = 50.0     # DK 块距最近墙 ≤ 此值则把门洞中心吸附到墙线（准确落在墙体内）
-DK_DEDUP_PT = 18.0         # 与已有窗/门/门洞中心距离小于此值则视为重复，跳过
+DK_DEDUP_PT = 8.0          # 同一 DK 标注在矢量/文本候选中的位置容差（与上游一致）
 # DK 块距任一摆弧门(普通门)中心 < 此值 → 该 DK 是普通门门口的标注(门宽/编号)，
 # 而非洞口；不据此生成门洞。门洞(DK 洞口)只应出现在没有摆弧门的卫生间/楼梯间。
 DK_NEAR_ARC_PT = 22.0
@@ -308,16 +302,16 @@ def classify_window_layer(lines, quads, curves):
     return window_groups, curves, removed
 
 
-# ---------------------------------------------------------------- 门洞识别与去重
+# ---------------------------------------------------------------- 门洞识别
 
 def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     """
     门洞识别：
       - 铰链门 = 摆弧（bezier 曲线）。弧的圆心=门轴铰链（在墙线上），
-        弧半径=门宽，门洞线段 = 铰链 -> 弧的"闭门端"（沿墙方向的端点）。
+        弧半径=门宽，门洞线段 = 铰链 -> 弧的“闭门端”（沿墙方向的端点）。
       - 圆心取 bbox 角点中离弧中点最远者（弧背向圆心鼓出）；
         闭门端取离墙线最近的端点（面板端伸入房间、远离墙线）。
-      - 每个门洞只保留一扇门：门洞线段按 平行+垂直间距+轴向间隙 聚类去重。
+      - 每个有效摆弧候选独立生成门对象，不合并不同摆弧。
     返回 [{'center': p_pt, 'width_pt': w, 'axis': (a,b), 'kind': 'swing'|'fire'}]
     """
     door_segs = []  # (hinge, tip, radius, kind)
@@ -357,47 +351,21 @@ def detect_doors(win_curves, fire_lines, fire_curves, struct_segs=None):
     for bz in fire_curves:
         arc_to_door(bz, "fire")
 
-    # 门洞去重：平行 + 垂直间距 + 轴向间隙
-    def link(d1, d2):
-        a1, b1 = d1["hinge"], d1["tip"]
-        a2, b2 = d2["hinge"], d2["tip"]
-        if angle_diff(seg_angle(a1, b1), seg_angle(a2, b2)) > math.radians(30):
-            return False
-        d, _ = point_to_seg_dist(seg_midpoint(a2, b2), a1, b1)
-        if d > DOOR_CLUSTER_PERP:
-            return False
-        # 中心距守卫：同一门多段弧中心几乎重合，相邻两房间门中心相隔 ≥ 门宽(>20pt)。
-        # 避免同一面墙上相邻两房间的门(如 R1021/R1022)被叶段投影间隙误并为一道。
-        c1 = seg_midpoint(a1, b1)
-        c2 = seg_midpoint(a2, b2)
-        if math.hypot(c1[0] - c2[0], c1[1] - c2[1]) > DOOR_CLUSTER_CENTER_PT:
-            return False
-        ang = seg_angle(a1, b1)
-        ux, uy = math.cos(ang), math.sin(ang)
-        lo1, hi1 = sorted((a1[0] * ux + a1[1] * uy, b1[0] * ux + b1[1] * uy))
-        lo2, hi2 = sorted((a2[0] * ux + a2[1] * uy, b2[0] * ux + b2[1] * uy))
-        gap = max(lo1, lo2) - min(hi1, hi2)
-        return gap < DOOR_CLUSTER_AXIS_GAP
-
-    groups = cluster_items(door_segs, link)
     doors = []
-    for g in groups:
-        # 同洞多门 -> 只保留一扇：取最宽的门洞线段代表
-        rep = max(g, key=lambda d: d["radius"])
+    for d in door_segs:
         # MIN_DOOR_WIDTH_PT 仅用于剔除 window 层的厕位/器具小弧；
         # DOOR_FIRE 层只放防火门，半径>=4pt(已在上游 arc_to_door 守卫)即有效，
         # 不再二次过滤，避免漏掉窄/小尺寸防火门（合班教室等）。
-        if rep["kind"] == "swing" and rep["radius"] < MIN_DOOR_WIDTH_PT:
+        if d["kind"] == "swing" and d["radius"] < MIN_DOOR_WIDTH_PT:
             continue  # 厕位/器具小弧，非房间门
-        hinge, tip = rep["hinge"], rep["tip"]
+        hinge, tip = d["hinge"], d["tip"]
         center = seg_midpoint(hinge, tip)
         doors.append({
             "center": center,
-            "width_pt": rep["radius"],
+            "width_pt": d["radius"],
             "axis": (hinge, tip),
-            "kind": rep["kind"],
-            "arc_mid": rep["arc_mid"],
-            "merged": len(g),
+            "kind": d["kind"],
+            "arc_mid": d["arc_mid"],
         })
     return doors
 
@@ -531,7 +499,7 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
     （普通教室走廊侧的门距明显更远），仍照常生成门洞。
 
     返回 [{'center','axis','width_pt','kind':'opening'}]，与 detect_doors 输出同构。
-    全局去重交由 dedupe_doorways 完成。
+    每个 DK 块对应的候选独立返回；同一 DK 矢量/文本标注的重复候选在上游消除。
     """
     gap_list = wall_gaps or []
 
@@ -552,12 +520,10 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
         return best
 
     out = []
-    seen = []
     for cx, cy in dk_blocks:
         c = (cx, cy)
-        # 与本次已生成门洞去重（多个 DK 块被聚到同一中心时只取一扇）
-        if any(math.hypot(c[0] - s[0], c[1] - s[1]) < DK_DEDUP_PT for s in seen):
-            continue
+        # 矢量与文本来源的重复标注候选已在调用方过滤；这里不按空间距离筛除独立 DK。
+        # 近邻 DK 可能对应不同门对象，必须逐个生成门洞候选。
         # 避让摆弧门：门口紧贴摆弧门的 DK 是该门的编号/宽度标注，不是洞口
         if swing_centers is not None and any(
                 math.hypot(c[0] - sc[0], c[1] - sc[1]) < DK_NEAR_ARC_PT
@@ -574,7 +540,6 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
                 "width_pt": g["gap"],
                 "kind": "opening",
             })
-            seen.append(c)
             continue
 
         # 否则吸附到最近墙线段
@@ -598,35 +563,6 @@ def find_wall_openings(dk_blocks, all_segs, wall_gaps=None,
             "width_pt": DEFAULT_OPENING_WIDTH_PT,
             "kind": "opening",
         })
-        seen.append(c)
-    return out
-
-
-def dedupe_doorways(doors):
-    """DISABLED: 未在任何调用链中使用（死代码），保留仅供 git 历史参考。
-    # 用户约定「门不合并」：每扇门独立成 TD，见 docs/设计决策记录.md ADR-门不合并。
-    # 原实现：仅合并**同类型**重合的门（swing↔swing、fire↔fire、opening↔opening）。
-
-    不同类型（如 swing 与 opening 标在相邻不同洞口）不合并——用户明确：
-    门洞和普通门不做去重合并，只针对同类型门去重。
-
-    同一类型内：两门中心极近(<13pt)即视为同一洞口，仅保留一扇。
-    """
-    MERGE_PT = 13.0
-
-    def link(d1, d2):
-        return math.hypot(d1["center"][0] - d2["center"][0],
-                          d1["center"][1] - d2["center"][1]) < MERGE_PT
-
-    by_kind = collections.defaultdict(list)
-    for d in doors:
-        by_kind[d.get("kind", "unknown")].append(d)
-
-    out = []
-    for _kind, items in by_kind.items():
-        groups = cluster_items(items, link)
-        for g in groups:
-            out.append(g[0])  # 同类型任意取一扇即可
     return out
 
 
@@ -1318,7 +1254,7 @@ def parse_floor(pdf_path, floor_no, cfg=None):
     room_names, room_codes = labels
     facility_codes = extract_facility_codes(page, title_block_x=cfg.title_block_x)
     # DK 文本标注（旋转/竖排标注常以 text span 存储）须在 doc 关闭前提取，
-    # 稍后在门洞识别阶段与矢量 DK 合并去重。
+    # 稍后在门洞识别阶段过滤矢量与文本抽取的重复 DK 标注候选。
     dk_text_labels = extract_dk_text_labels(page)
     doc.close()
 
@@ -1419,7 +1355,7 @@ def parse_floor(pdf_path, floor_no, cfg=None):
           f"DOOR_FIRE {len(fire['curves'])}->{len(fire_arcs)}")
     doors = detect_doors(win_arcs, fire["lines"], fire_arcs,
                          struct_segs=all_segs)
-    print(f"[F{floor_no}] 门洞(去重后): {len(doors)}")
+    print(f"[F{floor_no}] 摆弧门候选: {len(doors)}")
     # 普通门(摆弧)中心集合：供门洞识别避让。普通房间的门是 window 层摆弧元素，
     # 其门口的 DK 矢量标注(门宽/编号)紧邻摆弧门；该 DK 是门标注而非洞口，不生成门洞。
     swing_centers = [dr["center"] for dr in doors if dr.get("kind") == "swing"]
@@ -1432,11 +1368,11 @@ def parse_floor(pdf_path, floor_no, cfg=None):
     #       2) 其余 DK 块 → 吸附到最近墙线段生成门洞（纯洞口，无窗框）。
     glyph_codes = cluster_window_glyph_codes(win["lines"])
     dk_blocks = recognize_dk_glyph_blocks(win["lines"])
-    # 补充文本实体形式的 DK 标注（旋转/竖排标注常以 text span 存储），与矢量 DK 合并去重
+    # 同一 DK 标注的矢量/文本中心距小于 8pt 时视为同一来源候选，不合并门对象。
     dk_text = dk_text_labels
     n_text_added = 0
     for c in dk_text:
-        if not any(math.hypot(c[0] - bc[0], c[1] - bc[1]) < 8.0 for bc in dk_blocks):
+        if not any(math.hypot(c[0] - bc[0], c[1] - bc[1]) < DK_DEDUP_PT for bc in dk_blocks):
             dk_blocks.append(c)
             n_text_added += 1
     print(f"[F{floor_no}] window 矢量编号块: {len(glyph_codes)}  "
@@ -1465,7 +1401,6 @@ def parse_floor(pdf_path, floor_no, cfg=None):
                 "width_pt": wg["length_pt"],
                 "kind": "opening",
                 "arc_mid": wg["center"],
-                "merged": 1,
             })
             converted_idx.add(best_i)
             dk_consumed.add((round(cx, 1), round(cy, 1)))
@@ -1477,7 +1412,7 @@ def parse_floor(pdf_path, floor_no, cfg=None):
     remaining_dk = [c for c in dk_blocks
                     if (round(c[0], 1), round(c[1], 1)) not in dk_consumed]
     # 简化：每个 DK 块 → 一个门洞，吸附到最近墙（不再依赖房间类型 / 紧邻摆弧门过滤；
-    # 摆弧门避让由 swing_centers 内部处理；真正重合 → 由 dedupe_doorways 合并）。
+    # 摆弧门避让由 swing_centers 内部处理；不同候选门不做距离或几何合并）。
     wall_openings = find_wall_openings(remaining_dk, all_segs,
                                        wall_gaps=opening_gaps,
                                        swing_centers=swing_centers)
@@ -1490,16 +1425,11 @@ def parse_floor(pdf_path, floor_no, cfg=None):
             "width_pt": wo["width_pt"],
             "kind": "opening",
             "arc_mid": wo["center"],   # 无摆弧，归属几何中心即可
-            "merged": 1,
         })
     print(f"[F{floor_no}] 无摆弧门洞(DK约束): {len(wall_openings)}")
 
-    # --- 门不做合并（用户明确约定）：同一物理开口只保留检测出的门，禁止去重合并。
-    #     原 dedupe_doorways 会把同类型中心距<13pt 的门合并为一扇，
-    #     导致拓扑 TD rooms 归属混叠（如 F2-TD-0010 出现双归属）——已禁用。
-    before = len(doors)
-    doors = list(doors)
-    print(f"[F{floor_no}] 门（不做合并）: {before} -> {len(doors)}")
+    # 每个门对象在解析阶段原样保留；拓扑阶段同样按一门一 TD 构建。
+    print(f"[F{floor_no}] 门对象（不合并）: {len(doors)}")
 
     # --- 提前计算楼梯间 bbox（要在 build_rooms 之前得到位置，便于稍后作为 staircase room 加入
     #     rooms 列表，让门归属能找到楼梯间）。统一 detect_stair_boxes：

@@ -396,59 +396,6 @@ def build_skeleton_for_walkables(
     }
 
 
-def _merge_nearby_doors(doors: list, max_dist_m: float = 0.8,
-                        coords: Optional[Sequence] = None) -> list:
-    """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
-
-    DISABLED: 用户明确约定「同一物理开口只允许一扇门」，禁止任何形式门合并
-    （见 docs/设计决策记录.md ADR-01 门不合并、docs/项目迭代日志.md 门不合并铁律）。
-    本函数不再被 build_skeleton_topology 调用，保留仅为历史参考；
-    恢复使用前必须征得用户确认。
-
-    同一物理开口常被识别为多条门记录（swing + fire + opening），其几何中心重合；
-    也可能在投影到骨架后落到同一骨架点（同一房间多个邻近入口）。合并后 rooms 取并集、
-    kind 取 fire 优先、width 取最大，避免拓扑层出现重叠/重复的 TD 节点
-    （这也是渲染时「两个重叠的拓扑节点」的根因）。
-
-    coords: 可选，预先算好的合并依据坐标（如投影后的最终坐标）；为 None 时退回用
-    door 的 center_m。返回合并后的门列表，次序按簇首排列。
-    """
-    if not doors:
-        return []
-    if coords is None:
-        coords = [tuple(dr.get("center_m") or (0.0, 0.0)) for dr in doors]
-    used = [False] * len(doors)
-    merged = []
-    for i in range(len(doors)):
-        if used[i]:
-            continue
-        ci = tuple(coords[i])
-        cluster = [i]
-        used[i] = True
-        for j in range(i + 1, len(doors)):
-            if used[j]:
-                continue
-            cj = tuple(coords[j])
-            if math.hypot(ci[0] - cj[0], ci[1] - cj[1]) < max_dist_m:
-                cluster.append(j)
-                used[j] = True
-        rooms_u = []
-        for j in cluster:
-            for rid in (doors[j].get("rooms") or []):
-                if rid not in rooms_u:
-                    rooms_u.append(rid)
-        kinds = [doors[j].get("kind", "swing") for j in cluster]
-        kind = "fire" if "fire" in kinds else (kinds[0] if kinds else "swing")
-        width = max((doors[j].get("width_pt") or 0) for j in cluster)
-        md = dict(doors[cluster[0]])
-        md["center_m"] = list(ci)
-        md["kind"] = kind
-        md["width_pt"] = width
-        md["rooms"] = rooms_u
-        merged.append(md)
-    return merged
-
-
 def build_skeleton_topology(
     floor_no: int,
     rooms: list,
@@ -499,9 +446,7 @@ def build_skeleton_topology(
                 if wp is not None and not getattr(wp, "is_empty", True):
                     walkables.append(wp)
 
-    # 门不做合并（用户明确约定）：每扇门独立成 TD，禁止 _merge_nearby_doors 合并。
-    # 原合并会把 0.8m 内的多扇门并为单个 TD 且 rooms 取并集，
-    # 导致归属混叠（如 F2-TD-0010 出现 ['F2-CR-0042','F2-RM-0005']）——已禁用。
+    # 直接使用输入门对象列表；此处不按位置或属性合并，也不改变其 rooms 归属。
     td_doors = list(doors)
 
     door_centers = []
@@ -638,12 +583,9 @@ def build_skeleton_topology(
                 })
         skel_lines = sk["lines"]
 
-    # ---------- TD: 门节点严格 1:1 对应每扇 door（需求⑧） ----------
-    # 说明：每扇 geometry.door（含纯走廊门/门洞）都生成一个专属 TD 节点，
-    # TD id 序号与 door id 序号一致（F1-D-0018 → F1-TD-0018），不合并、不投影。
-    # TD 坐标 = 门坐标（真实开口处）；房间↔门边按贴墙/标注归属生成；
-    # 走廊连通性由 TI↔TI 承担，TD 连最近 TI 接入路网。
-    # （多房间共享门 room↔door 直连可能穿墙——已知限制，后续单独处理）
+    # ---------- TD: 门节点严格 1:1 对应每扇可建模 door ----------
+    # 每个 geometry.door 生成专属 TD（ID 与 door ID 序号一致），不合并；
+    # 每个 TD 按门对象各自的坐标、属性与房间归属生成。
     td_doors = list(td_doors)
 
     # 门贴墙补全归属（需求⑥：房间必须与「所有」swing/fire 门都有边）

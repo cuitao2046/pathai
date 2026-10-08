@@ -7,7 +7,7 @@
 结构：common/（constants.py 单一真值源：SCALE=0.0529、DOOR_PENALTY={swing:0,fire:0.5,opening:1}、DOOR_DEFAULT_PENALTY=9）/ parsing / geometry / semantics / skeleton / topology / rendering / qa / io / tools（~26 脚本）。
 - 解析主链：OCG 矢量→标定(SCALE=0.0529 m/pt, 原点(2019.1,1154.8)pt, Y翻转)→墙体矢量化→房间识别→门洞识别→门归属→GeoJSON。
 - **实际拓扑由 skeleton/pipeline.build_skeleton_topology 生成**（手动骨架优先取 result/skeleton_manual_parsed.json 跳过中轴），topology.build_floor_topology 仅回退；改拓扑须两处同步。
-- 门节点(TD) v9：同物理开口门按 center_m(0.8m)+投影坐标(1.0m) 两次合并；仅归属≥1封闭房间建 TD；validate_geojson 校验「每 TR 须有 TR↔TD 边」。
+- 门节点(TD) v9：**每扇门独立成 TD，禁止按物理开口或距离合并**；仅归属≥1封闭房间建 TD；validate_geojson 校验「每 TR 须有 TR↔TD 边」。
 - route_rules.py：受限 Dijkstra+三层回退(最佳门→所有门→wall_fallback)；盲模式剔盲区/禁楼梯跨层；validate_wall_crossing 豁免 doorway/facility 相邻段。
 - render_interactive.py 自包含交互 HTML；render_map.py→PNG；validate_geojson.py QA（核心指标无门封闭房间=0）。
 

@@ -44,7 +44,7 @@ class TestDoorUniqueness(unittest.TestCase):
 
     def test_door_counts_stable(self):
         geo = load_json(GEOJSON_PATH)
-        expected = {"1": 132, "2": 76}
+        expected = {"1": 138, "2": 85}
         for fk, n in expected.items():
             doors = geo["floors"][fk]["geometry"].get("doors") or []
             self.assertEqual(len(doors), n, f"F{fk} 门数量漂移")

@@ -249,58 +249,6 @@ def assign_node_risk_levels(nodes, rooms):
     return nodes
 
 
-def _merge_nearby_doors(doors, max_dist_m=0.8, coords=None):
-    """合并坐标距 < max_dist_m 的门为单个 doorway 节点（同一开口的摆弧/防火/门洞）。
-
-    DISABLED: 用户明确约定「同一物理开口只允许一扇门」，禁止任何形式门合并
-    （见 docs/设计决策记录.md ADR-01 门不合并、docs/项目迭代日志.md 门不合并铁律）。
-    本函数不再被 build_floor_topology 调用，保留仅为历史参考；
-    恢复使用前必须征得用户确认。
-
-    同一物理开口常被识别为多条门记录（swing + fire + opening），几何中心重合；
-    coords 可传入预先算好的合并依据坐标（如投影后的最终坐标），为 None 时退回用
-    door 的 center_m。合并后 rooms 取并集、kind 取 fire 优先、width 取最大。
-    返回合并后的门列表，次序按簇首排列。
-    """
-    if not doors:
-        return []
-    if coords is None:
-        try:
-            coords = [tuple(_to_xy(dr.get("center_m") or (0.0, 0.0))) for dr in doors]
-        except Exception:
-            coords = [tuple(dr.get("center_m") or (0.0, 0.0)) for dr in doors]
-    used = [False] * len(doors)
-    merged = []
-    for i in range(len(doors)):
-        if used[i]:
-            continue
-        ci = coords[i]
-        cluster = [i]
-        used[i] = True
-        for j in range(i + 1, len(doors)):
-            if used[j]:
-                continue
-            cj = coords[j]
-            if math.hypot(ci[0] - cj[0], ci[1] - cj[1]) < max_dist_m:
-                cluster.append(j)
-                used[j] = True
-        rooms_u = []
-        for j in cluster:
-            for rid in (doors[j].get("rooms") or []):
-                if rid not in rooms_u:
-                    rooms_u.append(rid)
-        kinds = [doors[j].get("kind", "swing") for j in cluster]
-        kind = "fire" if "fire" in kinds else (kinds[0] if kinds else "swing")
-        width = max((doors[j].get("width_pt") or 0) for j in cluster)
-        md = dict(doors[cluster[0]])
-        md["center_m"] = list(ci)
-        md["kind"] = kind
-        md["width_pt"] = width
-        md["rooms"] = rooms_u
-        merged.append(md)
-    return merged
-
-
 def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
                          corridor_adjacency=None, extra_nodes=None):
     """
@@ -345,7 +293,7 @@ def build_floor_topology(floor_no, rooms, doors, stairs, elevators,
         })
 
     # ---------- 门口节点（doorway） ----------
-    # 门不做合并（用户明确约定）：每扇门独立成 TD，禁止 _merge_nearby_doors 合并；
+    # 每个可建模门对象独立生成 TD；不按位置、类型或几何相似度合并。
     # 跳过无房间归属的门（避免悬空 corridor-only 节点）
     td_doors = list(doors)
     door_node_ids = []  # 与 td_doors 对齐，被跳过的门记为 None

@@ -2,7 +2,7 @@
 
 > 以 `A20-002/003-II-初中学部 1# 教学楼首层/二层平面图`（BIAD 导出 PDF）为例，总结从 CAD 矢量 PDF 中识别**墙体、封闭空间（房间）、门洞、窗、楼梯/电梯/柱**等关键元素并生成楼层 GeoJSON 的完整技术方案。
 >
-> 实现代码：`src/parsing/parse_cad_pdf.py`（解析）、`src/render_map.py`（渲染）、`src/qa/validate_geojson.py`（QA）、`src/skeleton/pipeline.py`（`build_skeleton_topology`，T8 替代逻辑）、`src/topology/topology.py`（`build_floor_topology`，仅回退）、`src/io/geojson_writer.py`（组装与 Walkable/开放空间分治）。
+> 实现代码：`src/parsing/parse_cad_pdf.py`（解析）、`src/rendering/render_map.py`（静态渲染）、`src/rendering/render_interactive.py`（交互渲染）、`src/qa/validate_geojson.py`（QA）、`src/skeleton/pipeline.py`（`build_skeleton_topology`，实际拓扑生成）、`src/topology/topology.py`（`build_floor_topology`，仅回退）、`src/io/geojson_writer.py`（组装与 Walkable/开放空间分治）。
 > 输出：`result/school_building_01_map_v9.geojson`（每层六图层 geometry / semantic / topology / skeleton / walkable_regions / accessibility，跨层边在顶层 `crossFloorEdges`）、`result/map_render_f{1,2}*.png` 及 `*_topology.png`。
 
 ---
@@ -25,7 +25,7 @@ CAD PDF（OCG 图层）
   ├─ 4. 墙体矢量化：端点量化吸附 → 共线合并(桥接 ≤30pt 缝隙)
   ├─ 5. 房间识别（栅格管线）：栅格化 → 连通域 → 分水岭归属
   │        → 标签探测 → 守卫式泛洪合并 → 轮廓多边形化
-  ├─ 6. 门洞识别：摆弧几何（铰链/闭门端/弧中点）→ 聚类去重（一洞一门）
+  ├─ 6. 门洞识别：摆弧逐个识别；每个有效门对象独立保留，不做合并
   ├─ 7. 门归属：5 段链（弧中点包含 → 侧向投票 → 距离兜底 → 零门认领 → 偷取）
   └─ 8. 组装 GeoJSON（geometry/semantic/topology/accessibility）→ QA → 渲染
 ```
@@ -137,7 +137,7 @@ window 层混有三类元素，需先分流：
 |---|---|---|
 | 门窗**编号笔画** | 长度 < `TINY_STROKE = 8pt`（≈0.5m）且端点不能吸附到任何长线 | 剔除（编号是矢量曲线，不是文本） |
 | **窗口线** | 长线按"平行(<5°) + 垂直间距 ≤6pt + 轴向投影重叠"分组 | windowSegments（组轴向包络 = 窗口轴线） |
-| **门扇摆弧** | bezier 曲线 | 交门洞识别 |
+| **门扇摆弧** | bezier 曲线 | 逐条摆弧独立生成门对象，不按几何相似度合并 |
 
 ### 6.2 摆弧 → 门洞 `detect_doors`
 
@@ -150,9 +150,17 @@ window 层混有三类元素，需先分流：
 - 半径 < `MIN_DOOR_WIDTH_PT = 9pt`（≈0.48m）的弧为厕位/器具小弧，丢弃；
 - `DOOR_FIRE` 层的摆弧同样处理，标记 `doorType = fire`。
 
-### 6.3 一洞一门（去重）
+### 6.3 当前规则：摆弧候选逐个保留
 
-同一门洞可能被多条弧/线表达（双扇门、门套线等）。门洞线段按"**平行(<30°) + 垂直间距 ≤6pt + 轴向间隙 <6pt**"聚类，**每个聚类只保留门洞线段最宽的一扇**（`mergedCount` 记录合并数）——满足"每一个门洞只需要一扇门"。
+每个通过有效性过滤的摆弧独立生成一个门对象。**禁止按距离、类型、几何相似度或“同一物理开口”关系合并、去重或丢弃已识别的不同门对象**；每个门对象在拓扑中独立对应一个 TD。
+
+| 候选来源 | 处理规则 | 目的 |
+|---|---|---|
+| 同一摆弧候选的重复线段 | 不按几何相似度聚类，不合并成单一门对象；逐个保留通过有效性过滤的候选 | 门对象与后续 TD 一一对应 |
+
+早期实现曾按“平行(<30°) + 垂直间距 ≤6pt + 轴向间隙 <6pt”聚类摆弧，并只保留最宽候选、记录 `mergedCount`。该算法已停用，仅作为历史实现说明，不代表当前规范。
+
+当前允许的局部过滤仅针对同一 DK 标注在矢量笔画与文本抽取中重复产生的标注候选；此步骤发生在门对象生成前，不得据此合并不同门对象。
 
 ---
 

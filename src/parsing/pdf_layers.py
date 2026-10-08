@@ -114,6 +114,7 @@ def extract_dk_text_labels(page):
                 continue
             x0, y0, x1, y1 = line["bbox"]
             cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            # 同一 DK 文本标注在文本行中的重复提取按 8pt 去重，独立标注不合并。
             if any(math.hypot(cx - sx, cy - sy) < 8.0 for sx, sy in seen):
                 continue
             seen.append((cx, cy))

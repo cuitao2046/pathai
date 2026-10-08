@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -117,7 +118,7 @@ def save_golden(stats, source_path):
         "schema": 1,
         "venueId": "school-building-01",
         "version": "9.0.0",
-        "generated_at": "2026-08-12",
+        "generated_at": date.today().isoformat(),
         "source": str(source_path),
         "source_sha256": sha256(source_path),
         "stats": stats,
@@ -168,7 +169,7 @@ def save_struct_golden(fingerprint, source_path):
         "schema": 1,
         "venueId": "school-building-01",
         "version": "9.0.0",
-        "generated_at": "2026-08-12",
+        "generated_at": date.today().isoformat(),
         "source": str(source_path),
         "source_sha256": sha256(source_path),
         "fingerprint": fingerprint,

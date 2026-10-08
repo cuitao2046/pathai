@@ -94,8 +94,8 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
         report.append(f"[F{floor_key}] {msg}")
 
     # 1) 门口覆盖：拓扑设计上 doorway 节点只为「服务封闭房间的门」建模
-    #    （走廊↔走廊的纯通行门归入走廊骨架 TI↔TI；每扇门独立成 TD，不合并，
-    #    与用户约定「同一物理开口只允许一扇门」一致，见 memory）。
+    #    （走廊↔走廊的纯通行门归入走廊骨架 TI↔TI；每个门对象独立成 TD，不合并，
+    #    见 docs/设计决策记录.md ADR-01）。
     #    因此校验目标改为：每个封闭房间(TR)均应能经门(doorway)进入——即存在 TR↔TD 边。
     n_doors = stats["doors_geom"]
     room_ids = {n["id"] for n in by_type["room"]}
@@ -118,7 +118,7 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
     # 仅作信息提示：物理门数 vs TD 节点数（不再强约束）
     if n_doors:
         report.append(f"[F{floor_key}] 信息: geometry.doors={n_doors} TD={stats['TD']} "
-                       f"(走廊通行门/合并后不再各建 TD)")
+                       f"(部分走廊通行门不建 TD)")
 
     # 2) 连通性：主分量应覆盖绝大多数非孤立节点
     comps = _components(nodes, edges)

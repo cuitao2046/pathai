@@ -1016,7 +1016,6 @@ def build_geojson(f1, f2, cfg=None, manual_skeleton=None):
                     "doorType": kind,
                     "doorSubType": DOOR_SUBTYPE.get(kind, kind),
                     "width_m": width_m,
-                    "mergedCount": dr.get("merged", 1),
                     "rooms": dr["rooms"],
                     # 指南 §3.2 开向（内开/外开 + 左开/右开），由摆弧几何推导
                     "openDirection": swing["openDirection"],

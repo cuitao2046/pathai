@@ -44,6 +44,9 @@ result/*
 .ipynb_checkpoints/
 *.ipynb
 
+# setuptools metadata (generated in repository root)
+/pathai.egg-info/
+
 # 探索性/实验性代码目录（非规范源码，本地保留不入库）
 src/adjcent/
 src/fix/

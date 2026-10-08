@@ -43,6 +43,21 @@ class TestPipelineGolden(unittest.TestCase):
         actual = compute_stats(geo)
         assert_golden(self, actual, golden)
 
+    def test_detect_doors_preserves_each_arc_candidate(self):
+        """相同位置的独立摆弧候选不得被聚类合并。"""
+        curve = ((0.0, 0.0), (0.0, 5.0), (5.0, 10.0), (10.0, 10.0))
+        doors = self.mod.detect_doors([curve, curve], [], [])
+        self.assertEqual(len(doors), 2)
+        self.assertTrue(all("merged" not in door for door in doors))
+
+    def test_find_wall_openings_preserves_nearby_distinct_dk_candidates(self):
+        """相邻但独立的 DK 候选不得按位置距离过滤。"""
+        openings = self.mod.find_wall_openings(
+            [(0.0, 0.0), (3.0, 0.0)],
+            [((-20.0, 0.0), (20.0, 0.0))],
+        )
+        self.assertEqual(len(openings), 2)
+
     def test_pipeline_reproduces_struct_fingerprint(self):
         geo = self._run_pipeline()
         golden = load_struct_golden()

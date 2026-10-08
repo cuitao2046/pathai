@@ -1,6 +1,7 @@
 # PathAI 核心代码审查报告
 
 - 审查日期：2026-08-12
+- 当前状态补记（2026-10-07）：本文中的门合并函数/缺陷描述是审查时点的历史记录。`dedupe_doorways` 与两个 `_merge_nearby_doors` 已从当前源码删除；现行门对象规则以 `docs/设计决策记录.md` ADR-01 为准。
 - 审查范围：`src/` 下核心模块（解析、骨架、拓扑、路由规则、校验、渲染），及 `.workbuddy/memory`、`docs/` 中的项目约定
 - 审查文件：
   - `src/parsing/parse_cad_pdf.py`（4472 行，全量）

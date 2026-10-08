@@ -24,8 +24,10 @@ pathai-parse = "src.parsing.parse_cad_pdf:main"
 pathai-validate = "src.qa.validate_geojson:main"
 pathai-render = "src.rendering.render_interactive:main"
 
-[tool.setuptools]
-packages = ["src"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
+namespaces = false
 
-[tool.setuptools.package-dir]
-src = "src"
+[tool.setuptools.package-data]
+"src.rendering" = ["static/*.js", "templates/*.html"]

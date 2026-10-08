@@ -15,9 +15,10 @@ src/
 ├── rendering/     交互式 HTML 渲染（SVG + 原生 JS）与 PNG 平面图渲染
 ├── qa/            GeoJSON 拓扑质量校验
 ├── io/            GeoJSON 写出（含可通行区域、骨架图层）
-├── tools/         数据修复 / 后处理 / 信标与指纹工具（约 35 个）
-└── sdk/           第三方信标配置工具（MinewBeaconAdmin 等，非本项目代码）
+└── tools/         数据修复 / 后处理 / 信标与指纹工具（26 个正式脚本）
 ```
+
+第三方 MinewBeaconAdmin SDK 归档在 `docs/reference/MinewBeaconAdmin/`，不属于 `src/` 项目源码。
 
 调试与一次性脚本放 `debug/`，根目录不留 `.py`。
 
