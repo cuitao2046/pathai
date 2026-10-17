@@ -181,6 +181,72 @@ def _centroid_ring(ring):
     return sum(xs) / len(xs), sum(ys) / len(ys)
 
 
+def filter_deployment_beacons(beacons, geo_json):
+    floors = geo_json.get("floors", {})
+    nodes_by_floor = {}
+    for floor_key, floor_data in floors.items():
+        nodes_by_floor[str(floor_key)] = {
+            node.get("id"): node
+            for node in floor_data.get("topology", {}).get("nodes", [])
+            if node.get("id")
+        }
+
+    filtered = []
+    excluded = []
+    for beacon in beacons:
+        beacon_id = beacon.get("beaconId") or "?"
+        reason = None
+        if beacon.get("beaconId") in (None, ""):
+            reason = "R5 missing beaconId"
+        elif beacon.get("coordinates") in (None, ""):
+            reason = "R5 missing coordinates"
+        elif beacon.get("floor") in (None, ""):
+            reason = "R5 missing floor"
+        else:
+            floor_key = str(beacon["floor"])
+            if floor_key not in floors:
+                reason = f"R5 unknown floor {floor_key}"
+            else:
+                coordinates = beacon.get("coordinates")
+                if not isinstance(coordinates, (list, tuple)) or len(coordinates) < 2:
+                    reason = "R5 invalid coordinates"
+                else:
+                    try:
+                        x, y = float(coordinates[0]), float(coordinates[1])
+                    except (TypeError, ValueError, OverflowError):
+                        reason = "R5 invalid coordinates"
+                    else:
+                        if not math.isfinite(x) or not math.isfinite(y):
+                            reason = "R5 invalid coordinates"
+                        else:
+                            source_node_id = beacon.get("sourceNodeId") or ""
+                            node = nodes_by_floor[floor_key].get(source_node_id) if source_node_id else None
+                            if node is not None:
+                                try:
+                                    node_x, node_y = (float(node["coordinates"][0]),
+                                                      float(node["coordinates"][1]))
+                                except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+                                    node = None
+                                else:
+                                    if math.isfinite(node_x) and math.isfinite(node_y):
+                                        distance = math.hypot(x - node_x, y - node_y)
+                                        if distance > 3.0:
+                                            reason = f"R1 sourceNodeId drift {distance:.2f}m"
+        if reason:
+            excluded.append((beacon_id, reason))
+        else:
+            filtered.append(beacon)
+    return filtered, excluded
+
+
+def log_deployment_beacon_filter(source, excluded):
+    if not excluded:
+        return
+    for beacon_id, reason in excluded:
+        print(f"  [warn] {source} 排除信标 {beacon_id}: {reason}")
+    print(f"  [warn] {source} 信标过滤: 排除 {len(excluded)} 个")
+
+
 def build_node_lookup(geo_json):
     lookup = {}
     for fk, fd in geo_json["floors"].items():
@@ -1078,10 +1144,13 @@ def main():
     if bc_path.exists():
         try:
             bc_data = json.load(open(bc_path, encoding="utf-8"))
-            for b in bc_data.get("beacons", []):
+            _global_beacons, _global_excluded = filter_deployment_beacons(
+                bc_data.get("beacons", []), geo)
+            log_deployment_beacon_filter(bc_path.name, _global_excluded)
+            for b in _global_beacons:
                 beacon_floors.setdefault(str(b.get("floor")), []).append(b)
             print(f"  [info] 全局信标方案 {bc_path.name}: "
-                  f"{len(bc_data.get('beacons', []))} 个信标")
+                  f"{len(_global_beacons)} 个信标")
         except Exception as e:
             print("  [warn] 读取全局信标方案失败：", e)
     else:
@@ -1092,10 +1161,13 @@ def main():
     if bc_r_path.exists():
         try:
             bc_r_data = json.load(open(bc_r_path, encoding="utf-8"))
-            for b in bc_r_data.get("beacons", []):
+            _route_beacons, _route_excluded = filter_deployment_beacons(
+                bc_r_data.get("beacons", []), geo)
+            log_deployment_beacon_filter(bc_r_path.name, _route_excluded)
+            for b in _route_beacons:
                 beacon_floors_routes.setdefault(str(b.get("floor")), []).append(b)
             print(f"  [info] 路线信标方案 {bc_r_path.name}: "
-                  f"{len(bc_r_data.get('beacons', []))} 个信标")
+                  f"{len(_route_beacons)} 个信标")
         except Exception as e:
             print("  [warn] 读取路线信标方案失败：", e)
 
@@ -1110,6 +1182,8 @@ def main():
                 _ble_data = json.load(open(_ble_path, encoding="utf-8"))
                 _ble_beacons = _ble_data.get("beacons") or []
                 if _ble_beacons:
+                    _ble_beacons, _ble_excluded = filter_deployment_beacons(_ble_beacons, geo)
+                    log_deployment_beacon_filter("ble_deployment.json", _ble_excluded)
                     beacon_floors_routes = {}
                     for _b in _ble_beacons:
                         beacon_floors_routes.setdefault(str(_b.get("floor")), []).append(_b)
