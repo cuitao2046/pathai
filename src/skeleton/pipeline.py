@@ -928,7 +928,8 @@ def build_skeleton_topology(
             add_edge(en["id"], best_dn, best_d, a_level=0, r_level=5)
 
     # 6) 全局合并聚集的 TI 节点（手绘/栅格骨架在 doorway、转折处产生的冗余微交叉口）
-    nodes, edges, _ = _merge_nearby_ti_nodes(nodes, edges, radius_m=TI_MERGE_RADIUS_M)
+    if manual_skeleton is None:
+        nodes, edges, _ = _merge_nearby_ti_nodes(nodes, edges, radius_m=TI_MERGE_RADIUS_M)
 
     # skeleton GeoJSON features
     if manual_skeleton is not None:
@@ -953,6 +954,8 @@ def build_skeleton_topology(
     n_orphan_fixed = 0
     for n in orphans:
         nt = n.get("type")
+        if manual_skeleton is not None and nt == "intersection":
+            continue
         # 目标类型优先级
         if nt == "room":
             prefer = ("doorway",)
@@ -993,7 +996,7 @@ def build_skeleton_topology(
 
     # 7) 骨架多连通分量：近距离 TI 软桥（非 all-pairs，每对分量最多 1 条）
     ti_nodes = [n for n in nodes if n.get("type") == "intersection"]
-    if len(ti_nodes) >= 2:
+    if manual_skeleton is None and len(ti_nodes) >= 2:
         # 用当前边重建 TI 子图分量
         tset = {n["id"] for n in ti_nodes}
         adj = {tid: set() for tid in tset}
@@ -1041,7 +1044,7 @@ def build_skeleton_topology(
                 print(f"    [skeleton] TI 分量软桥 {n_soft} 条 (分量 {len(comps)}→更少)")
 
     # 同层大孤岛补边（与质心拓扑一致）
-    if bridge_disconnected_components is not None:
+    if manual_skeleton is None and bridge_disconnected_components is not None:
         edges = bridge_disconnected_components(
             floor_no, nodes, edges,
             min_island_nodes=5,   # 略降，收纳中等孤岛
