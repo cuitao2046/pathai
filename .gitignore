@@ -21,6 +21,7 @@ env/
 .idea/
 *.swp
 *.swo
+.trae-html-share-packages/
 
 # 操作系统
 .DS_Store
