@@ -277,11 +277,11 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
     # 既有 TI 坐标表（吸附时直接用既有坐标，避免手绘端点误差引入抖动）
     exti_coord = {n["id"]: n["coordinates"] for n in existing_ti}
 
-    # 候选节点：端点 / 交点；优先吸附到既有 TI
-    cand = []  # (Point, snap_id_or_None)
-    for ep in endpoints:
-        sid = snap_to_existing(ep)
-        cand.append((ep, sid))
+    candidates = []
+    for i in range(0, len(endpoints), 2):
+        seg_idx = i // 2
+        candidates.append((endpoints[i], (seg_idx,)))
+        candidates.append((endpoints[i + 1], (seg_idx,)))
     for i in range(len(segments)):
         for j in range(i + 1, len(segments)):
             inter = segments[i].intersection(segments[j])
@@ -290,33 +290,34 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
             ips = ([inter] if inter.geom_type == "Point" else
                    (list(inter.geoms) if hasattr(inter, "geoms") else []))
             for ip in ips:
-                cand.append((ip, snap_to_existing(ip)))
+                candidates.append((ip, (i, j)))
 
-    # 合并候选为节点：
-    #  - 吸附到同一既有 TI 的候选 → 合并为「唯一」节点（用既有 TI 的精确坐标，
-    #    避免多个手绘端点各自落在 0.5m 容差内却相距 >0.3m 而被保留为重复 id）。
-    #  - 其余候选按空间 <0.3m 合并；吸附节点优先。
-    nodes_pts = []  # (Point, snap_id_or_None)
-    for cpt, csid in cand:
-        if csid and csid in exti_coord:
-            ec = exti_coord[csid]
-            found = any(nsid == csid for _, nsid in nodes_pts)
-            if not found:
-                nodes_pts.append((Point(ec), csid))
-            continue
-        merged = False
-        for k, (npt, nsid) in enumerate(nodes_pts):
-            if cpt.distance(npt) < 0.3:
-                # 已存在：若任一方吸附到既有 TI，则标记吸附
-                if csid or nsid:
-                    nodes_pts[k] = (npt if nsid else cpt, nsid or csid)
-                merged = True
-                break
-        if not merged:
-            nodes_pts.append((cpt, csid))
+    grouped_candidates = []
+    for cpt, source_segments in candidates:
+        match = next((i for i, (npt, _) in enumerate(grouped_candidates)
+                      if cpt.distance(npt) <= 1e-8), None)
+        if match is None:
+            grouped_candidates.append((cpt, []))
+            match = len(grouped_candidates) - 1
+        for seg_idx in source_segments:
+            grouped_candidates[match][1].append(
+                (seg_idx, segments[seg_idx].project(cpt)))
+    grouped_candidates.sort(
+        key=lambda item: -len({seg_idx for seg_idx, _ in item[1]}))
 
-    # 分配 id：吸附节点用既有 id；新节点顺序编号（接续既有最大号）
-    used_ids = {nid for _, nid in nodes_pts if nid}
+    nodes_pts = []
+    node_sources = []
+    used_snap_ids = set()
+    for cpt, sources in grouped_candidates:
+        csid = snap_to_existing(cpt)
+        if csid in used_snap_ids:
+            csid = None
+        node_pt = Point(exti_coord[csid]) if csid and csid in exti_coord else cpt
+        nodes_pts.append((node_pt, csid))
+        node_sources.append(sources)
+        if csid:
+            used_snap_ids.add(csid)
+
     max_existing = 0
     for n in existing_ti:
         try:
@@ -325,7 +326,8 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
             pass
     seq = max_existing
     ti_nodes = []
-    for pt, sid in nodes_pts:
+    cut_by_id = {}
+    for (pt, sid), sources in zip(nodes_pts, node_sources):
         if sid:
             nid = sid
         else:
@@ -336,72 +338,23 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
             "coordinates": [round(pt.x, 3), round(pt.y, 3)],
             "public": True, "accessible": True, "riskLevel": 0.5,
         })
+        for seg_idx, measure in sources:
+            cut_by_id.setdefault(seg_idx, []).append((measure, nid))
 
-    # 打断线段：取线段上的节点投影切点
     edges, edge_seq, seen = [], 0, set()
-    for seg in segments:
-        cuts = []
-        for n in ti_nodes:
-            p = Point(n["coordinates"])
-            if seg.distance(p) < 0.3:
-                cuts.append((seg.project(p), n["id"]))
-        cuts.sort()
-        for (pa_, aid), (pb_, bid) in zip(cuts, cuts[1:]):
-            pa, pb = Point(seg.interpolate(pa_)), Point(seg.interpolate(pb_))
-            d = pa.distance(pb)
+    for seg_idx, seg in enumerate(segments):
+        cuts = sorted(set(cut_by_id.get(seg_idx, [])))
+        for (pa, aid), (pb, bid) in zip(cuts, cuts[1:]):
+            d = pb - pa
             if d < 0.05:
                 continue
             key = tuple(sorted((aid, bid)))
-            if key in seen:
+            if aid == bid or key in seen:
                 continue
             seen.add(key)
             edge_seq += 1
             edges.append({
                 "id": f"F{fk}-TE-{start_seq + edge_seq:04d}", "from": aid, "to": bid,
-                "distance": round(d, 3), "estimatedTime": round(d / WALK_SPEED, 2),
-                "accessibilityLevel": 0, "riskLevel": 0.5,
-                "walkable": True, "wheelchairAccessible": True,
-                "blindAccessible": True,
-            })
-    # ---------- 缺口缝合 ----------
-    # 手绘骨架端点常留 <1m 的小缺口（线没精确压到既有节点）。对同层内分属不同
-    # 连通分量、且相距 < BRIDGE_TOL 的 TI 自动补一条连接边，接通因手绘误差断开的
-    # 走廊。仅在跨分量时补，不会误连同分量内部的并行走廊。
-    BRIDGE_TOL = 2.0
-    ti_ids = [n["id"] for n in ti_nodes]
-    coord = {n["id"]: n["coordinates"] for n in ti_nodes}
-    # 并查集分量
-    parent = {t: t for t in ti_ids}
-    def _find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]; x = parent[x]
-        return x
-    def _union(a, b):
-        ra, rb = _find(a), _find(b)
-        if ra != rb:
-            parent[ra] = rb
-    for e in edges:
-        if e["from"] in parent and e["to"] in parent:
-            _union(e["from"], e["to"])
-    max_seq = start_seq + edge_seq
-    for a in ti_ids:
-        ca = coord[a]
-        best = None
-        for b in ti_ids:
-            if b == a or _find(a) == _find(b):
-                continue
-            d = math.hypot(coord[b][0] - ca[0], coord[b][1] - ca[1])
-            if d < BRIDGE_TOL and (best is None or d < best[0]):
-                best = (d, b)
-        if best:
-            d, b = best
-            key = tuple(sorted((a, b)))
-            if key in seen:
-                continue
-            seen.add(key)
-            max_seq += 1
-            edges.append({
-                "id": f"F{fk}-TE-{max_seq:04d}", "from": a, "to": b,
                 "distance": round(d, 3), "estimatedTime": round(d / WALK_SPEED, 2),
                 "accessibilityLevel": 0, "riskLevel": 0.5,
                 "walkable": True, "wheelchairAccessible": True,
