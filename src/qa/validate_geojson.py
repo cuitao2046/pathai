@@ -210,9 +210,9 @@ def validate_blind_reachability(geo: dict, report: List[str]) -> Dict[str, Any]:
     rooms_by_floor = defaultdict(list)
     for n in g.nodes.values():
         if n["type"] == "room" and n.get("roomId"):
-            # 管井/设备间（infrastructure）非导航目标：其门被规则 5 剔除
-            # （纯管井门不出现于导航路径），不应纳入可达性普查。
-            if n.get("roomType") == "infrastructure":
+            # 管井/设备间、室外空间与卫生间不属于室内可达性测试目标；室内楼梯间仍需纳入。
+            if (n.get("roomType") in ("infrastructure", "toilet")
+                    or "室外" in n.get("label", "")):
                 continue
             rooms_by_floor[n["floor"]].append((n.get("roomId"), n["id"]))
     stats: Dict[str, Any] = {"ok": True, "issues": [], "by_floor": {}}
