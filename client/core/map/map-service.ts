@@ -46,6 +46,11 @@ export class MapService {
     return this.summary !== null && this.pkg !== null;
   }
 
+  /** 场所 ID（构造时固定）。 */
+  get siteId(): string {
+    return this.opts.siteId;
+  }
+
   /** 幂等加载：并发调用共享同一次加载（单飞）。 */
   async ensureLoaded(): Promise<void> {
     if (this.isLoaded) {

@@ -7,7 +7,7 @@
 }
 
 .hero {
-  margin: 120rpx 0 80rpx;
+  margin: 60rpx 0 40rpx;
 }
 
 .title {
@@ -22,13 +22,98 @@
   color: #6b7280;
 }
 
-.primary {
-  margin-top: 32rpx;
+.panel {
+  margin-bottom: 32rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: #f3f4f6;
 }
 
-.hint {
-  margin-top: 48rpx;
+.row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.row:last-child {
+  margin-bottom: 0;
+}
+
+.label {
+  flex-shrink: 0;
   font-size: 24rpx;
   color: #9ca3af;
-  text-align: center;
+}
+
+.fallback {
+  color: #b45309;
+}
+
+.candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.candidates .hint {
+  margin: 0 0 8rpx;
+  font-size: 26rpx;
+  color: #6b7280;
+  text-align: left;
+}
+
+.primary {
+  margin-bottom: 32rpx;
+}
+
+/* 按住说话热区：大按钮、高对比，状态用底色区分（视障可访问性） */
+.ptt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200rpx;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 36rpx;
+  margin: 24rpx auto;
+  width: 200rpx;
+}
+
+.ptt.recording {
+  background: #dc2626;
+}
+
+.ptt.recognizing {
+  background: #6b7280;
+}
+
+.ptt.error {
+  background: #92400e;
+}
+
+.ptt-text {
+  color: #ffffff;
+}
+
+.debug {
+  margin: 16rpx 0;
+  padding: 16rpx;
+  border: 1rpx dashed #d1d5db;
+  border-radius: 12rpx;
+}
+
+.debug-input {
+  padding: 12rpx;
+  border-bottom: 1rpx solid #d1d5db;
+}
+
+.debug .hint {
+  margin-top: 8rpx;
+  text-align: left;
+}
+
+.secondary {
+  margin-top: auto;
 }

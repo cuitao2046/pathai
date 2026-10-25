@@ -1,10 +1,15 @@
 /**
  * PathAI 室内导航小程序入口。
- * 生命周期编排（令牌预热、切后台恢复）在 C2/C8 里程碑接入。
+ * onLaunch 预热令牌（静默 wx.login → API-01）；切后台恢复在 C7/C8 接入。
  */
+import { appContext } from './services/app-context';
+
 App({
   onLaunch() {
-    // C2：预热令牌管理器（静默 wx.login → API-01）
+    // 预热令牌：提前触发登录，避免首个业务请求串行等待
+    void appContext.http.tokens.getAccessToken().catch(() => {
+      // 失败由首个业务请求的重登机制兜底
+    });
   },
 
   onError(message: string) {

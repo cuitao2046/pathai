@@ -1,8 +1,60 @@
 <view class="page">
   <view class="hero">
-    <view class="title">{{title}}</view>
-    <view class="subtitle">{{subtitle}}</view>
+    <view class="title">PathAI 室内导航</view>
+    <view class="subtitle" aria-live="polite">
+      {{mapReady ? '地图已就绪，按住下方按钮说话' : (loadError !== '' ? loadError : '正在加载地图…')}}
+    </view>
   </view>
-  <button class="primary" bindtap="onGoSettings" aria-label="打开设置">设置</button>
-  <view class="hint">按住说话入口将在 C5 里程碑启用</view>
+
+  <view class="panel" wx:if="{{recognized !== '' || reply !== '' || partial !== '' || fallbackText !== ''}}">
+    <view class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
+    <view class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
+    <view class="row" wx:if="{{reply !== ''}}"><text class="label">助手</text><text user-select>{{reply}}</text></view>
+    <view class="row fallback" wx:if="{{fallbackText !== ''}}">
+      <text class="label">文字提示</text><text user-select>{{fallbackText}}</text>
+    </view>
+  </view>
+
+  <view class="candidates" wx:if="{{candidates.length > 0}}">
+    <view class="hint">你想去哪一个？</view>
+    <button
+      wx:for="{{candidates}}"
+      wx:key="placeId"
+      class="candidate"
+      bindtap="onPickCandidate"
+      data-name="{{item.name}}"
+      aria-label="选择{{item.name}}"
+    >{{item.name}}（{{item.floorId}}）</button>
+  </view>
+
+  <button
+    wx:if="{{destination !== null}}"
+    class="primary"
+    bindtap="onStartNav"
+    aria-label="开始导航到{{destination.name}}"
+  >开始导航：{{destination.name}}</button>
+
+  <view
+    class="ptt {{pttState}}"
+    bindtouchstart="onPttStart"
+    bindtouchend="onPttEnd"
+    bindtouchcancel="onPttCancel"
+    aria-label="按住说话，松开结束"
+    aria-disabled="{{!mapReady}}"
+  >
+    <text class="ptt-text">{{pttStateText}}</text>
+  </view>
+
+  <view class="debug" wx:if="{{isMockSource}}">
+    <input
+      class="debug-input"
+      value="{{mockText}}"
+      bindinput="onMockTextInput"
+      placeholder="模拟识别文本（mock 模式）"
+      aria-label="模拟识别文本"
+    />
+    <view class="hint">mock 模式：松开按钮后以上方文本作为识别结果</view>
+  </view>
+
+  <button class="secondary" bindtap="onGoSettings" aria-label="打开设置">设置</button>
 </view>
