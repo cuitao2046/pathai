@@ -9,8 +9,10 @@ from fastapi import FastAPI
 from pathai_backend.config import Settings
 from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
+from pathai_backend.map_repository import MapRepository
 from pathai_backend.request_context import RequestContextMiddleware
 from pathai_backend.routers import auth as auth_router
+from pathai_backend.routers import map as map_router
 from pathai_backend.wechat import HttpWechatAuthClient
 
 
@@ -32,9 +34,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.wechat_client = HttpWechatAuthClient(
         appid=settings.wechat_appid, secret=settings.wechat_secret
     )
+    app.state.map_repository = MapRepository.load(
+        map_data_dir=settings.map_data_dir, public_base_url=settings.public_base_url
+    )
     app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
     app.include_router(auth_router.router)
+    app.include_router(map_router.router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

@@ -31,10 +31,15 @@ class Settings:
     wechat_secret: str = field(default="", repr=False)
     openid_salt: str = field(default="", repr=False)
     token_ttl_seconds: int = 7200
+    # 地图包目录：约定 backend/maps_data/<siteId>/<mapVersion>.json
+    map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
+    # 对外可访问基地址：拼接 API-02 dataUrl；必须 HTTPS（契约校验强制）
+    public_base_url: str = "https://localhost"
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
         env = environ if environ is not None else dict(os.environ)
+        map_data_dir = env.get("PATHAI_MAP_DATA_DIR")
         return cls(
             env=env.get("PATHAI_ENV", LOCAL_ENV),
             database_url=env.get("PATHAI_DATABASE_URL", ""),
@@ -42,7 +47,13 @@ class Settings:
             wechat_secret=env.get("PATHAI_WECHAT_SECRET", ""),
             openid_salt=env.get("PATHAI_OPENID_SALT", ""),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
+            map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
+            public_base_url=env.get("PATHAI_PUBLIC_BASE_URL", "https://localhost"),
         )
+
+    @staticmethod
+    def _default_map_data_dir() -> Path:
+        return Path(__file__).resolve().parent.parent / "maps_data"
 
     @property
     def resolved_database_url(self) -> str:

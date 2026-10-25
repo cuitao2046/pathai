@@ -10,6 +10,8 @@
   },
   "floors": {
     "1": {
+      "displayName": "一楼",
+      "level": 1,
       "topology": {
         "nodes": [
           {
@@ -72,6 +74,8 @@
       }
     },
     "2": {
+      "displayName": "二楼",
+      "level": 2,
       "topology": {
         "nodes": [
           {

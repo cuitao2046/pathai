@@ -121,6 +121,9 @@ class FloorData(_AllowExtraModel):
     topology: FloorTopology
     geometry: FloorGeometry = Field(default_factory=FloorGeometry)
     semantic: FloorSemantic = Field(default_factory=FloorSemantic)
+    # 楼层元数据：API-02 楼层摘要的来源（displayName 如"一楼"，level 为数值层）
+    displayName: str = Field(min_length=1)
+    level: int
 
 
 class MapCoordinateSystem(_AllowExtraModel):

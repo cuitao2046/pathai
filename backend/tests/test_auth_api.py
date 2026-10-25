@@ -11,34 +11,8 @@ from sqlalchemy import inspect as sa_inspect, text
 
 from pathai_backend.auth import get_current_user
 from pathai_backend.database import get_engine
-from pathai_backend.wechat import WechatAuthError
 
 ENDPOINT = "/api/v1/auth/wechat"
-
-
-class FakeWechatClient:
-    """内存替身：按 code 映射 openid，可注入故障。"""
-
-    def __init__(self, openid_by_code=None, behavior=None):
-        self.openid_by_code = dict(openid_by_code or {})
-        self.behavior = behavior
-
-    def code_to_session(self, code: str) -> str:
-        if self.behavior == "invalid_code":
-            raise WechatAuthError("invalid_code", "fake")
-        if self.behavior == "provider_error":
-            raise WechatAuthError("provider_error", "fake")
-        openid = self.openid_by_code.get(code)
-        if openid is None:
-            raise WechatAuthError("invalid_code", f"未知 code {code}")
-        return openid
-
-
-@pytest.fixture()
-def fake(app):
-    fake_client = FakeWechatClient()
-    app.state.wechat_client = fake_client
-    return fake_client
 
 
 @pytest.fixture()
