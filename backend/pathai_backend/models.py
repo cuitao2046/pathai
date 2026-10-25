@@ -43,3 +43,19 @@ class AccessToken(Base):
 
 
 Index("ix_access_tokens_subject", AccessToken.subject_id)
+
+
+class LocationSequence(Base):
+    """定位批次序号：按（主体, 场所）记录已处理最大 sequence，拒绝过期批次。
+
+    sequence 严格小于已处理值 → 409 STALE_LOCATION_BATCH（docs/24 API-05）。
+    """
+
+    __tablename__ = "location_sequences"
+
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("anonymous_subjects.id"), primary_key=True
+    )
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
