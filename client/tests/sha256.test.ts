@@ -1,8 +1,9 @@
 /**
  * SHA-256 正确性验证：NIST FIPS 180-2 已知向量 + 字节边界长度 + UTF-8 编码。
- * 参考摘要由 CPython hashlib 生成（2026-10）。
+ * 参考摘要由 CPython hashlib 生成（2026-10）。同步与异步分片版共用压缩核心，
+ * 异步版另覆盖分片切片（含代理对跨界）边界。
  */
-import { sha256, sha256Hex, utf8Bytes } from '../utils/sha256';
+import { sha256, sha256Async, sha256Hex, utf8Bytes, utf8BytesAsync } from '../utils/sha256';
 
 describe('sha256 已知向量', () => {
   test('空字符串', () => {
@@ -61,5 +62,38 @@ describe('UTF-8 编码', () => {
   test('增补平面代理对', () => {
     // U+1D54A MATHEMATICAL DOUBLE-STRUCK S → f0 9d 95 8a
     expect([...utf8Bytes('\u{1D54A}')]).toEqual([0xf0, 0x9d, 0x95, 0x8a]);
+  });
+});
+
+describe('异步分片版（sha256Async / utf8BytesAsync）', () => {
+  test('NIST 向量一致（含分片让出）', async () => {
+    expect(await sha256Async('')).toBe(
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    );
+    expect(await sha256Async('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
+  });
+
+  test('百万字节与同步版一致（UTF-8 与压缩均跨多片）', async () => {
+    const text = 'a'.repeat(1000000);
+    expect(await sha256Async(text)).toBe(sha256(text));
+    expect(await sha256Async(text)).toBe(
+      'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0',
+    );
+  });
+
+  test('代理对被切片边界切开时仍与同步版一致', async () => {
+    // UTF8_CHARS_PER_SLICE=524288：让代理对起始恰好压在第一片末尾，
+    // 触发边界归一（end 右移）分支
+    const text = 'x'.repeat(524287) + '\u{1D54A}' + 'y'.repeat(1000);
+    expect(await utf8BytesAsync(text)).toEqual(utf8Bytes(text));
+    expect(await sha256Async(text)).toBe(sha256(text));
+  });
+
+  test('混合文本（ASCII+中文+代理对跨片）与同步版一致', async () => {
+    const unit = 'abc中文\u{1D54A}';
+    const text = unit.repeat(120000); // 约 72 万码元，跨多片
+    expect(await sha256Async(text)).toBe(sha256(text));
   });
 });

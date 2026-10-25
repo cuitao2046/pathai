@@ -8,7 +8,7 @@
  * - 未加载时 require* 一律抛 MAP_UNAVAILABLE（禁止开始导航 FE-01）。
  */
 import { API_BASE_URL, DEBUG_REWRITE_DATA_URL } from '../../config/env';
-import { sha256 } from '../../utils/sha256';
+import { sha256Async } from '../../utils/sha256';
 import { createLogger } from '../../utils/logger';
 import { getJson, getString, setJson, setString } from '../../utils/kv';
 import type {
@@ -127,7 +127,9 @@ export class MapService {
 
     const targetSha = this.summary.dataSha256;
     const storedRaw = getString(DATA_KEY(siteId));
-    if (storedRaw !== null && sha256(storedRaw) === targetSha) {
+    // 4.6MB 级文本必须用分片异步校验：真机同步计算会阻塞逻辑层，
+    // 表现为「正在加载地图」期间整页点击无响应
+    if (storedRaw !== null && (await sha256Async(storedRaw)) === targetSha) {
       this.adopt(storedRaw);
       return; // 本地数据可用：不再下载
     }
@@ -149,7 +151,7 @@ export class MapService {
       dataType: 'text', // 原始字符串，保证 sha256 与服务端字节一致
     });
     const raw = resp.data;
-    if (typeof raw !== 'string' || sha256(raw) !== targetSha) {
+    if (typeof raw !== 'string' || (await sha256Async(raw)) !== targetSha) {
       throw mapUnavailable('地图数据摘要校验失败');
     }
     return raw;
