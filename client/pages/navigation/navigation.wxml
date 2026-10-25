@@ -1,4 +1,26 @@
 <view class="page">
-  <view class="title">{{title}}</view>
-  <view class="instruction" aria-live="polite">{{instruction}}</view>
+  <view class="header">
+    <view class="destination">目的地：{{destinationName}}</view>
+    <view class="state" aria-live="polite">{{stateText}}</view>
+  </view>
+
+  <view class="instruction-card" aria-live="assertive">
+    <view class="instruction">{{instruction}}</view>
+  </view>
+
+  <view class="fallback" wx:if="{{fallbackText !== ''}}">
+    <text class="label">文字提示</text>
+    <text user-select>{{fallbackText}}</text>
+  </view>
+
+  <view class="mock-hint" wx:if="{{isMockSource && !ended}}">mock 模式：使用模拟信标轨迹定位</view>
+
+  <button
+    wx:if="{{!ended}}"
+    class="end-button"
+    bindtap="onEndTap"
+    aria-label="结束导航，双击确认"
+  >结束导航</button>
+
+  <button wx:else class="back-button" bindtap="onBackHome" aria-label="返回首页">返回首页</button>
 </view>

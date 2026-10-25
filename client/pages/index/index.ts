@@ -176,7 +176,7 @@ Page({
     if (destination === null) {
       return;
     }
-    const query = `placeId=${encodeURIComponent(destination.placeId)}&name=${encodeURIComponent(destination.name)}`;
+    const query = `placeId=${encodeURIComponent(destination.placeId)}&name=${encodeURIComponent(destination.name)}&floorId=${encodeURIComponent(destination.floorId)}`;
     wx.navigateTo({ url: `/pages/navigation/navigation?${query}` });
   },
 });
