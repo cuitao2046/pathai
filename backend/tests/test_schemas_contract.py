@@ -75,7 +75,7 @@ def _instruction(**overrides) -> dict:
 def _route_payload() -> dict:
     return {
         "routeId": "route_abc123",
-        "mapVersion": "2026-10-01.1",
+        "mapVersion": "2026-10-25.1",
         "routeRulesVersion": "1.0.0",
         "distanceM": 126.5,
         "estimatedDurationSec": None,
@@ -133,8 +133,8 @@ class TestApi02Map:
     def test_map_version_response_roundtrip(self):
         payload = {
             "siteId": "school-building-01",
-            "mapVersion": "2026-10-01.1",
-            "publishedAt": "2026-10-01T08:00:00Z",
+            "mapVersion": "2026-10-25.1",
+            "publishedAt": "2026-10-25T14:10:01Z",
             "coordinateSystem": {
                 "unit": "m",
                 "originDescription": "由本地图版本定义",
@@ -149,13 +149,13 @@ class TestApi02Map:
         }
         resp = MapVersionResponse.model_validate(payload)
         assert [f.floorId for f in resp.floors] == ["1", "2"]
-        assert resp.model_dump(mode="json")["mapVersion"] == "2026-10-01.1"
+        assert resp.model_dump(mode="json")["mapVersion"] == "2026-10-25.1"
 
 
 class TestApi03Places:
     def test_places_response_roundtrip(self):
         payload = {
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "items": [
                 {
                     "placeId": "library-301",
@@ -213,7 +213,7 @@ class TestApi04Intent:
         req = IntentParseRequest.model_validate(
             {
                 "siteId": "school-building-01",
-                "mapVersion": "2026-10-01.1",
+                "mapVersion": "2026-10-25.1",
                 "text": "带我去三楼图书馆",
                 "sessionId": None,
                 "locale": "zh-CN",
@@ -226,7 +226,7 @@ class TestApi05Location:
     def _request_payload(self) -> dict:
         return {
             "siteId": "school-building-01",
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "sequence": 18,
             "collectedAt": "2026-10-23T08:00:00Z",
             "floorHint": "1",
@@ -256,7 +256,7 @@ class TestApi05Location:
         payload = {
             "estimateId": "loc_001",
             "sequence": 18,
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "position": {"x": 12.4, "y": 8.1, "floorId": "1"},
             "headingDeg": 41.5,
             "confidence": 0.82,
@@ -273,7 +273,7 @@ class TestApi05Location:
         payload = {
             "estimateId": "loc_002",
             "sequence": 19,
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "position": None,
             "headingDeg": None,
             "confidence": 0.2,
@@ -292,7 +292,7 @@ class TestApi06CreateSession:
     def test_create_request_roundtrip(self):
         payload = {
             "siteId": "school-building-01",
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "origin": {
                 "x": 12.4,
                 "y": 8.1,
@@ -311,7 +311,7 @@ class TestApi06CreateSession:
         payload = {
             "sessionId": "nav_abc12345",
             "status": "active",
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "destination": _destination(),
             "route": _route_payload(),
             "createdAt": "2026-10-23T08:00:01Z",
@@ -418,7 +418,7 @@ class TestApi08SessionQuery:
             "sessionId": "nav_abc12345",
             "status": "active",
             "siteId": "school-building-01",
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "destination": _destination(),
             "currentInstruction": {
                 "instructionId": "ins_2",
@@ -436,7 +436,7 @@ class TestApi08SessionQuery:
             "sessionId": "nav_abc12345",
             "status": "ended",
             "siteId": "school-building-01",
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "destination": _destination(),
             "currentInstruction": None,
             "lastProcessedSequence": 19,
@@ -490,7 +490,7 @@ class TestInvalidInputs:
         payload = {
             "estimateId": "loc_x",
             "sequence": 1,
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "position": {"x": 1.0, "y": 1.0, "floorId": "1"},
             "confidence": 1.5,
             "quality": "reliable",
@@ -503,7 +503,7 @@ class TestInvalidInputs:
         payload = {
             "estimateId": "loc_x",
             "sequence": 1,
-            "mapVersion": "2026-10-01.1",
+            "mapVersion": "2026-10-25.1",
             "position": {"x": 1.0, "y": 1.0, "floorId": "1"},
             "confidence": 0.9,
             "quality": "perfect",
@@ -526,7 +526,7 @@ class TestInvalidInputs:
         payload = {
             "siteId": "s",
             "mapVersion": "v1",
-            "publishedAt": "2026-10-01T08:00:00Z",
+            "publishedAt": "2026-10-25T14:10:01Z",
             "coordinateSystem": {"unit": "m", "originDescription": "o", "headingReference": "map_north"},
             "floors": [{"floorId": "1", "displayName": "一楼", "level": 1}],
             "dataUrl": "http://cdn.example.com/map-data.json",

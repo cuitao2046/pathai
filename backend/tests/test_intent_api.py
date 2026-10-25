@@ -1,16 +1,22 @@
 # -*- coding: utf-8 -*-
-"""M6 行为测试：API-04 受控意图解析（docs/24 §8）。"""
+"""M6 行为测试：API-04 受控意图解析（docs/24 §8）。
+
+mock 数据使用真实地图包 2026-10-25.1 的地点目录（56 地点）。
+"""
 from __future__ import annotations
 
 import pytest
 
 URL = "/api/v1/intents/parse"
 
+#: 真实地图版本。
+REAL_MAP_VERSION = "2026-10-25.1"
+
 
 def _parse(client, headers, text: str, **overrides) -> dict:
     body = {
         "siteId": "school-building-01",
-        "mapVersion": "2026-10-01.1",
+        "mapVersion": REAL_MAP_VERSION,
         "text": text,
         "sessionId": None,
         "locale": "zh-CN",
@@ -30,7 +36,7 @@ class TestAuthAndLookup:
     def test_unknown_site_404(self, client, auth_headers):
         resp = client.post(
             URL,
-            json={"siteId": "no-such", "mapVersion": "2026-10-01.1", "text": "去图书馆"},
+            json={"siteId": "no-such", "mapVersion": REAL_MAP_VERSION, "text": "去图书馆"},
             headers=auth_headers,
         )
         assert resp.status_code == 404
@@ -48,30 +54,33 @@ class TestAuthAndLookup:
 
 class TestNavigationIntent:
     def test_unique_match(self, client, auth_headers):
-        body = _parse(client, auth_headers, "带我去一楼图书馆")
+        # 「资源教室」在真实目录中唯一名
+        body = _parse(client, auth_headers, "带我去资源教室")
         assert body["intent"] == "start_navigation"
         assert body["needsClarification"] is False
         assert body["destination"] == {
-            "placeId": "library-1f", "name": "一楼图书馆", "floorId": "1"
+            "placeId": "F1-RM-0003", "name": "资源教室", "floorId": "1"
         }
         assert body["candidates"] == []
         assert body["confidence"] >= 0.9
-        assert "一楼图书馆" in body["responseText"]
+        assert "资源教室" in body["responseText"]
 
-    def test_longest_alias_disambiguates_floor(self, client, auth_headers):
-        body = _parse(client, auth_headers, "带我去二楼图书馆")
+    def test_longest_match_unique_full_name(self, client, auth_headers):
+        # 完整长名称命中唯一（真实数据地点名无楼层前缀，消歧依赖完整名称唯一性）
+        body = _parse(client, auth_headers, "带我去美术书法资料室")
         assert body["needsClarification"] is False
-        assert body["destination"]["placeId"] == "library-2f"
+        assert body["destination"]["placeId"] == "F1-RM-0009"
 
-    def test_ambiguous_alias_needs_clarification(self, client, auth_headers):
-        body = _parse(client, auth_headers, "带我去图书馆")
+    def test_ambiguous_name_needs_clarification(self, client, auth_headers):
+        # 「教师办公室」在 1/2 层共 3 处 → 需澄清，候选按 placeId 排序
+        body = _parse(client, auth_headers, "带我去教师办公室")
         assert body["intent"] == "start_navigation"
         assert body["needsClarification"] is True
         assert body["destination"] is None
         ids = [c["placeId"] for c in body["candidates"]]
-        assert ids == ["library-1f", "library-2f"]
+        assert ids == ["F1-RM-0033", "F2-RM-0025", "F2-RM-0031"]
         assert body["confidence"] < 0.9
-        assert "图书馆" in body["responseText"]
+        assert "教师办公室" in body["responseText"]
 
     def test_unknown_place_needs_clarification_empty_candidates(self, client, auth_headers):
         body = _parse(client, auth_headers, "带我去火星大厅")
@@ -81,7 +90,8 @@ class TestNavigationIntent:
         assert body["candidates"] == []
 
     def test_candidates_share_contract_shape(self, client, auth_headers):
-        body = _parse(client, auth_headers, "去图书馆")
+        body = _parse(client, auth_headers, "去教师办公室")
+        assert body["candidates"], "同名多处应产生候选"
         for candidate in body["candidates"]:
             assert set(candidate.keys()) == {"placeId", "name", "floorId"}
 
@@ -131,11 +141,11 @@ class TestContractDetails:
     @pytest.mark.parametrize(
         "body",
         [
-            {"siteId": "school-building-01", "mapVersion": "2026-10-01.1", "text": ""},
-            {"siteId": "school-building-01", "mapVersion": "2026-10-01.1", "text": "好" * 501},
+            {"siteId": "school-building-01", "mapVersion": REAL_MAP_VERSION, "text": ""},
+            {"siteId": "school-building-01", "mapVersion": REAL_MAP_VERSION, "text": "好" * 501},
             {"siteId": "school-building-01", "mapVersion": "", "text": "取消"},
-            {"siteId": "", "mapVersion": "2026-10-01.1", "text": "取消"},
-            {"siteId": "school-building-01", "mapVersion": "2026-10-01.1", "text": "取消", "extra": 1},
+            {"siteId": "", "mapVersion": REAL_MAP_VERSION, "text": "取消"},
+            {"siteId": "school-building-01", "mapVersion": REAL_MAP_VERSION, "text": "取消", "extra": 1},
         ],
     )
     def test_invalid_request_400(self, client, auth_headers, body):

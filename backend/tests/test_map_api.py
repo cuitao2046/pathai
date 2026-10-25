@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
-"""M5 行为测试：API-02 地图版本摘要/数据下载 与 API-03 地点查询（docs/24 §8）。"""
+"""M5 行为测试：API-02 地图版本摘要/数据下载 与 API-03 地点查询（docs/24 §8）。
+
+mock 数据使用真实地图包 2026-10-25.1（56 地点），列表类断言从包内动态推导。
+"""
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +14,17 @@ BASE = "/api/v1/sites/school-building-01"
 MAP_URL = f"{BASE}/map"
 DATA_URL = f"{BASE}/map/data"
 PLACES_URL = f"{BASE}/places"
+
+#: 真实地图版本与发布时间（与地图包一致）。
+REAL_MAP_VERSION = "2026-10-25.1"
+REAL_PUBLISHED_AT = "2026-10-25T14:10:01Z"
+
+#: 真实地图包路径与地点目录（模块级读一次，用于动态推导期望）。
+_REAL_MAP_FILE = (
+    Path(__file__).resolve().parent.parent
+    / "maps_data" / "school-building-01" / f"{REAL_MAP_VERSION}.json"
+)
+_REAL_PLACES: list[dict] = json.loads(_REAL_MAP_FILE.read_text(encoding="utf-8"))["places"]
 
 
 class TestAuthRequired:
@@ -49,8 +64,8 @@ class TestMapVersionEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         assert body["siteId"] == "school-building-01"
-        assert body["mapVersion"] == "2026-10-01.1"
-        assert body["publishedAt"] == "2026-10-01T08:00:00Z"
+        assert body["mapVersion"] == REAL_MAP_VERSION
+        assert body["publishedAt"] == REAL_PUBLISHED_AT
         assert body["coordinateSystem"]["unit"] == "m"
         assert body["coordinateSystem"]["headingReference"] == "map_north"
         assert body["floors"] == [
@@ -96,49 +111,60 @@ class TestMapVersionEndpoint:
         assert cached.status_code == 304
 
     def test_specific_version_served(self, client, auth_headers):
-        resp = client.get(f"{MAP_URL}?version=2026-10-01.1", headers=auth_headers)
+        resp = client.get(f"{MAP_URL}?version={REAL_MAP_VERSION}", headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json()["mapVersion"] == "2026-10-01.1"
+        assert resp.json()["mapVersion"] == REAL_MAP_VERSION
 
 
 class TestPlacesEndpoint:
     def test_list_all_sorted_by_place_id(self, client, auth_headers):
-        resp = client.get(PLACES_URL, headers=auth_headers)
+        resp = client.get(PLACES_URL, headers=auth_headers, params={"limit": 50})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["mapVersion"] == "2026-10-01.1"
+        assert body["mapVersion"] == REAL_MAP_VERSION
         ids = [item["placeId"] for item in body["items"]]
-        assert ids == sorted(ids)
+        # 地点共 56 个，limit 上限 50 → 返回按 placeId 排序的前 50 个
+        expected = sorted(p["placeId"] for p in _REAL_PLACES)[:50]
+        assert ids == expected
         assert body["nextCursor"] is None
 
     def test_place_item_shape(self, client, auth_headers):
-        items = client.get(PLACES_URL, headers=auth_headers).json()["items"]
-        library = next(i for i in items if i["placeId"] == "library-1f")
-        assert library == {
-            "placeId": "library-1f",
-            "name": "一楼图书馆",
-            "spokenName": "一楼图书馆",
-            "aliases": ["图书馆", "一楼图书室"],
-            "type": "library",
+        items = client.get(PLACES_URL, headers=auth_headers, params={"limit": 50}).json()["items"]
+        room = next(i for i in items if i["placeId"] == "F1-RM-0003")
+        assert room == {
+            "placeId": "F1-RM-0003",
+            "name": "资源教室",
+            "spokenName": "资源教室",
+            "aliases": [],
+            "type": "room",
             "floorId": "1",
-            "nodeId": "F1-TR-0001",
+            "nodeId": "F1-TR-0003",
             "accessible": True,
         }
 
     def test_query_exact_name_first(self, client, auth_headers):
-        resp = client.get(PLACES_URL, params={"q": "二楼图书馆"}, headers=auth_headers)
+        resp = client.get(PLACES_URL, params={"q": "资源教室", "limit": 50}, headers=auth_headers)
         items = resp.json()["items"]
-        assert items[0]["placeId"] == "library-2f"
+        assert [i["placeId"] for i in items] == ["F1-RM-0003"]
 
-    def test_query_alias_match(self, client, auth_headers):
-        resp = client.get(PLACES_URL, params={"q": "图书室"}, headers=auth_headers)
+    def test_query_multi_match_sorted_by_place_id(self, client, auth_headers):
+        # 同名多处（1 层 5 间音乐教室）按 placeId 排序返回
+        resp = client.get(PLACES_URL, params={"q": "音乐教室", "limit": 50}, headers=auth_headers)
         ids = [i["placeId"] for i in resp.json()["items"]]
-        assert "library-1f" in ids and "library-2f" in ids
+        expected = sorted(
+            p["placeId"] for p in _REAL_PLACES if "音乐教室" in p["name"]
+        )
+        assert ids == expected
+        assert len(ids) == 5
 
     def test_query_substring_match(self, client, auth_headers):
-        resp = client.get(PLACES_URL, params={"q": "图书馆"}, headers=auth_headers)
-        ids = [i["placeId"] for i in resp.json()["items"]]
-        assert ids == ["library-1f", "library-2f"]
+        resp = client.get(PLACES_URL, params={"q": "教室", "limit": 50}, headers=auth_headers)
+        items = resp.json()["items"]
+        assert items, "含『教室』的地点应非空"
+        assert all("教室" in i["name"] for i in items)
+        # 同 rank（全部为包含匹配）内按 placeId 排序
+        ids = [i["placeId"] for i in items]
+        assert ids == sorted(ids)
 
     def test_no_result_empty_items_not_error(self, client, auth_headers):
         resp = client.get(PLACES_URL, params={"q": "不存在的地点"}, headers=auth_headers)
@@ -146,14 +172,28 @@ class TestPlacesEndpoint:
         assert resp.json()["items"] == []
 
     def test_floor_filter(self, client, auth_headers):
-        resp = client.get(PLACES_URL, params={"floor": "2"}, headers=auth_headers)
-        ids = [i["placeId"] for i in resp.json()["items"]]
-        assert ids == ["library-2f", "study-room-2f"]
+        resp = client.get(
+            PLACES_URL, params={"floor": "2", "limit": 50}, headers=auth_headers
+        )
+        items = resp.json()["items"]
+        assert items
+        assert all(i["floorId"] == "2" for i in items)
+        expected = sorted(
+            p["placeId"] for p in _REAL_PLACES if p["floorId"] == "2"
+        )
+        assert [i["placeId"] for i in items] == expected
 
     def test_type_filter(self, client, auth_headers):
-        resp = client.get(PLACES_URL, params={"type": "activity"}, headers=auth_headers)
-        ids = [i["placeId"] for i in resp.json()["items"]]
-        assert ids == ["study-room-2f"]
+        resp = client.get(
+            PLACES_URL, params={"type": "toilet", "limit": 50}, headers=auth_headers
+        )
+        items = resp.json()["items"]
+        assert items
+        assert all(i["type"] == "toilet" for i in items)
+        expected = sorted(
+            p["placeId"] for p in _REAL_PLACES if p["type"] == "toilet"
+        )
+        assert [i["placeId"] for i in items] == expected
 
     def test_limit_truncates(self, client, auth_headers):
         resp = client.get(PLACES_URL, params={"limit": 2}, headers=auth_headers)

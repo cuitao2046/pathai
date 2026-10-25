@@ -22,7 +22,7 @@ from pathai_backend.wechat import WechatAuthError
 TEST_OPENID_SALT = "test-openid-salt"
 
 _BACK_DIR = Path(__file__).resolve().parent.parent
-SAMPLE_MAP_FILE = _BACK_DIR / "maps_data" / "school-building-01" / "2026-10-01.1.json"
+SAMPLE_MAP_FILE = _BACK_DIR / "maps_data" / "school-building-01" / "2026-10-25.1.json"
 
 
 class FakeWechatClient:

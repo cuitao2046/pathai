@@ -16,7 +16,7 @@ from pathai_backend.map_package import (
     validate_map_package,
 )
 
-SAMPLE_PATH = Path(__file__).resolve().parent.parent / "maps_data" / "school-building-01" / "2026-10-01.1.json"
+SAMPLE_PATH = Path(__file__).resolve().parent.parent / "maps_data" / "school-building-01" / "2026-10-25.1.json"
 
 
 @pytest.fixture(scope="module")
@@ -31,11 +31,11 @@ def sample_pkg(sample_raw) -> MapPackage:
 
 
 class TestSamplePackage:
-    """合成样例必须通过 schema + 语义全部校验。"""
+    """真实地图包（v9 转换产物）必须通过 schema + 语义全部校验。"""
 
     def test_sample_loads_and_validates(self, sample_pkg):
         assert sample_pkg.siteId == "school-building-01"
-        assert sample_pkg.mapVersion == "2026-10-01.1"
+        assert sample_pkg.mapVersion == "2026-10-25.1"
         assert set(sample_pkg.floors.keys()) == {"1", "2"}
 
     def test_sample_sha256_matches(self, sample_raw):
@@ -45,7 +45,7 @@ class TestSamplePackage:
 
     def test_load_map_package_from_path(self):
         pkg, digest = load_map_package(SAMPLE_PATH)
-        assert pkg.mapVersion == "2026-10-01.1"
+        assert pkg.mapVersion == "2026-10-25.1"
         assert digest == sha256_of_bytes(SAMPLE_PATH.read_bytes())
 
     def test_places_reference_existing_nodes(self, sample_pkg):
@@ -90,7 +90,7 @@ class TestSemanticValidation:
 
     def test_place_on_wrong_floor_rejected(self, sample_pkg):
         data = self._mutated(sample_pkg)
-        data["places"][0]["floorId"] = "2"  # F1-TR-0001 在 1 层
+        data["places"][0]["floorId"] = "2"  # F1-TR-0002 在 1 层
         problems = validate_map_package(MapPackage.model_validate(data))
         assert any("不一致" in p for p in problems)
 
@@ -104,8 +104,8 @@ class TestSemanticValidation:
         data = self._mutated(sample_pkg)
         data["floors"]["1"]["topology"]["nodes"].append(
             {
-                "id": "F1-TR-0003", "type": "room", "roomType": "office",
-                "roomId": "F1-RM-0004", "label": "孤立办公室",
+                "id": "F1-TR-9001", "type": "room", "roomType": "office",
+                "roomId": "F1-RM-9001", "label": "孤立办公室",
                 "coordinates": [20.0, 20.0],
             }
         )
@@ -177,13 +177,16 @@ class TestRouteEngineCompat:
         from src.topology.route_rules import RouteGraph
 
         graph = RouteGraph(raw_dict)
-        assert len(graph.nodes) == 14  # 每层 7 节点 × 2 层
+        expected = sum(
+            len(f["topology"]["nodes"]) for f in raw_dict["floors"].values()
+        )
+        assert len(graph.nodes) == expected  # 两层共 708 节点
 
     def test_blind_same_floor_route(self, raw_dict):
         from src.topology.route_rules import RouteGraph
 
         graph = RouteGraph(raw_dict)
-        route = graph.generate_route("F2-TR-0001", "F2-TI-0001", mode="blind")
+        route = graph.generate_route("F2-TR-0015", "F2-TR-0010", mode="blind")
         assert route["reachable"] is True
         assert route["valid"] is True
         assert route["cross_floor"] is False
@@ -192,7 +195,7 @@ class TestRouteEngineCompat:
         from src.topology.route_rules import RouteGraph
 
         graph = RouteGraph(raw_dict)
-        route = graph.generate_route("F1-TR-0002", "F2-TR-0001", mode="blind")
+        route = graph.generate_route("F1-TR-0003", "F2-TR-0015", mode="blind")
         assert route["reachable"] is True
         assert route["cross_floor"] is True
         assert route["used_elevator"] is True
