@@ -15,6 +15,7 @@ from pathai_backend.routers import auth as auth_router
 from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import location as location_router
 from pathai_backend.routers import map as map_router
+from pathai_backend.routers import nav as nav_router
 from pathai_backend.wechat import HttpWechatAuthClient
 
 
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(map_router.router)
     app.include_router(intent_router.router)
     app.include_router(location_router.router)
+    app.include_router(nav_router.router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

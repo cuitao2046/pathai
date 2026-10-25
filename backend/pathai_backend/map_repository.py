@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +23,7 @@ class PublishedMap:
     raw: bytes
     sha256: str
     data_url: str
+    data: dict  # 原始 JSON dict：路由引擎（src/topology RouteGraph）直接消费
 
     @property
     def etag(self) -> str:
@@ -44,6 +46,7 @@ class MapRepository:
                 for file in sorted(site_dir.glob("*.json")):
                     pkg, digest = load_map_package(file)
                     raw = file.read_bytes()
+                    data = json.loads(raw.decode("utf-8"))
                     version = pkg.mapVersion
                     data_url = f"{public_base_url.rstrip('/')}/api/v1/sites/{site_id}/map/data"
                     published = PublishedMap(
@@ -53,6 +56,7 @@ class MapRepository:
                         raw=raw,
                         sha256=digest,
                         data_url=data_url,
+                        data=data,
                     )
                     existing = maps.setdefault(site_id, {})
                     if version in existing:

@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -59,3 +59,48 @@ class LocationSequence(Base):
     site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     last_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class NavSession(Base):
+    """导航会话：状态机 active↔recovering→arrived/ended（终态不可逆，docs/24 §4.3）。"""
+
+    __tablename__ = "nav_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("anonymous_subjects.id"), nullable=False
+    )
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    map_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    destination_place_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    destination_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination_floor_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    user_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    route_json: Mapped[str] = mapped_column(Text, nullable=False)
+    current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location_algorithm_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    route_rules_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    ended_at_epoch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+Index("ix_nav_sessions_subject", NavSession.subject_id)
+
+
+class NavIdempotency(Base):
+    """会话创建幂等记录：Idempotency-Key → 已创建会话及其响应（docs/24 API-06）。"""
+
+    __tablename__ = "nav_idempotency_keys"
+
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("anonymous_subjects.id"), primary_key=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
