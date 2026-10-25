@@ -18,6 +18,9 @@ export interface TransportOptions<B = unknown> {
   data?: B;
   header?: Record<string, string>;
   timeoutMs?: number;
+  /** 地图数据下载需要原始文本：dataType 非 json 时 wx 不做自动 JSON.parse。 */
+  responseType?: 'arraybuffer' | 'text';
+  dataType?: string;
 }
 
 /** 大小写不敏感地读取响应头。 */
@@ -39,6 +42,8 @@ export function request<B, T = unknown>(opts: TransportOptions<B>): Promise<Tran
       data: opts.data,
       header: opts.header,
       timeout: opts.timeoutMs ?? REQUEST_TIMEOUT_MS,
+      responseType: opts.responseType,
+      dataType: opts.dataType,
       success: (res) => {
         resolve({
           statusCode: res.statusCode,

@@ -101,9 +101,10 @@ export type ApiErrorCode =
   | 'SESSION_NOT_ACTIVE'
   | 'STALE_NAV_UPDATE'
   | 'IDEMPOTENCY_CONFLICT'
-  // 客户端合成
+  // 客户端合成（本地生成，不发往服务端）
   | 'NETWORK_ERROR'
-  | 'REQUEST_TIMEOUT';
+  | 'REQUEST_TIMEOUT'
+  | 'MAP_UNAVAILABLE';
 
 // ---------------------------------------------------------------------------
 // 公共模型（schemas/common.py）
@@ -214,6 +215,44 @@ export interface PlacesResponse {
   mapVersion: string;
   items: Place[];
   nextCursor?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// 地图包（dataUrl 下载内容，backend/map_package/schema.py 客户端消费子集）
+// ---------------------------------------------------------------------------
+
+/** 地图包信标条目：uuid/major/minor 同现同缺（C1 契约）。 */
+export interface MapBeaconEntry {
+  beaconId: string;
+  floorId: string;
+  x: number;
+  y: number;
+  txPower?: number | null;
+  installHeightM?: number | null;
+  uuid?: string | null;
+  major?: number | null;
+  minor?: number | null;
+}
+
+/** 地图包地点目录（字段与 API-03 Place 一致）。 */
+export interface MapPlaceEntry {
+  placeId: string;
+  name: string;
+  spokenName: string;
+  aliases: string[];
+  type: string;
+  floorId: string;
+  nodeId: string;
+  accessible: boolean;
+}
+
+/** 地图包根结构：客户端只消费 siteId/mapVersion/places/beacons。 */
+export interface MapPackageRoot {
+  siteId: string;
+  mapVersion: string;
+  publishedAt: IsoDateTime;
+  places: MapPlaceEntry[];
+  beacons: MapBeaconEntry[];
 }
 
 // ---------------------------------------------------------------------------

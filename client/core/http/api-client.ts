@@ -20,18 +20,27 @@ export interface ApiResponse<T> {
   data: T | null;
   /** 优先取错误信封 requestId，否则取 X-Request-Id 响应头。 */
   requestId: string | null;
+  /** ETag 响应头（地图端点缓存用）；缺失为 null。 */
+  etag: string | null;
 }
 
 export interface ApiRequestOptions<B = unknown> {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  /** 以 / 开头的 API 路径。 */
-  path: string;
+  /** 以 / 开头的 API 路径；与 url 二选一。 */
+  path?: string;
+  /** 完整 URL 覆盖（如服务端 dataUrl）。 */
+  url?: string;
   body?: B;
   /** 默认 true；登录端点等匿名请求传 false。 */
   auth?: boolean;
   timeoutMs?: number;
   /** API-06 幂等键；与冻结的 body 一起重试复用（C7）。 */
   idempotencyKey?: string;
+  /** 附加请求头（如 If-None-Match）。 */
+  headers?: Record<string, string>;
+  /** 透传 wx.request 的响应形态（地图数据下载用 text）。 */
+  responseType?: 'arraybuffer' | 'text';
+  dataType?: string;
 }
 
 export interface HttpStack {
@@ -47,6 +56,7 @@ export function createHttpStack(baseUrl: string): HttpStack {
 interface SendResult {
   resp: TransportResponse;
   requestId: string | null;
+  etag: string | null;
   errorCode: string | null;
 }
 
@@ -82,26 +92,33 @@ export class ApiClient {
     if (opts.idempotencyKey !== undefined) {
       header['Idempotency-Key'] = opts.idempotencyKey;
     }
+    if (opts.headers !== undefined) {
+      Object.assign(header, opts.headers);
+    }
+    const url = opts.url ?? this.baseUrl + (opts.path ?? '');
     const resp = await transportRequest({
-      url: this.baseUrl + opts.path,
+      url,
       method: opts.method,
       data: opts.body,
       header,
       timeoutMs: opts.timeoutMs ?? REQUEST_TIMEOUT_MS,
+      responseType: opts.responseType,
+      dataType: opts.dataType,
     });
     return {
       resp,
       requestId: getHeader(resp.header, 'X-Request-Id'),
+      etag: getHeader(resp.header, 'ETag'),
       errorCode: resp.statusCode >= 400 ? extractErrorCode(resp.data) : null,
     };
   }
 
   private finish<T>(result: SendResult): ApiResponse<T> {
-    const { resp, requestId } = result;
+    const { resp, requestId, etag } = result;
     const ok = (resp.statusCode >= 200 && resp.statusCode <= 299) || resp.statusCode === 304;
     if (!ok) {
       throw parseErrorEnvelope({ statusCode: resp.statusCode, data: resp.data, requestId });
     }
-    return { statusCode: resp.statusCode, data: resp.data as T | null, requestId };
+    return { statusCode: resp.statusCode, data: resp.data as T | null, requestId, etag };
   }
 }

@@ -22,3 +22,10 @@ export const REQUEST_TIMEOUT_MS = 10000;
 
 /** 导航位置更新超时（毫秒）：导航中要求更快失败反馈。 */
 export const NAV_UPDATE_TIMEOUT_MS = 5000;
+
+/**
+ * 联调开关：把服务端 dataUrl（HTTPS 契约）重写为 API 同源
+ * `/api/v1/sites/{siteId}/map/data?version=...`，便于本地 http 联调。
+ * sha256 摘要校验不因此关闭。
+ */
+export const DEBUG_REWRITE_DATA_URL = true;
