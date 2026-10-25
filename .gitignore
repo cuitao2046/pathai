@@ -28,6 +28,12 @@ env/
 Thumbs.db
 desktop.ini
 
+# 工具共享缓存
+.pai/
+
+# 后端本地数据库与调试暂存
+/backend/.local/
+
 # 微信小程序本地配置
 /client/project.private.config.json
 
