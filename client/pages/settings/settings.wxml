@@ -1,4 +1,28 @@
 <view class="page">
-  <view class="title">{{title}}</view>
-  <view class="hint">数据源 / API 地址 / 令牌状态将在 C8 里程碑启用</view>
+  <view class="section">
+    <view class="section-title">联调配置</view>
+    <view class="row"><text class="label">API 地址</text><text user-select>{{apiUrl}}</text></view>
+    <view class="row"><text class="label">站点</text><text>{{siteId}}</text></view>
+    <view class="row">
+      <text class="label">真实信标（live）</text>
+      <switch checked="{{dataSource === 'live'}}" bindchange="onChangeDataSource" aria-label="切换数据源为真实信标扫描" />
+    </view>
+    <view class="hint">关闭=mock 模拟轨迹（开发者工具）；开启=真机 BLE 实扫。切换后重启小程序生效。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">状态</view>
+    <view class="row"><text class="label">地图版本</text><text>{{mapVersion}}</text></view>
+    <view class="row"><text class="label">登录状态</text><text user-select>{{tokenStatus}}</text></view>
+    <view class="row"><text class="label">TTS 引擎</text><text>{{ttsEngine}}</text></view>
+    <view class="row"><text class="label">ASR 引擎</text><text>{{asrEngine}}</text></view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">自检</view>
+    <view class="result" aria-live="polite" wx:if="{{selfTestResult !== ''}}">{{selfTestResult}}</view>
+    <button class="action" bindtap="onSelfTestTts" disabled="{{busy}}" aria-label="语音自检">语音自检</button>
+    <button class="action secondary" bindtap="onReloadMap" disabled="{{busy}}" aria-label="重新加载地图">重新加载地图</button>
+    <button class="action danger" bindtap="onClearCache" aria-label="清除本地缓存">清除本地缓存</button>
+  </view>
 </view>

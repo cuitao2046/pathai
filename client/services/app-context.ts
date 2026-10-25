@@ -1,6 +1,7 @@
 /**
  * 应用级装配（模块级单例）：HTTP 栈、地图服务与语音引擎按环境配置选择 mock/live。
  * 页面共享同一实例；SpeechQueue/PTT 按页面生命周期各自创建（页面互斥前台）。
+ * 数据源可在设置页覆盖（写 kv，重启小程序后生效）。
  */
 import {
   API_BASE_URL,
@@ -16,9 +17,18 @@ import { MockAsrEngine } from '../core/asr/mock-asr';
 import { WechatsiAsrEngine } from '../core/asr/wechatsi-asr';
 import { MockTtsEngine } from '../core/speech/mock-tts';
 import { WechatsiTts } from '../core/speech/wechatsi-tts';
+import { getJson, setJson } from '../utils/kv';
+
+/** 数据源覆盖的持久化 key（设置页写入，启动时读取）。 */
+export const DATA_SOURCE_KEY = 'cfg:dataSource';
+
+function resolveDataSource(): DataSource {
+  const stored = getJson<DataSource>(DATA_SOURCE_KEY);
+  return stored === 'mock' || stored === 'live' ? stored : DEFAULT_DATA_SOURCE;
+}
 
 class AppContext {
-  readonly dataSource: DataSource = DEFAULT_DATA_SOURCE;
+  readonly dataSource: DataSource = resolveDataSource();
   readonly http = createHttpStack(API_BASE_URL);
   readonly map = new MapService({ client: this.http.client, siteId: DEFAULT_SITE_ID });
 
@@ -26,7 +36,7 @@ class AppContext {
   private readonly asrInstance: AsrEngine;
 
   constructor() {
-    if (DEFAULT_DATA_SOURCE === 'mock') {
+    if (this.dataSource === 'mock') {
       // 开发者工具：无 iBeacon/插件环境不确定，先用 Mock 引擎联调业务闭环
       this.ttsInstance = new MockTtsEngine();
       this.asrInstance = new MockAsrEngine();
@@ -49,6 +59,11 @@ class AppContext {
     if (this.asrInstance instanceof MockAsrEngine) {
       this.asrInstance.nextText = text;
     }
+  }
+
+  /** 设置页：写入数据源覆盖（重启小程序后生效）。 */
+  setDataSourceOverride(source: DataSource): void {
+    setJson(DATA_SOURCE_KEY, source);
   }
 }
 

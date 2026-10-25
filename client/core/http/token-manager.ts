@@ -5,7 +5,7 @@
  * - 并发请求单飞（共享同一 inflight Promise，只发一次登录）；
  * - 登录走 API 同源（本地联调 PATHAI_WECHAT_FAKE=1 时 code 为 fake-<openid>）。
  */
-import { REQUEST_TIMEOUT_MS } from '../../config/env';
+import { REQUEST_TIMEOUT_MS, WECHAT_FAKE_LOGIN } from '../../config/env';
 import { nowMs } from '../../utils/clock';
 import { createLogger } from '../../utils/logger';
 import { getJson, remove, setJson } from '../../utils/kv';
@@ -43,7 +43,8 @@ function wxLoginCode(): Promise<string> {
     wx.login({
       success: (res) => {
         if (res.code) {
-          resolve(res.code);
+          // 本地联调：fake- 前缀配合后端 PATHAI_WECHAT_FAKE=1 直换 openid
+          resolve(WECHAT_FAKE_LOGIN ? `fake-${res.code}` : res.code);
         } else {
           reject(
             new ApiClientError({

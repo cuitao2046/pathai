@@ -46,7 +46,7 @@ test('并发 getAccessToken 单飞：wx.login 与登录 POST 各只一次', asyn
   expect(wxStub.__loginCount).toBe(1);
   const loginPosts = wxStub.__requestLog.filter((r) => r.url === LOGIN_URL);
   expect(loginPosts.length).toBe(1);
-  expect(loginPosts[0]?.data).toEqual({ code: 'mock-wx-code' });
+  expect(loginPosts[0]?.data).toEqual({ code: 'fake-mock-wx-code' }); // 联调开关加 fake- 前缀
 });
 
 test('登录成功后令牌持久化（含 7200s 过期）', async () => {
