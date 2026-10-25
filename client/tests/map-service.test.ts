@@ -1,66 +1,35 @@
 /**
  * MapService：首次下载与校验、304 短路 + 数据 sha 命中免下载、
  * 摘要不符拒绝入库、联调重写下载源、未加载守卫。
+ * mock 数据使用真实地图包 2026-10-25.1（56 地点 / 61 信标）。
  */
 import { MapService } from '../core/map/map-service';
 import { createHttpStack } from '../core/http/api-client';
 import { sha256 } from '../utils/sha256';
 import { getString, remove } from '../utils/kv';
 import { wxStub } from './setup-wx';
+import { REAL_MAP, REAL_UUID } from './fixtures/real-map';
 
 const BASE = 'http://localhost:8000';
 const SITE = 'school-building-01';
 const SUMMARY_URL = `${BASE}/api/v1/sites/${SITE}/map`;
-const REWRITE_DATA_URL = `${BASE}/api/v1/sites/${SITE}/map/data?version=v2026.10.1`;
+const REWRITE_DATA_URL = `${BASE}/api/v1/sites/${SITE}/map/data?version=${REAL_MAP.mapVersion}`;
 const CDN_URL = 'https://cdn.example.com/maps/school.json';
 const LOGIN_URL = `${BASE}/api/v1/auth/wechat`;
 
-const PKG = {
-  siteId: SITE,
-  mapVersion: 'v2026.10.1',
-  publishedAt: '2026-10-01T00:00:00Z',
-  places: [
-    {
-      placeId: 'P-CLASS-1',
-      name: '一楼教室',
-      spokenName: '一楼教室',
-      aliases: ['教室'],
-      type: 'classroom',
-      floorId: '1',
-      nodeId: 'F1-N1',
-      accessible: true,
-    },
-  ],
-  beacons: [
-    {
-      beaconId: 'BK-1',
-      floorId: '1',
-      x: 5,
-      y: 5,
-      uuid: 'FDA50693-A4E2-4FB1-AFCF-C6EB07647825',
-      major: 1,
-      minor: 1,
-    },
-    {
-      beaconId: 'BK-2',
-      floorId: '1',
-      x: 10,
-      y: 10,
-      uuid: 'FDA50693-A4E2-4FB1-AFCF-C6EB07647825',
-      major: 1,
-      minor: 2,
-    },
-  ],
-};
+const PKG = REAL_MAP;
 const RAW = JSON.stringify(PKG);
 const SHA = sha256(RAW);
 
 const SUMMARY = {
   siteId: SITE,
-  mapVersion: 'v2026.10.1',
-  publishedAt: '2026-10-01T00:00:00Z',
-  coordinateSystem: { unit: 'm', originDescription: '西南角原点', headingReference: '北' },
-  floors: [{ floorId: '1', displayName: '一层', level: 1 }],
+  mapVersion: REAL_MAP.mapVersion,
+  publishedAt: REAL_MAP.publishedAt,
+  coordinateSystem: { unit: 'm', originDescription: '场馆局部坐标', headingReference: 'map_north' },
+  floors: [
+    { floorId: '1', displayName: '一楼', level: 1 },
+    { floorId: '2', displayName: '二楼', level: 2 },
+  ],
   dataUrl: CDN_URL,
   dataSha256: SHA,
 };
@@ -137,7 +106,7 @@ test('首次加载：下载校验入库，摘要 ETag 持久化', async () => {
   const service = newService();
   await service.ensureLoaded();
   expect(service.isLoaded).toBe(true);
-  expect(service.requireVersion()).toBe('v2026.10.1');
+  expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
   expect(summaryServed).toBe(1);
   expect(dataServed).toBe(1);
   // 数据走服务端 dataUrl（未开重写）
@@ -145,9 +114,9 @@ test('首次加载：下载校验入库，摘要 ETag 持久化', async () => {
   expect(dataCall).toBeDefined();
   // ETag 入库供下次 304 短路
   expect(getString(`map:summary-etag:${SITE}`)).toBe('etag-1');
-  // 注册表可用
-  expect(service.beaconRegistry.resolve('fda50693-a4e2-4fb1-afcf-c6eb07647825', 1, 2)).toBe('BK-2');
-  expect(service.places.length).toBe(1);
+  // 注册表可用（真实三元组）
+  expect(service.beaconRegistry.resolve(REAL_UUID.toLowerCase(), 1, 10101)).toBe('BK-01-001');
+  expect(service.places.length).toBe(REAL_MAP.places.length);
 });
 
 test('二次加载：304 复用缓存摘要 + 数据 sha 命中不再下载', async () => {
@@ -157,7 +126,7 @@ test('二次加载：304 复用缓存摘要 + 数据 sha 命中不再下载', as
 
   const second = newService();
   await second.ensureLoaded();
-  expect(second.requireVersion()).toBe('v2026.10.1');
+  expect(second.requireVersion()).toBe(REAL_MAP.mapVersion);
   expect(summaryServed).toBe(2); // 摘要刷新一次（304）
   expect(dataServed).toBe(1); // 数据未重新下载
   const summaryCall = wxStub.__requestLog.filter((r) => r.url === SUMMARY_URL);
@@ -181,7 +150,7 @@ test('联调开关：下载源重写为 API 同源且校验不关闭', async () 
   const dataCall = wxStub.__requestLog.find((r) => r.url === REWRITE_DATA_URL);
   expect(dataCall).toBeDefined();
   expect(wxStub.__requestLog.find((r) => r.url === CDN_URL)).toBeUndefined();
-  expect(service.requireVersion()).toBe('v2026.10.1');
+  expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
 
   // 重写模式同样执行摘要校验
   dataBody = 'tampered';
@@ -193,7 +162,7 @@ test('联调开关：下载源重写为 API 同源且校验不关闭', async () 
 test('requirePlace 命中与未命中', async () => {
   const service = newService();
   await service.ensureLoaded();
-  expect(service.requirePlace('P-CLASS-1').name).toBe('一楼教室');
+  expect(service.requirePlace('F1-RM-0003').name).toBe('资源教室');
   expect(() => service.requirePlace('P-NONE')).toThrowError();
 });
 

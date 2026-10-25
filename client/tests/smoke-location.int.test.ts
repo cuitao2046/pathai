@@ -38,9 +38,10 @@ describe('定位集成冒烟（PATHAI_SMOKE=1 且本地后端运行时执行）'
       const source = new MockBeaconSource({
         beacons: map.beacons,
         floorId: '1',
+        // 真实 1 层信标区（BK-01-001 (-30.25,-75.08) 附近）内走动 2.8m
         path: [
-          { x: 6, y: 8 },
-          { x: 9, y: 9 },
+          { x: -31, y: -76 },
+          { x: -29, y: -74 },
         ],
         tickMs: 500,
         speedMps: 1.0,

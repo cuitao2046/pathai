@@ -16,10 +16,11 @@ import { resetNowSource, setNowSource } from '../utils/clock';
 import { remove } from '../utils/kv';
 import type { AuthResponse, MapBeaconEntry, PositionEstimateResponse } from '../typings/api';
 import { wxStub } from './setup-wx';
+import { REAL_F1_TRIO, REAL_MAP, REAL_UUID } from './fixtures/real-map';
 
 jest.useFakeTimers({ doNotFake: ['setImmediate'] });
 
-const UUID = 'FDA50693-A4E2-4FB1-AFCF-C6EB07647825';
+const UUID = REAL_UUID;
 const AUTH_RESPONSE: AuthResponse = {
   accessToken: 'token-1',
   tokenType: 'Bearer',
@@ -27,17 +28,13 @@ const AUTH_RESPONSE: AuthResponse = {
   userId: 'anon_1',
 };
 
-const CATALOG: MapBeaconEntry[] = [
-  { beaconId: 'BK-1', floorId: '1', x: 5, y: 5, uuid: UUID, major: 1, minor: 1 },
-  { beaconId: 'BK-2', floorId: '1', x: 10, y: 10, uuid: UUID, major: 1, minor: 2 },
-  { beaconId: 'BK-3', floorId: '1', x: 5, y: 10, uuid: UUID, major: 1, minor: 3 },
-];
+const CATALOG: MapBeaconEntry[] = REAL_F1_TRIO;
 
 const ESTIMATE: PositionEstimateResponse = {
   estimateId: 'loc_1',
   sequence: 1,
-  mapVersion: 'v1',
-  position: { x: 6.2, y: 8.1, floorId: '1' },
+  mapVersion: REAL_MAP.mapVersion,
+  position: { x: -25.7, y: -67.9, floorId: '1' },
   confidence: 0.9,
   quality: 'reliable',
   algorithmVersion: 'location-0.1',
@@ -95,7 +92,7 @@ describe('LocationPipeline 定位管线', () => {
 
   const map: LocationMapProvider = {
     siteId: 'school-building-01',
-    requireVersion: () => 'v1',
+    requireVersion: () => REAL_MAP.mapVersion,
     beaconRegistry: new BeaconRegistry(CATALOG),
   };
 
@@ -164,14 +161,14 @@ describe('LocationPipeline 定位管线', () => {
     expect(request.header?.Authorization).toBe('Bearer token-1');
     expect(request.data).toEqual({
       siteId: 'school-building-01',
-      mapVersion: 'v1',
+      mapVersion: REAL_MAP.mapVersion,
       sequence: 1,
       collectedAt: new Date(now).toISOString(),
       floorHint: null,
       beacons: expect.arrayContaining([
-        expect.objectContaining({ beaconId: 'BK-1', rssi: -60 }),
-        expect.objectContaining({ beaconId: 'BK-2', rssi: -60 }),
-        expect.objectContaining({ beaconId: 'BK-3', rssi: -60 }),
+        expect.objectContaining({ beaconId: 'BK-01-001', rssi: -60 }),
+        expect.objectContaining({ beaconId: 'BK-01-004', rssi: -60 }),
+        expect.objectContaining({ beaconId: 'BK-01-005', rssi: -60 }),
       ]),
     });
     expect(estimates).toHaveLength(1);
@@ -203,8 +200,8 @@ describe('LocationPipeline 定位管线', () => {
     await flush();
 
     // 只注入 2 个信标
-    source.handler?.({ uuid: UUID, major: 1, minor: 1, rssi: -60, observedAtMs: now });
-    source.handler?.({ uuid: UUID, major: 1, minor: 2, rssi: -60, observedAtMs: now });
+    source.handler?.({ uuid: UUID, major: 1, minor: 10101, rssi: -60, observedAtMs: now });
+    source.handler?.({ uuid: UUID, major: 1, minor: 10104, rssi: -60, observedAtMs: now });
     await advance(8000);
     expect(estimateRequests()).toHaveLength(0);
     expect(seq).toBe(0);
