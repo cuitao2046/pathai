@@ -31,6 +31,8 @@ class Settings:
     wechat_secret: str = field(default="", repr=False)
     openid_salt: str = field(default="", repr=False)
     token_ttl_seconds: int = 7200
+    # 本地联调假微信客户端开关：仅 env=local 允许开启（code 以 fake-<openid> 形式直换）
+    wechat_fake: bool = False
     # 地图包目录：约定 backend/maps_data/<siteId>/<mapVersion>.json
     map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
     # 对外可访问基地址：拼接 API-02 dataUrl；必须 HTTPS（契约校验强制）
@@ -47,6 +49,7 @@ class Settings:
             wechat_secret=env.get("PATHAI_WECHAT_SECRET", ""),
             openid_salt=env.get("PATHAI_OPENID_SALT", ""),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
+            wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
             public_base_url=env.get("PATHAI_PUBLIC_BASE_URL", "https://localhost"),
         )

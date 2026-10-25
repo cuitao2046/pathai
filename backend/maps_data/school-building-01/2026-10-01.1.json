@@ -149,9 +149,11 @@
     { "placeId": "study-room-2f", "name": "二楼自习室", "spokenName": "二楼自习室", "aliases": ["自习室"], "type": "activity", "floorId": "2", "nodeId": "F2-TR-0002", "accessible": true }
   ],
   "beacons": [
-    { "beaconId": "BK-01-001", "floorId": "1", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5 },
-    { "beaconId": "BK-01-002", "floorId": "1", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5 },
-    { "beaconId": "BK-02-001", "floorId": "2", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5 },
-    { "beaconId": "BK-02-002", "floorId": "2", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5 }
+    { "beaconId": "BK-01-001", "floorId": "1", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 1, "minor": 1 },
+    { "beaconId": "BK-01-002", "floorId": "1", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 1, "minor": 2 },
+    { "beaconId": "BK-01-003", "floorId": "1", "x": 5.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 1, "minor": 3 },
+    { "beaconId": "BK-02-001", "floorId": "2", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 2, "minor": 1 },
+    { "beaconId": "BK-02-002", "floorId": "2", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 2, "minor": 2 },
+    { "beaconId": "BK-02-003", "floorId": "2", "x": 5.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5, "uuid": "FDA50693-A4E2-4FB1-AFCF-C6EB07647825", "major": 2, "minor": 3 }
   ]
 }

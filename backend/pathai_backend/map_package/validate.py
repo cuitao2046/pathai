@@ -125,9 +125,19 @@ def _check_places(pkg: MapPackage, node_ids: dict[str, str], report: _Report) ->
 
 def _check_beacons(pkg: MapPackage, report: _Report) -> None:
     beacon_ids: set[str] = set()
+    ibeacon_keys: dict[tuple[str, int, int], str] = {}  # (uuid,major,minor) -> beaconId
     for beacon in pkg.beacons:
         if beacon.beaconId in beacon_ids:
             report.add(f"信标 ID 重复：{beacon.beaconId}")
         beacon_ids.add(beacon.beaconId)
         if beacon.floorId not in pkg.floors:
             report.add(f"信标 {beacon.beaconId} 引用不存在的楼层：{beacon.floorId}")
+        if beacon.uuid is not None:
+            key = (beacon.uuid, beacon.major, beacon.minor)
+            if key in ibeacon_keys:
+                report.add(
+                    f"iBeacon 三元组重复：{beacon.beaconId} 与 {ibeacon_keys[key]}"
+                    f"（uuid={beacon.uuid}, major={beacon.major}, minor={beacon.minor}）"
+                )
+            else:
+                ibeacon_keys[key] = beacon.beaconId

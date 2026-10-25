@@ -205,3 +205,43 @@ class TestRouteEngineCompat:
         route = graph.generate_route("F1-TF-0001", "F2-TF-0001", mode="normal")
         assert route["reachable"] is True
         assert route["used_stair"] is True
+
+
+class TestIbeaconMapping:
+    """C1：信标 iBeacon 三元组（uuid/major/minor）同现同缺且组合唯一。"""
+
+    def test_sample_beacons_carry_triplet(self, sample_pkg):
+        for beacon in sample_pkg.beacons:
+            assert beacon.uuid and beacon.major is not None and beacon.minor is not None
+
+    def test_partial_triplet_rejected_at_schema(self, sample_pkg):
+        data = json.loads(sample_pkg.model_dump_json())
+        del data["beacons"][0]["minor"]
+        with pytest.raises(Exception, match="uuid/major/minor"):
+            MapPackage.model_validate(data)
+
+    def test_triplet_out_of_range_rejected(self, sample_pkg):
+        data = json.loads(sample_pkg.model_dump_json())
+        data["beacons"][0]["major"] = 65536
+        with pytest.raises(Exception):
+            MapPackage.model_validate(data)
+
+    def test_duplicate_triplet_rejected_semantically(self, sample_pkg):
+        data = self.__class__._copy(sample_pkg)
+        data["beacons"][1]["uuid"] = data["beacons"][0]["uuid"]
+        data["beacons"][1]["major"] = data["beacons"][0]["major"]
+        data["beacons"][1]["minor"] = data["beacons"][0]["minor"]
+        problems = validate_map_package(MapPackage.model_validate(data))
+        assert any("iBeacon 三元组重复" in p for p in problems)
+
+    def test_triplet_absent_allowed(self, sample_pkg):
+        """未配硬件映射的信标仍合法（backward 兼容发布流程）。"""
+        data = json.loads(sample_pkg.model_dump_json())
+        for field in ("uuid", "major", "minor"):
+            del data["beacons"][0][field]
+        pkg = MapPackage.model_validate(data)
+        assert validate_map_package(pkg) == ()
+
+    @staticmethod
+    def _copy(sample_pkg):
+        return json.loads(sample_pkg.model_dump_json())

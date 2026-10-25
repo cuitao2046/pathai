@@ -168,3 +168,43 @@ class TestBearerAuth:
         resp = self._me(client, {"Authorization": f"Bearer {self.token}"})
         assert resp.status_code == 401
         assert resp.json()["error"]["code"] == "TOKEN_EXPIRED"
+
+
+class TestFakeAuthSwitch:
+    """C1：本地 fake 微信客户端开关（PATHAI_WECHAT_FAKE，仅 local 环境可开）。"""
+
+    def _make_app(self, tmp_path):
+        from fastapi.testclient import TestClient
+
+        from pathai_backend.app import create_app
+        from pathai_backend.config import Settings
+        from pathai_backend.database import get_engine
+        from pathai_backend.models import Base
+
+        settings = Settings(
+            env="local",
+            database_url=f"sqlite:///{(tmp_path / 'fake-auth.db').as_posix()}",
+            openid_salt="salt",
+            wechat_fake=True,
+        )
+        application = create_app(settings)
+        Base.metadata.create_all(get_engine())
+        return TestClient(application, raise_server_exceptions=False)
+
+    def test_local_fake_login_roundtrip(self, tmp_path):
+        client = self._make_app(tmp_path)
+        with client as c:
+            resp = _login(c, "fake-user-1")
+            assert resp.status_code == 200
+            assert resp.json()["userId"].startswith("anon_")
+            bad = _login(c, "not-fake-form")
+            assert bad.status_code == 401
+            assert _envelope(bad.json())["code"] == "AUTH_CODE_INVALID"
+
+    def test_demo_env_forbidden(self):
+        from pathai_backend.app import create_app
+        from pathai_backend.config import Settings
+
+        settings = Settings(env="demo", database_url="sqlite:///:memory:", wechat_fake=True)
+        with pytest.raises(RuntimeError, match="PATHAI_WECHAT_FAKE"):
+            create_app(settings)

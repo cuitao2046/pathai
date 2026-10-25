@@ -61,3 +61,17 @@ class HttpWechatAuthClient:
         if errcode in _INVALID_CODE_ERRCODES:
             raise WechatAuthError("invalid_code", f"微信返回 errcode={errcode}")
         raise WechatAuthError("provider_error", f"code2session 异常响应 errcode={errcode}")
+
+
+class FakeWechatAuthClient:
+    """本地联调替身：code 以 ``fake-<openid>`` 形式直接换取 openid。
+
+    仅允许 PATHAI_ENV=local 且 PATHAI_WECHAT_FAKE=1 时装配（装配处校验）；
+    不访问网络、不校验 appid/secret，方便客户端在无真实 appid 时联调登录链路。
+    """
+
+    def code_to_session(self, code: str) -> str:
+        prefix = "fake-"
+        if not code.startswith(prefix) or len(code) <= len(prefix):
+            raise WechatAuthError("invalid_code", "fake 模式仅接受 fake-<openid> 形式的 code")
+        return code[len(prefix):]

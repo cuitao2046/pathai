@@ -45,18 +45,7 @@ def _reload(app, maps_dir: Path) -> None:
 
 @pytest.fixture()
 def rich_maps(maps_dir, app):
-    """样例每层只有 2 信标，补到每层 3 个以支持三点解算。"""
-    path = maps_dir / "school-building-01" / f"{SAMPLE}.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["beacons"].extend(
-        [
-            {"beaconId": "BK-01-003", "floorId": "1", "x": 5.0, "y": 10.0,
-             "txPower": -59.0, "installHeightM": 2.5},
-            {"beaconId": "BK-02-003", "floorId": "2", "x": 5.0, "y": 10.0,
-             "txPower": -59.0, "installHeightM": 2.5},
-        ]
-    )
-    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    """样例地图自 C1 起每层自带 3 信标（(5,5)/(10,10)/(5,10)），直接可用。"""
     _reload(app, maps_dir)
     return app
 

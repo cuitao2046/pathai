@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from pathai_backend.schemas.common import StrictModel
 
@@ -147,7 +147,11 @@ class PlaceEntry(_AllowExtraModel):
 
 
 class BeaconEntry(_AllowExtraModel):
-    """信标映射：定位解算只允许使用本目录内信标（REQ-LOCATION）。"""
+    """信标映射：定位解算只允许使用本目录内信标（REQ-LOCATION）。
+
+    uuid/major/minor 为 iBeacon 硬件广播三元组，客户端扫描结果经此解析为
+    beaconId；三字段必须同现同缺（C1 第二阶段新增）。
+    """
 
     beaconId: str = Field(min_length=1)
     floorId: str = Field(min_length=1)
@@ -155,6 +159,16 @@ class BeaconEntry(_AllowExtraModel):
     y: float
     txPower: float | None = None
     installHeightM: float | None = Field(default=None, gt=0)
+    uuid: str | None = Field(default=None, min_length=1)
+    major: int | None = Field(default=None, ge=0, le=65535)
+    minor: int | None = Field(default=None, ge=0, le=65535)
+
+    @model_validator(mode="after")
+    def _ibeacon_triplet_all_or_none(self) -> "BeaconEntry":
+        present = [self.uuid is not None, self.major is not None, self.minor is not None]
+        if any(present) and not all(present):
+            raise ValueError("uuid/major/minor 必须同时提供或同时缺省")
+        return self
 
 
 class MapPackage(_AllowExtraModel):
