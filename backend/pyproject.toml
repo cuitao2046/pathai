@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pathai-backend"
+version = "0.1.0"
+description = "PathAI 视障人士室内导航第一阶段后端 API（FastAPI + SQLAlchemy 2）"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+# Demo 部署使用托管 PostgreSQL；本地开发/测试使用 SQLite，无需安装
+demo = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pathai_backend", "pathai_backend.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
