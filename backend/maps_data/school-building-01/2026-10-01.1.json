@@ -1,0 +1,153 @@
+{
+  "siteId": "school-building-01",
+  "mapVersion": "2026-10-01.1",
+  "publishedAt": "2026-10-01T08:00:00Z",
+  "coordinateSystem": {
+    "name": "local_meters",
+    "unit": "m",
+    "originDescription": "场馆局部坐标，原点在建筑西南角，x 东向 y 北向，单位米",
+    "headingReference": "map_north"
+  },
+  "floors": {
+    "1": {
+      "topology": {
+        "nodes": [
+          {
+            "id": "F1-TI-0001", "type": "intersection", "roomType": "corridor",
+            "roomId": "F1-RM-0003", "label": "一楼走廊",
+            "coordinates": [5.0, 5.0], "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TR-0001", "type": "room", "roomType": "library",
+            "roomId": "F1-RM-0001", "label": "一楼图书馆",
+            "coordinates": [5.0, 10.0], "public": true, "accessible": true, "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TR-0002", "type": "room", "roomType": "classroom",
+            "roomId": "F1-RM-0002", "label": "一楼教室",
+            "coordinates": [10.0, 5.0], "public": false, "accessible": true, "riskLevel": 0.5
+          },
+          {
+            "id": "F1-TD-0001", "type": "doorway", "label": "普通门", "doorType": "swing",
+            "coordinates": [5.0, 8.0], "rooms": ["F1-RM-0001"],
+            "openDirection": "inward", "isNormallyOpen": true, "riskLevel": 1.0
+          },
+          {
+            "id": "F1-TD-0002", "type": "doorway", "label": "普通门", "doorType": "swing",
+            "coordinates": [8.0, 5.0], "rooms": ["F1-RM-0002"],
+            "openDirection": "inward", "isNormallyOpen": true, "riskLevel": 1.0
+          },
+          {
+            "id": "F1-TF-0001", "type": "facility", "facilityType": "staircase",
+            "label": "一楼楼梯", "coordinates": [1.0, 1.0],
+            "blindAccessible": false, "wheelchairAccessible": false
+          },
+          {
+            "id": "F1-TF-0002", "type": "facility", "facilityType": "elevator",
+            "label": "一楼电梯", "coordinates": [2.0, 1.0],
+            "blindAccessible": true, "wheelchairAccessible": true
+          }
+        ],
+        "edges": [
+          { "id": "F1-TE-0001", "from": "F1-TI-0001", "to": "F1-TD-0001", "distance": 3.0, "estimatedTime": 3.8, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F1-TE-0002", "from": "F1-TD-0001", "to": "F1-TR-0001", "distance": 2.0, "estimatedTime": 2.5, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F1-TE-0003", "from": "F1-TI-0001", "to": "F1-TD-0002", "distance": 3.0, "estimatedTime": 3.8, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F1-TE-0004", "from": "F1-TD-0002", "to": "F1-TR-0002", "distance": 2.0, "estimatedTime": 2.5, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F1-TE-0005", "from": "F1-TI-0001", "to": "F1-TF-0001", "distance": 5.66, "estimatedTime": 7.1, "accessibilityLevel": 999, "riskLevel": 10, "walkable": true, "wheelchairAccessible": false, "blindAccessible": false },
+          { "id": "F1-TE-0006", "from": "F1-TI-0001", "to": "F1-TF-0002", "distance": 5.0, "estimatedTime": 6.3, "accessibilityLevel": 0, "riskLevel": 1.0, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true }
+        ]
+      },
+      "geometry": {
+        "walls": [
+          { "geometry": { "type": "LineString", "coordinates": [[0.0, 6.5], [4.0, 6.5]] }, "properties": { "thickness": 0.2 } },
+          { "geometry": { "type": "LineString", "coordinates": [[6.0, 6.5], [12.0, 6.5]] }, "properties": { "thickness": 0.2 } }
+        ]
+      },
+      "semantic": {
+        "rooms": [
+          { "id": "F1-RM-0001", "type": "library", "roomSubType": null, "label": "一楼图书馆", "centroid": [5.0, 10.0], "geometryId": "F1-RM-0001", "public": true, "accessible": true, "hasIndependentEntrance": false, "floor": 1 },
+          { "id": "F1-RM-0002", "type": "classroom", "roomSubType": "classroom", "label": "一楼教室", "centroid": [10.0, 5.0], "geometryId": "F1-RM-0002", "public": false, "accessible": true, "hasIndependentEntrance": false, "floor": 1 },
+          { "id": "F1-RM-0003", "type": "corridor", "roomSubType": null, "label": "一楼走廊", "centroid": [5.0, 5.0], "geometryId": "F1-RM-0003", "public": true, "accessible": true, "hasIndependentEntrance": false, "floor": 1 }
+        ]
+      }
+    },
+    "2": {
+      "topology": {
+        "nodes": [
+          {
+            "id": "F2-TI-0001", "type": "intersection", "roomType": "corridor",
+            "roomId": "F2-RM-0003", "label": "二楼走廊",
+            "coordinates": [5.0, 5.0], "riskLevel": 0.5
+          },
+          {
+            "id": "F2-TR-0001", "type": "room", "roomType": "library",
+            "roomId": "F2-RM-0001", "label": "二楼图书馆",
+            "coordinates": [5.0, 10.0], "public": true, "accessible": true, "riskLevel": 0.5
+          },
+          {
+            "id": "F2-TR-0002", "type": "room", "roomType": "activity",
+            "roomId": "F2-RM-0002", "label": "二楼自习室",
+            "coordinates": [10.0, 5.0], "public": true, "accessible": true, "riskLevel": 0.5
+          },
+          {
+            "id": "F2-TD-0001", "type": "doorway", "label": "普通门", "doorType": "swing",
+            "coordinates": [5.0, 8.0], "rooms": ["F2-RM-0001"],
+            "openDirection": "inward", "isNormallyOpen": true, "riskLevel": 1.0
+          },
+          {
+            "id": "F2-TD-0002", "type": "doorway", "label": "门洞", "doorType": "opening",
+            "coordinates": [8.0, 5.0], "rooms": ["F2-RM-0002"],
+            "openDirection": "inward", "isNormallyOpen": true, "riskLevel": 1.0
+          },
+          {
+            "id": "F2-TF-0001", "type": "facility", "facilityType": "staircase",
+            "label": "二楼楼梯", "coordinates": [1.0, 1.0],
+            "blindAccessible": false, "wheelchairAccessible": false
+          },
+          {
+            "id": "F2-TF-0002", "type": "facility", "facilityType": "elevator",
+            "label": "二楼电梯", "coordinates": [2.0, 1.0],
+            "blindAccessible": true, "wheelchairAccessible": true
+          }
+        ],
+        "edges": [
+          { "id": "F2-TE-0001", "from": "F2-TI-0001", "to": "F2-TD-0001", "distance": 3.0, "estimatedTime": 3.8, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F2-TE-0002", "from": "F2-TD-0001", "to": "F2-TR-0001", "distance": 2.0, "estimatedTime": 2.5, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F2-TE-0003", "from": "F2-TI-0001", "to": "F2-TD-0002", "distance": 3.0, "estimatedTime": 3.8, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F2-TE-0004", "from": "F2-TD-0002", "to": "F2-TR-0002", "distance": 2.0, "estimatedTime": 2.5, "accessibilityLevel": 0, "riskLevel": 0.5, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+          { "id": "F2-TE-0005", "from": "F2-TI-0001", "to": "F2-TF-0001", "distance": 5.66, "estimatedTime": 7.1, "accessibilityLevel": 999, "riskLevel": 10, "walkable": true, "wheelchairAccessible": false, "blindAccessible": false },
+          { "id": "F2-TE-0006", "from": "F2-TI-0001", "to": "F2-TF-0002", "distance": 5.0, "estimatedTime": 6.3, "accessibilityLevel": 0, "riskLevel": 1.0, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true }
+        ]
+      },
+      "geometry": {
+        "walls": [
+          { "geometry": { "type": "LineString", "coordinates": [[0.0, 6.5], [4.0, 6.5]] }, "properties": { "thickness": 0.2 } },
+          { "geometry": { "type": "LineString", "coordinates": [[6.0, 6.5], [12.0, 6.5]] }, "properties": { "thickness": 0.2 } }
+        ]
+      },
+      "semantic": {
+        "rooms": [
+          { "id": "F2-RM-0001", "type": "library", "roomSubType": null, "label": "二楼图书馆", "centroid": [5.0, 10.0], "geometryId": "F2-RM-0001", "public": true, "accessible": true, "hasIndependentEntrance": false, "floor": 2 },
+          { "id": "F2-RM-0002", "type": "activity", "roomSubType": null, "label": "二楼自习室", "centroid": [10.0, 5.0], "geometryId": "F2-RM-0002", "public": true, "accessible": true, "hasIndependentEntrance": false, "floor": 2 },
+          { "id": "F2-RM-0003", "type": "corridor", "roomSubType": null, "label": "二楼走廊", "centroid": [5.0, 5.0], "geometryId": "F2-RM-0003", "public": true, "accessible": true, "hasIndependentEntrance": false, "floor": 2 }
+        ]
+      }
+    }
+  },
+  "crossFloorEdges": [
+    { "id": "FX-XE-0001", "code": "EL-01", "from": "F1-TF-0002", "to": "F2-TF-0002", "fromFloor": "1", "toFloor": "2", "type": "elevator", "matchedBy": "code", "distance": 4.2, "estimatedTime": 15.0, "accessibilityLevel": 0, "riskLevel": 1.0, "walkable": true, "wheelchairAccessible": true, "blindAccessible": true },
+    { "id": "FX-XE-0002", "code": "ST-01", "from": "F1-TF-0001", "to": "F2-TF-0001", "fromFloor": "1", "toFloor": "2", "type": "staircase", "matchedBy": "code", "distance": 4.2, "estimatedTime": 60.0, "accessibilityLevel": 999, "riskLevel": 10, "walkable": true, "wheelchairAccessible": false, "blindAccessible": false }
+  ],
+  "places": [
+    { "placeId": "library-1f", "name": "一楼图书馆", "spokenName": "一楼图书馆", "aliases": ["图书馆", "一楼图书室"], "type": "library", "floorId": "1", "nodeId": "F1-TR-0001", "accessible": true },
+    { "placeId": "classroom-1f", "name": "一楼教室", "spokenName": "一楼教室", "aliases": ["教室"], "type": "classroom", "floorId": "1", "nodeId": "F1-TR-0002", "accessible": true },
+    { "placeId": "library-2f", "name": "二楼图书馆", "spokenName": "二楼图书馆", "aliases": ["图书馆", "二楼图书室"], "type": "library", "floorId": "2", "nodeId": "F2-TR-0001", "accessible": true },
+    { "placeId": "study-room-2f", "name": "二楼自习室", "spokenName": "二楼自习室", "aliases": ["自习室"], "type": "activity", "floorId": "2", "nodeId": "F2-TR-0002", "accessible": true }
+  ],
+  "beacons": [
+    { "beaconId": "BK-01-001", "floorId": "1", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5 },
+    { "beaconId": "BK-01-002", "floorId": "1", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5 },
+    { "beaconId": "BK-02-001", "floorId": "2", "x": 5.0, "y": 5.0, "txPower": -59.0, "installHeightM": 2.5 },
+    { "beaconId": "BK-02-002", "floorId": "2", "x": 10.0, "y": 10.0, "txPower": -59.0, "installHeightM": 2.5 }
+  ]
+}
