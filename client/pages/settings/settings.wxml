@@ -1,0 +1,4 @@
+<view class="page">
+  <view class="title">{{title}}</view>
+  <view class="hint">数据源 / API 地址 / 令牌状态将在 C8 里程碑启用</view>
+</view>

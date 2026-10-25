@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/navigation/navigation",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "navigationBarTitleText": "PathAI 室内导航",
+    "navigationBarBackgroundColor": "#1A56DB",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F5F7FA",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

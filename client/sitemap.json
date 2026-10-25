@@ -1,0 +1,9 @@
+{
+  "desc": "室内导航应用不允许被索引",
+  "rules": [
+    {
+      "action": "disallow",
+      "page": "*"
+    }
+  ]
+}

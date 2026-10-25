@@ -1,0 +1,37 @@
+{
+  "compileType": "miniprogram",
+  "libVersion": "3.7.12",
+  "appid": "touristappid",
+  "projectname": "pathai-client",
+  "description": "PathAI 视障室内导航小程序客户端",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "useCompilerPlugins": ["typescript"],
+    "ignoreUploadUnusedFiles": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "node_modules" },
+      { "type": "folder", "value": "tests" },
+      { "type": "folder", "value": "typings" },
+      { "type": "file", "value": "jest.config.js" },
+      { "type": "file", "value": "tsconfig.json" },
+      { "type": "file", "value": "package-lock.json" }
+    ],
+    "include": []
+  },
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}
