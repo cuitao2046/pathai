@@ -12,6 +12,7 @@ from pathai_backend.errors import install_error_handlers
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.request_context import RequestContextMiddleware
 from pathai_backend.routers import auth as auth_router
+from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import map as map_router
 from pathai_backend.wechat import HttpWechatAuthClient
 
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_error_handlers(app)
     app.include_router(auth_router.router)
     app.include_router(map_router.router)
+    app.include_router(intent_router.router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
