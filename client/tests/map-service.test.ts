@@ -9,8 +9,10 @@ import { sha256 } from '../utils/sha256';
 import { getString, remove } from '../utils/kv';
 import { wxStub } from './setup-wx';
 import { REAL_MAP, REAL_UUID } from './fixtures/real-map';
+import { API_BASE_URL } from '../config/env';
 
-const BASE = 'http://localhost:8000';
+// 与生产重写逻辑同源（map-service 用 env.ts 的 API_BASE_URL 拼 dataUrl）
+const BASE = API_BASE_URL;
 const SITE = 'school-building-01';
 const SUMMARY_URL = `${BASE}/api/v1/sites/${SITE}/map`;
 const REWRITE_DATA_URL = `${BASE}/api/v1/sites/${SITE}/map/data?version=${REAL_MAP.mapVersion}`;

@@ -1,15 +1,17 @@
 /**
  * 运行环境配置（联调默认值，真机部署前按现场调整）。
  *
- * 开发者工具需开启「不校验合法域名」才能访问 http://localhost:8000；
- * 真机联调时改为开发机局域网 IP。
+ * 开发者工具需开启「不校验合法域名」才能访问 http；
+ * 真机联调必须用开发机局域网 IP（真机上 localhost 指手机自身，
+ * 会报 NETWORK_ERROR「网络连接不可用」），且后端需以
+ * `uvicorn --host 0.0.0.0` 启动。
  */
 
 /** 数据源：mock=开发者工具无 iBeacon 时的模拟信标轨迹；live=真机 BLE 实扫。 */
 export type DataSource = 'mock' | 'live';
 
-/** 后端 API 根地址（不带末尾斜杠）。 */
-export const API_BASE_URL = 'http://localhost:8000';
+/** 后端 API 根地址（不带末尾斜杠）；开发机 WLAN IP，同 WiFi 下真机可访问。 */
+export const API_BASE_URL = 'http://192.168.100.103:8000';
 
 /** 默认站点 ID：对应 backend/maps_data/school-building-01。 */
 export const DEFAULT_SITE_ID = 'school-building-01';
