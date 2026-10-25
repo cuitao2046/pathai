@@ -54,7 +54,14 @@ Page({
   },
 
   onGoSettings() {
-    wx.navigateTo({ url: '/pages/settings/settings' });
+    log.info('onGoSettings tap');
+    wx.navigateTo({
+      url: '/pages/settings/settings',
+      fail: (err) => {
+        // 真机排查：tap 已触发但跳转失败时，vConsole 可见具体原因
+        log.warn('navigateTo settings 失败', JSON.stringify(err));
+      },
+    });
   },
 
   // ------------------------------------------------------------------
