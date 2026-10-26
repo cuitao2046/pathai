@@ -1,11 +1,15 @@
-<view
-  class="map-stage"
-  catchtouchstart="onTouchStart"
-  catchtouchmove="onTouchMove"
-  catchtouchend="onTouchEnd"
-  catchtouchcancel="onTouchCancel"
->
-  <canvas type="2d" id="mapCanvas" class="map-canvas" />
+<view class="map-stage">
+  <!-- 手势绑在 canvas 自身：按钮是 canvas 的兄弟节点，其 touch 序列不会
+       进入手势流，规避 catchtouch 容器吞掉子元素 tap 的问题 -->
+  <canvas
+    type="2d"
+    id="mapCanvas"
+    class="map-canvas"
+    catchtouchstart="onTouchStart"
+    catchtouchmove="onTouchMove"
+    catchtouchend="onTouchEnd"
+    catchtouchcancel="onTouchCancel"
+  />
 
   <view class="floor-badge" aria-live="polite">{{floorLabel}}</view>
 

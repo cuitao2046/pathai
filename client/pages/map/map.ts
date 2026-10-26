@@ -359,6 +359,7 @@ Page({
 
   onSwitchFloor(e: WechatMiniprogram.TouchEvent): void {
     const floorId = String(e.currentTarget.dataset.floor ?? '');
+    log.info('tap 切换楼层', floorId, `current=${this.data.currentFloor}`);
     const vp = this.viewport;
     if (floorId === '' || floorId === this.data.currentFloor || vp === null) {
       return;
@@ -375,6 +376,7 @@ Page({
   },
 
   onResetView(): void {
+    log.info('tap 回到全图');
     this.viewport?.fit();
     this.requestDraw();
   },
