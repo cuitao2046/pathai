@@ -9,7 +9,13 @@
     </view>
     <view class="hint">关闭=mock 模拟轨迹（开发者工具）；开启=真机 BLE 实扫。切换后重启小程序生效。</view>
 
-    <block wx:if="{{dataSource === 'mock'}}">
+    <view class="row">
+      <text class="label">语音使用 mock（ASR+TTS）</text>
+      <switch checked="{{voiceMock}}" bindchange="onChangeVoiceMock" aria-label="切换语音交互是否使用模拟数据" />
+    </view>
+    <view class="hint">开启=Mock 引擎（模拟识别文本、无声音）；<text style="color:#b91c1c">关闭=ASR 与 TTS 真实调用讯飞 API</text>（需网络与 socket 合法域名）。切换后重启小程序生效。</view>
+
+    <block wx:if="{{voiceMock}}">
       <view class="row">
         <text class="label">模拟识别文本</text>
         <input

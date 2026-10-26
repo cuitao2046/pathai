@@ -20,6 +20,7 @@ Page({
     apiUrl: API_BASE_URL,
     siteId: DEFAULT_SITE_ID,
     dataSource: 'mock' as DataSource,
+    voiceMock: true,
     mockText: appContext.getMockAsrText() || '带我去图书馆',
     mapVersion: '未加载',
     tokenStatus: '检查中…',
@@ -31,18 +32,27 @@ Page({
 
   onLoad() {
     const dataSource = appContext.dataSource;
-    const ttsEngine = dataSource === 'mock' ? 'MockTtsEngine（本地）' : '讯飞超拟人合成（在线）';
-    const asrEngine = dataSource === 'mock' ? 'MockAsrEngine（本地）' : '讯飞听写大模型（在线）';
-    this.setData({ dataSource, ttsEngine, asrEngine });
+    const ttsEngine = appContext.voiceMock ? 'MockTtsEngine（本地）' : '讯飞超拟人合成（在线）';
+    const asrEngine = appContext.voiceMock ? 'MockAsrEngine（本地）' : '讯飞听写大模型（在线）';
+    this.setData({
+      dataSource,
+      voiceMock: appContext.getVoiceMockSetting(),
+      ttsEngine,
+      asrEngine,
+    });
     void this.refreshMapVersion();
     void this.checkAuth();
   },
 
   onShow() {
-    // 从其它页面返回后刷新地图/登录状态；mock 文本每次进入都回读缓存
+    // 从其它页面返回后刷新：地图/登录状态 + 开关与 mock 文本回读
     //（页面 data 字面量仅在模块首次加载时求值，靠 onShow 兜住任意进入时序）
     void this.refreshMapVersion();
-    this.setData({ mockText: appContext.getMockAsrText() || '带我去图书馆' });
+    this.setData({
+      dataSource: appContext.dataSource,
+      voiceMock: appContext.getVoiceMockSetting(),
+      mockText: appContext.getMockAsrText() || '带我去图书馆',
+    });
   },
 
   async refreshMapVersion() {
@@ -76,6 +86,22 @@ Page({
   onChangeDataSource(event: WechatMiniprogram.SwitchChange) {
     const source: DataSource = event.detail.value ? 'live' : 'mock';
     appContext.setDataSourceOverride(source);
+    this.setData({ dataSource: source }); // 受控回显（二次进入前保持一致）
+    wx.showToast({
+      title: '已保存，重启小程序生效',
+      icon: 'none',
+      duration: 2500,
+    });
+  },
+
+  /** 语音 mock 开关：关闭后 ASR+TTS 真实调用讯飞（重启小程序生效）。 */
+  onChangeVoiceMock(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setVoiceMockSetting(on);
+    this.setData({ voiceMock: on });
+    const ttsEngine = on ? 'MockTtsEngine（本地）' : '讯飞超拟人合成（在线）';
+    const asrEngine = on ? 'MockAsrEngine（本地）' : '讯飞听写大模型（在线）';
+    this.setData({ ttsEngine, asrEngine });
     wx.showToast({
       title: '已保存，重启小程序生效',
       icon: 'none',

@@ -643,7 +643,11 @@ Page({
       },
       onPartial: (text) => this.setData({ partial: text }),
       onFinal: (text) => void this.handleFinal(text),
-      onError: (message) => this.setData({ reply: message }),
+      onError: (message) => {
+        // 显示反馈的同时进行语音播报（REQ：助手反馈与播报同步）
+        this.setData({ reply: message });
+        this.speech?.enqueue(message, 'normal');
+      },
     });
   },
 

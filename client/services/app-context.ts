@@ -20,6 +20,7 @@ import { XfyunTts } from '../core/speech/xfyun-tts';
 import { createWssUrlProvider } from '../utils/wss-url';
 import { createLogger } from '../utils/logger';
 import { getString, getJson, setJson, setString } from '../utils/kv';
+import { resolveVoiceMock, VOICE_MOCK_KEY } from './voice-mock';
 
 const log = createLogger('app');
 
@@ -36,6 +37,8 @@ function resolveDataSource(): DataSource {
 
 class AppContext {
   readonly dataSource: DataSource = resolveDataSource();
+  /** 语音交互（ASR+TTS）是否用 mock 引擎：独立开关，未设置过则跟随数据源。 */
+  readonly voiceMock: boolean = resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
   readonly http = createHttpStack(API_BASE_URL);
   readonly map = new MapService({ client: this.http.client, siteId: DEFAULT_SITE_ID });
 
@@ -43,9 +46,9 @@ class AppContext {
   private readonly asrInstance: AsrEngine;
 
   constructor() {
-    log.info('数据源 =', this.dataSource); // vConsole 首查项：mock/live 是否符合预期
-    if (this.dataSource === 'mock') {
-      // 开发者工具：无 iBeacon/插件环境不确定，先用 Mock 引擎联调业务闭环
+    log.info('数据源 =', this.dataSource, '语音mock =', this.voiceMock);
+    if (this.voiceMock) {
+      // 语音 mock：Mock 引擎联调业务闭环（模拟文本在设置页配置，本地持久化）
       this.ttsInstance = new MockTtsEngine();
       const mockAsr = new MockAsrEngine();
       const storedText = getString(MOCK_ASR_TEXT_KEY);
@@ -54,7 +57,7 @@ class AppContext {
       }
       this.asrInstance = mockAsr;
     } else {
-      // live：讯飞在线 ASR/TTS（wss 直连；签名 URL 由后端签发，密钥留在服务端，
+      // 语音真实调用讯飞：wss 直连（签名 URL 由后端签发，密钥留在服务端，
       // 凭据按 provider 缓存 ≤4min）。失败由 PTT/SpeechQueue 既有错误路径承接。
       this.asrInstance = new XfyunAsrEngine({
         credential: createWssUrlProvider(this.http.client, '/api/v1/voice/asr-url'),
@@ -89,6 +92,16 @@ class AppContext {
   /** 设置页：写入数据源覆盖（重启小程序后生效）。 */
   setDataSourceOverride(source: DataSource): void {
     setJson(DATA_SOURCE_KEY, source);
+  }
+
+  /** 设置页：写入语音 mock 开关（重启小程序后生效）。 */
+  setVoiceMockSetting(on: boolean): void {
+    setJson(VOICE_MOCK_KEY, on);
+  }
+
+  /** 设置页回显：语音 mock 的最新设置值（未设置过则跟随数据源）。 */
+  getVoiceMockSetting(): boolean {
+    return resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
   }
 }
 
