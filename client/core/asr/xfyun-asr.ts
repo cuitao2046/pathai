@@ -20,7 +20,10 @@
 import { AsrCancelledError, type AsrEngine, type AsrHandlers } from './asr-engine';
 import { PcmRecorder, type RecorderLike } from './pcm-recorder';
 import { base64ToUtf8, bytesToBase64 } from '../../utils/base64';
+import { createLogger } from '../../utils/logger';
 import type { WssCredentialProvider } from '../../utils/wss-url';
+
+const log = createLogger('xfyun-asr');
 
 /** 讯飞建议发送节奏：1024B 音频 / 40ms。 */
 const SEND_INTERVAL_MS = 40;
@@ -206,6 +209,7 @@ export class XfyunAsrEngine implements AsrEngine {
     if (this.pending !== null) {
       throw new Error('ASR 会话进行中'); // 契约：重复 start 同步抛错
     }
+    log.info('识别会话开始');
     const session: PendingSession = {
       resolve: () => undefined,
       reject: () => undefined,
@@ -270,6 +274,7 @@ export class XfyunAsrEngine implements AsrEngine {
       if (this.pending !== session) {
         return; // 会话已被 cancel
       }
+      log.info('凭据就绪 → 连接', cred.url.split('?')[0]); // 不打印签名参数
       session.appId = cred.appId;
       const socket = this.connect(cred.url);
       session.socket = socket;
@@ -298,6 +303,7 @@ export class XfyunAsrEngine implements AsrEngine {
       return;
     }
     session.opened = true;
+    log.info('讯飞连接已建立');
     if (session.openTimer !== null) {
       clearTimeout(session.openTimer);
       session.openTimer = null;
@@ -326,8 +332,12 @@ export class XfyunAsrEngine implements AsrEngine {
       return;
     }
     const queued = session.queue.shift() as QueuedFrame;
+    const frame = buildFrame(session, { audio: queued.audio });
+    if (session.seq === 1) {
+      log.info('首帧已发送（含 parameter.iat）'); // buildFrame 后 seq 已递增到 1
+    }
     session.socket.send({
-      data: buildFrame(session, { audio: queued.audio }),
+      data: frame,
       fail: (err) => this.failSession(session, new Error(err.errMsg ?? '音频帧发送失败')),
     });
     if (session.queue.length === 0) {
@@ -464,6 +474,7 @@ export class XfyunAsrEngine implements AsrEngine {
     if (this.pending !== session || !session.gotFinal || !session.stopped) {
       return;
     }
+    log.info('识别完成:', session.finalText || '(空文本)');
     this.pending = null;
     this.teardownSession(session);
     session.resolve(session.finalText);
@@ -473,6 +484,7 @@ export class XfyunAsrEngine implements AsrEngine {
     if (this.pending !== session) {
       return;
     }
+    log.error('识别会话失败:', err instanceof Error ? err.message : err);
     this.pending = null;
     this.recorder.cancel(); // 录音中出错必须释放麦克风
     this.teardownSession(session);

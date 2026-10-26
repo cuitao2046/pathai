@@ -14,7 +14,10 @@
  */
 import type { TtsEngine } from './tts-engine';
 import { base64ToBytes, utf8ToBase64 } from '../../utils/base64';
+import { createLogger } from '../../utils/logger';
 import type { WssCredentialProvider } from '../../utils/wss-url';
+
+const log = createLogger('xfyun-tts');
 
 /** 默认发音人（讯飞文档默认值；x6 系列需控制台另行开通权限）。 */
 const DEFAULT_VCN = 'x5_lingxiaoxuan_flow';
@@ -185,6 +188,7 @@ export class XfyunTts implements TtsEngine {
       if (session.aborted) {
         return; // stop() 打断导致的失败静默结束，交还队列
       }
+      log.error('合成/播报失败:', err instanceof Error ? err.message : err);
       throw err instanceof Error ? err : new Error('语音合成失败');
     } finally {
       if (this.session === session) {
@@ -353,8 +357,10 @@ export class XfyunTts implements TtsEngine {
           session.player = null;
         }
         if (err === null) {
+          log.info('播报结束');
           resolve();
         } else {
+          log.error('播放失败:', err.message);
           reject(err);
         }
       };

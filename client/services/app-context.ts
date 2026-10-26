@@ -18,7 +18,10 @@ import { MockAsrEngine } from '../core/asr/mock-asr';
 import { MockTtsEngine } from '../core/speech/mock-tts';
 import { XfyunTts } from '../core/speech/xfyun-tts';
 import { createWssUrlProvider } from '../utils/wss-url';
+import { createLogger } from '../utils/logger';
 import { getJson, setJson } from '../utils/kv';
+
+const log = createLogger('app');
 
 /** 数据源覆盖的持久化 key（设置页写入，启动时读取）。 */
 export const DATA_SOURCE_KEY = 'cfg:dataSource';
@@ -37,6 +40,7 @@ class AppContext {
   private readonly asrInstance: AsrEngine;
 
   constructor() {
+    log.info('数据源 =', this.dataSource); // vConsole 首查项：mock/live 是否符合预期
     if (this.dataSource === 'mock') {
       // 开发者工具：无 iBeacon/插件环境不确定，先用 Mock 引擎联调业务闭环
       this.ttsInstance = new MockTtsEngine();
