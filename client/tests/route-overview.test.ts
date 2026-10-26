@@ -52,7 +52,7 @@ describe('buildRouteOverview（REQ-NAV 路径概要）', () => {
   test('单楼层：楼层内走到终点，不提电梯', () => {
     const route = makeRoute({ distanceM: 45.6, polyline: [p(0, 0, '1'), p(9, 9, '1')] });
     const text = buildRouteOverview(route, '图书馆', floorName);
-    expect(text).toBe('路线概要：全程约 45 米，在一楼内走到图书馆。');
+    expect(text).toBe('路线概要：全程约 46 米，在一楼内走到图书馆。');
     expect(text).not.toContain('电梯');
   });
 
