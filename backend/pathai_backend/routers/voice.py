@@ -27,15 +27,19 @@ def _settings(request: Request):
 
 @router.get("/asr-url", response_model=VoiceUrlResponse)
 def get_asr_url(request: Request) -> VoiceUrlResponse:
+    settings = _settings(request)
     return VoiceUrlResponse(
-        url=xfyun.build_iat_url(_settings(request)),
+        url=xfyun.build_iat_url(settings),
+        appId=settings.xfyun_appid,
         expiresIn=xfyun.URL_EXPIRES_SECONDS,
     )
 
 
 @router.get("/tts-url", response_model=VoiceUrlResponse)
 def get_tts_url(request: Request) -> VoiceUrlResponse:
+    settings = _settings(request)
     return VoiceUrlResponse(
-        url=xfyun.build_tts_url(_settings(request)),
+        url=xfyun.build_tts_url(settings),
+        appId=settings.xfyun_appid,
         expiresIn=xfyun.URL_EXPIRES_SECONDS,
     )

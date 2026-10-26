@@ -138,6 +138,7 @@ def test_asr_url_ok(client, app, auth_headers, keyed_settings):
     assert resp.status_code == 200
     body = resp.json()
     assert body["expiresIn"] == xfyun.URL_EXPIRES_SECONDS
+    assert body["appId"] == XFYUN_KEYS["xfyun_appid"]
     query = _query(body["url"])
     assert urlsplit(body["url"]).netloc == IAT_HOST
     # 用响应里的 date 独立重算签名（不依赖签发时钟）
@@ -152,6 +153,7 @@ def test_tts_url_ok(client, app, auth_headers, keyed_settings):
     assert resp.status_code == 200
     body = resp.json()
     assert body["expiresIn"] == xfyun.URL_EXPIRES_SECONDS
+    assert body["appId"] == XFYUN_KEYS["xfyun_appid"]
     parts = urlsplit(body["url"])
     assert parts.path == "/v1/private/demo123"
     query = _query(body["url"])

@@ -1,16 +1,25 @@
 /**
- * 讯飞签名 URL 获取与缓存（ASR/TTS 各自一个 provider）。
+ * 讯飞签名凭据获取与缓存（ASR/TTS 各自一个 provider）。
  *
- * 后端 GET /api/v1/voice/{asr,tts}-url 签发的 URL 内嵌 RFC1123 date，
- * 讯飞握手时校验与服务端偏差 ±300s，故缓存须短于响应 expiresIn（240s）；
- * 经 ApiClient 请求，自带 Bearer 注入与 401 重登后重放一次。
+ * 后端 GET /api/v1/voice/{asr,tts}-url 签发 {url, appId, expiresIn}：
+ * - url 内嵌 RFC1123 date，讯飞握手时校验与服务端偏差 ±300s，
+ *   故缓存须短于 expiresIn（240s）；
+ * - appId 用于讯飞请求帧 header.app_id（非机密，随签发响应下发）；
+ * - 经 ApiClient 请求，自带 Bearer 注入与 401 重登后重放一次。
  */
 import type { ApiClient } from '../core/http/api-client';
 
-export type WssUrlProvider = () => Promise<string>;
+/** 连接讯飞所需的凭据：签名 URL + 请求帧 app_id。 */
+export interface VoiceCredential {
+  url: string;
+  appId: string;
+}
+
+export type WssCredentialProvider = () => Promise<VoiceCredential>;
 
 interface VoiceUrlResponse {
   url: string;
+  appId: string;
   expiresIn: number;
 }
 
@@ -25,14 +34,14 @@ export function createWssUrlProvider(
   path: string,
   ttlMs = 240_000,
   now: () => number = Date.now,
-): WssUrlProvider {
-  let cached: { url: string; expiresAt: number } | null = null;
-  let inflight: Promise<string> | null = null;
+): WssCredentialProvider {
+  let cached: { cred: VoiceCredential; expiresAt: number } | null = null;
+  let inflight: Promise<VoiceCredential> | null = null;
 
   return () => {
     const t = now();
     if (cached !== null && t < cached.expiresAt) {
-      return Promise.resolve(cached.url);
+      return Promise.resolve(cached.cred);
     }
     if (inflight !== null) {
       return inflight;
@@ -41,12 +50,17 @@ export function createWssUrlProvider(
       .request<VoiceUrlResponse>({ method: 'GET', path })
       .then((resp) => {
         const url = resp.data?.url;
+        const appId = resp.data?.appId;
         if (typeof url !== 'string' || url.length === 0) {
           throw new Error('签名 URL 响应缺少 url 字段');
         }
+        if (typeof appId !== 'string' || appId.length === 0) {
+          throw new Error('签名 URL 响应缺少 appId 字段');
+        }
+        const cred: VoiceCredential = { url, appId };
         const expiresInMs = (resp.data?.expiresIn ?? 240) * 1000;
-        cached = { url, expiresAt: now() + Math.min(expiresInMs, ttlMs) };
-        return url;
+        cached = { cred, expiresAt: now() + Math.min(expiresInMs, ttlMs) };
+        return cred;
       })
       .finally(() => {
         inflight = null;

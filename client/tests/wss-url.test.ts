@@ -1,8 +1,8 @@
 /**
- * utils/wss-url.ts：讯飞签名 URL provider 的缓存/过期/并发去重/失败重试语义。
+ * utils/wss-url.ts：讯飞签名凭据 provider 的缓存/过期/并发去重/失败重试语义。
  */
 import type { ApiClient } from '../core/http/api-client';
-import { createWssUrlProvider } from '../utils/wss-url';
+import { createWssUrlProvider, type VoiceCredential } from '../utils/wss-url';
 
 type Handler = (opts: { method: string; path: string }) => Promise<unknown>;
 
@@ -12,8 +12,12 @@ function fakeClient(handler: Handler): { client: ApiClient; request: jest.Mock }
   return { client, request };
 }
 
-function ok(url: string, expiresIn = 240) {
-  return { statusCode: 200, data: { url, expiresIn }, requestId: null, etag: null };
+function ok(url: string, expiresIn = 240, appId = 'app-1') {
+  return { statusCode: 200, data: { url, appId, expiresIn }, requestId: null, etag: null };
+}
+
+function cred(url: string, appId = 'app-1'): VoiceCredential {
+  return { url, appId };
 }
 
 describe('createWssUrlProvider', () => {
@@ -22,9 +26,9 @@ describe('createWssUrlProvider', () => {
     const { client, request } = fakeClient(() => Promise.resolve(ok('wss://host/v1?sig=1')));
     const getUrl = createWssUrlProvider(client, '/api/v1/voice/asr-url', 240_000, () => t);
 
-    await expect(getUrl()).resolves.toBe('wss://host/v1?sig=1');
+    await expect(getUrl()).resolves.toEqual(cred('wss://host/v1?sig=1'));
     t = 239_000;
-    await expect(getUrl()).resolves.toBe('wss://host/v1?sig=1');
+    await expect(getUrl()).resolves.toEqual(cred('wss://host/v1?sig=1'));
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -34,9 +38,9 @@ describe('createWssUrlProvider', () => {
     const { client, request } = fakeClient(() => Promise.resolve(ok(`wss://host?sig=${(n += 1)}`)));
     const getUrl = createWssUrlProvider(client, '/p', 240_000, () => t);
 
-    await expect(getUrl()).resolves.toBe('wss://host?sig=1');
+    await expect(getUrl()).resolves.toEqual(cred('wss://host?sig=1'));
     t = 240_000;
-    await expect(getUrl()).resolves.toBe('wss://host?sig=2');
+    await expect(getUrl()).resolves.toEqual(cred('wss://host?sig=2'));
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -64,8 +68,8 @@ describe('createWssUrlProvider', () => {
     const p1 = getUrl();
     const p2 = getUrl();
     resolveReq(ok('wss://host?sig=1'));
-    await expect(p1).resolves.toBe('wss://host?sig=1');
-    await expect(p2).resolves.toBe('wss://host?sig=1');
+    await expect(p1).resolves.toEqual(cred('wss://host?sig=1'));
+    await expect(p2).resolves.toEqual(cred('wss://host?sig=1'));
     expect(request).toHaveBeenCalledTimes(1);
   });
 
@@ -78,14 +82,18 @@ describe('createWssUrlProvider', () => {
 
     await expect(getUrl()).rejects.toThrow('network');
     fail = false;
-    await expect(getUrl()).resolves.toBe('wss://host?sig=2');
+    await expect(getUrl()).resolves.toEqual(cred('wss://host?sig=2'));
   });
 
-  it('响应缺少 url 字段时报错', async () => {
-    const { client } = fakeClient(() =>
+  it('响应缺少 url 或 appId 字段时报错', async () => {
+    const noUrl = fakeClient(() =>
       Promise.resolve({ statusCode: 200, data: null, requestId: null, etag: null }),
     );
-    const getUrl = createWssUrlProvider(client, '/p');
-    await expect(getUrl()).rejects.toThrow('缺少 url');
+    await expect(createWssUrlProvider(noUrl.client, '/p')()).rejects.toThrow('缺少 url');
+
+    const noAppId = fakeClient(() =>
+      Promise.resolve(ok('wss://host?sig=1', 240, '')),
+    );
+    await expect(createWssUrlProvider(noAppId.client, '/p')()).rejects.toThrow('缺少 appId');
   });
 });
