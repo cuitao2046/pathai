@@ -14,11 +14,5 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents",
-  "plugins": {
-    "WechatSI": {
-      "version": "0.0.7",
-      "provider": "wx069ba97219f66d99"
-    }
-  }
+  "lazyCodeLoading": "requiredComponents"
 }
