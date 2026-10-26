@@ -655,6 +655,7 @@ Page({
     if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {
       return; // 地图未就绪不受理语音（原首页 mapReady 门）
     }
+    this.onDismissIntent(); // 新一轮对话先收起旧卡，避免上一轮提示残留
     this.ptt?.begin();
   },
 
@@ -962,6 +963,18 @@ Page({
     }, DOUBLE_TAP_WINDOW_MS);
   },
 
+  /** 收起意图/反馈居中卡：清空全部面板状态，避免关闭后残留遮挡地图（REQ-PAGE）。 */
+  onDismissIntent(): void {
+    this.setData({
+      recognized: '',
+      partial: '',
+      reply: '',
+      fallbackText: '',
+      candidates: [],
+      destination: null,
+    });
+  },
+
   /** 导航结束后关闭 HUD，回到待命地图。 */
   onDismissNav(): void {
     this.navDestination = null;
@@ -979,6 +992,9 @@ Page({
       state: 'idle' as NavState,
       stateText: NAV_TEXT.idle,
     });
+    // 关键：导航期间累积的 fallbackText/reply 若不清空，
+    // navActive=false 后居中卡会因 fallbackText 非空重新弹出遮挡地图
+    this.onDismissIntent();
     this.requestDraw();
   },
 });

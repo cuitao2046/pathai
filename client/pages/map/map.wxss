@@ -160,6 +160,23 @@
   gap: 20rpx;
 }
 
+/* 居中卡右上角关闭：随时收起反馈，不遮挡地图 */
+.card-close {
+  position: absolute;
+  top: 8rpx;
+  right: 8rpx;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  line-height: 64rpx;
+  font-size: 30rpx;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+}
+
 .center-card .row {
   font-size: 30rpx;
   color: #1f2937;

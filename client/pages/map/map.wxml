@@ -32,6 +32,11 @@
     class="center-card"
     wx:if="{{!navActive && (recognized !== '' || reply !== '' || partial !== '' || fallbackText !== '' || candidates.length > 0 || destination !== null)}}"
   >
+    <button
+      class="card-close"
+      bindtap="onDismissIntent"
+      aria-label="关闭提示"
+    >✕</button>
     <view class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
     <view class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
     <view class="row" wx:if="{{reply !== ''}}"><text class="label">助手</text><text user-select>{{reply}}</text></view>
