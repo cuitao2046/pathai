@@ -11,7 +11,7 @@
 export type DataSource = 'mock' | 'live';
 
 /** 后端 API 根地址（不带末尾斜杠）；开发机 WLAN IP，同 WiFi 下真机可访问。 */
-export const API_BASE_URL = 'http://192.168.100.103:8000';
+export const API_BASE_URL = 'http://192.168.1.28:8000';
 
 /** 默认站点 ID：对应 backend/maps_data/school-building-01。 */
 export const DEFAULT_SITE_ID = 'school-building-01';
