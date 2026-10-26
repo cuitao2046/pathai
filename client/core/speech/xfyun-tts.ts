@@ -13,7 +13,7 @@
  * 依赖注入（单测用假件，不碰 wx/网络）：credential、connect、fs、audioFactory。
  */
 import type { TtsEngine } from './tts-engine';
-import { base64ToBytes } from '../../utils/base64';
+import { base64ToBytes, utf8ToBase64 } from '../../utils/base64';
 import type { WssCredentialProvider } from '../../utils/wss-url';
 
 /** 默认发音人（讯飞文档默认值；x6 系列需控制台另行开通权限）。 */
@@ -46,7 +46,15 @@ function buildRequestFrame(appId: string, text: string, vcn: string): string {
       },
     },
     payload: {
-      text: { encoding: 'utf8', compress: 'raw', format: 'plain', status: 2, seq: 0, text },
+      // 实测：网关强校验 text 为 base64(UTF-8)（明文会被 10163 拒绝，文档未标明）
+      text: {
+        encoding: 'utf8',
+        compress: 'raw',
+        format: 'plain',
+        status: 2,
+        seq: 0,
+        text: utf8ToBase64(text),
+      },
     },
   });
 }

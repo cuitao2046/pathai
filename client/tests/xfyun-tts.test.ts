@@ -5,7 +5,7 @@
  */
 import type { AudioPlayerLike, FileWriteLike, SocketLike } from '../core/speech/xfyun-tts';
 import { XfyunTts } from '../core/speech/xfyun-tts';
-import { bytesToBase64 } from '../utils/base64';
+import { bytesToBase64, utf8ToBase64 } from '../utils/base64';
 
 const CRED = { url: 'wss://cbm01.test/v1/private/demo', appId: 'app-x' };
 const TMP_PATH = 'wxfile://usr/xfyun-tts.mp3';
@@ -169,7 +169,8 @@ describe('XfyunTts', () => {
       format: 'plain',
       status: 2,
       seq: 0,
-      text: '前方左转到达资源教室',
+      // 实测网关强校验：text 必须是 base64(UTF-8)，明文会被 10163 拒绝
+      text: utf8ToBase64('前方左转到达资源教室'),
     });
 
     socket.emitMessage(audioMessage(bytesToBase64(new Uint8Array([1, 2, 3]))));
