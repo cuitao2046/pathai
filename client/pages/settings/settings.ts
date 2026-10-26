@@ -39,8 +39,10 @@ Page({
   },
 
   onShow() {
-    // 从其它页面返回后刷新地图/登录状态
+    // 从其它页面返回后刷新地图/登录状态；mock 文本每次进入都回读缓存
+    //（页面 data 字面量仅在模块首次加载时求值，靠 onShow 兜住任意进入时序）
     void this.refreshMapVersion();
+    this.setData({ mockText: appContext.getMockAsrText() || '带我去图书馆' });
   },
 
   async refreshMapVersion() {
@@ -81,9 +83,11 @@ Page({
     });
   },
 
-  /** mock 调试：模拟识别文本（写内存中的 MockAsrEngine.nextText）。 */
+  /** mock 调试：模拟识别文本（受控回显 + 写缓存，重启后 mock 引擎自动恢复）。 */
   onMockTextInput(event: WechatMiniprogram.Input) {
-    appContext.setMockAsrText(event.detail.value);
+    const text = event.detail.value;
+    this.setData({ mockText: text }); // 受控 input 必须回显，否则二次进入显示旧 data
+    appContext.setMockAsrText(text);
   },
 
   onSelfTestTts() {
