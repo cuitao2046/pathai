@@ -11,8 +11,22 @@ import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
 import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels, type PlaceLabel } from '../../core/map/floor-geometry';
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
+import { PushToTalk, type PttState } from '../../core/asr/push-to-talk';
+import { createBeaconSource } from '../../core/ble/beacon-source-factory';
+import { SpeechQueue } from '../../core/speech/speech-queue';
+import { IntentService } from '../../services/intent.service';
+import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
+import type { IntentParseResponse, PlaceCandidate } from '../../typings/api';
 
 const log = createLogger('map');
+
+/** PTT 状态文案（自原语音首页平移，REQ-PAGE 单页化）。 */
+const PTT_TEXT: Record<PttState, string> = {
+  idle: '按住说话',
+  recording: '松开结束',
+  recognizing: '识别中…',
+  error: '识别失败，请重试',
+};
 
 /** mock 初始位置：1 层 (-37,-48)（局部米制，邻近真实信标 BK-01-008）。 */
 const MOCK_POSITION = { floorId: '1', x: -37, y: -48 };
@@ -46,12 +60,29 @@ Page({
   data: {
     loading: true,
     loadError: '',
+    mapReady: false,
     floorLabel: '一楼',
     currentFloor: '1',
     floors: [] as FloorItem[],
+    // 意图/语音（REQ-PAGE：下半屏热区 + 居中浮层）
+    pttState: 'idle' as PttState,
+    pttStateText: PTT_TEXT.idle,
+    partial: '',
+    recognized: '',
+    reply: '',
+    fallbackText: '',
+    candidates: [] as PlaceCandidate[],
+    destination: null as PlaceCandidate | null,
+    isMockSource: appContext.dataSource === 'mock',
   },
 
   canvas: null as WechatMiniprogram.Canvas | null,
+  speech: null as SpeechQueue | null,
+  ptt: null as PushToTalk | null,
+  intents: null as IntentService | null,
+  locationQuery: null as LocationQueryService | null,
+  parseInFlight: false,
+  locationInFlight: false,
   ctx: null as Canvas2d | null,
   viewport: null as FloorMapViewport | null,
   wallSegs: {} as Record<string, Float32Array>,
@@ -73,7 +104,20 @@ Page({
   } as GestureState,
 
   onLoad(): void {
+    this.initSpeech();
+    this.initPtt();
+    this.intents = new IntentService(appContext.http.client, appContext.map);
+    this.locationQuery = new LocationQueryService({
+      client: appContext.http.client,
+      map: appContext.map,
+      makeSource: () => createBeaconSource(appContext.dataSource, appContext.map),
+      floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
+    });
     void this.bootstrap();
+  },
+
+  onHide(): void {
+    this.ptt?.handleAppHide(); // 切后台：取消识别，不提交
   },
 
   onReady(): void {
@@ -100,7 +144,7 @@ Page({
       this.wallSegs = segs;
       this.placeLabels = labels;
       this.floorList = floors;
-      this.setData({ floors, loading: false, loadError: '' });
+      this.setData({ floors, loading: false, loadError: '', mapReady: true });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
       // 启动集中申请权限：地图就绪后再弹，避免与加载叠加
@@ -109,7 +153,7 @@ Page({
       const message =
         err instanceof ApiClientError ? describeError(err.code) : '地图加载失败，请检查网络';
       log.warn('地图加载失败', err);
-      this.setData({ loading: false, loadError: message });
+      this.setData({ loading: false, loadError: message, mapReady: false });
     }
   },
 
@@ -398,10 +442,130 @@ Page({
     this.requestDraw();
   },
 
-  onGoVoiceHome(): void {
+  onGoSettings(): void {
+    log.info('onGoSettings tap');
     wx.navigateTo({
-      url: '/pages/index/index',
-      fail: (err) => log.warn('进入语音首页失败', JSON.stringify(err)),
+      url: '/pages/settings/settings',
+      fail: (err) => log.warn('navigateTo settings 失败', JSON.stringify(err)),
     });
+  },
+
+  // ------------------------------------------------------------------
+  // 按住说话 → 意图（REQ-PAGE 下半屏热区 / 居中浮层）
+  // ------------------------------------------------------------------
+
+  initSpeech(): void {
+    const appendFallback = (text: string) => {
+      const next =
+        this.data.fallbackText.length > 0 ? `${this.data.fallbackText}\n${text}` : text;
+      this.setData({ fallbackText: next });
+    };
+    this.speech = new SpeechQueue({
+      engine: appContext.tts,
+      onUnavailable: (lastText) => {
+        log.warn('TTS 不可用，降级文本展示', lastText);
+        this.setData({ reply: lastText });
+        appendFallback('语音播报不可用，已切换为文字提示');
+      },
+      onTextFallback: appendFallback,
+    });
+  },
+
+  initPtt(): void {
+    this.ptt = new PushToTalk({
+      engine: appContext.asr,
+      onStateChange: (state) => {
+        this.setData({ pttState: state, pttStateText: PTT_TEXT[state] });
+      },
+      onPartial: (text) => this.setData({ partial: text }),
+      onFinal: (text) => void this.handleFinal(text),
+      onError: (message) => this.setData({ reply: message }),
+    });
+  },
+
+  onPttStart(): void {
+    if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {
+      return; // 地图未就绪不受理语音（原首页 mapReady 门）
+    }
+    this.ptt?.begin();
+  },
+
+  onPttEnd(): void {
+    this.ptt?.end();
+  },
+
+  onPttCancel(): void {
+    this.ptt?.cancel();
+  },
+
+  async handleFinal(text: string): Promise<void> {
+    if (this.parseInFlight || this.intents === null) {
+      return;
+    }
+    this.parseInFlight = true;
+    this.setData({ recognized: text, partial: '', reply: '正在理解…' });
+    try {
+      const result = await this.intents.parse(text);
+      this.applyIntent(result);
+    } catch (err) {
+      const message = err instanceof ApiClientError ? describeError(err.code) : '网络异常，请重试';
+      log.warn('意图解析失败', err);
+      this.setData({ reply: message });
+      this.speech?.enqueue(message, 'normal');
+    } finally {
+      this.parseInFlight = false;
+    }
+  },
+
+  applyIntent(result: IntentParseResponse): void {
+    this.setData({
+      reply: result.responseText,
+      candidates: result.needsClarification ? result.candidates : [],
+      destination: result.destination ?? null,
+    });
+    this.speech?.enqueue(result.responseText, 'normal');
+    if (result.intent === 'query_location') {
+      // responseText 是过渡话术（"请稍等，正在查询…"），随后补播真实位置
+      void this.answerLocation();
+    }
+  },
+
+  /** 「我在哪儿」：单次定位 → 按质量策略播报（FE-01，失败播安全文案）。 */
+  async answerLocation(): Promise<void> {
+    if (this.locationInFlight || this.locationQuery === null) {
+      return;
+    }
+    this.locationInFlight = true;
+    try {
+      const text = await this.locationQuery.query();
+      if (text === null || !this.data.mapReady) {
+        return; // 并发被忽略 / 页面已不可用
+      }
+      this.setData({ reply: text });
+      this.speech?.enqueue(text, 'normal');
+    } catch (err) {
+      log.warn('位置查询异常', err);
+      this.setData({ reply: UNRESOLVED_TEXT });
+      this.speech?.enqueue(UNRESOLVED_TEXT, 'normal');
+    } finally {
+      this.locationInFlight = false;
+    }
+  },
+
+  /** 澄清候选点选：以候选名重新解析，取得目的地与话术。 */
+  onPickCandidate(event: WechatMiniprogram.TouchEvent): void {
+    const name = event.currentTarget.dataset.name;
+    if (typeof name === 'string' && name.length > 0) {
+      void this.handleFinal(name);
+    }
+  },
+
+  onStartNav(): void {
+    const destination = this.data.destination;
+    if (destination === null) {
+      return;
+    }
+    const query = `placeId=${encodeURIComponent(destination.placeId)}&name=${encodeURIComponent(destination.name)}&floorId=${encodeURIComponent(destination.floorId)}`;
+    wx.navigateTo({ url: `/pages/navigation/navigation?${query}` });
   },
 });

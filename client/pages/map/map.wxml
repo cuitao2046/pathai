@@ -1,6 +1,6 @@
 <view class="map-stage">
-  <!-- 手势绑在 canvas 自身：按钮是 canvas 的兄弟节点，其 touch 序列不会
-       进入手势流，规避 catchtouch 容器吞掉子元素 tap 的问题 -->
+  <!-- 手势绑在 canvas 自身：覆盖控件是 canvas 的兄弟节点，其 touch 序列
+       不会进入手势流，规避 catchtouch 容器吞掉子元素 tap 的问题 -->
   <canvas
     type="2d"
     id="mapCanvas"
@@ -27,10 +27,56 @@
 
   <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
 
+  <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE） -->
+  <view
+    class="center-card"
+    wx:if="{{recognized !== '' || reply !== '' || partial !== '' || fallbackText !== '' || candidates.length > 0 || destination !== null}}"
+  >
+    <view class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
+    <view class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
+    <view class="row" wx:if="{{reply !== ''}}"><text class="label">助手</text><text user-select>{{reply}}</text></view>
+    <view class="row fallback" wx:if="{{fallbackText !== ''}}">
+      <text class="label">文字提示</text><text user-select>{{fallbackText}}</text>
+    </view>
+
+    <view class="candidates" wx:if="{{candidates.length > 0}}">
+      <view class="hint">你想去哪一个？</view>
+      <button
+        wx:for="{{candidates}}"
+        wx:key="placeId"
+        class="candidate"
+        bindtap="onPickCandidate"
+        data-name="{{item.name}}"
+        aria-label="选择{{item.name}}"
+      >{{item.name}}（{{item.floorId}}）</button>
+    </view>
+
+    <button
+      wx:if="{{destination !== null}}"
+      class="primary"
+      bindtap="onStartNav"
+      aria-label="开始导航到{{destination.name}}"
+    >开始导航：{{destination.name}}</button>
+  </view>
+
+  <!-- 下半屏按住说话热区（REQ-PAGE：语音无按钮；z-index 低于覆盖控件，
+       控件点击优先，热区空白处承接按住手势） -->
+  <view
+    class="ptt-zone {{pttState}}"
+    bindtouchstart="onPttStart"
+    bindtouchend="onPttEnd"
+    bindtouchcancel="onPttCancel"
+    aria-label="按住说话，松开结束"
+    aria-disabled="{{!mapReady}}"
+  >
+    <text class="ptt-hint {{pttState}}">{{pttStateText}}</text>
+  </view>
+
+  <!-- 底端常驻设置入口（REQ-PAGE：mock/live 均可进入） -->
+  <button class="settings-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
+
   <view class="overlay" wx:if="{{loading}}">
     <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
     <button class="retry-btn" wx:if="{{loadError !== ''}}" bindtap="onRetry">重试</button>
   </view>
-
-  <button class="home-btn" bindtap="onGoVoiceHome">进入语音首页</button>
 </view>

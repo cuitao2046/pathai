@@ -100,18 +100,123 @@
   color: #ffffff;
 }
 
-.home-btn {
+/* ------------------------------------------------------------------
+ * REQ-PAGE 单页化：下半屏按住说话热区 / 居中浮层 / 常驻设置入口
+ * ------------------------------------------------------------------ */
+
+/* 热区覆盖下半屏：透明不遮地图观感，状态胶囊悬浮提示；
+   z-index 低于覆盖控件(10)与居中卡(30)，其上的控件点击与地图
+   上半屏手势均不受影响 */
+.ptt-zone {
   position: absolute;
-  z-index: 10;
-  left: 32rpx;
-  right: 32rpx;
-  bottom: 32rpx;
-  margin: 0;
-  height: 96rpx;
-  line-height: 96rpx;
-  font-size: 32rpx;
-  font-weight: 600;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  top: 50%;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 140rpx;
+}
+
+.ptt-hint {
+  padding: 14rpx 40rpx;
+  border-radius: 999rpx;
+  background: rgba(31, 41, 55, 0.72);
+  color: #ffffff;
+  font-size: 30rpx;
+}
+
+.ptt-hint.recording {
+  background: rgba(37, 99, 235, 0.9);
+}
+
+.ptt-hint.recognizing {
+  background: rgba(5, 150, 105, 0.9);
+}
+
+.ptt-hint.error {
+  background: rgba(185, 28, 28, 0.9);
+}
+
+/* 意图结果/候选/确认：屏幕居中卡片（REQ-PAGE） */
+.center-card {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 640rpx;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 32rpx;
+  box-sizing: border-box;
+  background: #ffffff;
   border-radius: 24rpx;
+  box-shadow: 0 8rpx 40rpx rgba(31, 41, 55, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.center-card .row {
+  font-size: 30rpx;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.center-card .label {
+  color: #6b7280;
+  margin-right: 16rpx;
+  font-size: 26rpx;
+}
+
+.center-card .fallback {
+  color: #b45309;
+  font-size: 26rpx;
+}
+
+.center-card .hint {
+  color: #6b7280;
+  font-size: 26rpx;
+  margin-bottom: 8rpx;
+}
+
+.center-card .candidate {
+  margin: 0 0 12rpx 0;
+  height: 76rpx;
+  line-height: 76rpx;
+  font-size: 28rpx;
+  border-radius: 16rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.center-card .primary {
+  margin: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 16rpx;
   background: #2563eb;
   color: #ffffff;
+}
+
+/* 底端常驻设置入口（半透明小按钮，让位于 PTT 状态胶囊） */
+.settings-btn {
+  position: absolute;
+  z-index: 10;
+  left: 24rpx;
+  bottom: 32rpx;
+  margin: 0;
+  padding: 0 32rpx;
+  height: 64rpx;
+  line-height: 64rpx;
+  font-size: 26rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2937;
+  border: 2rpx solid #d1d5db;
 }
