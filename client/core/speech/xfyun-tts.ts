@@ -23,6 +23,8 @@ const log = createLogger('xfyun-tts');
 const DEFAULT_VCN = 'x5_lingxiaoxuan_flow';
 /** 合成完成等待兜底超时（正常毫秒级返回，防服务端半开连接悬挂）。 */
 const SYNTH_TIMEOUT_MS = 30_000;
+/** wss 握手超时（对齐 ASR 引擎）。 */
+const OPEN_TIMEOUT_MS = 8000;
 const TMP_FILE_NAME = 'xfyun-tts.mp3';
 
 /** 一次性合成请求参数（docs：super smart-tts）。 */
@@ -237,7 +239,9 @@ export class XfyunTts implements TtsEngine {
     return new Promise<Uint8Array | null>((resolve, reject) => {
       const chunks: Uint8Array[] = [];
       let settled = false;
+      let opened = false;
       let timer: ReturnType<typeof setTimeout> | null = null;
+      let openTimer: ReturnType<typeof setTimeout> | null = null;
       const finish = (bytes: Uint8Array | null, err?: Error): void => {
         if (settled) {
           return;
@@ -247,6 +251,10 @@ export class XfyunTts implements TtsEngine {
         if (timer !== null) {
           clearTimeout(timer);
           timer = null;
+        }
+        if (openTimer !== null) {
+          clearTimeout(openTimer);
+          openTimer = null;
         }
         const socket = session.socket;
         session.socket = null;
@@ -271,6 +279,11 @@ export class XfyunTts implements TtsEngine {
 
       const socket = this.connect(url);
       session.socket = socket;
+      // 微信 SocketTask 在 readyState≠OPEN 时 send 直接 fail（真机踩坑）：
+      // 必须等 onOpen 后再发请求帧；握手超时兜底。
+      openTimer = setTimeout(() => {
+        finish(null, new Error('讯飞合成连接超时'));
+      }, OPEN_TIMEOUT_MS);
 
       socket.onMessage((res) => {
         if (settled) {
@@ -312,7 +325,25 @@ export class XfyunTts implements TtsEngine {
           }
         }
       });
+      socket.onOpen(() => {
+        if (settled) {
+          return;
+        }
+        opened = true;
+        if (openTimer !== null) {
+          clearTimeout(openTimer);
+          openTimer = null;
+        }
+        socket.send({
+          data: buildRequestFrame(appId, text, this.vcn),
+          fail: (err) => finish(null, new Error(err.errMsg ?? '语音合成请求发送失败')),
+        });
+      });
       socket.onClose(() => {
+        if (!opened) {
+          finish(null, new Error('讯飞合成连接失败'));
+          return;
+        }
         // 服务端发完即关（未携带 status==2 收尾帧）：有分片即视为完成
         if (chunks.length > 0) {
           finish(concatBytes(chunks));
@@ -322,10 +353,6 @@ export class XfyunTts implements TtsEngine {
       });
       socket.onError((err) => {
         finish(null, new Error(err.errMsg ?? '语音合成连接失败'));
-      });
-      socket.send({
-        data: buildRequestFrame(appId, text, this.vcn),
-        fail: (err) => finish(null, new Error(err.errMsg ?? '语音合成请求发送失败')),
       });
     });
   }

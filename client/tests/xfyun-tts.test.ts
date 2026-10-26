@@ -7,6 +7,8 @@ import type { AudioPlayerLike, FileWriteLike, SocketLike } from '../core/speech/
 import { XfyunTts } from '../core/speech/xfyun-tts';
 import { bytesToBase64, utf8ToBase64 } from '../utils/base64';
 
+jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+
 const CRED = { url: 'wss://cbm01.test/v1/private/demo', appId: 'app-x' };
 const TMP_PATH = 'wxfile://usr/xfyun-tts.mp3';
 
@@ -18,18 +20,26 @@ const flush = async (): Promise<void> => {
 
 class FakeSocket implements SocketLike {
   sent: string[] = [];
-  closed = false;
+  /** 微信 SocketTask 语义：CONNECTING 时 send 直接 fail（真机踩坑，必须模拟）。 */
+  readyState: 'CONNECTING' | 'OPEN' | 'CLOSED' = 'CONNECTING';
+  private openCb: (() => void) | null = null;
   private messageCb: ((res: { data: unknown }) => void) | null = null;
   private closeCb: (() => void) | null = null;
   private errorCb: ((err: { errMsg?: string }) => void) | null = null;
 
   send(opt: { data: string; fail?: (err: { errMsg?: string }) => void }): void {
+    if (this.readyState !== 'OPEN') {
+      opt.fail?.({ errMsg: 'SocketTask.send:fail SocketTask.readyState is not OPEN' });
+      return;
+    }
     this.sent.push(opt.data);
   }
   close(): void {
-    this.closed = true;
+    this.readyState = 'CLOSED';
   }
-  onOpen(): void {}
+  onOpen(cb: () => void): void {
+    this.openCb = cb;
+  }
   onMessage(cb: (res: { data: unknown }) => void): void {
     this.messageCb = cb;
   }
@@ -40,10 +50,15 @@ class FakeSocket implements SocketLike {
     this.errorCb = cb;
   }
 
+  emitOpen(): void {
+    this.readyState = 'OPEN';
+    this.openCb?.();
+  }
   emitMessage(msg: unknown): void {
     this.messageCb?.({ data: typeof msg === 'string' ? msg : JSON.stringify(msg) });
   }
   emitClose(): void {
+    this.readyState = 'CLOSED';
     this.closeCb?.();
   }
   emitError(errMsg: string): void {
@@ -147,11 +162,20 @@ function audioMessage(b64: string, opts: { final?: boolean } = {}): unknown {
 }
 
 describe('XfyunTts', () => {
-  test('全链路：单帧请求→收分片→合并写临时文件→播放→onEnded resolve', async () => {
+  afterEach(() => {
+    jest.clearAllTimers();
+  });
+
+  test('全链路：onOpen 后才发单帧请求 → 收分片 → 合并写临时文件 → 播放 → resolve', async () => {
     const { tts, socket, player, fs } = makeTts();
     const done = tts.speak('前方左转到达资源教室');
 
     await flush();
+    // 防回归：CONNECTING 状态绝不 send（真机 SocketTask.send:fail readyState not OPEN）
+    expect(socket.sent).toHaveLength(0);
+    socket.emitOpen();
+    await flush();
+
     expect(socket.sent).toHaveLength(1);
     const req = JSON.parse(socket.sent[0]);
     expect(req.header).toEqual({ app_id: 'app-x', status: 2 }); // 一次性合成
@@ -183,7 +207,7 @@ describe('XfyunTts', () => {
 
     expect(player.playCount).toBe(1);
     expect(player.src).toBe(TMP_PATH);
-    expect(socket.closed).toBe(true); // 收到 status==2 即关闭连接
+    expect(socket.readyState).toBe('CLOSED'); // 收到 status==2 即关闭连接
 
     player.emitEnded();
     await expect(done).resolves.toBeUndefined();
@@ -210,7 +234,7 @@ describe('XfyunTts', () => {
 
     tts.stop();
     await expect(done).resolves.toBeUndefined();
-    expect(socket.closed).toBe(true);
+    expect(socket.readyState).toBe('CLOSED');
     expect(fs.writes).toHaveLength(0);
     expect(player.playCount).toBe(0);
   });
@@ -221,7 +245,7 @@ describe('XfyunTts', () => {
     await flush();
     socket.emitMessage({ header: { code: 10113, message: '发音人未授权', status: 1 } });
     await expect(done).rejects.toThrow('发音人未授权');
-    expect(socket.closed).toBe(true);
+    expect(socket.readyState).toBe('CLOSED');
   });
 
   test('status==2 但无音频数据 → reject', async () => {
@@ -235,6 +259,8 @@ describe('XfyunTts', () => {
   test('服务端未发收尾帧直接关闭：已有分片即完成并播放', async () => {
     const { tts, socket, player } = makeTts();
     const done = tts.speak('关连接分支');
+    await flush();
+    socket.emitOpen();
     await flush();
     socket.emitMessage(audioMessage(bytesToBase64(new Uint8Array([7, 8]))));
     socket.emitClose();
@@ -250,6 +276,17 @@ describe('XfyunTts', () => {
     await flush();
     socket.emitError('connectSocket:fail fail');
     await expect(done).rejects.toThrow('connectSocket:fail fail');
+  });
+
+  test('握手超时：8s 未 onOpen → reject 连接超时（不悬挂播报）', async () => {
+    const { tts, socket } = makeTts();
+    const done = tts.speak('超时分支');
+    await flush();
+    expect(socket.sent).toHaveLength(0);
+
+    jest.advanceTimersByTime(8000);
+    await expect(done).rejects.toThrow('讯飞合成连接超时');
+    expect(socket.readyState).toBe('CLOSED');
   });
 
   test('临时文件写入失败 reject', async () => {
