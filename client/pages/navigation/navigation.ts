@@ -5,10 +5,7 @@
  * - 生命周期：onHide 停采集、onShow 查询重对齐恢复（FE-05）、onUnload 上报取消；
  * - 结束：双击结束按钮（500ms 内）防误触；到达判定权在服务端，客户端从不发送 arrived。
  */
-import { DEFAULT_DATA_SOURCE } from '../../config/env';
-import type { BeaconSourceLike } from '../../core/ble/beacon-source';
-import { LiveBeaconScanner } from '../../core/ble/beacon-scanner';
-import { MockBeaconSource } from '../../core/ble/mock-beacon-source';
+import { createBeaconSource } from '../../core/ble/beacon-source-factory';
 import { describeError } from '../../core/http/error-messages';
 import { ApiClientError } from '../../core/http/errors';
 import {
@@ -44,7 +41,7 @@ Page({
     instruction: '正在确定您的位置…',
     fallbackText: '',
     ended: false,
-    isMockSource: DEFAULT_DATA_SOURCE === 'mock',
+    isMockSource: appContext.dataSource === 'mock',
   },
 
   speech: null as SpeechQueue | null,
@@ -104,22 +101,6 @@ Page({
     });
   },
 
-  /** mock 轨迹：以地图包首个信标为锚点的短点列，保证解算可靠。 */
-  makeMockSource(): BeaconSourceLike {
-    const beacons = appContext.map.beacons.filter((b) => typeof b.uuid === 'string');
-    const anchor = beacons[0];
-    const path = anchor
-      ? [
-          { x: anchor.x, y: anchor.y },
-          { x: anchor.x + 1, y: anchor.y + 1 },
-        ]
-      : [
-          { x: 0, y: 0 },
-          { x: 1, y: 1 },
-        ];
-    return new MockBeaconSource({ beacons: appContext.map.beacons, floorId: anchor?.floorId ?? '1', path });
-  },
-
   async bootstrap() {
     if (this.speech === null) {
       return;
@@ -134,10 +115,7 @@ Page({
       return;
     }
 
-    const source: BeaconSourceLike =
-      DEFAULT_DATA_SOURCE === 'mock'
-        ? this.makeMockSource()
-        : new LiveBeaconScanner(appContext.map.beaconRegistry.scanUuids);
+    const source = createBeaconSource(appContext.dataSource, appContext.map);
 
     const pipeline = new LocationPipeline({
       client: appContext.http.client,

@@ -2,14 +2,15 @@
  * 首页：按住说话 → ASR → API-04 意图解析 → 澄清/确认 → 进入导航（C5）。
  * TTS 回复经 SpeechQueue（normal）播报；TTS 失败时走屏幕文本降级（FE-04）。
  */
-import { DEFAULT_DATA_SOURCE } from '../../config/env';
 import { PushToTalk, type PttState } from '../../core/asr/push-to-talk';
+import { createBeaconSource } from '../../core/ble/beacon-source-factory';
 import { ApiClientError } from '../../core/http/errors';
 import { SpeechQueue } from '../../core/speech/speech-queue';
 import { IntentService } from '../../services/intent.service';
+import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
 import { appContext } from '../../services/app-context';
 import { createLogger } from '../../utils/logger';
-import type { PlaceCandidate } from '../../typings/api';
+import type { IntentParseResponse, PlaceCandidate } from '../../typings/api';
 import { describeError } from '../../core/http/error-messages';
 
 const log = createLogger('index');
@@ -33,19 +34,27 @@ Page({
     fallbackText: '',
     candidates: [] as PlaceCandidate[],
     destination: null as PlaceCandidate | null,
-    isMockSource: DEFAULT_DATA_SOURCE === 'mock',
+    isMockSource: appContext.dataSource === 'mock',
     mockText: '带我去图书馆',
   },
 
   speech: null as SpeechQueue | null,
   ptt: null as PushToTalk | null,
   intents: null as IntentService | null,
+  locationQuery: null as LocationQueryService | null,
   parseInFlight: false,
+  locationInFlight: false,
 
   onLoad() {
     this.initSpeech();
     this.initPtt();
     this.intents = new IntentService(appContext.http.client, appContext.map);
+    this.locationQuery = new LocationQueryService({
+      client: appContext.http.client,
+      map: appContext.map,
+      makeSource: () => createBeaconSource(appContext.dataSource, appContext.map),
+      floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
+    });
     void this.bootstrap();
   },
 
@@ -156,18 +165,40 @@ Page({
     }
   },
 
-  applyIntent(result: {
-    needsClarification: boolean;
-    destination?: PlaceCandidate | null;
-    candidates: PlaceCandidate[];
-    responseText: string;
-  }) {
+  applyIntent(result: IntentParseResponse) {
     this.setData({
       reply: result.responseText,
       candidates: result.needsClarification ? result.candidates : [],
       destination: result.destination ?? null,
     });
     this.speech?.enqueue(result.responseText, 'normal');
+    if (result.intent === 'query_location') {
+      // responseText 是过渡话术（"请稍等，正在查询…"），随后补播真实位置
+      void this.answerLocation();
+    }
+  },
+
+  /** 「我在哪儿」：单次定位 → 按质量策略播报（FE-01，失败播安全文案）。 */
+  async answerLocation() {
+    if (this.locationInFlight || this.locationQuery === null) {
+      return;
+    }
+    this.locationInFlight = true;
+    try {
+      const text = await this.locationQuery.query();
+      if (text === null || !this.data.mapReady) {
+        return; // 并发被忽略 / 页面已不可用
+      }
+      this.setData({ reply: text });
+      this.speech?.enqueue(text, 'normal');
+    } catch (err) {
+      // query() 设计上不抛错，此处为兜底（如地图未就绪抛 MAP_UNAVAILABLE）
+      log.warn('位置查询异常', err);
+      this.setData({ reply: UNRESOLVED_TEXT });
+      this.speech?.enqueue(UNRESOLVED_TEXT, 'normal');
+    } finally {
+      this.locationInFlight = false;
+    }
   },
 
   /** 澄清候选点选：以候选名重新解析，取得目的地与话术。 */
