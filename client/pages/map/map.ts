@@ -13,6 +13,9 @@ import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels, type P
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
 import { PushToTalk, type PttState } from '../../core/asr/push-to-talk';
 import { createBeaconSource } from '../../core/ble/beacon-source-factory';
+import type { BeaconSourceLike } from '../../core/ble/beacon-source';
+import { MockBeaconSource } from '../../core/ble/mock-beacon-source';
+import { MOCK_POSITION, MOCK_WALK_SPEED_MPS } from '../../core/map/mock-position';
 import { SpeechQueue } from '../../core/speech/speech-queue';
 import { IntentService } from '../../services/intent.service';
 import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
@@ -52,9 +55,6 @@ const NAV_TEXT: Record<NavState, string> = {
 };
 
 const DOUBLE_TAP_WINDOW_MS = 500;
-
-/** mock 初始位置：1 层 (-37,-48)（局部米制，邻近真实信标 BK-01-008）。 */
-const MOCK_POSITION = { floorId: '1', x: -37, y: -48 };
 
 type Canvas2d = WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D;
 
@@ -115,6 +115,8 @@ Page({
   locationQuery: null as LocationQueryService | null,
   controller: null as NavSessionController | null,
   pipeline: null as LocationPipeline | null,
+  /** 当前导航的观测源（mock 时为 MockBeaconSource，路线就绪后切换行走轨迹）。 */
+  navSource: null as BeaconSourceLike | null,
   navDestination: null as PlaceCandidate | null,
   routeForDisplay: null as RouteInfo | null,
   /** 导航态最近一次可信位置（unreliable/lost 不更新 → 恢复态不推进显示）。 */
@@ -770,6 +772,7 @@ Page({
     }
 
     const source = createBeaconSource(appContext.dataSource, appContext.map);
+    this.navSource = source;
     const pipeline = new LocationPipeline({
       client: appContext.http.client,
       map: appContext.map,
@@ -820,6 +823,16 @@ Page({
         const text = route.segments[0]?.text;
         if (text !== undefined) {
           this.setData({ instruction: text });
+        }
+        // mock 模拟导航（类高德）：路线就绪后让 mock 用户沿规划路线
+        // 以 1.5m/s 行走，沿途按所在楼层采集信标观测（reroute 同样换新路线）
+        if (this.navSource instanceof MockBeaconSource && route.polyline.length > 0) {
+          this.navSource.updatePath(
+            route.polyline.map((p) => ({ x: p.x, y: p.y, floorId: p.floorId ?? undefined })),
+          );
+          log.info(
+            `模拟导航：沿路线行走 ${route.polyline.length} 点 @${MOCK_WALK_SPEED_MPS}m/s`,
+          );
         }
         this.routeForDisplay = route;
         this.requestDraw(); // 导航视觉：重绘路线（REQ-NAV 展示层）
@@ -950,6 +963,7 @@ Page({
     this.navDestination = null;
     this.routeForDisplay = null;
     this.navPosition = null;
+    this.navSource = null;
     this.pipeline?.stop();
     this.pipeline = null;
     this.controller = null;
