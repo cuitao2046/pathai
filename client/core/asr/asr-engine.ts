@@ -1,6 +1,6 @@
 /**
- * ASR 引擎抽象（docs/24 FE-02：ASR 由客户端集成微信同声传译插件）。
- * WechatSI 插件实现与调试 Mock 可互换；会话语义：
+ * ASR 引擎抽象（docs/24 FE-02；live 实现见 core/asr/xfyun-asr.ts 讯飞在线识别）。
+ * 讯飞实现与调试 Mock 可互换；会话语义：
  * - start 返回的 promise 在 stop() 之后以最终识别文本 resolve；
  * - 引擎故障以 Error reject；cancel() 使其以 AsrCancelledError reject（取消不提交）。
  */

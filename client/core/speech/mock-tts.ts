@@ -1,6 +1,6 @@
 /**
  * 调试/兜底用 Mock TTS 引擎：记录播报文本，立即完成。
- * 开发者工具中 WechatSI 表现不确定时由应用装配层选用（C8 引擎自检）。
+ * 开发者工具联调（无讯飞网络环境）由应用装配层选用（C8 引擎自检）。
  */
 import type { TtsEngine } from './tts-engine';
 

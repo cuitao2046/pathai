@@ -33,8 +33,6 @@ desktop.ini
 
 # 后端本地数据库与调试暂存
 /backend/.local/
-# ASR 模型文件（体积大不入 git；开发机从 result/asr-models 拷入供静态托管）
-/backend/static/asr/
 
 # 微信小程序本地配置
 /client/project.private.config.json

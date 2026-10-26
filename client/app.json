@@ -14,11 +14,5 @@
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents",
-  "subpackages": [
-    {
-      "root": "subpackages/asr",
-      "pages": ["pages/boot/boot"]
-    }
-  ]
+  "lazyCodeLoading": "requiredComponents"
 }
