@@ -16,7 +16,21 @@ import { createBeaconSource } from '../../core/ble/beacon-source-factory';
 import { SpeechQueue } from '../../core/speech/speech-queue';
 import { IntentService } from '../../services/intent.service';
 import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
-import type { IntentParseResponse, PlaceCandidate } from '../../typings/api';
+import {
+  NavSessionController,
+  type NavPipelineControl,
+  type NavState,
+} from '../../core/nav/nav-session-controller';
+import { LocationPipeline } from '../../core/position/location-pipeline';
+import { SequenceCounter } from '../../core/position/sequence-counter';
+import { buildRouteOverview } from '../../core/nav/route-overview';
+import { vibrateLong, vibrateShort } from '../../utils/haptic';
+import type {
+  IntentParseResponse,
+  PlaceCandidate,
+  PositionEstimateResponse,
+  RouteInfo,
+} from '../../typings/api';
 
 const log = createLogger('map');
 
@@ -27,6 +41,17 @@ const PTT_TEXT: Record<PttState, string> = {
   recognizing: '识别中…',
   error: '识别失败，请重试',
 };
+
+/** 导航态文案（自原导航页平移）。 */
+const NAV_TEXT: Record<NavState, string> = {
+  idle: '正在定位…',
+  active: '导航中',
+  recovering: '信号弱，正在重新定位，请原地稍候',
+  arrived: '已到达目的地',
+  ended: '导航结束',
+};
+
+const DOUBLE_TAP_WINDOW_MS = 500;
 
 /** mock 初始位置：1 层 (-37,-48)（局部米制，邻近真实信标 BK-01-008）。 */
 const MOCK_POSITION = { floorId: '1', x: -37, y: -48 };
@@ -74,6 +99,13 @@ Page({
     candidates: [] as PlaceCandidate[],
     destination: null as PlaceCandidate | null,
     isMockSource: appContext.dataSource === 'mock',
+    // 导航态（REQ-PAGE：导航融合进地图页，原独立导航页退役）
+    navActive: false,
+    state: 'idle' as NavState,
+    stateText: NAV_TEXT.idle,
+    instruction: '',
+    destinationName: '',
+    ended: false,
   },
 
   canvas: null as WechatMiniprogram.Canvas | null,
@@ -81,6 +113,13 @@ Page({
   ptt: null as PushToTalk | null,
   intents: null as IntentService | null,
   locationQuery: null as LocationQueryService | null,
+  controller: null as NavSessionController | null,
+  pipeline: null as LocationPipeline | null,
+  navDestination: null as PlaceCandidate | null,
+  routeForDisplay: null as RouteInfo | null,
+  overviewAnnounced: false,
+  lastTapAt: 0,
+  sessionEnded: false,
   parseInFlight: false,
   locationInFlight: false,
   ctx: null as Canvas2d | null,
@@ -118,6 +157,22 @@ Page({
 
   onHide(): void {
     this.ptt?.handleAppHide(); // 切后台：取消识别，不提交
+    this.controller?.handleBackground(); // 导航中：停采集，恢复交给 onShow
+  },
+
+  onShow(): void {
+    const controller = this.controller;
+    if (controller !== null && controller.sessionId !== null && !this.sessionEnded) {
+      void controller.handleForeground();
+    }
+  },
+
+  onUnload(): void {
+    const controller = this.controller;
+    if (controller !== null && !this.sessionEnded && controller.sessionId !== null) {
+      controller.endSession('user_cancelled').catch(() => undefined);
+    }
+    this.pipeline?.stop();
   },
 
   onReady(): void {
@@ -560,12 +615,212 @@ Page({
     }
   },
 
+  /** 确认目的地 → 进入导航态（同页融合，原 navigateTo 导航页已退役）。 */
   onStartNav(): void {
     const destination = this.data.destination;
-    if (destination === null) {
+    if (destination === null || this.data.navActive) {
       return;
     }
-    const query = `placeId=${encodeURIComponent(destination.placeId)}&name=${encodeURIComponent(destination.name)}&floorId=${encodeURIComponent(destination.floorId)}`;
-    wx.navigateTo({ url: `/pages/navigation/navigation?${query}` });
+    this.navDestination = destination;
+    this.sessionEnded = false;
+    this.overviewAnnounced = false;
+    this.routeForDisplay = null;
+    this.lastTapAt = 0;
+    // 收起意图居中卡，切换到导航 HUD
+    this.setData({
+      navActive: true,
+      ended: false,
+      state: 'idle' as NavState,
+      stateText: NAV_TEXT.idle,
+      instruction: '正在确定您的位置…',
+      destinationName: destination.name,
+      destination: null,
+      candidates: [],
+      reply: '',
+      partial: '',
+      recognized: '',
+    });
+    void this.initNavigation();
+  },
+
+  /**
+   * 导航编排（自原导航页 bootstrap 平移）：定位管线 + 会话控制器。
+   * SpeechQueue 复用页面级实例（onLoad 已建）。
+   */
+  async initNavigation(): Promise<void> {
+    if (this.speech === null) {
+      return;
+    }
+    try {
+      await appContext.map.ensureLoaded();
+    } catch (err) {
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '地图加载失败，请重试';
+      log.warn('导航前地图加载失败', err);
+      this.setData({ stateText: message, instruction: message });
+      return;
+    }
+
+    const source = createBeaconSource(appContext.dataSource, appContext.map);
+    const pipeline = new LocationPipeline({
+      client: appContext.http.client,
+      map: appContext.map,
+      source,
+      sequence: new SequenceCounter(),
+      onEstimate: (estimate) => this.handleEstimate(estimate),
+      onUnusable: (err) => {
+        log.warn('定位不可用', err.code);
+        vibrateShort();
+      },
+    });
+    this.pipeline = pipeline;
+
+    const pipelineControl: NavPipelineControl = {
+      stop: () => pipeline.stop(),
+      startNavigating: async () => {
+        if (pipeline.isRunning) {
+          pipeline.setMode('navigating');
+        } else {
+          await pipeline.start('navigating');
+        }
+      },
+    };
+    this.controller = new NavSessionController({
+      client: appContext.http.client,
+      map: appContext.map,
+      speech: this.speech,
+      pipeline: pipelineControl,
+      onStateChange: (state) => {
+        this.setData({ state, stateText: NAV_TEXT[state] });
+        if (state === 'recovering') {
+          vibrateLong(); // 震动模式：脱离路线需要引起注意
+        }
+      },
+      onRoute: (route) => {
+        // onRoute 先于 controller 播报首条指令（createSession 内顺序）：
+        // 概要先进队列，形成「概要 → 首条指令」的既定顺序（REQ-NAV）
+        if (!this.overviewAnnounced && this.navDestination !== null) {
+          this.overviewAnnounced = true;
+          const overview = buildRouteOverview(
+            route,
+            this.navDestination.name,
+            (floorId) => appContext.map.floors[floorId]?.displayName,
+          );
+          this.speech?.enqueue(overview, 'normal');
+          log.info('路径概要:', overview);
+        }
+        const text = route.segments[0]?.text;
+        if (text !== undefined) {
+          this.setData({ instruction: text });
+        }
+        this.routeForDisplay = route;
+        this.requestDraw(); // 导航视觉：重绘路线（REQ-NAV 展示层）
+      },
+      onEnded: (info) => {
+        this.sessionEnded = true;
+        pipeline.stop();
+        if (!info.byArrival && info.reason !== null) {
+          this.setData({
+            ended: true,
+            instruction: '导航已结束',
+            stateText: info.reason === 'user_cancelled' ? '已取消导航' : NAV_TEXT.ended,
+          });
+        } else {
+          this.setData({ ended: true }); // 到达/恢复失效：按钮切为「关闭」
+        }
+      },
+    });
+
+    try {
+      await pipeline.start('standby');
+    } catch (err) {
+      log.warn('定位采集启动失败', err);
+      this.setData({
+        stateText: '定位启动失败，请检查蓝牙后重试',
+        instruction: '定位启动失败，请检查蓝牙后重试',
+      });
+    }
+  },
+
+  /** 定位 → 会话（首个可信估计作为起点）。 */
+  handleEstimate(estimate: PositionEstimateResponse): void {
+    const controller = this.controller;
+    if (controller === null || this.sessionEnded) {
+      return;
+    }
+    if (controller.sessionId === null) {
+      void this.createSession(estimate);
+      return;
+    }
+    controller.handleEstimate(estimate);
+  },
+
+  async createSession(estimate: PositionEstimateResponse): Promise<void> {
+    const controller = this.controller;
+    const position = estimate.position;
+    const destination = this.navDestination;
+    if (controller === null || position === undefined || position === null || destination === null) {
+      return;
+    }
+    try {
+      await controller.createSession(destination, {
+        x: position.x,
+        y: position.y,
+        floorId: position.floorId ?? null,
+        confidence: estimate.confidence,
+        observedAt: estimate.observedAt,
+      });
+      this.setData({ stateText: NAV_TEXT.active });
+    } catch (err) {
+      const message = err instanceof ApiClientError ? describeError(err.code) : '无法开始导航，请重试';
+      log.warn('会话创建失败', err);
+      this.setData({ instruction: message });
+      this.speech?.enqueue(message, 'normal');
+    }
+  },
+
+  /** 双击结束导航（防误触，自原导航页平移）。 */
+  onEndTap(): void {
+    const controller = this.controller;
+    if (controller === null || this.sessionEnded || controller.sessionId === null) {
+      return;
+    }
+    const now = Date.now();
+    if (now - this.lastTapAt <= DOUBLE_TAP_WINDOW_MS) {
+      this.lastTapAt = 0;
+      this.setData({ stateText: '正在结束导航…' });
+      controller.endSession('user_finished').catch((err) => {
+        log.warn('结束会话失败', err);
+        this.setData({ stateText: NAV_TEXT.active });
+      });
+      return;
+    }
+    this.lastTapAt = now;
+    const hint = '再按一次结束导航';
+    this.setData({ stateText: hint });
+    this.speech?.enqueue(hint, 'normal');
+    setTimeout(() => {
+      if (this.lastTapAt !== 0 && !this.sessionEnded) {
+        this.setData({ stateText: NAV_TEXT[this.data.state as NavState] });
+      }
+    }, DOUBLE_TAP_WINDOW_MS);
+  },
+
+  /** 导航结束后关闭 HUD，回到待命地图。 */
+  onDismissNav(): void {
+    this.navDestination = null;
+    this.routeForDisplay = null;
+    this.pipeline?.stop();
+    this.pipeline = null;
+    this.controller = null;
+    this.setData({
+      navActive: false,
+      ended: false,
+      instruction: '',
+      destinationName: '',
+      state: 'idle' as NavState,
+      stateText: NAV_TEXT.idle,
+    });
+    this.requestDraw();
   },
 });

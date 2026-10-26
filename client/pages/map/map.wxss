@@ -220,3 +220,103 @@
   color: #1f2937;
   border: 2rpx solid #d1d5db;
 }
+
+/* ------------------------------------------------------------------
+ * 导航 HUD（REQ-PAGE：导航态融合进地图页）
+ * ------------------------------------------------------------------ */
+
+.nav-hud {
+  position: absolute;
+  z-index: 30;
+  left: 24rpx;
+  right: 24rpx;
+  top: 96rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  pointer-events: none; /* 仅子控件可点，避免大块遮挡地图手势 */
+}
+
+.nav-hud .nav-top,
+.nav-hud .nav-instruction,
+.nav-hud .nav-fallback,
+.nav-hud .mock-hint,
+.nav-hud .end-button,
+.nav-hud .dismiss-button {
+  pointer-events: auto;
+}
+
+.nav-top {
+  padding: 20rpx 28rpx;
+  background: rgba(31, 41, 55, 0.88);
+  color: #ffffff;
+  border-radius: 20rpx;
+}
+
+.nav-top .destination {
+  font-size: 28rpx;
+  opacity: 0.85;
+}
+
+.nav-top .state {
+  font-size: 34rpx;
+  font-weight: 600;
+  margin-top: 6rpx;
+}
+
+.nav-instruction {
+  padding: 24rpx 28rpx;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.5;
+  border-radius: 20rpx;
+  box-shadow: 0 6rpx 24rpx rgba(31, 41, 55, 0.16);
+}
+
+.nav-fallback {
+  padding: 16rpx 24rpx;
+  background: rgba(255, 251, 235, 0.96);
+  color: #b45309;
+  font-size: 26rpx;
+  border-radius: 16rpx;
+}
+
+.nav-fallback .label {
+  color: #92400e;
+  margin-right: 12rpx;
+}
+
+.mock-hint {
+  align-self: flex-start;
+  padding: 8rpx 20rpx;
+  background: rgba(5, 150, 105, 0.9);
+  color: #ffffff;
+  font-size: 24rpx;
+  border-radius: 999rpx;
+}
+
+.end-button {
+  margin: 8rpx auto 0;
+  width: 320rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: 999rpx;
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.dismiss-button {
+  margin: 8rpx auto 0;
+  width: 320rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: 999rpx;
+  background: #2563eb;
+  color: #ffffff;
+}

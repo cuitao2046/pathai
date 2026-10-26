@@ -1,7 +1,6 @@
 {
   "pages": [
     "pages/map/map",
-    "pages/navigation/navigation",
     "pages/settings/settings"
   ],
   "window": {

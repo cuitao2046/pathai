@@ -27,10 +27,10 @@
 
   <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
 
-  <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE） -->
+  <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE；导航态时让位给导航 HUD） -->
   <view
     class="center-card"
-    wx:if="{{recognized !== '' || reply !== '' || partial !== '' || fallbackText !== '' || candidates.length > 0 || destination !== null}}"
+    wx:if="{{!navActive && (recognized !== '' || reply !== '' || partial !== '' || fallbackText !== '' || candidates.length > 0 || destination !== null)}}"
   >
     <view class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
     <view class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
@@ -57,6 +57,31 @@
       bindtap="onStartNav"
       aria-label="开始导航到{{destination.name}}"
     >开始导航：{{destination.name}}</button>
+  </view>
+
+  <!-- 导航 HUD（REQ-PAGE：导航态融合进地图页；原独立导航页退役） -->
+  <view class="nav-hud" wx:if="{{navActive}}">
+    <view class="nav-top">
+      <view class="destination">目的地：{{destinationName}}</view>
+      <view class="state" aria-live="polite">{{stateText}}</view>
+    </view>
+
+    <view class="nav-instruction" aria-live="assertive" wx:if="{{instruction !== ''}}">{{instruction}}</view>
+
+    <view class="nav-fallback" wx:if="{{fallbackText !== ''}}">
+      <text class="label">文字提示</text>
+      <text user-select>{{fallbackText}}</text>
+    </view>
+
+    <view class="mock-hint" wx:if="{{isMockSource && !ended}}">mock 模式：使用模拟信标轨迹定位</view>
+
+    <button
+      wx:if="{{!ended}}"
+      class="end-button"
+      bindtap="onEndTap"
+      aria-label="结束导航，双击确认"
+    >结束导航</button>
+    <button wx:else class="dismiss-button" bindtap="onDismissNav" aria-label="关闭导航结果">关闭</button>
   </view>
 
   <!-- 下半屏按住说话热区（REQ-PAGE：语音无按钮；z-index 低于覆盖控件，
