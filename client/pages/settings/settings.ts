@@ -20,7 +20,7 @@ Page({
     apiUrl: API_BASE_URL,
     siteId: DEFAULT_SITE_ID,
     dataSource: 'mock' as DataSource,
-    mockText: '带我去图书馆',
+    mockText: appContext.getMockAsrText() || '带我去图书馆',
     mapVersion: '未加载',
     tokenStatus: '检查中…',
     ttsEngine: '',
