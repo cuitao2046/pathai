@@ -3,7 +3,7 @@
  * （项目约束：mock 必须使用真实地图与信标数据）。
  */
 import { FloorMapViewport } from '../core/map/floor-map-viewport';
-import { flattenWalls, flatBounds, floorsSortedByLevel } from '../core/map/floor-geometry';
+import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels } from '../core/map/floor-geometry';
 import { REAL_MAP } from './fixtures/real-map';
 
 const FLOORS = REAL_MAP.floors;
@@ -41,6 +41,23 @@ describe('floor-geometry（真实墙体数据）', () => {
     expect(list.map((f) => f.floorId)).toEqual(['1', '2']);
     expect(list[0].displayName).toBe('一楼');
     expect(list[1].displayName).toBe('二楼');
+  });
+
+  test('floorPlaceLabels 每层地点全部解析出坐标（空间语义标注）', () => {
+    for (const floorId of ['1', '2']) {
+      const expectedCount = REAL_MAP.places.filter((p) => p.floorId === floorId).length;
+      expect(expectedCount).toBeGreaterThan(0);
+      const labels = floorPlaceLabels(FLOORS, REAL_MAP.places, floorId);
+      expect(labels).toHaveLength(expectedCount); // nodeId 坐标全部可解析
+    }
+    const f1 = floorPlaceLabels(FLOORS, REAL_MAP.places, '1');
+    const resource = f1.find((l) => l.text === '资源教室');
+    expect(resource).toBeDefined();
+    // 真实坐标落在 1 层范围内（x ∈ [-84,13]、y ∈ [-89,40]）
+    expect(resource!.x).toBeGreaterThan(-85);
+    expect(resource!.x).toBeLessThan(14);
+    expect(resource!.y).toBeGreaterThan(-90);
+    expect(resource!.y).toBeLessThan(41);
   });
 });
 

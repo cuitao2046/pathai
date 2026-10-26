@@ -253,14 +253,22 @@ export interface MapWallFeature {
   properties?: { type?: string; thickness?: number | null };
 }
 
+/** 拓扑节点（渲染子集：空间语义标注经 place.nodeId 查节点坐标）。 */
+export interface MapNodeRef {
+  id: string;
+  coordinates: [number, number];
+}
+
 /**
- * 楼层数据渲染子集（镜像 schema.py FloorData，楼层地图首屏需 geometry.walls；
- * topology/semantic/rooms/doors 等其余图层暂不消费，后续按需在此扩展）。
+ * 楼层数据渲染子集（镜像 schema.py FloorData，楼层地图首屏消费：
+ * geometry.walls 画墙体、topology.nodes 定位地点名称标注；
+ * semantic/rooms/doors 等其余图层暂不消费，后续按需在此扩展）。
  */
 export interface MapFloorData {
   displayName: string;
   level: number;
   geometry: { walls: MapWallFeature[] };
+  topology: { nodes: MapNodeRef[] };
 }
 
 /** 地图包根结构：客户端消费 siteId/mapVersion/publishedAt/places/beacons/floors。 */

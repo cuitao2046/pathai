@@ -80,3 +80,38 @@ export function wallThickness(wall: MapWallFeature): number {
     ? wall.properties.thickness
     : 0.2;
 }
+
+/** 地点名称标注项（世界坐标 + 显示文本）。 */
+export interface PlaceLabel {
+  x: number;
+  y: number;
+  text: string;
+}
+
+/**
+ * 当前楼层的地点名称标注（空间语义：教室/办公室/卫生间等）：
+ * place 经 nodeId 查拓扑节点坐标；查不到坐标的位置跳过（数据自洽性由
+ * 后端 test_places_reference_existing_nodes 保证，此处防御）。
+ */
+export function floorPlaceLabels(
+  floors: Record<string, MapFloorData>,
+  places: readonly { placeId: string; name: string; floorId: string; nodeId: string }[],
+  floorId: string,
+): PlaceLabel[] {
+  const nodes = floors[floorId]?.topology.nodes;
+  if (nodes === undefined) {
+    return [];
+  }
+  const coordById = new Map(nodes.map((n) => [n.id, n.coordinates] as const));
+  const labels: PlaceLabel[] = [];
+  for (const place of places) {
+    if (place.floorId !== floorId) {
+      continue;
+    }
+    const coord = coordById.get(place.nodeId);
+    if (coord !== undefined) {
+      labels.push({ x: coord[0], y: coord[1], text: place.name });
+    }
+  }
+  return labels;
+}

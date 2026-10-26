@@ -9,7 +9,7 @@ import { appContext } from '../../services/app-context';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
-import { flattenWalls, flatBounds, floorsSortedByLevel } from '../../core/map/floor-geometry';
+import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels, type PlaceLabel } from '../../core/map/floor-geometry';
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
 
 const log = createLogger('map');
@@ -55,6 +55,7 @@ Page({
   ctx: null as Canvas2d | null,
   viewport: null as FloorMapViewport | null,
   wallSegs: {} as Record<string, Float32Array>,
+  placeLabels: {} as Record<string, PlaceLabel[]>,
   floorList: [] as FloorItem[],
   canvasRect: { left: 0, top: 0 },
   canvasReady: false,
@@ -90,10 +91,14 @@ Page({
       const floorsData = appContext.map.floors;
       const floors = floorsSortedByLevel(floorsData);
       const segs: Record<string, Float32Array> = {};
+      const labels: Record<string, PlaceLabel[]> = {};
       for (const item of floors) {
         segs[item.floorId] = flattenWalls(floorsData, item.floorId);
+        // 空间语义标注（教室/办公室等名称）：一次预计算，draw 按层引用
+        labels[item.floorId] = floorPlaceLabels(floorsData, appContext.map.places, item.floorId);
       }
       this.wallSegs = segs;
+      this.placeLabels = labels;
       this.floorList = floors;
       this.setData({ floors, loading: false, loadError: '' });
       log.info('地图首屏就绪', appContext.map.requireVersion());
@@ -204,6 +209,42 @@ Page({
       ctx.beginPath();
       ctx.arc(sx, sy, 3, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // 空间语义标注（教室/办公室等）：固定屏幕字号、白描边压在墙线上、
+    // 贪心防重叠（超出视口的跳过；缩得过小时自然只显示互不相交的子集）
+    const labels = this.placeLabels[vp.floorId];
+    if (labels !== undefined) {
+      const FONT = 12;
+      ctx.font = `${FONT}px -apple-system, "PingFang SC", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const boxes: Array<[number, number, number, number]> = [];
+      for (const label of labels) {
+        const { sx, sy } = vp.toScreen(label.x, label.y);
+        const halfW = (label.text.length * FONT) / 2;
+        if (sx < -halfW - 4 || sy < -10 || sx > w + halfW + 4 || sy > h + 10) {
+          continue;
+        }
+        const box: [number, number, number, number] = [
+          sx - halfW - 3,
+          sy - FONT / 2 - 3,
+          sx + halfW + 3,
+          sy + FONT / 2 + 3,
+        ];
+        const overlaps = boxes.some(
+          (r) => !(box[2] < r[0] || box[0] > r[2] || box[3] < r[1] || box[1] > r[3]),
+        );
+        if (overlaps) {
+          continue;
+        }
+        boxes.push(box);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(245, 247, 250, 0.95)';
+        ctx.strokeText(label.text, sx, sy);
+        ctx.fillStyle = '#374151';
+        ctx.fillText(label.text, sx, sy);
+      }
     }
 
     // mock 位置点（仅所在楼层）：精度圈 + 蓝点白描边
