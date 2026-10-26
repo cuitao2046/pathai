@@ -103,11 +103,28 @@ Page({
       this.setData({ floors, loading: false, loadError: '' });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
+      // 启动集中申请权限：地图就绪后再弹，避免与加载叠加
+      this.requestStartupPermissions();
     } catch (err) {
       const message =
         err instanceof ApiClientError ? describeError(err.code) : '地图加载失败，请检查网络';
       log.warn('地图加载失败', err);
       this.setData({ loading: false, loadError: message });
+    }
+  },
+
+  /**
+   * 启动授权：麦克风（按住说话/同声传译插件）、蓝牙（iBeacon 实扫）。
+   * wx.authorize 仅首次弹窗；用户此前拒绝过则直接 fail（记录日志，
+   * 需在设置页手动开启），一律不阻塞启动。
+   */
+  requestStartupPermissions(): void {
+    for (const scope of ['scope.record', 'scope.bluetooth']) {
+      wx.authorize({
+        scope,
+        success: () => log.info('授权通过', scope),
+        fail: (err) => log.info('授权未通过（拒绝过或不支持）', scope, err.errMsg ?? ''),
+      });
     }
   },
 
