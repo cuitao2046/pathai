@@ -117,6 +117,8 @@ Page({
   pipeline: null as LocationPipeline | null,
   navDestination: null as PlaceCandidate | null,
   routeForDisplay: null as RouteInfo | null,
+  /** 导航态最近一次可信位置（unreliable/lost 不更新 → 恢复态不推进显示）。 */
+  navPosition: null as { floorId: string; x: number; y: number } | null,
   overviewAnnounced: false,
   lastTapAt: 0,
   sessionEnded: false,
@@ -363,9 +365,114 @@ Page({
       }
     }
 
-    // mock 位置点（仅所在楼层）：精度圈 + 蓝点白描边
-    if (vp.floorId === MOCK_POSITION.floorId) {
-      const { sx, sy } = vp.toScreen(MOCK_POSITION.x, MOCK_POSITION.y);
+    // 导航态：当前楼层路线全貌 + 标记（REQ-NAV 展示层；route 由 onRoute 存入）
+    const route = this.routeForDisplay;
+    if (route !== null && this.data.navActive && route.polyline.length >= 2) {
+      // polyline 按楼层切段（floorId null 沿用前一点楼层，桥接跨层内的空洞）
+      const routeSegs: Array<{ floorId: string; pts: Array<{ x: number; y: number }> }> = [];
+      let lastFloor: string | null = null;
+      for (const pt of route.polyline) {
+        const fid: string | null = pt.floorId ?? lastFloor;
+        if (fid === null) {
+          continue;
+        }
+        lastFloor = fid;
+        const tail = routeSegs[routeSegs.length - 1];
+        if (tail !== undefined && tail.floorId === fid) {
+          tail.pts.push({ x: pt.x, y: pt.y });
+        } else {
+          routeSegs.push({ floorId: fid, pts: [{ x: pt.x, y: pt.y }] });
+        }
+      }
+
+      // 当前层整条路线高亮（宽底衬 + 主线，非只显示前方一段）
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const seg of routeSegs) {
+        if (seg.floorId !== vp.floorId || seg.pts.length < 2) {
+          continue;
+        }
+        ctx.beginPath();
+        const head = vp.toScreen(seg.pts[0].x, seg.pts[0].y);
+        ctx.moveTo(head.sx, head.sy);
+        for (let i = 1; i < seg.pts.length; i += 1) {
+          const pt = vp.toScreen(seg.pts[i].x, seg.pts[i].y);
+          ctx.lineTo(pt.sx, pt.sy);
+        }
+        ctx.strokeStyle = 'rgba(37, 99, 235, 0.22)';
+        ctx.lineWidth = Math.max(10, 1.0 * vp.scale);
+        ctx.stroke();
+        ctx.strokeStyle = '#2563eb';
+        ctx.lineWidth = Math.max(5, 0.5 * vp.scale);
+        ctx.stroke();
+      }
+
+      // 楼层切换点（相邻点楼层变化处、属本层）：橙色空心圈
+      for (let i = 1; i < route.polyline.length; i += 1) {
+        const prevFloor = route.polyline[i - 1].floorId;
+        const cur = route.polyline[i];
+        if (
+          prevFloor === null || prevFloor === undefined ||
+          cur.floorId === null || cur.floorId === undefined ||
+          prevFloor === cur.floorId ||
+          cur.floorId !== vp.floorId
+        ) {
+          continue;
+        }
+        const { sx, sy } = vp.toScreen(cur.x, cur.y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      // 转向点：decision_point 指令按 nodeId 查本层拓扑节点坐标 → 白边橙菱形
+      const nodes = appContext.map.floors[vp.floorId]?.topology.nodes ?? [];
+      for (const seg of route.segments) {
+        const nodeId = seg.trigger.nodeId;
+        if (seg.trigger.type !== 'decision_point' || nodeId === null || nodeId === undefined) {
+          continue;
+        }
+        const node = nodes.find((n) => n.id === nodeId);
+        if (node === undefined) {
+          continue;
+        }
+        const { sx, sy } = vp.toScreen(node.coordinates[0], node.coordinates[1]);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(-6, -6, 12, 12);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-6, -6, 12, 12);
+        ctx.restore();
+      }
+
+      // 终点标记（本层）：红底白圈 + 「终」
+      const lastPt = route.polyline[route.polyline.length - 1];
+      if (lastPt !== undefined && (lastPt.floorId ?? lastFloor) === vp.floorId) {
+        const { sx, sy } = vp.toScreen(lastPt.x, lastPt.y);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 11, 0, Math.PI * 2);
+        ctx.fillStyle = '#dc2626';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.font = '12px -apple-system, "PingFang SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('终', sx, sy);
+      }
+    }
+
+    // 位置点：导航态画最近可信位置（无估计则不画，不伪造）；待命态保留 mock 锚点
+    const displayPos = this.data.navActive ? this.navPosition : MOCK_POSITION;
+    if (displayPos !== null && displayPos.floorId === vp.floorId) {
+      const { sx, sy } = vp.toScreen(displayPos.x, displayPos.y);
       ctx.beginPath();
       ctx.arc(sx, sy, 14, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(37, 99, 235, 0.18)';
@@ -625,6 +732,7 @@ Page({
     this.sessionEnded = false;
     this.overviewAnnounced = false;
     this.routeForDisplay = null;
+    this.navPosition = null;
     this.lastTapAt = 0;
     // 收起意图居中卡，切换到导航 HUD
     this.setData({
@@ -742,8 +850,18 @@ Page({
     }
   },
 
-  /** 定位 → 会话（首个可信估计作为起点）。 */
+  /** 定位 → 会话（首个可信估计作为起点）；可信位置驱动显示跟随。 */
   handleEstimate(estimate: PositionEstimateResponse): void {
+    const position = estimate.position;
+    if (position !== undefined && position !== null) {
+      // pipeline 仅把 reliable/degraded 交给本回调 → 恢复态(unreliable)天然不推进显示
+      this.navPosition = {
+        floorId: position.floorId ?? this.navPosition?.floorId ?? this.floorList[0]?.floorId ?? '1',
+        x: position.x,
+        y: position.y,
+      };
+      this.followPosition();
+    }
     const controller = this.controller;
     if (controller === null || this.sessionEnded) {
       return;
@@ -753,6 +871,27 @@ Page({
       return;
     }
     controller.handleEstimate(estimate);
+  },
+
+  /** 类高德跟随：楼层自动切换 + 视口对准当前位置（REQ-NAV 展示层）。 */
+  followPosition(): void {
+    const vp = this.viewport;
+    const pos = this.navPosition;
+    if (vp === null || pos === null || this.canvasSize.w === 0) {
+      return;
+    }
+    if (pos.floorId !== vp.floorId) {
+      const segs = this.wallSegs[pos.floorId];
+      if (segs !== undefined) {
+        vp.setFloor(pos.floorId, flatBounds(segs));
+        const item = this.floorList.find((f) => f.floorId === pos.floorId);
+        this.setData({ currentFloor: pos.floorId, floorLabel: item?.displayName ?? pos.floorId });
+      }
+    }
+    // 每次可信估计把视口中心对准位置（导航态低频：standby 8s / 导航 2.5s）
+    const { sx, sy } = vp.toScreen(pos.x, pos.y);
+    vp.panBy(this.canvasSize.w / 2 - sx, this.canvasSize.h / 2 - sy);
+    this.requestDraw();
   },
 
   async createSession(estimate: PositionEstimateResponse): Promise<void> {
@@ -810,6 +949,7 @@ Page({
   onDismissNav(): void {
     this.navDestination = null;
     this.routeForDisplay = null;
+    this.navPosition = null;
     this.pipeline?.stop();
     this.pipeline = null;
     this.controller = null;
