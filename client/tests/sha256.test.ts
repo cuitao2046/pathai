@@ -81,7 +81,7 @@ describe('异步分片版（sha256Async / utf8BytesAsync）', () => {
     expect(await sha256Async(text)).toBe(
       'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0',
     );
-  });
+  }, 30000); // 大计算量用例：全量并发下 5s 默认超时不够（复发性 flaky）
 
   test('代理对被切片边界切开时仍与同步版一致', async () => {
     // UTF8_CHARS_PER_SLICE=524288：让代理对起始恰好压在第一片末尾，
@@ -89,11 +89,11 @@ describe('异步分片版（sha256Async / utf8BytesAsync）', () => {
     const text = 'x'.repeat(524287) + '\u{1D54A}' + 'y'.repeat(1000);
     expect(await utf8BytesAsync(text)).toEqual(utf8Bytes(text));
     expect(await sha256Async(text)).toBe(sha256(text));
-  });
+  }, 30000); // 同上：满载机器上双跑 sha256 可超 5s
 
   test('混合文本（ASCII+中文+代理对跨片）与同步版一致', async () => {
     const unit = 'abc中文\u{1D54A}';
     const text = unit.repeat(120000); // 约 72 万码元，跨多片
     expect(await sha256Async(text)).toBe(sha256(text));
-  });
+  }, 30000); // 同上
 });
