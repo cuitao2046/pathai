@@ -11,12 +11,12 @@ from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.request_context import RequestContextMiddleware
-from pathai_backend.routers import assets as assets_router
 from pathai_backend.routers import auth as auth_router
 from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import location as location_router
 from pathai_backend.routers import map as map_router
 from pathai_backend.routers import nav as nav_router
+from pathai_backend.routers import voice as voice_router
 from pathai_backend.wechat import FakeWechatAuthClient, HttpWechatAuthClient
 
 
@@ -53,8 +53,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(intent_router.router)
     app.include_router(location_router.router)
     app.include_router(nav_router.router)
-    # 静态资源（ASR 模型下载）：端点免鉴权，须在业务路由之外无依赖
-    app.include_router(assets_router.router)
+    # 讯飞 WebSocket 签名 URL 签发（live 语音 ASR/TTS）
+    app.include_router(voice_router.router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

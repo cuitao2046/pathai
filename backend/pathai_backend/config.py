@@ -30,6 +30,14 @@ class Settings:
     wechat_appid: str = field(default="", repr=False)
     wechat_secret: str = field(default="", repr=False)
     openid_salt: str = field(default="", repr=False)
+    # 讯飞开放平台（live 语音 ASR/TTS）：appid 两服务共用，key/secret 按服务分列
+    xfyun_appid: str = field(default="", repr=False)
+    xfyun_iat_api_key: str = field(default="", repr=False)
+    xfyun_iat_api_secret: str = field(default="", repr=False)
+    xfyun_tts_api_key: str = field(default="", repr=False)
+    xfyun_tts_api_secret: str = field(default="", repr=False)
+    #: 超拟人合成控制台接入地址，形如 wss://cbm01.cn-huabei-1.xf-yun.com/v1/private/xxx
+    xfyun_tts_url: str = ""
     token_ttl_seconds: int = 7200
     # 本地联调假微信客户端开关：仅 env=local 允许开启（code 以 fake-<openid> 形式直换）
     wechat_fake: bool = False
@@ -48,6 +56,12 @@ class Settings:
             wechat_appid=env.get("PATHAI_WECHAT_APPID", ""),
             wechat_secret=env.get("PATHAI_WECHAT_SECRET", ""),
             openid_salt=env.get("PATHAI_OPENID_SALT", ""),
+            xfyun_appid=env.get("PATHAI_XFYUN_APPID", ""),
+            xfyun_iat_api_key=env.get("PATHAI_XFYUN_IAT_API_KEY", ""),
+            xfyun_iat_api_secret=env.get("PATHAI_XFYUN_IAT_API_SECRET", ""),
+            xfyun_tts_api_key=env.get("PATHAI_XFYUN_TTS_API_KEY", ""),
+            xfyun_tts_api_secret=env.get("PATHAI_XFYUN_TTS_API_SECRET", ""),
+            xfyun_tts_url=env.get("PATHAI_XFYUN_TTS_URL", ""),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
