@@ -56,6 +56,13 @@ const NAV_TEXT: Record<NavState, string> = {
 
 const DOUBLE_TAP_WINDOW_MS = 500;
 
+/**
+ * 进入导航时的视野收窄倍数（相对全图适配 scale；工程默认值，按真机观感调）。
+ * 全路线视野 → 局部跟随视野（类高德步行导航），后续跟随只平移不再改缩放，
+ * 用户手动缩放始终优先。
+ */
+const NAV_VIEW_FACTOR = 2.5;
+
 type Canvas2d = WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D;
 
 interface FloorItem {
@@ -755,7 +762,25 @@ Page({
       partial: '',
       recognized: '',
     });
+    this.enterNavZoom(); // 视野从全路线收窄到局部（REQ-NAV 展示层）
     void this.initNavigation();
+  },
+
+  /**
+   * 进入导航：视野过宽（全图/全路线）时以屏心放大到 NAV_VIEW_FACTOR 倍，
+   * 只放大不缩小——已手动放大的视角不被抢回；后续跟随只平移。
+   */
+  enterNavZoom(): void {
+    const vp = this.viewport;
+    if (vp === null || this.canvasSize.w === 0) {
+      return;
+    }
+    const target = Math.min(vp.fitScale * NAV_VIEW_FACTOR, vp.maxScale);
+    if (vp.scale < target) {
+      vp.zoomAt(this.canvasSize.w / 2, this.canvasSize.h / 2, target / vp.scale);
+      log.info(`导航视野收窄 ×${NAV_VIEW_FACTOR}`, `scale=${vp.scale.toFixed(2)}`);
+      this.requestDraw();
+    }
   },
 
   /**
