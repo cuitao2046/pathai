@@ -1,0 +1,32 @@
+<view
+  class="map-stage"
+  catchtouchstart="onTouchStart"
+  catchtouchmove="onTouchMove"
+  catchtouchend="onTouchEnd"
+  catchtouchcancel="onTouchCancel"
+>
+  <canvas type="2d" id="mapCanvas" class="map-canvas" />
+
+  <view class="floor-badge" aria-live="polite">{{floorLabel}}</view>
+
+  <view class="floor-switch" aria-label="楼层切换">
+    <button
+      wx:for="{{floors}}"
+      wx:key="floorId"
+      class="floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+      data-floor="{{item.floorId}}"
+      bindtap="onSwitchFloor"
+      aria-label="切换到{{item.displayName}}"
+      aria-pressed="{{item.floorId === currentFloor}}"
+    >{{item.level}}F</button>
+  </view>
+
+  <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
+
+  <view class="overlay" wx:if="{{loading}}">
+    <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
+    <button class="retry-btn" wx:if="{{loadError !== ''}}" bindtap="onRetry">重试</button>
+  </view>
+
+  <button class="home-btn" bindtap="onGoVoiceHome">进入语音首页</button>
+</view>
