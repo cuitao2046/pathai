@@ -38,3 +38,9 @@ export const DEBUG_REWRITE_DATA_URL = true;
  * 真机部署/上线前必须关闭。
  */
 export const WECHAT_FAKE_LOGIN = true;
+
+/**
+ * ASR 模型版本（Sherpa-Onnx 端侧识别）：首启从自家后端下载到用户目录，
+ * 识别期零联网；变更此值触发重新下载（须与后端 routers/assets.py manifest 一致）。
+ */
+export const ASR_MODEL_VERSION = 'zipformer2-ctc-zh-int8-2025-04-01-v1';
