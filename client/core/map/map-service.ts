@@ -19,6 +19,7 @@ import { getJson, getString, setJson, setString } from '../../utils/kv';
 import { readMapCache, writeMapCache } from '../../utils/map-cache';
 import type {
   MapBeaconEntry,
+  MapFloorData,
   MapPackageRoot,
   MapPlaceEntry,
   MapVersionResponse,
@@ -83,6 +84,11 @@ export class MapService {
 
   get beacons(): MapBeaconEntry[] {
     return this.pkg?.beacons ?? [];
+  }
+
+  /** 楼层几何（墙体等渲染子集）；未加载返回空对象。 */
+  get floors(): Readonly<Record<string, MapFloorData>> {
+    return this.pkg?.floors ?? {};
   }
 
   /** 信标三元组解析表；未加载抛 MAP_UNAVAILABLE。 */

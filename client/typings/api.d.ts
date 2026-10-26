@@ -246,13 +246,31 @@ export interface MapPlaceEntry {
   accessible: boolean;
 }
 
-/** 地图包根结构：客户端只消费 siteId/mapVersion/places/beacons。 */
+/** 墙体要素（schema geometry.walls 的 LineString 渲染子集，楼层地图首屏消费）。 */
+export interface MapWallFeature {
+  id?: string;
+  geometry: { type: 'LineString'; coordinates: Array<[number, number]> };
+  properties?: { type?: string; thickness?: number | null };
+}
+
+/**
+ * 楼层数据渲染子集（镜像 schema.py FloorData，楼层地图首屏需 geometry.walls；
+ * topology/semantic/rooms/doors 等其余图层暂不消费，后续按需在此扩展）。
+ */
+export interface MapFloorData {
+  displayName: string;
+  level: number;
+  geometry: { walls: MapWallFeature[] };
+}
+
+/** 地图包根结构：客户端消费 siteId/mapVersion/publishedAt/places/beacons/floors。 */
 export interface MapPackageRoot {
   siteId: string;
   mapVersion: string;
   publishedAt: IsoDateTime;
   places: MapPlaceEntry[];
   beacons: MapBeaconEntry[];
+  floors: Record<string, MapFloorData>;
 }
 
 // ---------------------------------------------------------------------------
