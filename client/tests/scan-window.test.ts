@@ -37,15 +37,16 @@ describe('ScanWindowAggregator 窗口聚合', () => {
     expect(byId.get(BK3.beaconId)?.rssi).toBe(-90);
   });
 
-  it('偶数样本取中间两值平均', () => {
+  it('偶数样本取中间两值平均并取整（strict int 契约，防 400 int_from_float）', () => {
     const agg = new ScanWindowAggregator();
     agg.push(sample({ rssi: -60, observedAtMs: 100 }));
-    agg.push(sample({ rssi: -70, observedAtMs: 200 }));
+    agg.push(sample({ rssi: -71, observedAtMs: 200 })); // 均值 -65.5 → 取整
     agg.push(sample({ minor: 10104, observedAtMs: 100 }));
     agg.push(sample({ minor: 10105, observedAtMs: 100 }));
     const result = agg.snapshot(REGISTRY, 1000);
     const bk1 = result!.find((o) => o.beaconId === BK1.beaconId);
     expect(bk1?.rssi).toBe(-65);
+    expect(Number.isInteger(bk1?.rssi)).toBe(true);
   });
 
   it('RSSI 截断到 [-100,-20]，非数值丢弃', () => {

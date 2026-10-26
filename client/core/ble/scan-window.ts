@@ -35,9 +35,11 @@ function clampRssi(rssi: number): number | null {
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
+  // 偶数个取中间两值平均后必须取整：API-05 契约 rssi 为 strict int，
+  // -57.5 这类小数会被后端 400（int_from_float）拒绝。
   return sorted.length % 2 === 1
     ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
+    : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
 
 interface WindowEntry {
