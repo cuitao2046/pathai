@@ -20,6 +20,7 @@ Page({
     apiUrl: API_BASE_URL,
     siteId: DEFAULT_SITE_ID,
     dataSource: 'mock' as DataSource,
+    mockText: '带我去图书馆',
     mapVersion: '未加载',
     tokenStatus: '检查中…',
     ttsEngine: '',
@@ -30,15 +31,15 @@ Page({
 
   onLoad() {
     const dataSource = appContext.dataSource;
-    const ttsEngine = dataSource === 'mock' ? 'MockTtsEngine（本地）' : '微信同声传译插件';
-    const asrEngine = dataSource === 'mock' ? 'MockAsrEngine（本地）' : '微信同声传译插件';
+    const ttsEngine = dataSource === 'mock' ? 'MockTtsEngine（本地）' : '讯飞超拟人合成（在线）';
+    const asrEngine = dataSource === 'mock' ? 'MockAsrEngine（本地）' : '讯飞听写大模型（在线）';
     this.setData({ dataSource, ttsEngine, asrEngine });
     void this.refreshMapVersion();
     void this.checkAuth();
   },
 
   onShow() {
-    // 从导航页返回后刷新地图/登录状态
+    // 从其它页面返回后刷新地图/登录状态
     void this.refreshMapVersion();
   },
 
@@ -78,6 +79,11 @@ Page({
       icon: 'none',
       duration: 2500,
     });
+  },
+
+  /** mock 调试：模拟识别文本（写内存中的 MockAsrEngine.nextText）。 */
+  onMockTextInput(event: WechatMiniprogram.Input) {
+    appContext.setMockAsrText(event.detail.value);
   },
 
   onSelfTestTts() {

@@ -48,6 +48,15 @@
   color: #374151;
 }
 
+.mock-input {
+  flex: 1;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border-radius: 12rpx;
+  background: #f3f4f6;
+  font-size: 26rpx;
+}
+
 .action {
   margin-top: 24rpx;
   font-size: 30rpx;
