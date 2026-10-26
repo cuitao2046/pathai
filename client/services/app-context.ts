@@ -12,11 +12,12 @@ import {
 import { createHttpStack } from '../core/http/api-client';
 import { MapService } from '../core/map/map-service';
 import type { AsrEngine } from '../core/asr/asr-engine';
-import { SherpaOnnxAsrEngine } from '../core/asr/sherpa-onnx-asr';
+import { XfyunAsrEngine } from '../core/asr/xfyun-asr';
 import type { TtsEngine } from '../core/speech/tts-engine';
 import { MockAsrEngine } from '../core/asr/mock-asr';
 import { MockTtsEngine } from '../core/speech/mock-tts';
-import { WechatsiTts } from '../core/speech/wechatsi-tts';
+import { XfyunTts } from '../core/speech/xfyun-tts';
+import { createWssUrlProvider } from '../utils/wss-url';
 import { getJson, setJson } from '../utils/kv';
 
 /** 数据源覆盖的持久化 key（设置页写入，启动时读取）。 */
@@ -41,13 +42,14 @@ class AppContext {
       this.ttsInstance = new MockTtsEngine();
       this.asrInstance = new MockAsrEngine();
     } else {
-      // live：端侧 Sherpa-Onnx WASM（个人主体无法添加同声传译插件）。
-      // 预热：提前下载模型+初始化 wasm，首按 PTT 前就绪；失败留到 start 重试。
-      const sherpa = new SherpaOnnxAsrEngine();
-      sherpa.warmup();
-      this.asrInstance = sherpa;
-      // TTS 仍走同声传译（插件缺失时由 SpeechQueue 降级震动+文本，FE-04）
-      this.ttsInstance = new WechatsiTts();
+      // live：讯飞在线 ASR/TTS（wss 直连；签名 URL 由后端签发，密钥留在服务端，
+      // 凭据按 provider 缓存 ≤4min）。失败由 PTT/SpeechQueue 既有错误路径承接。
+      this.asrInstance = new XfyunAsrEngine({
+        credential: createWssUrlProvider(this.http.client, '/api/v1/voice/asr-url'),
+      });
+      this.ttsInstance = new XfyunTts({
+        credential: createWssUrlProvider(this.http.client, '/api/v1/voice/tts-url'),
+      });
     }
   }
 
