@@ -8,6 +8,12 @@
 
 `ble_deployment.json` 是**信标部署方案（位置规划）**，描述每枚 iBeacon 的部署位置与属性。**它不直接内嵌地图几何**（墙体/房间多边形在 `school_building_01_map_v9.geojson`），与地图的关联靠 **ID 引用 + 描述字段**：
 
+> **当前状态（2026-10-27 用户确认）：全部 61 枚信标均未上墙。**
+> 本文件是**基于交互渲染图（`render_interactive.py` 部署模式）生成的部署点位建议**，
+> 属"规划态"而非"竣工台账"：`installDate` 全为空、`locationDesc` 部分是坐标回显，均属正常。
+> 后续按这些点位**现场实际部署**，并逐枚配置 AT 参数（`major`/`minor` 照抄本文件，见 `docs/08` §3 第 3 步）。
+> 配置完成后应回填 `installDate` 与实测 `rssiAt1m`，届时本文件才转为"竣工态"。
+
 - 通过 `sourceNodeId` 关联到 geojson 的拓扑节点（`topology.nodes` 中的 TR/TD/TI 等）。
 - 通过 `adjacentRooms` 关联到 geojson 的房间要素。
 - 通过 `coordinates` 与 geojson 共用同一坐标系（米，原点在地图左下角，Y 向上为正）。
