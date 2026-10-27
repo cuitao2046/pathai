@@ -12,26 +12,24 @@
   height: 100%;
 }
 
-.floor-badge {
+/* 顶端工具条：设置 / 楼层 / 全图 横向一字排开，悬浮于地图上（z10 高于 PTT 热区） */
+.top-bar {
   position: absolute;
   z-index: 10;
   top: 24rpx;
   left: 24rpx;
-  padding: 8rpx 24rpx;
-  background: rgba(31, 41, 55, 0.85);
-  color: #ffffff;
-  font-size: 30rpx;
-  border-radius: 999rpx;
+  right: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
 }
 
+/* 楼层切换：横向居中排开；当前楼层用 .active 高亮（替代原文字角标） */
 .floor-switch {
-  position: absolute;
-  z-index: 10;
-  right: 24rpx;
-  top: 50%;
-  transform: translateY(-50%);
+  flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  justify-content: center;
   gap: 16rpx;
 }
 
@@ -56,15 +54,11 @@
 }
 
 .reset-btn {
-  position: absolute;
-  z-index: 10;
-  right: 24rpx;
-  bottom: 180rpx;
   width: 120rpx;
   margin: 0;
   padding: 0;
-  height: 64rpx;
-  line-height: 64rpx;
+  height: 80rpx;
+  line-height: 80rpx;
   font-size: 26rpx;
   border-radius: 999rpx;
   background: #ffffff;
@@ -101,23 +95,20 @@
 }
 
 /* ------------------------------------------------------------------
- * REQ-PAGE 单页化：下半屏按住说话热区 / 居中浮层 / 常驻设置入口
+ * REQ-PAGE 单页化：顶端工具条 / 下端居中按住说话按钮 / 居中浮层
  * ------------------------------------------------------------------ */
 
-/* 热区覆盖下半屏：透明不遮地图观感，状态胶囊悬浮提示；
-   z-index 低于覆盖控件(10)与居中卡(30)，其上的控件点击与地图
-   上半屏手势均不受影响 */
+/* 按住说话按钮：屏幕下端居中（胶囊按钮视觉，padding 扩大按压命中区） */
 .ptt-zone {
   position: absolute;
   z-index: 5;
-  left: 0;
-  right: 0;
-  top: 50%;
-  bottom: 0;
+  left: 50%;
+  bottom: 64rpx;
+  transform: translateX(-50%);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding-bottom: 140rpx;
+  padding: 32rpx 64rpx;
 }
 
 .ptt-hint {
@@ -221,16 +212,12 @@
   color: #ffffff;
 }
 
-/* 底端常驻设置入口（半透明小按钮，让位于 PTT 状态胶囊） */
+/* 设置入口（顶端工具条左侧；mock/live 均可进入） */
 .settings-btn {
-  position: absolute;
-  z-index: 10;
-  left: 24rpx;
-  bottom: 32rpx;
   margin: 0;
   padding: 0 32rpx;
-  height: 64rpx;
-  line-height: 64rpx;
+  height: 80rpx;
+  line-height: 80rpx;
   font-size: 26rpx;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.92);
@@ -247,7 +234,7 @@
   z-index: 30;
   left: 24rpx;
   right: 24rpx;
-  top: 96rpx;
+  top: 150rpx; /* 让位顶端工具条（24rpx 顶距 + 88rpx 楼层按钮） */
   display: flex;
   flex-direction: column;
   gap: 16rpx;

@@ -11,21 +11,25 @@
     catchtouchcancel="onTouchCancel"
   />
 
-  <view class="floor-badge" aria-live="polite">{{floorLabel}}</view>
+  <!-- 顶端工具条：设置 / 楼层切换 / 全图 横向一字排开，悬浮在地图上；
+       当前楼层不另显文字角标，靠楼层按钮高亮（active）识别 -->
+  <view class="top-bar">
+    <button class="settings-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
 
-  <view class="floor-switch" aria-label="楼层切换">
-    <button
-      wx:for="{{floors}}"
-      wx:key="floorId"
-      class="floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
-      data-floor="{{item.floorId}}"
-      bindtap="onSwitchFloor"
-      aria-label="切换到{{item.displayName}}"
-      aria-pressed="{{item.floorId === currentFloor}}"
-    >{{item.level}}F</button>
+    <view class="floor-switch" aria-label="楼层切换">
+      <button
+        wx:for="{{floors}}"
+        wx:key="floorId"
+        class="floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+        data-floor="{{item.floorId}}"
+        bindtap="onSwitchFloor"
+        aria-label="切换到{{item.displayName}}"
+        aria-pressed="{{item.floorId === currentFloor}}"
+      >{{item.level}}F</button>
+    </view>
+
+    <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
   </view>
-
-  <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
 
   <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE；导航态时让位给导航 HUD） -->
   <view
@@ -89,8 +93,7 @@
     <button wx:else class="dismiss-button" bindtap="onDismissNav" aria-label="关闭导航结果">关闭</button>
   </view>
 
-  <!-- 下半屏按住说话热区（REQ-PAGE：语音无按钮；z-index 低于覆盖控件，
-       控件点击优先，热区空白处承接按住手势） -->
+  <!-- 按住说话按钮：屏幕下端居中（视觉为按钮，命中区同尺寸放大） -->
   <view
     class="ptt-zone {{pttState}}"
     bindtouchstart="onPttStart"
@@ -101,9 +104,6 @@
   >
     <text class="ptt-hint {{pttState}}">{{pttStateText}}</text>
   </view>
-
-  <!-- 底端常驻设置入口（REQ-PAGE：mock/live 均可进入） -->
-  <button class="settings-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
 
   <view class="overlay" wx:if="{{loading}}">
     <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>

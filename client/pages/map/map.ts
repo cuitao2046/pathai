@@ -93,10 +93,9 @@ Page({
     loading: true,
     loadError: '',
     mapReady: false,
-    floorLabel: '一楼',
     currentFloor: '1',
     floors: [] as FloorItem[],
-    // 意图/语音（REQ-PAGE：下半屏热区 + 居中浮层）
+    // 意图/语音（REQ-PAGE：下端居中按住说话按钮 + 居中浮层）
     pttState: 'idle' as PttState,
     pttStateText: PTT_TEXT.idle,
     partial: '',
@@ -602,8 +601,7 @@ Page({
     }
     // 保持 scale/offset（同坐标系视觉连续），仅按新层 bounds 夹紧
     vp.setFloor(floorId, flatBounds(segs));
-    const item = this.floorList.find((f) => f.floorId === floorId);
-    this.setData({ currentFloor: floorId, floorLabel: item?.displayName ?? floorId });
+    this.setData({ currentFloor: floorId });
     this.requestDraw();
   },
 
@@ -927,8 +925,7 @@ Page({
       const segs = this.wallSegs[pos.floorId];
       if (segs !== undefined) {
         vp.setFloor(pos.floorId, flatBounds(segs));
-        const item = this.floorList.find((f) => f.floorId === pos.floorId);
-        this.setData({ currentFloor: pos.floorId, floorLabel: item?.displayName ?? pos.floorId });
+        this.setData({ currentFloor: pos.floorId });
       }
     }
     // 每次可信估计把视口中心对准位置（导航态低频：standby 8s / 导航 2.5s）
