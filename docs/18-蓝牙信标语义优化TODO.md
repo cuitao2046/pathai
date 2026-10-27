@@ -38,7 +38,7 @@
 | `coordinates` | 唯一真值（单坐标 schema） | 定位锚点 | planned/coords 混用 → "哪份算数"歧义 | ✅ 已单坐标化（2bdef53） |
 | `mountType`/`installHeight` | 全站统一高度 2.2m | 稳定 RSSI 距离模型 | 混装 1.2/2.2/天花板 → 同 RSSI 不同距离 | ✅ 高度全 2.2m；挂装 `wall` 54 / `door_frame` 7 |
 | `txPower` | 全站一致 | RSSI→距离模型假设同功率 | 混型号必炸 | ✅ 61 枚全 -10dBm |
-| `uuid`/`major`/`minor` | 同 uuid；major/minor 分段 | 扫描阶段按 major+minor 索引 | 蓝牙扫描阶段复杂匹配 | ⚠️ major=1（54 枚）/ major=2（7 枚），**major 不完全等于楼层**（major=1 含 2 枚 F2 信标），判楼层须用 `floor`；minor 实测 10001~20002 |
+| `uuid`/`major`/`minor` | 同 uuid；major/minor 分段 | 扫描阶段按 major+minor 索引 | 蓝牙扫描阶段复杂匹配 | ⚠️ major=1（54 枚）/ major=2（7 枚），**major 不完全等于楼层**（major=1 含 2 枚 F2 信标），判楼层须用 `floor`；minor 实测 10001~20002，**万位不承诺等于 major**（9 枚不符）。**见 TODO-9** |
 
 ---
 
@@ -48,7 +48,7 @@
 |---|---|---|
 | ① 决策点 ≥3 信标可见包围 | 每个转弯/门口至少 3 个信标同时扫到，几何张开度好（GDOP 小） | ✅ docs/13 量化：GDOP 最小高/底 0.20（保守 0.25）、<0.05 禁用、>3 退化；现行 61 枚在路线网格 ≥3 可见覆盖 97.7% |
 | ② TxPower 全站一致 | RSSI→距离模型假设同功率 | ✅ 全 -10dBm |
-| ③ 同 uuid、major/minor 分段 | 按 major+minor 索引语义，避免扫描阶段复杂匹配 | ⚠️ major 与楼层非一一对应（见 §2 末行） |
+| ③ 同 uuid、major/minor 分段 | 按 major+minor 索引语义，避免扫描阶段复杂匹配 | ⚠️ major 与楼层非一一对应、minor 万位与 major 亦非一一对应（见 §2 末行与 **TODO-9**） |
 | ④ 长直走廊加方向信标 | 一维走廊沿走向误差大，`subType=dir` 给"走向"锚点 | ⚠️ 13 枚 `dir` 现有，但 `route_corridor` 段语义未配 |
 | ⑤ 指纹网格 + 实时信标双轨 | 指纹兜底离线覆盖，信标保实时锚定；语义只在信标层配 | ✅ 647 指纹点（路线网格）+ 61 信标 |
 
@@ -99,6 +99,24 @@
   - 动作：`subType` 增补 `staircase`（或复用 `stairs_door`），`locationDesc` 含「楼梯口」；对 15 个部署盲区（F1 6 楼梯 + F1-EL-0002；F2 6 楼梯 + F2-EL-0002/0003）依据 `docs/16` 的 GDOP/覆盖分析决定是否补点。
   - 产出：信标语义修正 + 盲区补点决策记录。
 
+- [ ] **TODO-9 · `major` / `minor` 与 `floor` 的口径不一致（配置正确性阻断项，2026-10-27 发现）**
+  - **现象**（实测现行 61 枚台账）：
+    - `major ≠ floor`：**2 枚** —— `BK-M-2-001` / `BK-M-2-002`（`floor=2`、`major=1`、`minor=20001/20002`）
+    - `minor 万位 ≠ major`：**9 枚** —— 上列 2 枚（万位 2 vs major 1）＋ **F2 主信标 7 枚**（`BK-02-001~004`、`BK-TR-F2-001~003`：`major=2` 但 `minor=10145~10160`，万位为 1）
+  - **根因**：`BK-M-*` 由 `render_interactive.py` 部署模式**手工录入**导出（`generatedBy=pathai-manual-deploy`，2026-08-20），`major` 沿用了默认值 1 未随楼层改；F2 主信标的 `minor` 从 F1 序列**连续编号**（10145 起），未按楼层重新分段。
+  - **影响**：
+    1. **配置工具会写错参数**（`docs/27` G3）：若按"Major=楼层"生成 AT 指令，这 2 枚会被写成 `major=2`，而地图包与客户端按 `major=1` 解析 → 扫到也解析不出 `beaconId`，**被当陌生信标丢弃，定位少两颗锚点**；
+    2. **文档口径互相矛盾**：`docs/07` §5.1 与 `docs/08` §3 第 3 步写"Major = 楼层号"（2 枚例外）；`docs/19` §3.1 写"minor 万位对应 major"（9 枚例外）——两条规则在现行数据上都不成立；
+    3. **今天不影响既有功能**：客户端按 `(uuid, major, minor)` 三元组解析，楼层一律取 `floor`/`floorId`（`location_solver._select_floor` 用 `beacon.floorId`），故 `major` 错位**不会误判楼层**——本质是"配置正确性与文档一致性"缺陷，而非运行故障。
+  - **修复步骤（建议按序）**：
+    1. **先现场确认这 2 枚是否已安装/配置**：8 枚 `BK-M-*` 的 `installDate` 均为 `null`、`locationDesc` 是坐标回显（如「人工部署 2F（-30.37, -79.12）」）→ 很可能**尚未安装**；未安装则修正零成本，已安装则需现场重配（并注意 `AT+ADS` 模式须保持 1）。
+    2. **确立权威口径并统一文档**：`floor` = 楼层**唯一权威**字段；`major` = **部署编号空间**（实践上≈楼层，允许例外）；`minor` 万位**不承诺**等于 `major`。据此改写 `docs/07` §5.1、`docs/08` §3 第 3 步、`docs/19` §3.1。
+    3. **数据修正（若第 1 步确认未安装）**：将 `BK-M-2-001/002` 的 `major` 由 1 改为 **2**，使全 61 枚满足 `major == floor`。
+    4. **连带影响面**：数据变更需**重发布地图包**（现行 `2026-10-27.1` 内为 `major=1`）＋ 客户端缓存经**两次冷启动**刷新；AT 清单须重生成（`docs/27` P0）。
+    5. **校验器加固**：`validate_beacon_deployment.py` 增规则报告 `major != floor`（定级视第 2 步口径，建议 ERROR）；**不要**把"`minor` 万位 == `major`"设为规则——9 枚现存数据违反且其中 7 枚是合规的 F2 主信标。
+    6. **工具预检**：AT 生成器必须取台账 `major` 字段（**禁止按 `floor` 计算**），并把 `major/floor` 不一致列为待人工确认项。
+  - **产出**：口径修订文档 diff ＋（若未安装）台账修正 ＋ 地图包重发布 ＋ 校验器规则 ＋ 复核记录。
+
 ### P1 · 体验升级
 
 - [ ] **TODO-3 · 走廊段语义（`route_corridor`/`route_fill` 补 `S-xx` 段 ID）**
@@ -139,3 +157,4 @@
 
 *文档生成：2026-08-20，基于 `docs/17` 语义审计与 `2bdef53` 单坐标 schema 落地后的架构状态。*
 *2026-09-21 校订：按现行数据实测更新字段分布（`sourceNodeType`/`subType`/`mountType`/`major`/`riskLevel`/`sourceNodeId` 空值口径）、补 R4 现状与 TODO-2b、更新 TODO-7 测试状态。*
+*2026-10-27 校订：实测 `major`/`minor` 与 `floor` 的一致性（`major ≠ floor` 2 枚、`minor` 万位 ≠ `major` 9 枚），新增 **TODO-9** 并在 §2 末行、§3 ③ 加交叉引用。*
