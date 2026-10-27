@@ -22,6 +22,7 @@ import unittest
 from collections import defaultdict
 
 from src.common.constants import DOOR_PENALTY, DOOR_DEFAULT_PENALTY, SAME_FLOOR_MID_TYPES, CROSS_FLOOR_MID_TYPES
+from src.common.rounding import round_distance
 from src.rendering.render_interactive import compute_route_rule_extras, build_path_rules_js
 try:
     from testutil import GEOJSON_PATH, PROJECT_ROOT, load_json
@@ -100,6 +101,39 @@ class TestJsNoEmbeddedRules(unittest.TestCase):
 
     def test_rules_read_from_path_graph(self):
         self.assertIn("PATH_GRAPH.rules", self.src)
+
+
+class TestDistanceRounding(unittest.TestCase):
+    """距离舍入必须与前端 Math.round 同口径（A2 对拍的隐藏前提）。
+
+    回归：后端曾用内置 round()（就近取偶），前端用 Math.round（半数向上），
+    在 `.xx5` 半分位差 0.01m，导致路径对拍在特定拓扑下随机变红。
+    """
+
+    # 期望值取自 JS `Math.round(v*100)/100`（Node 实测）
+    CASES = (
+        (28.415, 28.42),
+        (73.455, 73.46),
+        (128.185, 128.19),
+        (42.325, 42.33),
+        (2.675, 2.68),
+        (1.005, 1.0),
+        (118.69500000000001, 118.7),
+        (0.0, 0.0),
+    )
+
+    def test_matches_js_math_round(self):
+        for raw, expected in self.CASES:
+            with self.subTest(raw=raw):
+                self.assertEqual(round_distance(raw), expected)
+
+    def test_differs_from_builtin_round_on_half_up_boundaries(self):
+        # 内置 round 在这些值上会给出不同结果，锁死「不得回退到 round()」
+        differing = [(raw, expected) for raw, expected in self.CASES
+                     if round(raw, 2) != expected]
+        self.assertTrue(differing, "用例已无法区分 round() 与 Math.round")
+        for raw, expected in differing:
+            self.assertNotEqual(round(raw, 2), expected)
 
 
 class TestPathParity(unittest.TestCase):
@@ -357,7 +391,7 @@ class _BackendReplica:
         path.reverse()
         edge_ids.reverse()
         return {"nodes": path, "edges": edge_ids,
-                "distance": round(dist[end_id], 2),
+                "distance": round_distance(dist[end_id]),
                 "cross_floor": any(self.edge_by_id.get(x) and self.edge_by_id[x]["crossFloor"]
                                    for x in edge_ids)}
 
@@ -580,7 +614,7 @@ def _js_dijkstra_core(pg, start_id, end_id, mode, adj, mid_override=None):
     path.reverse()
     edge_ids.reverse()
     return {"nodes": path, "edges": edge_ids,
-            "distance": round(dist[end_id] * 100) / 100}
+            "distance": round_distance(dist[end_id])}
 
 
 def js_shortest_path(pg, start_id, end_id, mode):

@@ -46,6 +46,7 @@ from src.common.constants import (
     CROSS_FLOOR_MID_TYPES,
 )
 from src.geometry.segments import segments_properly_cross
+from src.common.rounding import round_distance
 
 
 class RouteGraph:
@@ -464,7 +465,7 @@ class RouteGraph:
             "nodes": path,
             "path": path,
             "edges": edge_ids,
-            "distance": round(dist[end_id], 2),
+            "distance": round_distance(dist[end_id]),
             "cross_floor": bool(cross_edges),
             "used_elevator": used_elevator,
             "used_stair": used_stair,
