@@ -305,18 +305,56 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
     grouped_candidates.sort(
         key=lambda item: -len({seg_idx for seg_idx, _ in item[1]}))
 
+    # 交叉口归并：同一物理路口可能产生多个候选点（相邻两线的交点、端点、
+    # 折点各自成为一个候选，误差在厘米级）。归并规则：
+    #   ① 相距 ≤ CROSS_MERGE_TOL 的候选视为同一路口（手绘误差）；
+    #   ② 吸附到同一既有 TI 的候选视为同一路口（既有点位只应存在一份）。
+    # 归并只做「同一路口的去重」，不跨距离连通不同路口；跨路口的缺口由下方的
+    # 「缺口缝合」按投影补，绝不按两点直线距离补桥（那会造出与走向无关的捷径）。
+    # 切分位置仍逐段记录（node_sources），因此归并后两条线依旧按真实交点切分。
+    CROSS_MERGE_TOL = 0.3
+    snap_ids = [snap_to_existing(cpt) for cpt, _ in grouped_candidates]
+    parent = list(range(len(grouped_candidates)))
+
+    def _find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def _union(a, b):
+        ra, rb = _find(a), _find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(len(grouped_candidates)):
+        for j in range(i + 1, len(grouped_candidates)):
+            if grouped_candidates[i][0].distance(grouped_candidates[j][0]) <= CROSS_MERGE_TOL:
+                _union(i, j)
+            elif snap_ids[i] and snap_ids[i] == snap_ids[j]:
+                _union(i, j)
+
+    merged_groups = {}
+    for idx in range(len(grouped_candidates)):
+        merged_groups.setdefault(_find(idx), []).append(idx)
+
     nodes_pts = []
     node_sources = []
-    used_snap_ids = set()
-    for cpt, sources in grouped_candidates:
-        csid = snap_to_existing(cpt)
-        if csid in used_snap_ids:
+    for members in merged_groups.values():
+        sources = []
+        for idx in members:
+            sources.extend(grouped_candidates[idx][1])
+        # 组内若有吸附候选，取最近的那个既有 TI 作为节点 id 与坐标
+        snapped = [(grouped_candidates[i][0].distance(Point(exti_coord[sid])), sid)
+                   for i in members for sid in (snap_ids[i],) if sid]
+        if snapped:
+            _, csid = min(snapped)
+            node_pt = Point(exti_coord[csid])
+        else:
             csid = None
-        node_pt = Point(exti_coord[csid]) if csid and csid in exti_coord else cpt
+            node_pt = grouped_candidates[members[0]][0]
         nodes_pts.append((node_pt, csid))
         node_sources.append(sources)
-        if csid:
-            used_snap_ids.add(csid)
 
     max_existing = 0
     for n in existing_ti:
@@ -341,25 +379,108 @@ def build_from_lines(m_lines, fk, start_seq=0, existing_ti=None, snap_tol=0.8):
         for seg_idx, measure in sources:
             cut_by_id.setdefault(seg_idx, []).append((measure, nid))
 
-    edges, edge_seq, seen = [], 0, set()
-    for seg_idx, seg in enumerate(segments):
-        cuts = sorted(set(cut_by_id.get(seg_idx, [])))
-        for (pa, aid), (pb, bid) in zip(cuts, cuts[1:]):
-            d = pb - pa
-            if d < 0.05:
-                continue
+    extra_edges = []  # 目标线段上已有同位置切点时，改为补一条点对点短边
+
+    def rebuild_edges():
+        """按 cut_by_id + extra_edges 重建骨架边（缝合补出切点后需重算）。"""
+        out, seq_e, seen_e = [], 0, set()
+
+        def _add(aid, bid, d):
+            nonlocal seq_e
             key = tuple(sorted((aid, bid)))
-            if aid == bid or key in seen:
-                continue
-            seen.add(key)
-            edge_seq += 1
-            edges.append({
-                "id": f"F{fk}-TE-{start_seq + edge_seq:04d}", "from": aid, "to": bid,
+            if aid == bid or d < 0.05 or key in seen_e:
+                return
+            seen_e.add(key)
+            seq_e += 1
+            out.append({
+                "id": f"F{fk}-TE-{start_seq + seq_e:04d}", "from": aid, "to": bid,
                 "distance": round(d, 3), "estimatedTime": round(d / WALK_SPEED, 2),
                 "accessibilityLevel": 0, "riskLevel": 0.5,
                 "walkable": True, "wheelchairAccessible": True,
                 "blindAccessible": True,
             })
+
+        for seg_idx in range(len(segments)):
+            cuts = sorted(set(cut_by_id.get(seg_idx, [])))
+            for (pa, aid), (pb, bid) in zip(cuts, cuts[1:]):
+                _add(aid, bid, pb - pa)
+        for aid, bid, d in extra_edges:
+            _add(aid, bid, d)
+        return out
+
+    edges = rebuild_edges()
+
+    # ---------- 缺口缝合 ----------
+    # 交点切分让连通性完全由手绘几何决定，而手绘线常在交叉口差一小段没画到
+    # （实测 F2 有两处 0.04m / 0.14m），线段就此断成孤岛。
+    # 这里只做「分属不同连通分量、最近距离 ≤ CROSS_GAP_TOL」的最小缝合：
+    # 把缺口端点接到目标线段上的**投影点**（必要时在该线段插入切点）。
+    #
+    # 阈值刻意取得很小（0.2m）：只补“线没精确压到相邻线”的笔画误差。
+    # 大于此值一律视为**真实断开**，宁可让 QA 的门禁报分量数 >1 去暴露，
+    # 也不用距离补桥糊过去——否则会凭空造出与手绘走向无关的捷径
+    # （历史教训：2m 距离补桥让交叉口2 直接跨接到 19）。
+    CROSS_GAP_TOL = 0.2
+    coord = {n["id"]: n["coordinates"] for n in ti_nodes}
+
+    def components():
+        parent = {n["id"]: n["id"] for n in ti_nodes}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for e in edges:
+            ra, rb = find(e["from"]), find(e["to"])
+            if ra != rb:
+                parent[ra] = rb
+        groups = defaultdict(list)
+        for n in ti_nodes:
+            groups[find(n["id"])].append(n["id"])
+        return list(groups.values())
+
+    stitched = 0
+    attempted = set()
+    while stitched < 50:
+        comps = components()
+        if len(comps) <= 1:
+            break
+        comp_of = {nid: i for i, c in enumerate(comps) for nid in c}
+        best = None
+        for i, ci in enumerate(comps):
+            for nid in ci:
+                p = Point(coord[nid])
+                for seg_idx, seg in enumerate(segments):
+                    if (nid, seg_idx) in attempted:
+                        continue
+                    holders = {h for _, h in cut_by_id.get(seg_idx, [])}
+                    if holders and all(comp_of.get(h) == i for h in holders):
+                        continue  # 该线段与本分量同属一体，无需缝合
+                    d = seg.distance(p)
+                    if d > CROSS_GAP_TOL:
+                        continue
+                    if best is None or d < best[0]:
+                        best = (d, nid, seg_idx, seg.project(p))
+        if best is None:
+            break
+        d, nid, seg_idx, measure = best
+        attempted.add((nid, seg_idx))
+        same_spot = next((hid for m, hid in cut_by_id.get(seg_idx, [])
+                          if abs(m - measure) < 0.05), None)
+        if same_spot == nid:
+            continue  # 节点本就切在该线段上，无需缝合
+        if same_spot is None:
+            cut_by_id.setdefault(seg_idx, []).append((measure, nid))
+        else:
+            extra_edges.append((nid, same_spot, d))
+        edges = rebuild_edges()
+        stitched += 1
+        print(f"    [skeleton] 缺口缝合 {nid} -> F{fk} SK#{seg_idx + 1} "
+              f"({d:.2f}m)")
+    if stitched:
+        print(f"    [skeleton] 缺口缝合 {stitched} 条，TI 分量 {len(components())}")
     return segments, ti_nodes, edges
 
 
@@ -397,17 +518,16 @@ def main():
     for fk, pts_list in per_floor.items():
         band_base = bands[fk][0]
         m_lines = [svg_to_meters(pts, min_x, max_y, band_base) for pts in pts_list]
-        # 吸附用：该楼层既有 intersection 节点
-        existing_ti = [n for n in geo["floors"][fk]["topology"]["nodes"]
-                       if n.get("type") == "intersection"]
+        # 不吸附 geojson 里已有的 TI：手绘骨架是走廊网络的**整体替换**，
+        # 吸附上轮构建残留的 TI 会让导入结果依赖上一次构建（同一 SVG 每次
+        # 导入都不同），破坏可复现性与 golden 回归。跨分量缺口由 build_from_lines
+        # 内部的投影缝合按几何补齐。
         segments, ti_nodes, edges = build_from_lines(
-            m_lines, fk, 0, existing_ti=existing_ti, snap_tol=0.5)
-        snapped = sum(1 for n in ti_nodes
-                      if any(e["id"] == n["id"] for e in existing_ti))
+            m_lines, fk, 0, existing_ti=[], snap_tol=0.5)
         results[fk] = {"lines": m_lines, "segments": segments,
                        "ti": ti_nodes, "edges": edges}
         print(f"F{fk}: {len(m_lines)} 条线 → {len(segments)} 段骨架, "
-              f"{len(ti_nodes)} 个 TI (吸附既有 {snapped}), {len(edges)} 条边")
+              f"{len(ti_nodes)} 个 TI, {len(edges)} 条边")
 
     if not results:
         print("未解析到任何红线（请确认使用 #e74c3c / red 描边线）")
