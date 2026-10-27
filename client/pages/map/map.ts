@@ -94,6 +94,10 @@ Page({
     loadError: '',
     mapReady: false,
     currentFloor: '1',
+    /** 楼层选择按钮常显文案（如 "1F"，随楼层切换/定位换层更新）。 */
+    currentFloorText: '1F',
+    /** 楼层选择菜单是否横向展开。 */
+    floorMenuOpen: false,
     floors: [] as FloorItem[],
     // 意图/语音（REQ-PAGE：下端居中按住说话按钮 + 居中浮层）
     pttState: 'idle' as PttState,
@@ -209,7 +213,14 @@ Page({
       this.wallSegs = segs;
       this.placeLabels = labels;
       this.floorList = floors;
-      this.setData({ floors, loading: false, loadError: '', mapReady: true });
+      const cur = floors.find((f) => f.floorId === this.data.currentFloor);
+      this.setData({
+        floors,
+        loading: false,
+        loadError: '',
+        mapReady: true,
+        currentFloorText: cur !== undefined ? `${cur.level}F` : this.data.currentFloorText,
+      });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
       // 启动集中申请权限：地图就绪后再弹，避免与加载叠加
@@ -591,6 +602,10 @@ Page({
   onSwitchFloor(e: WechatMiniprogram.TouchEvent): void {
     const floorId = String(e.currentTarget.dataset.floor ?? '');
     log.info('tap 切换楼层', floorId, `current=${this.data.currentFloor}`);
+    // 选中即收起楼层菜单（含重复点击当前层的场景）
+    if (this.data.floorMenuOpen) {
+      this.setData({ floorMenuOpen: false });
+    }
     const vp = this.viewport;
     if (floorId === '' || floorId === this.data.currentFloor || vp === null) {
       return;
@@ -601,8 +616,17 @@ Page({
     }
     // 保持 scale/offset（同坐标系视觉连续），仅按新层 bounds 夹紧
     vp.setFloor(floorId, flatBounds(segs));
-    this.setData({ currentFloor: floorId });
+    const item = this.floorList.find((f) => f.floorId === floorId);
+    this.setData({
+      currentFloor: floorId,
+      currentFloorText: item !== undefined ? `${item.level}F` : floorId,
+    });
     this.requestDraw();
+  },
+
+  /** 楼层选择按钮：横向展开/收起可选楼层。 */
+  onToggleFloorMenu(): void {
+    this.setData({ floorMenuOpen: !this.data.floorMenuOpen });
   },
 
   onResetView(): void {
@@ -620,7 +644,7 @@ Page({
   },
 
   // ------------------------------------------------------------------
-  // 按住说话 → 意图（REQ-PAGE 下半屏热区 / 居中浮层）
+  // 按住说话 → 意图（REQ-PAGE 下端居中按钮 / 居中浮层）
   // ------------------------------------------------------------------
 
   initSpeech(): void {
@@ -925,7 +949,11 @@ Page({
       const segs = this.wallSegs[pos.floorId];
       if (segs !== undefined) {
         vp.setFloor(pos.floorId, flatBounds(segs));
-        this.setData({ currentFloor: pos.floorId });
+        const item = this.floorList.find((f) => f.floorId === pos.floorId);
+        this.setData({
+          currentFloor: pos.floorId,
+          currentFloorText: item !== undefined ? `${item.level}F` : pos.floorId,
+        });
       }
     }
     // 每次可信估计把视口中心对准位置（导航态低频：standby 8s / 导航 2.5s）

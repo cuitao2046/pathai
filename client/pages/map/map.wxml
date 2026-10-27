@@ -11,24 +11,32 @@
     catchtouchcancel="onTouchCancel"
   />
 
-  <!-- 顶端工具条：设置 / 楼层切换 / 全图 横向一字排开，悬浮在地图上；
-       当前楼层不另显文字角标，靠楼层按钮高亮（active）识别 -->
-  <view class="top-bar">
-    <button class="settings-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
+  <!-- 左上角竖向工具条：设置 / 楼层选择（点击横向展开可选楼层）/ 全图，
+       三枚按钮同尺寸；楼层选择按钮常显当前楼层 -->
+  <view class="top-left">
+    <button class="tool-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
 
-    <view class="floor-switch" aria-label="楼层切换">
+    <view class="floor-menu" aria-label="楼层选择">
       <button
-        wx:for="{{floors}}"
-        wx:key="floorId"
-        class="floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
-        data-floor="{{item.floorId}}"
-        bindtap="onSwitchFloor"
-        aria-label="切换到{{item.displayName}}"
-        aria-pressed="{{item.floorId === currentFloor}}"
-      >{{item.level}}F</button>
+        class="tool-btn floor-current"
+        bindtap="onToggleFloorMenu"
+        aria-label="楼层选择，当前{{currentFloorText}}"
+        aria-expanded="{{floorMenuOpen}}"
+      >{{currentFloorText}}</button>
+      <block wx:if="{{floorMenuOpen}}">
+        <button
+          wx:for="{{floors}}"
+          wx:key="floorId"
+          class="tool-btn floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+          data-floor="{{item.floorId}}"
+          bindtap="onSwitchFloor"
+          aria-label="切换到{{item.displayName}}"
+          aria-pressed="{{item.floorId === currentFloor}}"
+        >{{item.level}}F</button>
+      </block>
     </view>
 
-    <button class="reset-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
+    <button class="tool-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
   </view>
 
   <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE；导航态时让位给导航 HUD） -->
