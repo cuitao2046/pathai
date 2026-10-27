@@ -3,7 +3,14 @@
  * （项目约束：mock 必须使用真实地图与信标数据）。
  */
 import { FloorMapViewport } from '../core/map/floor-map-viewport';
-import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels } from '../core/map/floor-geometry';
+import {
+  flattenWalls,
+  flatBounds,
+  floorsSortedByLevel,
+  floorPlaceLabels,
+  flattenRoomFills,
+  roomFillColor,
+} from '../core/map/floor-geometry';
 import { REAL_MAP } from './fixtures/real-map';
 
 const FLOORS = REAL_MAP.floors;
@@ -58,6 +65,61 @@ describe('floor-geometry（真实墙体数据）', () => {
     expect(resource!.x).toBeLessThan(14);
     expect(resource!.y).toBeGreaterThan(-90);
     expect(resource!.y).toBeLessThan(41);
+  });
+});
+
+describe('floor-geometry 房间填色（真实房间面）', () => {
+  test('四类房间各自成色，公共空间为白色，其余中性灰', () => {
+    expect(roomFillColor('room', 'classroom')).toBe('#fbe3b4');
+    expect(roomFillColor('room', 'office')).toBe('#f9d2bd');
+    expect(roomFillColor('toilet', 'toilet')).toBe('#bfe4dc');
+    expect(roomFillColor('room', 'lab')).toBe('#c9ddf3');
+    // 走廊/大厅/楼梯厅/电梯厅 → 白
+    for (const t of ['corridor', 'lobby', 'stair_lobby', 'elevator_lobby']) {
+      expect(roomFillColor(t, t)).toBe('#ffffff');
+    }
+    // 四色互不相同，且都不与公共空间白色混淆
+    const four = [
+      roomFillColor('room', 'classroom'),
+      roomFillColor('room', 'office'),
+      roomFillColor('toilet', 'toilet'),
+      roomFillColor('room', 'lab'),
+    ];
+    expect(new Set(four).size).toBe(4);
+    expect(four).not.toContain('#ffffff');
+  });
+
+  test('1 层 81 个房间面全部填充，按色聚合（走廊/大厅/楼梯厅/电梯厅共 29 个白色）', () => {
+    const rooms = FLOORS['1'].geometry.rooms ?? [];
+    expect(rooms).toHaveLength(81);
+    const groups = flattenRoomFills(FLOORS, '1');
+    const rings = groups.reduce((n, g) => n + g.rings.length, 0);
+    expect(rings).toBe(81); // 每房间单环，一个不漏
+
+    const count = (color: string) =>
+      groups.filter((g) => g.color === color).reduce((n, g) => n + g.rings.length, 0);
+    expect(count('#ffffff')).toBe(29); // corridor 14 + stair_lobby 10 + lobby 4 + elevator_lobby 1
+    expect(count('#fbe3b4')).toBe(11); // classroom
+    expect(count('#f9d2bd')).toBe(7); // office
+    expect(count('#bfe4dc')).toBe(6); // toilet
+    expect(count('#c9ddf3')).toBe(0); // 1 层无实验室
+  });
+
+  test('2 层存在实验室（浅蓝）且聚合批次远少于房间数', () => {
+    const groups = flattenRoomFills(FLOORS, '2');
+    const lab = groups.find((g) => g.color === '#c9ddf3');
+    expect(lab?.rings).toHaveLength(1);
+    expect(groups.length).toBeLessThanOrEqual(10); // 每色一批，避免逐房间绘制
+  });
+
+  test('房间环为 x/y 交替的扁平坐标，且首尾不重复', () => {
+    const groups = flattenRoomFills(FLOORS, '1');
+    for (const group of groups) {
+      for (const ring of group.rings) {
+        expect(ring.length % 2).toBe(0);
+        expect(ring.length).toBeGreaterThanOrEqual(6);
+      }
+    }
   });
 });
 

@@ -9,7 +9,16 @@ import { appContext } from '../../services/app-context';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
-import { flattenWalls, flatBounds, floorsSortedByLevel, floorPlaceLabels, type PlaceLabel } from '../../core/map/floor-geometry';
+import {
+  flattenWalls,
+  flatBounds,
+  floorsSortedByLevel,
+  floorPlaceLabels,
+  flattenRoomFills,
+  MAP_BACKGROUND_COLOR,
+  type PlaceLabel,
+  type RoomFillGroup,
+} from '../../core/map/floor-geometry';
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
 import { PushToTalk, type PttState } from '../../core/asr/push-to-talk';
 import { createBeaconSource } from '../../core/ble/beacon-source-factory';
@@ -169,6 +178,8 @@ Page({
   ctx: null as Canvas2d | null,
   viewport: null as FloorMapViewport | null,
   wallSegs: {} as Record<string, Float32Array>,
+  /** 房间填色组（按类型聚合，draw 时每色一次 fill）。 */
+  roomFills: {} as Record<string, RoomFillGroup[]>,
   placeLabels: {} as Record<string, PlaceLabel[]>,
   floorList: [] as FloorItem[],
   canvasRect: { left: 0, top: 0 },
@@ -234,13 +245,17 @@ Page({
       const floorsData = appContext.map.floors;
       const floors = floorsSortedByLevel(floorsData);
       const segs: Record<string, Float32Array> = {};
+      const fills: Record<string, RoomFillGroup[]> = {};
       const labels: Record<string, PlaceLabel[]> = {};
       for (const item of floors) {
         segs[item.floorId] = flattenWalls(floorsData, item.floorId);
+        // 房间面按类型着色（教室/办公室/卫生间/实验室；走廊大厅留白）
+        fills[item.floorId] = flattenRoomFills(floorsData, item.floorId);
         // 空间语义标注（教室/办公室等名称）：一次预计算，draw 按层引用
         labels[item.floorId] = floorPlaceLabels(floorsData, appContext.map.places, item.floorId);
       }
       this.wallSegs = segs;
+      this.roomFills = fills;
       this.placeLabels = labels;
       this.floorList = floors;
       const cur = floors.find((f) => f.floorId === this.data.currentFloor);
@@ -347,11 +362,34 @@ Page({
     const { w, h } = this.canvasSize;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
-    // 背景
-    ctx.fillStyle = '#f5f7fa';
+    // 背景：建筑外部底色（房间面与公共空间填色后，仅剩余外部区域可见）
+    ctx.fillStyle = MAP_BACKGROUND_COLOR;
     ctx.fillRect(0, 0, w, h);
 
-    // 墙体：扁平段单 path 一次 stroke（F1 2436 段）
+    // 房间面按类型着色（教室/办公室/卫生间/实验室各有色系；走廊/大厅/门厅白色）
+    const fills = this.roomFills[vp.floorId];
+    if (fills !== undefined) {
+      const { scale, offsetX, offsetY } = vp;
+      for (const group of fills) {
+        ctx.beginPath();
+        for (const ring of group.rings) {
+          for (let i = 0; i + 1 < ring.length; i += 2) {
+            const sx = ring[i] * scale + offsetX;
+            const sy = -ring[i + 1] * scale + offsetY;
+            if (i === 0) {
+              ctx.moveTo(sx, sy);
+            } else {
+              ctx.lineTo(sx, sy);
+            }
+          }
+          ctx.closePath();
+        }
+        ctx.fillStyle = group.color;
+        ctx.fill();
+      }
+    }
+
+    // 墙体：扁平段单 path 一次 stroke（F1 2436 段）；浅灰细线，压住房间色块边界
     const segs = this.wallSegs[vp.floorId];
     if (segs !== undefined) {
       const { scale, offsetX, offsetY } = vp;
@@ -360,8 +398,8 @@ Page({
         ctx.moveTo(segs[i] * scale + offsetX, -segs[i + 1] * scale + offsetY);
         ctx.lineTo(segs[i + 2] * scale + offsetX, -segs[i + 3] * scale + offsetY);
       }
-      ctx.strokeStyle = '#1f2937';
-      ctx.lineWidth = Math.max(1, 0.2 * scale);
+      ctx.strokeStyle = '#aeb7c4';
+      ctx.lineWidth = Math.max(1, 0.12 * scale);
       ctx.stroke();
     }
 
@@ -409,7 +447,7 @@ Page({
         }
         boxes.push(box);
         ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(245, 247, 250, 0.95)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
         ctx.strokeText(label.text, sx, sy);
         ctx.fillStyle = '#374151';
         ctx.fillText(label.text, sx, sy);

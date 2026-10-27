@@ -3,7 +3,7 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: #f5f7fa;
+  background: #eef3f8; /* 与 canvas 外部底色一致，避免首帧闪白 */
 }
 
 .map-canvas {

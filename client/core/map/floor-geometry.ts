@@ -81,6 +81,87 @@ export function wallThickness(wall: MapWallFeature): number {
     : 0.2;
 }
 
+/** 图层样式：建筑外部底色（房间与公共空间之外可见）。 */
+export const MAP_BACKGROUND_COLOR = '#eef3f8';
+
+/**
+ * 房间类型 → 填充色（参考商场/展馆导览图配色：暖黄教室、浅橙办公室、
+ * 薄荷卫生间、浅蓝实验室；走廊/大厅/门厅等公共空间留白，便于路线压在其上）。
+ * 其余（设备间、风井、楼梯间等）用中性浅灰，避免抢眼。
+ */
+const ROOM_TYPE_FILL: Record<string, string> = {
+  classroom: '#fbe3b4',
+  office: '#f9d2bd',
+  toilet: '#bfe4dc',
+  lab: '#c9ddf3',
+  activity: '#e6dff5',
+  meeting: '#e6dff5',
+  reception: '#f5e6c8',
+  medical: '#e3eaf1',
+  storage: '#eef1f5',
+  equipment: '#eef1f5',
+  room: '#eef1f5',
+  staircase: '#f1f4f7',
+  infrastructure: '#e4e8ee',
+};
+
+/** 公共空间（走廊/大厅/门厅/电梯厅/楼梯厅）：白色。 */
+const PUBLIC_ROOM_FILL = '#ffffff';
+const PUBLIC_ROOM_TYPES = new Set([
+  'corridor',
+  'lobby',
+  'hall',
+  'foyer',
+  'entrance_hall',
+  'stair_lobby',
+  'elevator_lobby',
+]);
+
+/** 房间填色：优先按 roomSubType（教室/办公室/实验室细分在 subType），否则按 type。 */
+export function roomFillColor(type?: string, roomSubType?: string | null): string {
+  const key = roomSubType ?? type ?? '';
+  if (PUBLIC_ROOM_TYPES.has(key)) {
+    return PUBLIC_ROOM_FILL;
+  }
+  return ROOM_TYPE_FILL[key] ?? '#eef1f5';
+}
+
+/** 同色房间的填充组：一个 color 一次 fill（81 个房间压到 ≤8 个绘制批次）。 */
+export interface RoomFillGroup {
+  color: string;
+  /** 每个环为 Flat32 坐标序列（x,y 交替，局部米制）。 */
+  rings: Float32Array[];
+}
+
+/** 当前楼层的房间填色组（按颜色聚合；多边形环去掉闭合重复点）。 */
+export function flattenRoomFills(
+  floors: Record<string, MapFloorData>,
+  floorId: string,
+): RoomFillGroup[] {
+  const byColor = new Map<string, Float32Array[]>();
+  for (const room of floors[floorId]?.geometry.rooms ?? []) {
+    const props = room.properties ?? {};
+    const color = roomFillColor(props.roomType ?? props.type, props.roomSubType);
+    for (const ring of room.geometry.coordinates ?? []) {
+      if (ring.length < 3) {
+        continue;
+      }
+      const pts = new Float32Array(ring.length * 2);
+      for (let i = 0; i < ring.length; i += 1) {
+        pts[i * 2] = ring[i][0];
+        pts[i * 2 + 1] = ring[i][1];
+      }
+      const list = byColor.get(color);
+      if (list === undefined) {
+        byColor.set(color, [pts]);
+      } else {
+        list.push(pts);
+      }
+    }
+  }
+  return [...byColor.entries()].map(([color, rings]) => ({ color, rings }));
+}
+
 /** 地点名称标注项（世界坐标 + 显示文本）。 */
 export interface PlaceLabel {
   x: number;
