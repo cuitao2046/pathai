@@ -2,7 +2,7 @@
 
 > 文档版本：1.1 ｜ 对应数据版本：`schemaVersion 1.0`，**61 信标**（现行台账，`fix-rollback-ble-61` 回滚后状态）
 > 生成方式：`generatedBy = "pathai-manual-deploy"`，经 `render_interactive.py` 部署模式拖拽/点选导出，由人工确认后入库 `result/`。
-> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）；2026-10-27 修正 `minor`"万位对应 major"的错误不变量（实测 9 枚不符，见 §3.1 与 `docs/18` TODO-9）。
+> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）；2026-10-27 修正 `minor`"万位对应 major"的错误不变量（实测 7 枚不符，见 §3.1 与 `docs/18` TODO-9），并记录 `major` 已统一为楼层（`BK-M-2-001/002` 由 1→2 修正）。
 
 ## 1. 文件定位
 
@@ -37,8 +37,8 @@
 |---|---|---|---|
 | `beaconId` | string | ✅ | 信标唯一编号。实际存在三种形态：`BK-01-xxx`（F1 顺序位，39 枚）、`BK-02-xxx`（F2，4 枚）、`BK-TR-F1-xxx` / `BK-TR-F2-xxx`（测试路线补点，7+3 枚）、`BK-M-1-xxx` / `BK-M-2-xxx`（人工部署，6+2 枚） |
 | `uuid` | string | ✅ | iBeacon UUID，全楼统一 `B9407F30-F5F8-466E-AFF9-25556B57FE6D` |
-| `major` | number | ✅ | iBeacon major：实测 `1`（54 枚）/ `2`（7 枚）。**注意 major 不完全等于楼层**——`major=1` 覆盖 F1 全部 52 枚 + F2 的 2 枚，`major=2` 的 7 枚全在 F2；判楼层应以 `floor` 字段为准（详见 `docs/18` TODO-9） |
-| `minor` | number | ✅ | iBeacon minor（信标序号），实测区间 `10001` ~ `20002`。**"万位对应 major"不成立**：9 枚不符——`BK-02-001~004` 与 `BK-TR-F2-001~003` 为 `major=2` 但 `minor=10145~10160`（万位为 1），`BK-M-2-001/002` 为 `major=1` 但 `minor=20001/20002`（万位为 2）。判楼层一律用 `floor`（详见 `docs/18` TODO-9） |
+| `major` | number | ✅ | iBeacon major：**已与楼层一致**——`major=1`（52 枚，全 F1）/ `major=2`（9 枚，全 F2），61/61 满足 `major == floor`（2026-10-27 修正 `BK-M-2-001/002` 由 1→2）。仍以 `floor` 为楼层唯一权威（详见 `docs/18` TODO-9） |
+| `minor` | number | ✅ | iBeacon minor（信标序号），实测区间 `10001` ~ `20002`。**"万位对应 major"不成立**：7 枚不符——`BK-02-001~004` 与 `BK-TR-F2-001~003` 为 `major=2` 但 `minor=10145~10160`（万位为 1，因 F2 主信标沿 F1 序列连续编号）。判楼层一律用 `floor`（详见 `docs/18` TODO-9） |
 | `coordinates` | array\<number,2\> | ✅ | 平面坐标 `[x, y]`（米，同源 geojson 坐标系） |
 
 ### 3.2 部署位置与安装参数

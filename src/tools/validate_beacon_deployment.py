@@ -14,6 +14,10 @@
   R5 [ERROR] 缺失 beaconId / coordinates / floor 任一必填字段
   R6 [ERROR] 信标坐标 ADJ_RADIUS 内的房间须全部录入 adjacentRooms
              （L4 相邻房间语义完整性，与 inject_adjacent_rooms.py 同半径）
+  R7 [ERROR] major 必须等于 floor（楼层以 floor 为准；major 偏离会让配置工具按 floor
+             写出的 AT 参数与地图包/客户端三元组解析不一致，详见 docs/18 TODO-9）
+             注：不校验「minor 万位 == major」——F2 主信标 7 枚 minor 连续编号自 F1
+             （10145~10160 而 major=2），属合规现状。
 
 注：方案 B 单坐标 schema（2026-08-20 起）：coordinates 为唯一真值，
     plannedCoordinates/snapDist_m 字段已废弃 → R2（planned 脱节）/ R3（人工信标同步）
@@ -119,7 +123,7 @@ def _has_stair_keyword(beacon):
 
 
 def validate_beacon(beacon, ctx):
-    """对单枚信标执行 R1~R5，返回 [(rule, level, message), ...]。"""
+    """对单枚信标执行 R1/R4/R5/R6/R7，返回 [(rule, level, message), ...]。"""
     rooms, tree, stairs, nodes = ctx
     out = []
     bid = beacon.get("beaconId") or "?"
@@ -173,6 +177,16 @@ def validate_beacon(beacon, ctx):
         out.append(("R6", "ERROR",
                     f"几何相邻房间未录入 adjacentRooms（缺 {len(missing)} 个: {shown}）"))
 
+    # R7：major 必须等于 floor（docs/18 TODO-9）
+    #     楼层唯一权威字段是 floor；major 偏离会让配置工具按 floor 写出的 AT 参数
+    #     与地图包/客户端 (uuid,major,minor) 三元组解析不一致 → 该信标被当陌生信标丢弃。
+    #     不校验「minor 万位 == major」：F2 主信标 minor 连续自 F1 编号，属合规现状。
+    major = _num(beacon.get("major"))
+    floor = _num(beacon.get("floor"))
+    if major is None or floor is None or int(major) != int(floor):
+        out.append(("R7", "ERROR",
+                    f"major={major} ≠ floor={floor}（楼层以 floor 为准，major 须与之一致）"))
+
     return out
 
 
@@ -208,7 +222,7 @@ def main() -> int:
 
     print("-" * 70)
     print(f"汇总: 共 {len(beacons)} 枚信标")
-    for rule in ("R1", "R4", "R5", "R6"):
+    for rule in ("R1", "R4", "R5", "R6", "R7"):
         parts = [f"{lv}={by_rule.get(rule, {}).get(lv, 0)}" for lv in ("ERROR", "WARN")]
         print(f"  {rule}: " + " | ".join(parts))
     print(f"合计: ERROR={counts['ERROR']}  WARN={counts['WARN']}")

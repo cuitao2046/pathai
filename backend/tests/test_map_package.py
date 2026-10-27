@@ -17,6 +17,7 @@ from pathai_backend.map_package import (
 )
 
 SAMPLE_PATH = Path(__file__).resolve().parent.parent / "maps_data" / "school-building-01" / "2026-10-25.1.json"
+MAPS_DIR = SAMPLE_PATH.parent
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +29,39 @@ def sample_raw() -> bytes:
 def sample_pkg(sample_raw) -> MapPackage:
     pkg, _ = parse_map_package_bytes(sample_raw)
     return pkg
+
+
+class TestBeaconFloorConsistency:
+    """信标 major 必须等于所在楼层（docs/18 TODO-9）。
+
+    楼层唯一权威字段是 floor/floorId；major 偏离会让配置工具按 floor 生成的 AT 参数
+    与地图包/客户端 (uuid,major,minor) 三元组解析不一致 → 扫到也被当陌生信标丢弃。
+    对所有已入库地图包（含最新发布版）生效，防止回归。
+    例外：`2026-10-27.1` 及更早为修正前发布物，发布版本不可变，故不纳入断言。
+    """
+
+    @pytest.mark.parametrize(
+        "path",
+        sorted(p for p in MAPS_DIR.glob("*.json") if p.stem >= "2026-10-27.2"),
+        ids=lambda p: p.name,
+    )
+    def test_major_matches_floor_for_every_published_package(self, path: Path):
+        pkg, _ = load_map_package(path)
+        bad = [
+            (b.beaconId, b.floorId, b.major)
+            for b in pkg.beacons
+            if b.major is not None and str(b.major) != b.floorId
+        ]
+        assert bad == [], f"{path.name}: major 与楼层不一致 {bad}"
+
+    def test_latest_package_carries_the_fix(self):
+        """2026-10-27.2 起 BK-M-2-* 的 major 已由 1 修正为 2。"""
+        latest = max(MAPS_DIR.glob("2026-10-27*.json"), key=lambda p: p.name)
+        pkg, _ = load_map_package(latest)
+        by_id = {b.beaconId: b for b in pkg.beacons}
+        for bid in ("BK-M-2-001", "BK-M-2-002"):
+            assert by_id[bid].floorId == "2"
+            assert by_id[bid].major == 2
 
 
 class TestSamplePackage:

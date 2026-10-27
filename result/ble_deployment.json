@@ -1888,7 +1888,7 @@
     {
       "beaconId": "BK-M-2-001",
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
+      "major": 2,
       "minor": 20001,
       "coordinates": [
         -28.86,
@@ -1916,7 +1916,7 @@
     {
       "beaconId": "BK-M-2-002",
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
+      "major": 2,
       "minor": 20002,
       "coordinates": [
         -32.92,
