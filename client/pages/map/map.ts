@@ -739,6 +739,11 @@ Page({
     this.ptt = new PushToTalk({
       engine: appContext.asr,
       onStateChange: (state) => {
+        // 按住瞬间短震动：视障用户据此确认「已开始录音、可以开口」，
+        // 无需依赖视觉状态文案（REQ-VOICE 非视觉反馈）
+        if (state === 'recording') {
+          vibrateShort();
+        }
         this.setData({ pttState: state, pttStateText: PTT_TEXT[state] });
       },
       onPartial: (text) => this.setData({ partial: text }),
