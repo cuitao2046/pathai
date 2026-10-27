@@ -59,6 +59,10 @@ result/*
 
 # 探索性/实验性代码目录（非规范源码，本地保留不入库）
 src/adjcent/
+
+# 本地草稿与调试产物（不入版本库）
+.trae/
+backend/out_*.txt
 src/fix/
 src/optimize/
 src/optimize_v2/

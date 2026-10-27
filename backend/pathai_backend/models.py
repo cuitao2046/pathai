@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
-"""ORM 模型基类。
-
-具体表模型按里程碑随迁移一起加入（M4 起：匿名主体/令牌映射等）。
-数据库仅持久化用户主体映射、导航会话、幂等记录及最小业务元数据；
-地图几何等大文件不入库（spec §4）。
-"""
+"""ORM 模型基类。"""
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -16,7 +11,7 @@ class Base(DeclarativeBase):
 
 
 class AnonymousSubject(Base):
-    """匿名主体：仅存加盐 openid 哈希（docs/24 §8 API-01），不存明文身份。"""
+    """匿名主体：仅存加盐 openid 哈希，不存明文身份。"""
 
     __tablename__ = "anonymous_subjects"
 
@@ -27,10 +22,7 @@ class AnonymousSubject(Base):
 
 
 class AccessToken(Base):
-    """不透明访问令牌：服务端仅存 token 哈希（sha256 hex 作主键），便于吊销。
-
-    多设备并发登录各自持有独立令牌，互不踢除；过期自然失效。
-    """
+    """不透明访问令牌：服务端仅存 token 哈希。"""
 
     __tablename__ = "access_tokens"
 
@@ -46,10 +38,7 @@ Index("ix_access_tokens_subject", AccessToken.subject_id)
 
 
 class LocationSequence(Base):
-    """定位批次序号：按（主体, 场所）记录已处理最大 sequence，拒绝过期批次。
-
-    sequence 严格小于已处理值 → 409 STALE_LOCATION_BATCH（docs/24 API-05）。
-    """
+    """定位批次序号。"""
 
     __tablename__ = "location_sequences"
 
@@ -62,7 +51,7 @@ class LocationSequence(Base):
 
 
 class NavSession(Base):
-    """导航会话：状态机 active↔recovering→arrived/ended（终态不可逆，docs/24 §4.3）。"""
+    """导航会话。"""
 
     __tablename__ = "nav_sessions"
 
@@ -93,7 +82,7 @@ Index("ix_nav_sessions_subject", NavSession.subject_id)
 
 
 class NavIdempotency(Base):
-    """会话创建幂等记录：Idempotency-Key → 已创建会话及其响应（docs/24 API-06）。"""
+    """导航创建幂等记录。"""
 
     __tablename__ = "nav_idempotency_keys"
 
@@ -104,3 +93,60 @@ class NavIdempotency(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     session_id: Mapped[str] = mapped_column(String(40), nullable=False)
     response_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class AdminAccount(Base):
+    """管理后台固定账户：仅存带随机盐的密码哈希，不存明文。
+
+    must_change_password：首版初始化 admin/admin 后为真，成功改密后置假。
+    """
+
+    __tablename__ = "admin_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    password_salt: Mapped[str] = mapped_column(String(64), nullable=False)
+    hash_params: Mapped[str] = mapped_column(String(64), nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AdminSession(Base):
+    """管理员会话：服务端只存 token/CSRF 的 SHA-256 摘要，cookie 携带原文。"""
+
+    __tablename__ = "admin_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    csrf_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class MapDraft(Base):
+    """每场所唯一活动草稿：只保存白名单编辑差异，不复制整份地图包。"""
+
+    __tablename__ = "map_drafts"
+
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    base_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    patch_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AdminAuditEvent(Base):
+    """关键管理操作审计：登录成功/失败、改密、退出、草稿重置、发布、回滚。
+
+    不记录密码、token 或字段级编辑差异（map-admin-spec §6 审计）。
+    """
+
+    __tablename__ = "admin_audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+

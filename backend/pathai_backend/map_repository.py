@@ -67,6 +67,10 @@ class MapRepository:
     def is_known_site(self, site_id: str) -> bool:
         return site_id in self.known_sites
 
+    def get_site_versions(self, site_id: str) -> set[str]:
+        """场所已发布版本号集合；未知场所返回空集合。"""
+        return set(self._maps.get(site_id, {}).keys())
+
     def get(self, site_id: str, version: str) -> PublishedMap | None:
         return self._maps.get(site_id, {}).get(version)
 

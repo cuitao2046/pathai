@@ -6,12 +6,16 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from pathai_backend.config import DEMO_ENV, Settings, resolve_database_url
 from pathai_backend.errors import ApiError
+
+ADMIN_DIST = Path(__file__).resolve().parents[2] / "admin-web" / "dist"
 
 
 def _assert_error_shape(body: dict, expected_code: str) -> None:
@@ -33,6 +37,28 @@ class TestRequestContext:
         first = client.get("/healthz").headers["X-Request-Id"]
         second = client.get("/healthz").headers["X-Request-Id"]
         assert first != second
+
+
+class TestSecurityHeaders:
+    def test_csp_limits_to_self(self, client: TestClient):
+        resp = client.get("/healthz")
+        assert resp.headers["Content-Security-Policy"].startswith("default-src 'self'")
+        assert "connect-src 'self'" in resp.headers["Content-Security-Policy"]
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+
+
+class TestAdminStaticHosting:
+    def test_admin_ui_served_when_built(self, client: TestClient):
+        if not (ADMIN_DIST / "index.html").exists():
+            pytest.skip("admin-web/dist 未构建")
+        resp = client.get("/admin/")
+        assert resp.status_code == 200
+        assert "PathAI 地图管理后台" in resp.text
+
+    def test_api_route_not_captured_by_static_mount(self, client: TestClient):
+        resp = client.get("/api/v1/does-not-exist")
+        assert resp.status_code == 404
+        _assert_error_shape(resp.json(), "NOT_FOUND")
 
 
 class TestErrorEnvelope:
