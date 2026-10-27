@@ -646,8 +646,9 @@ Page({
     if (segs === undefined) {
       return;
     }
-    // 保持 scale/offset（同坐标系视觉连续），仅按新层 bounds 夹紧
+    // 切换楼层后回到该层全图模式居中展示（与启动首屏一致）
     vp.setFloor(floorId, flatBounds(segs));
+    vp.fit();
     const item = this.floorList.find((f) => f.floorId === floorId);
     this.setData({
       currentFloor: floorId,
@@ -970,13 +971,19 @@ Page({
     controller.handleEstimate(estimate);
   },
 
-  /** 类高德跟随：楼层自动切换 + 视口对准当前位置（REQ-NAV 展示层）。 */
+  /**
+   * 类高德跟随：楼层自动切换 + 视口对准当前位置（REQ-NAV 展示层）。
+   * 待命态保持全图居中（启动/换层后的观感），不做位置跟随平移；
+   * 导航态才把视口中心对准当前位置（进入导航时已按 NAV_VIEW_FACTOR 收窄）。
+   */
   followPosition(): void {
     const vp = this.viewport;
     const pos = this.navPosition;
     if (vp === null || pos === null || this.canvasSize.w === 0) {
       return;
     }
+    const navActive = this.data.navActive;
+    let floorChanged = false;
     if (pos.floorId !== vp.floorId) {
       const segs = this.wallSegs[pos.floorId];
       if (segs !== undefined) {
@@ -986,9 +993,20 @@ Page({
           currentFloor: pos.floorId,
           currentFloorText: item !== undefined ? `${item.level}F` : pos.floorId,
         });
+        floorChanged = true;
+        // 待命态换层：回到该层全图居中；导航态保持局部跟随视野
+        if (!navActive) {
+          vp.fit();
+        }
       }
     }
-    // 每次可信估计把视口中心对准位置（导航态低频：standby 8s / 导航 2.5s）
+    if (!navActive) {
+      if (floorChanged) {
+        this.requestDraw();
+      }
+      return;
+    }
+    // 导航态每次可信估计把视口中心对准位置（2.5s 节奏）
     const { sx, sy } = vp.toScreen(pos.x, pos.y);
     vp.panBy(this.canvasSize.w / 2 - sx, this.canvasSize.h / 2 - sy);
     this.requestDraw();
