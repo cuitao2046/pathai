@@ -11,32 +11,45 @@
     catchtouchcancel="onTouchCancel"
   />
 
-  <!-- 左上角竖向工具条：设置 / 楼层选择（点击横向展开可选楼层）/ 全图，
-       三枚按钮同尺寸；楼层选择按钮常显当前楼层 -->
+  <!-- 左上角竖向工具条：设置 / 楼层选择（点击横向展开可选楼层）/ 全图。
+       三枚按钮统一宽度 = 三者文案中最宽者（toolBtnWidth，页面按字体估算）；
+       展开的楼层候选为绝对定位浮层，不影响设置/全图的位置 -->
   <view class="top-left">
-    <button class="tool-btn" bindtap="onGoSettings" aria-label="打开设置">设置</button>
+    <button
+      class="tool-btn"
+      style="width:{{toolBtnWidth}}rpx"
+      bindtap="onGoSettings"
+      aria-label="打开设置"
+    >设置</button>
 
     <view class="floor-menu" aria-label="楼层选择">
       <button
         class="tool-btn floor-current"
+        style="width:{{toolBtnWidth}}rpx"
         bindtap="onToggleFloorMenu"
         aria-label="楼层选择，当前{{currentFloorText}}"
         aria-expanded="{{floorMenuOpen}}"
       >{{currentFloorText}}</button>
-      <block wx:if="{{floorMenuOpen}}">
+      <view class="floor-options" wx:if="{{floorMenuOpen}}">
         <button
           wx:for="{{floors}}"
           wx:key="floorId"
           class="tool-btn floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+          style="width:{{toolBtnWidth}}rpx"
           data-floor="{{item.floorId}}"
           bindtap="onSwitchFloor"
           aria-label="切换到{{item.displayName}}"
           aria-pressed="{{item.floorId === currentFloor}}"
         >{{item.level}}F</button>
-      </block>
+      </view>
     </view>
 
-    <button class="tool-btn" bindtap="onResetView" aria-label="回到全图">全图</button>
+    <button
+      class="tool-btn"
+      style="width:{{toolBtnWidth}}rpx"
+      bindtap="onResetView"
+      aria-label="回到全图"
+    >全图</button>
   </view>
 
   <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE；导航态时让位给导航 HUD） -->

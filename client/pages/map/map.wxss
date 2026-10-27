@@ -13,8 +13,8 @@
 }
 
 /* 左上角竖向工具条：设置 / 楼层选择 / 全图，悬浮于地图上。
-   自适应说明：rpx 随屏宽等比缩放（750rpx = 屏宽），flex 纵列兜底——
-   按钮 flex:none 不收缩，文字 nowrap 不截断 */
+   宽度由页面按「三者文案中最宽者」算出后内联下发（toolBtnWidth），三键等宽；
+   rpx 随屏宽等比缩放（750rpx = 屏宽），文字 nowrap 不截断 */
 .top-left {
   position: absolute;
   z-index: 10;
@@ -23,35 +23,46 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16rpx;
+  gap: 12rpx;
 }
 
-/* 统一按钮尺寸（触发键、设置、全图、展开的楼层键全部一致） */
+/* 统一按钮尺寸（触发键、设置、全图、展开的楼层键全部一致；宽度见内联 style） */
 .tool-btn {
   flex: 0 0 auto;
-  width: 120rpx;
-  height: 88rpx;
+  height: 72rpx;
   margin: 0;
-  padding: 0;
+  padding: 0 14rpx;
   box-sizing: border-box;
-  line-height: 84rpx; /* height - 上下 border */
-  font-size: 28rpx;
+  line-height: 68rpx; /* height - 上下 border */
+  font-size: 26rpx;
   font-weight: 600;
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
-  border-radius: 20rpx;
+  border-radius: 16rpx;
   background: rgba(255, 255, 255, 0.92);
   color: #1f2937;
   border: 2rpx solid #d1d5db;
 }
 
-/* 楼层选择：触发键常显当前楼层（高亮），点击后横向展开可选楼层 */
+/* 楼层选择：触发键常显当前楼层（高亮）；候选楼层为绝对定位浮层，
+   横向展开时不影响「设置」「全图」的位置（不参与竖向布局流） */
 .floor-menu {
+  position: relative;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 12rpx;
+}
+
+.floor-options {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 12rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8rpx;
 }
 
 .floor-current {
@@ -219,7 +230,7 @@
 .nav-hud {
   position: absolute;
   z-index: 30;
-  left: 168rpx; /* 让位左上角竖向工具条（24 左距 + 120 按钮宽 + 余量） */
+  left: 128rpx; /* 让位左上角竖向工具条（24 左距 + 按钮宽 + 余量） */
   right: 24rpx;
   top: 24rpx;
   display: flex;

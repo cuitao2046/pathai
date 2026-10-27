@@ -63,6 +63,34 @@ const DOUBLE_TAP_WINDOW_MS = 500;
  */
 const NAV_VIEW_FACTOR = 2.5;
 
+/** 工具条按钮排版参数（与 map.wxss 的 .tool-btn 保持一致）。 */
+const TOOL_BTN_FONT_RPX = 26;
+const TOOL_BTN_PAD_X_RPX = 14;
+const TOOL_BTN_BORDER_RPX = 2;
+/** 估算余量：避免不同机型字体度量差异导致文字贴边/截断。 */
+const TOOL_BTN_SAFETY_RPX = 6;
+
+/**
+ * 工具条统一按钮宽度（rpx）：按「设置 / 全图 / 各楼层文案」中最宽者估算。
+ * 全角（CJK）按 1em、半角按 0.6em 计，再叠加左右内边距、边框与安全余量。
+ * 三枚按钮共用同一宽度 → 点击展开楼层候选时其他按钮位置不变。
+ */
+function toolBtnWidthRpx(labels: string[]): number {
+  let maxText = 0;
+  for (const label of labels) {
+    let w = 0;
+    for (const ch of label) {
+      w += ch.charCodeAt(0) < 0x2e80 ? TOOL_BTN_FONT_RPX * 0.6 : TOOL_BTN_FONT_RPX;
+    }
+    if (w > maxText) {
+      maxText = w;
+    }
+  }
+  return Math.ceil(
+    maxText + TOOL_BTN_PAD_X_RPX * 2 + TOOL_BTN_BORDER_RPX * 2 + TOOL_BTN_SAFETY_RPX,
+  );
+}
+
 type Canvas2d = WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D;
 
 interface FloorItem {
@@ -98,6 +126,8 @@ Page({
     currentFloorText: '1F',
     /** 楼层选择菜单是否横向展开。 */
     floorMenuOpen: false,
+    /** 工具条三枚按钮的统一宽度（rpx，按文案最宽者估算，见 toolBtnWidthRpx）。 */
+    toolBtnWidth: toolBtnWidthRpx(['设置', '全图', '1F']),
     floors: [] as FloorItem[],
     // 意图/语音（REQ-PAGE：下端居中按住说话按钮 + 居中浮层）
     pttState: 'idle' as PttState,
@@ -220,6 +250,8 @@ Page({
         loadError: '',
         mapReady: true,
         currentFloorText: cur !== undefined ? `${cur.level}F` : this.data.currentFloorText,
+        // 楼层数量与文案确定后重算三枚按钮的统一宽度（取三者最宽者）
+        toolBtnWidth: toolBtnWidthRpx(['设置', '全图', ...floors.map((f) => `${f.level}F`)]),
       });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
