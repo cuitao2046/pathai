@@ -12,7 +12,9 @@
   height: 100%;
 }
 
-/* 顶端工具条：设置 / 楼层 / 全图 横向一字排开，悬浮于地图上（z10 高于 PTT 热区） */
+/* 顶端工具条：设置 / 楼层 / 全图 横向一字排开，悬浮于地图上（z10 高于 PTT 热区）。
+   自适应说明：rpx 本身随屏宽等比缩放（750rpx = 屏宽），布局再用 flex 兜底——
+   三个区块 flex:none 不收缩，保证按钮不被挤出屏、文字不截断 */
 .top-bar {
   position: absolute;
   z-index: 10;
@@ -20,31 +22,49 @@
   left: 24rpx;
   right: 24rpx;
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 16rpx;
+  box-sizing: border-box;
 }
 
-/* 楼层切换：横向居中排开；当前楼层用 .active 高亮（替代原文字角标） */
+/* 直属按钮（设置/全图）：不参与压缩，文字永不截断 */
+.top-bar > button {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* 楼层切换：占据中间剩余空间并居中；min-width:0 允许在极窄屏收敛而不撑破工具条 */
 .floor-switch {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: center;
   gap: 16rpx;
 }
 
+/* 楼层按钮：胶囊形（宽度随内容），min-width 保底圆润、padding 保证 "1F/2F" 完整 */
 .floor-pill {
-  width: 88rpx;
-  height: 88rpx;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 88rpx;
+  height: 80rpx;
   margin: 0;
-  padding: 0;
-  border-radius: 50%;
+  padding: 0 20rpx;
+  box-sizing: border-box;
+  white-space: nowrap;
+  border-radius: 999rpx;
   background: #ffffff;
   color: #1f2937;
   font-size: 30rpx;
   font-weight: 600;
   border: 2rpx solid #d1d5db;
-  line-height: 88rpx;
+  line-height: 76rpx; /* height - 上下 border，避免边框挤压文字 */
 }
 
 .floor-pill.active {
@@ -54,12 +74,15 @@
 }
 
 .reset-btn {
-  width: 120rpx;
+  flex: 0 0 auto;
+  width: auto;
   margin: 0;
-  padding: 0;
+  padding: 0 28rpx;
+  box-sizing: border-box;
   height: 80rpx;
-  line-height: 80rpx;
+  line-height: 76rpx;
   font-size: 26rpx;
+  white-space: nowrap;
   border-radius: 999rpx;
   background: #ffffff;
   color: #1f2937;
@@ -214,11 +237,15 @@
 
 /* 设置入口（顶端工具条左侧；mock/live 均可进入） */
 .settings-btn {
+  flex: 0 0 auto;
+  width: auto;
   margin: 0;
-  padding: 0 32rpx;
+  padding: 0 28rpx;
+  box-sizing: border-box;
   height: 80rpx;
-  line-height: 80rpx;
+  line-height: 76rpx;
   font-size: 26rpx;
+  white-space: nowrap;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.92);
   color: #1f2937;
