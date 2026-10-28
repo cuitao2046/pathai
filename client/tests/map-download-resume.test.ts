@@ -53,6 +53,8 @@ interface ServerOptions {
   version?: string;
   raw?: string;
   sha?: string;
+  /** 忽略 Range，始终整包 200（模拟未实现断点续传的服务端）。 */
+  ignoreRange?: boolean;
 }
 
 /** 模拟支持 Range 的地图服务端；返回每个数据请求的 Range 头（便于断言续传偏移）。 */
@@ -89,7 +91,7 @@ function installServer(options: ServerOptions = {}): { ranges: string[] } {
         o.fail({ errMsg: 'request:fail network' });
         return;
       }
-      if (range === null) {
+      if (options.ignoreRange === true || range === null) {
         o.success({ statusCode: 200, header: { ETag: 'etag-1' }, data: toArrayBuffer(bytes) });
         return;
       }
@@ -228,6 +230,15 @@ test('无缓存且下载失败：前台下载事件 + 保留状态（不落正�
   expect(service.pendingDownload?.active).toBe(false);
   expect(wxStub.__files.has(CACHE_FILE)).toBe(false);
 });
+
+test('服务端不支持 Range：按整包 200 兜底写入并校验通过', async () => {
+  installServer({ ignoreRange: true });
+  const service = newService();
+  await service.ensureLoaded();
+  expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+  expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
+  expect(wxStub.__files.has(partialPath(SITE, REAL_MAP.mapVersion))).toBe(false);
+}, 30000);
 
 test('半成品写入契约：offset=0 需建档（真机 appendFile 不自动创建文件）', async () => {
   const path = partialPath(SITE, REAL_MAP.mapVersion);

@@ -13,6 +13,10 @@
  * - 读取方以 JSON.parse 失败兜底（写入中断的半截文件视为无缓存，触发重新下载）。
  */
 
+import { createLogger } from './logger';
+
+const log = createLogger('map-cache');
+
 /** 正式缓存文件路径（用户数据根目录，按站点隔离）。 */
 function cachePath(siteId: string): string {
   return `${wx.env.USER_DATA_PATH}/map-cache-${siteId}.json`;
@@ -120,26 +124,7 @@ export function appendMapPartial(
   });
 }
 
-/** 读取半成品全部字节（校验完整文件 sha256 用）；不存在返回 null。 */
-export function readMapPartialBytes(
-  siteId: string,
-  mapVersion: string,
-): Promise<Uint8Array | null> {
-  return new Promise((resolve) => {
-    try {
-      wx.getFileSystemManager().readFile({
-        filePath: partialPath(siteId, mapVersion),
-        success: (res) =>
-          resolve(res.data instanceof ArrayBuffer ? new Uint8Array(res.data) : null),
-        fail: () => resolve(null),
-      });
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-/** 读取半成品为 UTF-8 文本（完整后转正缓存用）；不存在返回 null。 */
+/** 读取半成品为 UTF-8 文本（完整后转正缓存与摘要校验用）；不存在/读取失败返回 null。 */
 export function readMapPartialText(
   siteId: string,
   mapVersion: string,
@@ -150,9 +135,13 @@ export function readMapPartialText(
         filePath: partialPath(siteId, mapVersion),
         encoding: 'utf8',
         success: (res) => resolve(typeof res.data === 'string' ? res.data : null),
-        fail: () => resolve(null),
+        fail: (err) => {
+          log.warn('半成品读取失败', err.errMsg);
+          resolve(null);
+        },
       });
-    } catch {
+    } catch (err) {
+      log.warn('半成品读取异常', err instanceof Error ? err.message : String(err));
       resolve(null);
     }
   });

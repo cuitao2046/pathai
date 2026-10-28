@@ -21,14 +21,13 @@ import {
   MAP_STALE_DAYS,
 } from '../../config/env';
 import { nowMs } from '../../utils/clock';
-import { sha256BytesAsync } from '../../utils/sha256';
+import { sha256Async } from '../../utils/sha256';
 import { createLogger } from '../../utils/logger';
 import { getJson, getString, remove, setJson, setString } from '../../utils/kv';
 import {
   appendMapPartial,
   commitMapCache,
   readMapCache,
-  readMapPartialBytes,
   readMapPartialSize,
   readMapPartialText,
   removeMapPartial,
@@ -385,20 +384,18 @@ export class MapService {
         }
       }
 
-      // 完整性校验对象是完整文件（分片拼接后的字节），与服务端 dataSha256 必须一致
-      const bytes = await readMapPartialBytes(siteId, version);
-      if (bytes === null) {
+      // 完整性校验对象是完整文件（分片拼接后的文本），与服务端 dataSha256 必须一致。
+      // 用文本读取而非二进制 ArrayBuffer：真机/工具 readFile 不带 encoding 时的返回值
+      // 未必能被宿主环境的 instanceof ArrayBuffer 命中，文本读取是已验证可靠的路径；
+      // sha256Async 内部按 UTF-8 编码后分片哈希，JSON 文本往返编码字节一致。
+      const raw = await readMapPartialText(siteId, version);
+      if (raw === null || raw.length === 0) {
         throw mapUnavailable('地图半成品读取失败');
       }
-      const digest = toHex(await sha256BytesAsync(bytes));
+      const digest = await sha256Async(raw);
       if (digest !== summary.dataSha256) {
         await removeMapPartial(siteId, version);
         throw mapUnavailable('地图数据摘要校验失败');
-      }
-
-      const raw = await readMapPartialText(siteId, version);
-      if (raw === null || raw.length === 0) {
-        throw mapUnavailable('地图半成品文本读取失败');
       }
       await commitMapCache(siteId, raw);
       await removeMapPartial(siteId, version);
@@ -508,14 +505,6 @@ export function isVersionStale(
     return false;
   }
   return (server - local) / 86_400_000 > maxDays;
-}
-
-function toHex(bytes: Uint8Array): string {
-  let out = '';
-  for (const byte of bytes) {
-    out += byte.toString(16).padStart(2, '0');
-  }
-  return out;
 }
 
 function mapUnavailable(message: string): ApiClientError {
