@@ -11,7 +11,7 @@
     "postcss": true,
     "minified": true,
     "useCompilerPlugins": ["typescript"],
-    "ignoreUploadUnusedFiles": true,
+    "ignoreUploadUnusedFiles": false,
     "babelSetting": {
       "ignore": [],
       "disablePlugins": [],
