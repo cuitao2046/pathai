@@ -34,8 +34,8 @@ for _fp in ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf"]:
         break
 matplotlib.rcParams["axes.unicode_minus"] = False
 
-TX_POWER = -10
-RSSI_REF_1M = -50
+TX_POWER = -12
+RSSI_REF_1M = -52
 N = 3.5
 WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}
 VISIBLE = -85

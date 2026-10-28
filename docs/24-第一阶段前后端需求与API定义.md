@@ -509,6 +509,7 @@ flowchart LR
   "quality": "reliable",
   "matchedArea": { "placeId": "main-corridor", "name": "一楼走廊" },
   "algorithmVersion": "location-0.1",
+  "paramsVersion": "loc-2026-11-01.1",
   "observedAt": "2026-10-23T08:00:00Z"
 }
 ```
@@ -520,6 +521,7 @@ flowchart LR
 - `unreliable` / `lost` 时 `position` 可为 `null`；`floorId` 在不能可靠判定楼层时为 `null`。
 - 若 `sequence` 小于本客户端/会话已处理序号，返回 `409 STALE_LOCATION_BATCH`，不得覆盖新结果。
 - 未知信标 ID 可在 `ignoredBeaconIds` 中返回，不将其强行参与估计。
+- `paramsVersion` 标识本次解算使用的参数集（`PATHAI_LOCATION_*`），用于与 `mapVersion`/`algorithmVersion` 一起追溯；导航会话创建时固化并在创建/查询响应返回（docs/28 §5.4）。
 - 地图版本不一致返回 `409 MAP_VERSION_CONFLICT`；定位阈值与 `confidence` 到 `quality` 的映射必须经测试定标 `[TBD]`。
 
 ### API-06 创建导航会话并规划路线

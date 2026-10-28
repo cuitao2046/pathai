@@ -5,7 +5,7 @@ QA 独立验证脚本 (严过关) — GDOP 退化判据升级 + R3 补点策略�
 不 import src/tools/refine_beacon_placement.py 的任何函数, 从零重算:
   - 2D 三边测量 GDOP = sqrt(trace((H^T H)^-1)), 共线返回 999
   - 目标到三角形最近边距离 tri_out_dist (内=0)
-  - RSSI 可见性模型: RSSI_REF_1M=-50, N=3.5, VISIBLE=-85, D_MAX=11.0, OFFSET=0.25
+  - RSSI 可见性模型: RSSI_REF_1M=-52, N=3.5, VISIBLE=-85, D_MAX=11.0, OFFSET=0.25
     WALL_ATTEN={brick:12,concrete:15,partition:8,glass:6,None:12}, 墙段 STRtree 加速
 用法:
   python debug/qa_gdop_independent.py [--plan <json>] [--points <json>] [--self-test]
@@ -24,7 +24,7 @@ GEO = f"{ROOT}/result/school_building_01_map_v9.geojson"
 DEFAULT_PLAN = f"{ROOT}/result/beacon_deployment_plan_trilateration_routes_refined.json"
 DEFAULT_POINTS = f"{ROOT}/result/fingerprint_grid_routes.json"
 
-RSSI_REF_1M = -50
+RSSI_REF_1M = -52
 N = 3.5
 WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}
 VISIBLE = -85

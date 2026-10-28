@@ -58,8 +58,8 @@ ROUTE_PLAN = ROOT / "result" / "beacon_deployment_plan_trilateration_routes.json
 ROUTE_TARGET = ROOT / "result" / "fingerprint_grid_routes.json"
 
 # ---- 无线模型(与 gen_trilateration_plan.py 完全同口径) ----
-TX_POWER = -10
-RSSI_REF_1M = -50
+TX_POWER = -12
+RSSI_REF_1M = -52
 N = 3.5
 WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}
 VISIBLE = -85

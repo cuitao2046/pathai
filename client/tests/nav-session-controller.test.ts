@@ -112,6 +112,7 @@ const CREATE_RESPONSE: CreateSessionResponse = {
   sessionId: 'sess-1',
   status: 'active',
   mapVersion: 'v1',
+  paramsVersion: 'unset',
   destination: { placeId: 'p1', name: '图书馆', floorId: '1' },
   route: ROUTE1,
   createdAt: NOW_ISO,
@@ -133,6 +134,7 @@ const ESTIMATE_RELIABLE: PositionEstimateResponse = {
   confidence: 0.9,
   quality: 'reliable',
   algorithmVersion: 'location-0.1',
+  paramsVersion: 'unset',
   observedAt: NOW_ISO,
   ignoredBeaconIds: [],
 };
@@ -142,6 +144,7 @@ const QUERY_RESPONSE: SessionQueryResponse = {
   status: 'active',
   siteId: 's1',
   mapVersion: 'v1',
+  paramsVersion: 'unset',
   destination: { placeId: 'p1', name: '图书馆', floorId: '1' },
   lastProcessedSequence: 0,
   updatedAt: NOW_ISO,

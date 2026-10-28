@@ -71,6 +71,10 @@ class NavSession(Base):
     last_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     location_algorithm_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: 会话创建时固化的定位参数版本（docs/28 §5.4）
+    location_params_version: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="unset"
+    )
     route_rules_version: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)

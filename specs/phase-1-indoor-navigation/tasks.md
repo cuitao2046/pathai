@@ -40,6 +40,7 @@
 - [x] T-015 实现受限 Dijkstra 路由与规则回归；明确回退标志及首条受控指令。（复用 `src/topology/route_rules`，`plan_route` 在 `nav_service.py`）
 - [x] T-016 实现导航会话状态机、位置更新、偏航重规划、恢复、到达判定、查询和幂等结束。（`nav_service.py` + `routers/nav.py`）
 - [ ] T-017 实现最小数据留存、脱敏日志、到期删除及授权安全测试。（仅落地结构化脱敏日志字段约定；**留存/到期删除流程未实现**）
+- [x] T-030 定位参数配置化与版本追溯：`Settings` 新增 `PATHAI_LOCATION_*`，`location_solver` 接收可注入 `LocationParams`；API-05 响应与会话（创建/查询）返回 `paramsVersion`，`NavSession` 增 `location_params_version` 列（alembic `0005`）；pytest 覆盖配置注入生效、缺省回落、响应字段及「基准误用 txPower 必判 unreliable」反例。（`config.py` / `location_solver.py` / `schemas/location.py` / `routers/location.py` / `schemas/nav.py` / `routers/nav.py` / `models.py` / `alembic/versions/0005_*.py`；`test_location_api` / `test_schemas_contract` / `test_nav_api` / `test_app_skeleton`）
 
 ## Gate 3：小程序能力
 

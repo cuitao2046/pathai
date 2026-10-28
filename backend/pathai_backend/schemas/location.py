@@ -68,6 +68,8 @@ class PositionEstimateResponse(StrictModel):
     quality: LocationQuality
     matchedArea: MatchedArea | None = None
     algorithmVersion: str = Field(min_length=1)
+    #: 解算参数版本（docs/28 §5.4）：与 mapVersion/algorithmVersion 一起追溯本次结果
+    paramsVersion: str = Field(min_length=1)
     observedAt: datetime
     ignoredBeaconIds: list[str] = Field(default_factory=list)
 

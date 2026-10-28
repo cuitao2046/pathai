@@ -2,7 +2,8 @@
 """第一阶段 BLE 三点定位解算（REQ-LOCATION）。
 
 - 只使用地图包信标目录内、与目标楼层一致的信标；未知/跨层信标进 ignoredBeaconIds；
-- RSSI→距离：对数路径损耗模型 d = 10^((txPower - rssi) / (10·n))，n=2 为工程初始值；
+- RSSI→距离：对数路径损耗模型 d = 10^((RSSI@1m - rssi) / (10·n))，n=2 为工程初始值；
+  RSSI@1m 取部署档位推算的占位值（-71 dBm），**不使用**信标 txPower（docs/28 §1）；
 - 三边最小二乘（线性化正规方程，2×2 手工求解，不引入 numpy）；
 - 残差→quality/confidence 映射与阈值均为工程初始值，须经现场标定后冻结（docs/24 §12）。
 """
@@ -16,13 +17,31 @@ from pathai_backend.schemas.common import LocationQuality
 
 #: 工程初始值（现场标定后冻结）。
 PATH_LOSS_EXPONENT = 2.0
-DEFAULT_TX_POWER_DBM = -59.0
+#: 1m 参考 RSSI（iBeacon measured power）。**不是**发射功率：
+#: 部署档位为 E5 3 档 -12 dBm（厂商标称覆盖半径约 15 m），按 0 dBm 档典型
+#: measured power -59 dBm 随功率下降 12 dB 推算得 -71 dBm；15 m 处约 -94.5 dBm，
+#: 与 nRF52 灵敏度（约 -96 dBm）自洽。仍属估算占位，须按 docs/28 现场标定后冻结。
+RSSI_AT_1M_DBM = -71.0
 RESIDUAL_RELIABLE_M = 1.5
 RESIDUAL_DEGRADED_M = 4.0
 #: 正规方程行列式下限：信标近似共线时几何退化，判为 lost。
 _MIN_DETERMINANT = 1e-6
 #: 最少同层可用信标数（三点定位）。
 MIN_BEACONS_FOR_TRILATERATION = 3
+
+
+@dataclass(frozen=True)
+class LocationParams:
+    """解算参数（docs/28 §5.4）：由服务端配置注入，随 paramsVersion 追溯。"""
+
+    rssi_at_1m: float = RSSI_AT_1M_DBM
+    path_loss_n: float = PATH_LOSS_EXPONENT
+    residual_reliable_m: float = RESIDUAL_RELIABLE_M
+    residual_degraded_m: float = RESIDUAL_DEGRADED_M
+    params_version: str = "unset"
+
+
+DEFAULT_LOCATION_PARAMS = LocationParams()
 
 
 @dataclass(frozen=True)
@@ -41,9 +60,13 @@ class LocationEstimate:
     ignored_beacon_ids: tuple[str, ...]
 
 
-def rssi_to_distance(rssi: int, tx_power: float | None) -> float:
-    power = tx_power if tx_power is not None else DEFAULT_TX_POWER_DBM
-    return 10.0 ** ((power - rssi) / (10.0 * PATH_LOSS_EXPONENT))
+def rssi_to_distance(rssi: int, params: LocationParams = DEFAULT_LOCATION_PARAMS) -> float:
+    """对数路径损耗模型：d = 10^((RSSI@1m − rssi) / (10·n))。
+
+    RSSI@1m 取自配置（measured power），**不得**使用设备发射功率 txPower
+    （txPower 仅描述广播功率，与距离不是同一量纲；docs/28 §1）。
+    """
+    return 10.0 ** ((params.rssi_at_1m - rssi) / (10.0 * params.path_loss_n))
 
 
 def _dedupe_strongest(observations: list[BeaconInput]) -> list[BeaconInput]:
@@ -109,6 +132,7 @@ def estimate_location(
     pkg: MapPackage,
     observations: list[BeaconInput],
     floor_hint: str | None,
+    params: LocationParams = DEFAULT_LOCATION_PARAMS,
 ) -> LocationEstimate:
     catalog = {b.beaconId: b for b in pkg.beacons}
     deduped = _dedupe_strongest(observations)
@@ -125,7 +149,8 @@ def estimate_location(
             ignored.append(obs.beacon_id)
             continue
         anchors.append((beacon.x, beacon.y))
-        ranges.append(rssi_to_distance(obs.rssi, beacon.txPower))
+        # txPower 是设备广播档位，不参与测距；参考值统一取配置的 RSSI@1m（docs/28 §1）
+        ranges.append(rssi_to_distance(obs.rssi, params))
     ignored.sort()
 
     if (
@@ -154,9 +179,9 @@ def estimate_location(
 
     rms = _residual_rms(point, anchors, ranges)
     confidence = round(max(0.0, min(1.0, 1.0 - rms / 10.0)), 3)
-    if rms <= RESIDUAL_RELIABLE_M:
+    if rms <= params.residual_reliable_m:
         quality = LocationQuality.RELIABLE
-    elif rms <= RESIDUAL_DEGRADED_M:
+    elif rms <= params.residual_degraded_m:
         quality = LocationQuality.DEGRADED
     else:
         return LocationEstimate(

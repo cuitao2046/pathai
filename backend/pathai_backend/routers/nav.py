@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth
+from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.map_repository import MapRepository, PublishedMap
 from pathai_backend.models import NavIdempotency, NavSession
@@ -101,6 +102,7 @@ def create_session(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> CreateSessionResponse:
     idem_key = (request.headers.get("Idempotency-Key") or "").strip()
     if not idem_key or len(idem_key) > 128:
@@ -141,6 +143,7 @@ def create_session(
         current_index=0,
         last_sequence=0,
         location_algorithm_version=LOCATION_ALGORITHM_VERSION,
+        location_params_version=settings.location_params_version,
         route_rules_version=route_info.routeRulesVersion,
         created_at_epoch=now,
         updated_at_epoch=now,
@@ -149,6 +152,7 @@ def create_session(
         sessionId=session_id,
         status=SessionStatus.ACTIVE,
         mapVersion=published.map_version,
+        paramsVersion=settings.location_params_version,
         destination=PlaceCandidate(placeId=place.placeId, name=place.name, floorId=place.floorId),
         route=route_info,
         createdAt=_epoch_to_dt(now),
@@ -356,6 +360,7 @@ def query_session(
         status=status,
         siteId=session.site_id,
         mapVersion=session.map_version,
+        paramsVersion=session.location_params_version,
         destination=PlaceCandidate(
             placeId=session.destination_place_id,
             name=session.destination_name,

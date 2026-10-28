@@ -8,6 +8,7 @@ mock 数据使用真实地图包 2026-10-25.1（坐标为局部米制），几�
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -146,6 +147,7 @@ class TestCreateSession:
         body = resp.json()
         assert body["sessionId"].startswith("nav_")
         assert body["status"] == "active"
+        assert body["paramsVersion"] == "unset"
         assert body["destination"]["placeId"] == DEST_PLACE
         route = body["route"]
         assert route["routeRulesVersion"] == "1.0.0"
@@ -178,6 +180,18 @@ class TestCreateSession:
         first = _create(client, auth_headers, idem="k1").json()
         second = _create(client, auth_headers, idem="k2").json()
         assert first["sessionId"] != second["sessionId"]
+
+    def test_params_version_frozen_at_session_creation(self, client, auth_headers, app, settings):
+        # 创建时固化：之后服务端参数版本变化，会话查询仍返回创建时的版本
+        app.state.settings = replace(settings, location_params_version="loc-freeze.1")
+        created = _create(client, auth_headers, idem="freeze").json()
+        assert created["paramsVersion"] == "loc-freeze.1"
+
+        app.state.settings = replace(settings, location_params_version="loc-freeze.2")
+        query = client.get(
+            f"{CREATE_URL}/{created['sessionId']}", headers=auth_headers
+        ).json()
+        assert query["paramsVersion"] == "loc-freeze.1"
 
 
 class TestNavUpdate:
@@ -282,6 +296,7 @@ class TestSessionQuery:
         body = resp.json()
         assert body["status"] == "active"
         assert body["siteId"] == "school-building-01"
+        assert body["paramsVersion"] == "unset"
         assert body["destination"]["placeId"] == DEST_PLACE
         assert body["currentInstruction"]["instructionId"]
         assert body["lastProcessedSequence"] == 1

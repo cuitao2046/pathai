@@ -1,6 +1,8 @@
 /**
  * Mock 信标源：沿给定点列轨迹匀速行走，按对数路径损耗模型
- * rssi = txPower − 10·n·log10(d)（n=2，与后端解算互逆）合成观测。
+ * rssi = RSSI@1m − 10·n·log10(d)（n=2，与后端解算互逆）合成观测。
+ * 参考值是 1m 处 RSSI（measured power），**不是**信标发射功率 txPower：
+ * txPower 只描述广播档位，与距离不同量纲（docs/28 §1）。
  * 只注入地图包已登记三元组；走与 live 完全相同的聚合/节流路径。
  *
  * 模拟导航（类高德）：进入导航后由调用方 `updatePath(route.polyline)`
@@ -9,14 +11,16 @@
  * 走完末点驻留（持续观测直到服务端判定到达）。
  */
 import { nowMs } from '../../utils/clock';
+import { BEACON_RSSI_AT_1M_DBM } from '../../config/env';
 import type { MapBeaconEntry } from '../../typings/api';
 import type { BeaconSourceLike } from './beacon-source';
 import type { BeaconSample } from './scan-window';
 
 const PATH_LOSS_N = 2.0;
-/** 距离下限（米）：避免 d 过小时 RSSI 反超 txPower 的非物理值。 */
+/** 距离下限（米）：避免 d 过小时 RSSI 反超 1m 参考值的非物理值。 */
 const MIN_DISTANCE_M = 0.5;
-const DEFAULT_TX_POWER_DBM = -59;
+/** 接收灵敏度下限（dBm）：低于此值的信标真实扫描不可见，mock 同样不注入。 */
+const MIN_RSSI_DBM = -100;
 
 export interface MockWalkOptions {
   beacons: MapBeaconEntry[];
@@ -135,9 +139,11 @@ export class MockBeaconSource implements BeaconSourceLike {
         MIN_DISTANCE_M,
       );
       const rssi = Math.round(
-        (beacon.txPower ?? DEFAULT_TX_POWER_DBM) -
-          10 * PATH_LOSS_N * Math.log10(distance),
+        BEACON_RSSI_AT_1M_DBM - 10 * PATH_LOSS_N * Math.log10(distance),
       );
+      if (rssi < MIN_RSSI_DBM) {
+        continue; // 低于接收灵敏度：真实扫描看不到，mock 也不注入
+      }
       handler({
         uuid: beacon.uuid as string,
         major: beacon.major as number,

@@ -1011,8 +1011,8 @@ try:
 except Exception:
     _HAS_SHAPELY = False
 
-COV_TX_POWER = -10       # dBm，三角定位要求功率一致
-COV_RSSI_REF_1M = -50    # dBm，TxPower=-10 时 1m 参考(RSSI_ref = TX - FSPL@1m, FSPL≈40dB)
+COV_TX_POWER = -12       # dBm，统一 3 档，三角定位要求功率一致
+COV_RSSI_REF_1M = -52    # dBm，TxPower=-12 时 1m 参考(RSSI_ref = TX - FSPL@1m, FSPL≈40dB)
 COV_N = 3.5              # 室内路径损耗指数
 COV_WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}  # 每面墙衰减 dB
 COV_VISIBLE = -85        # dBm 稳定可检测阈值
@@ -1200,7 +1200,7 @@ def main():
         "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
         "major": 1,
         "installHeight": 2.2,
-        "txPower": -10,
+        "txPower": -12,
         "broadcastInterval": 300,
         "batteryModel": "CR2477",
         "expectedLifespan": 5,

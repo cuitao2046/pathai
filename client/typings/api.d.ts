@@ -227,6 +227,7 @@ export interface MapBeaconEntry {
   floorId: string;
   x: number;
   y: number;
+  /** 设备广播功率档位（dBm，当前 -12）；仅描述配置，**不参与测距**。 */
   txPower?: number | null;
   installHeightM?: number | null;
   uuid?: string | null;
@@ -365,6 +366,8 @@ export interface PositionEstimateResponse {
   quality: LocationQuality;
   matchedArea?: MatchedArea | null;
   algorithmVersion: string;
+  /** 解算参数版本（与 mapVersion/algorithmVersion 一起追溯本次结果）。 */
+  paramsVersion: string;
   observedAt: IsoDateTime;
   ignoredBeaconIds: string[];
 }
@@ -411,6 +414,8 @@ export interface CreateSessionResponse {
   sessionId: string;
   status: SessionStatus;
   mapVersion: string;
+  /** 会话创建时固化的定位参数版本。 */
+  paramsVersion: string;
   destination: PlaceCandidate;
   route: RouteInfo;
   createdAt: IsoDateTime;
@@ -455,6 +460,7 @@ export interface SessionQueryResponse {
   status: SessionStatus;
   siteId: string;
   mapVersion: string;
+  paramsVersion: string;
   destination: PlaceCandidate;
   currentInstruction?: CurrentInstructionSummary | null;
   lastProcessedSequence?: number | null;

@@ -26,6 +26,13 @@ export const REQUEST_TIMEOUT_MS = 10000;
 export const NAV_UPDATE_TIMEOUT_MS = 5000;
 
 /**
+ * 信标 1m 参考 RSSI（iBeacon measured power，dBm）。
+ * 部署档位 E5 3 档 -12 dBm（厂商标称覆盖半径约 15 m），按 0 dBm 档典型 -59 dBm
+ * 随功率下降 12 dB 推算为 -71 dBm；与后端解算同一参考值，现场标定后替换。
+ */
+export const BEACON_RSSI_AT_1M_DBM = -71;
+
+/**
  * 地图过旧阈值（天）：服务端最新版本日期 − 本地缓存版本日期 > 该值 → 判为过旧，
  * 启动时播「地图过旧」（旧版仍可用，新版后台静默下载）。按 mapVersion 日期部分比较。
  */
