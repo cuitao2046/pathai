@@ -116,6 +116,71 @@ class TestMapVersionEndpoint:
         assert resp.json()["mapVersion"] == REAL_MAP_VERSION
 
 
+class TestMapDataRange:
+    """断点续传：Accept-Ranges/206/416 与分片拼包一致性（REQ-MAP 下载状态）。"""
+
+    def test_full_response_advertises_accept_ranges(self, client, auth_headers):
+        resp = client.get(DATA_URL, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.headers["Accept-Ranges"] == "bytes"
+
+    def test_partial_range_returns_206_with_content_range(self, client, auth_headers):
+        full = client.get(DATA_URL, headers=auth_headers).content
+        resp = client.get(DATA_URL, headers={**auth_headers, "Range": "bytes=0-99"})
+        assert resp.status_code == 206
+        assert resp.content == full[:100]
+        assert resp.headers["Content-Range"] == f"bytes 0-99/{len(full)}"
+        assert resp.headers["Content-Length"] == "100"
+
+    def test_open_ended_range_returns_remainder(self, client, auth_headers):
+        full = client.get(DATA_URL, headers=auth_headers).content
+        offset = 1024
+        resp = client.get(DATA_URL, headers={**auth_headers, "Range": f"bytes={offset}-"})
+        assert resp.status_code == 206
+        assert resp.content == full[offset:]
+        assert resp.headers["Content-Range"] == f"bytes {offset}-{len(full) - 1}/{len(full)}"
+
+    def test_suffix_range_returns_tail(self, client, auth_headers):
+        full = client.get(DATA_URL, headers=auth_headers).content
+        resp = client.get(DATA_URL, headers={**auth_headers, "Range": "bytes=-64"})
+        assert resp.status_code == 206
+        assert resp.content == full[-64:]
+
+    def test_unsatisfiable_range_returns_416(self, client, auth_headers):
+        full = client.get(DATA_URL, headers=auth_headers).content
+        resp = client.get(
+            DATA_URL, headers={**auth_headers, "Range": f"bytes={len(full)}-"}
+        )
+        assert resp.status_code == 416
+        assert resp.headers["Content-Range"] == f"bytes */{len(full)}"
+
+    def test_ranges_reassemble_to_full_bytes(self, client, auth_headers):
+        """按 1 MiB 显式分片串行请求，拼包字节与整包一致（客户端续传口径）。"""
+        full = client.get(DATA_URL, headers=auth_headers).content
+        chunk = 1024 * 1024
+        offset = 0
+        pieces = []
+        while offset < len(full):
+            end = offset + chunk - 1
+            resp = client.get(
+                DATA_URL, headers={**auth_headers, "Range": f"bytes={offset}-{end}"}
+            )
+            assert resp.status_code == 206
+            assert len(resp.content) <= chunk
+            pieces.append(resp.content)
+            offset += len(resp.content)
+        assert b"".join(pieces) == full
+
+    def test_range_with_matching_etag_still_304(self, client, auth_headers):
+        """带 If-None-Match 的续传请求命中 304 时不下发分片（客户端应视为已缓存）。"""
+        etag = client.get(DATA_URL, headers=auth_headers).headers["ETag"]
+        resp = client.get(
+            DATA_URL,
+            headers={**auth_headers, "If-None-Match": etag, "Range": "bytes=0-99"},
+        )
+        assert resp.status_code == 304
+
+
 class TestPlacesEndpoint:
     def test_list_all_sorted_by_place_id(self, client, auth_headers):
         resp = client.get(PLACES_URL, headers=auth_headers, params={"limit": 50})

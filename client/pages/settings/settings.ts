@@ -23,12 +23,17 @@ Page({
     voiceMock: true,
     mockText: appContext.getMockAsrText() || '带我去图书馆',
     mapVersion: '未加载',
+    /** 未完成地图下载的进度文案（完成或从未下载时为空，不展示）。 */
+    downloadText: '',
     tokenStatus: '检查中…',
     ttsEngine: '',
     asrEngine: '',
     selfTestResult: '',
     busy: false,
   },
+
+  /** 地图下载进度订阅（仅本页存活期间）。 */
+  mapUnsubscribe: null as (() => void) | null,
 
   onLoad() {
     const dataSource = appContext.dataSource;
@@ -40,18 +45,48 @@ Page({
       ttsEngine,
       asrEngine,
     });
+    // 未完成下载的百分比只在这里展示（REQ-MAP），随下载进度实时刷新
+    this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
+    this.refreshDownload();
     void this.refreshMapVersion();
     void this.checkAuth();
+  },
+
+  onUnload() {
+    this.mapUnsubscribe?.();
+    this.mapUnsubscribe = null;
   },
 
   onShow() {
     // 从其它页面返回后刷新：地图/登录状态 + 开关与 mock 文本回读
     //（页面 data 字面量仅在模块首次加载时求值，靠 onShow 兜住任意进入时序）
     void this.refreshMapVersion();
+    this.refreshDownload();
     this.setData({
       dataSource: appContext.dataSource,
       voiceMock: appContext.getVoiceMockSetting(),
       mockText: appContext.getMockAsrText() || '带我去图书馆',
+    });
+  },
+
+  /** 未完成下载百分比（REQ-MAP：只在本页展示；完成/无任务时隐藏）。 */
+  refreshDownload() {
+    const pending = appContext.map.pendingDownload;
+    if (pending === null) {
+      if (this.data.downloadText !== '') {
+        this.setData({ downloadText: '' });
+      }
+      return;
+    }
+    if (pending.totalBytes === null || pending.totalBytes <= 0) {
+      this.setData({
+        downloadText: pending.active ? '新版地图下载中…' : '新版地图未下载完成，下次启动继续',
+      });
+      return;
+    }
+    const percent = Math.min(100, Math.floor((pending.downloadedBytes / pending.totalBytes) * 100));
+    this.setData({
+      downloadText: `${pending.mapVersion} 下载${pending.active ? '中' : '未完成'}：${percent}%`,
     });
   },
 

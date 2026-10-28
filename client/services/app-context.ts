@@ -17,6 +17,10 @@ import type { TtsEngine } from '../core/speech/tts-engine';
 import { MockAsrEngine } from '../core/asr/mock-asr';
 import { MockTtsEngine } from '../core/speech/mock-tts';
 import { XfyunTts } from '../core/speech/xfyun-tts';
+import {
+  LocalVoice,
+  type LocalVoiceClipHandle,
+} from '../core/speech/local-voice';
 import { createWssUrlProvider } from '../utils/wss-url';
 import { createLogger } from '../utils/logger';
 import { getString, getJson, setJson, setString } from '../utils/kv';
@@ -35,12 +39,29 @@ function resolveDataSource(): DataSource {
   return stored === 'mock' || stored === 'live' ? stored : DEFAULT_DATA_SOURCE;
 }
 
+/** 本地提示音句柄（InnerAudioContext 适配；文件缺失由 onError 静默跳过）。 */
+function createWxAudio(src: string): LocalVoiceClipHandle {
+  const audio = wx.createInnerAudioContext();
+  audio.src = src;
+  // 提示音是启动安全提示：静音开关打开时也要能听到
+  audio.obeyMuteSwitch = false;
+  return {
+    play: () => audio.play(),
+    stop: () => audio.stop(),
+    destroy: () => audio.destroy(),
+    onEnded: (listener) => audio.onEnded(listener),
+    onError: (listener) => audio.onError(() => listener()),
+  };
+}
+
 class AppContext {
   readonly dataSource: DataSource = resolveDataSource();
   /** 语音交互（ASR+TTS）是否用 mock 引擎：独立开关，未设置过则跟随数据源。 */
   readonly voiceMock: boolean = resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
   readonly http = createHttpStack(API_BASE_URL);
   readonly map = new MapService({ client: this.http.client, siteId: DEFAULT_SITE_ID });
+  /** 启动提示音（本地音频，离线可播；按住说话可打断）。 */
+  readonly voicePrompts = new LocalVoice({ createAudio: createWxAudio });
 
   private readonly ttsInstance: TtsEngine;
   private readonly asrInstance: AsrEngine;

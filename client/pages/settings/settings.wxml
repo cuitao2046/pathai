@@ -33,6 +33,9 @@
   <view class="section">
     <view class="section-title">状态</view>
     <view class="row"><text class="label">地图版本</text><text>{{mapVersion}}</text></view>
+    <view class="row" wx:if="{{downloadText !== ''}}">
+      <text class="label">地图下载</text><text>{{downloadText}}</text>
+    </view>
     <view class="row"><text class="label">登录状态</text><text user-select>{{tokenStatus}}</text></view>
     <view class="row"><text class="label">TTS 引擎</text><text>{{ttsEngine}}</text></view>
     <view class="row"><text class="label">ASR 引擎</text><text>{{asrEngine}}</text></view>

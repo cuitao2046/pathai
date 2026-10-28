@@ -122,7 +122,7 @@ test('首次加载：下载校验入库，摘要 ETag 持久化', async () => {
   expect(service.beaconRegistry.resolve(REAL_UUID.toLowerCase(), 1, 10101)).toBe('BK-01-001');
   expect(service.places.length).toBe(REAL_MAP.places.length);
   // 数据本体落文件缓存（storage 单 key 1MB 上限放不下 4.6MB 地图包）
-  expect(wxStub.__files.get(CACHE_FILE)).toBe(RAW);
+  expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
 });
 
 test('二次加载：304 复用缓存摘要 + 数据 sha 命中不再下载', async () => {
@@ -179,7 +179,7 @@ test('服务端新版本：本会话沿用缓存版，后台异步覆盖本地�
   // 首次加载（旧版）：文件缓存 + 摘要 + ETag 落地
   const first = newService();
   await first.ensureLoaded();
-  expect(wxStub.__files.get(CACHE_FILE)).toBe(RAW);
+  expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
 
   // 服务端发布新版本：新摘要（etag-2）+ 新数据
   const NEW_RAW = JSON.stringify({ ...PKG, mapVersion: '2026-10-26.1' });
@@ -214,10 +214,10 @@ test('服务端新版本：本会话沿用缓存版，后台异步覆盖本地�
   expect(second.places.length).toBe(REAL_MAP.places.length);
 
   // 后台下载完成后：文件被新版本覆盖，摘要/ETag 同步刷新（下次启动配对生效）
-  for (let i = 0; i < 50 && wxStub.__files.get(CACHE_FILE) !== NEW_RAW; i += 1) {
+  for (let i = 0; i < 50 && wxStub.__fileText(CACHE_FILE) !== NEW_RAW; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  expect(wxStub.__files.get(CACHE_FILE)).toBe(NEW_RAW);
+  expect(wxStub.__fileText(CACHE_FILE)).toBe(NEW_RAW);
   expect(getJson<{ mapVersion: string }>(`map:summary:${SITE}`)?.mapVersion).toBe('2026-10-26.1');
   expect(getString(`map:summary-etag:${SITE}`)).toBe('etag-2');
   // 本会话版本保持不变

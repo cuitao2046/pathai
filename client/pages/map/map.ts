@@ -26,6 +26,7 @@ import type { BeaconSourceLike } from '../../core/ble/beacon-source';
 import { MockBeaconSource } from '../../core/ble/mock-beacon-source';
 import { MOCK_POSITION, MOCK_WALK_SPEED_MPS } from '../../core/map/mock-position';
 import { SpeechQueue } from '../../core/speech/speech-queue';
+import type { MapServiceEvent } from '../../core/map/map-service';
 import { IntentService } from '../../services/intent.service';
 import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
 import {
@@ -159,6 +160,8 @@ Page({
 
   canvas: null as WechatMiniprogram.Canvas | null,
   speech: null as SpeechQueue | null,
+  /** 地图下载/就绪事件订阅（启动播报序列用）。 */
+  mapUnsubscribe: null as (() => void) | null,
   ptt: null as PushToTalk | null,
   intents: null as IntentService | null,
   locationQuery: null as LocationQueryService | null,
@@ -207,6 +210,8 @@ Page({
       makeSource: () => createBeaconSource(appContext.dataSource, appContext.map),
       floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
     });
+    // 启动播报序列由地图事件驱动（下载开始/就绪/过旧），必须在 bootstrap 之前订阅
+    this.mapUnsubscribe = appContext.map.subscribe((event) => this.onMapEvent(event));
     void this.bootstrap();
   },
 
@@ -223,11 +228,40 @@ Page({
   },
 
   onUnload(): void {
+    this.mapUnsubscribe?.();
+    this.mapUnsubscribe = null;
     const controller = this.controller;
     if (controller !== null && !this.sessionEnded && controller.sessionId !== null) {
       controller.endSession('user_cancelled').catch(() => undefined);
     }
     this.pipeline?.stop();
+  },
+
+  /**
+   * 启动播报序列（REQ-MAP）：
+   * - 无缓存首启：正在加载地图 → 加载成功 → 程序已启动（失败则 加载失败，不播已启动）；
+   * - 缓存不过旧：程序已启动；
+   * - 缓存过旧：程序已启动 → 地图过旧（新版后台静默下载，不播下载过程）。
+   * 「地图已读取到内存」只是状态节点，不单独播报。
+   */
+  onMapEvent(event: MapServiceEvent): void {
+    if (event.type === 'download-start') {
+      if (event.foreground) {
+        void appContext.voicePrompts.play('map-loading');
+      }
+      return;
+    }
+    if (event.type !== 'ready') {
+      return;
+    }
+    if (event.source === 'download') {
+      void appContext.voicePrompts.play('map-loaded');
+      vibrateShort(); // 加载成功短震动
+    }
+    void appContext.voicePrompts.play('app-started');
+    if (event.stale) {
+      void appContext.voicePrompts.play('map-stale');
+    }
   },
 
   onReady(): void {
@@ -277,6 +311,9 @@ Page({
         err instanceof ApiClientError ? describeError(err.code) : '地图加载失败，请检查网络';
       log.warn('地图加载失败', err);
       this.setData({ loading: false, loadError: message, mapReady: false });
+      // 无可用地图 → 本地提示音 + 长震动（不播「程序已启动」）
+      void appContext.voicePrompts.play('map-load-failed');
+      vibrateLong();
     }
   },
 
@@ -757,6 +794,8 @@ Page({
   },
 
   onPttStart(): void {
+    // 按住说话优先：立即打断启动/提示音，避免与录音抢麦
+    appContext.voicePrompts.stop();
     if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {
       return; // 地图未就绪不受理语音（原首页 mapReady 门）
     }

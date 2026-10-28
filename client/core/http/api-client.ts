@@ -22,6 +22,8 @@ export interface ApiResponse<T> {
   requestId: string | null;
   /** ETag 响应头（地图端点缓存用）；缺失为 null。 */
   etag: string | null;
+  /** 原始响应头（地图分片下载需读 Content-Range）。 */
+  header: Record<string, string>;
 }
 
 export interface ApiRequestOptions<B = unknown> {
@@ -73,8 +75,8 @@ export class ApiClient {
     const shouldReplay =
       first.resp.statusCode === 401 &&
       useAuth &&
-      first.errorCode !== null &&
-      AUTH_RETRYABLE_CODES.has(first.errorCode);
+      // 二进制下载（地图分片）无法解析错误信封 → errorCode 为 null，同样重登重放一次
+      (first.errorCode === null || AUTH_RETRYABLE_CODES.has(first.errorCode));
     if (shouldReplay) {
       log.warn('令牌失效，重登后重放一次', opts.path);
       await this.tokens.forceRefresh();
@@ -119,6 +121,6 @@ export class ApiClient {
     if (!ok) {
       throw parseErrorEnvelope({ statusCode: resp.statusCode, data: resp.data, requestId });
     }
-    return { statusCode: resp.statusCode, data: resp.data as T | null, requestId, etag };
+    return { statusCode: resp.statusCode, data: resp.data as T | null, requestId, etag, header: resp.header };
   }
 }

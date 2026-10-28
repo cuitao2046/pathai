@@ -56,6 +56,64 @@ def _etag_hit(request: Request, published: PublishedMap) -> bool:
     return False
 
 
+def _parse_range_header(value: str, total: int) -> tuple[int, int] | None:
+    """解析单段 `Range: bytes=start-end`；非法/不可满足返回 None（调用方回 416）。
+
+    仅支持单段（断点续传只需要 `bytes=N-`）；多段或非 bytes 单位视为不可满足。
+    """
+    unit, _, spec = value.partition("=")
+    if unit.strip().lower() != "bytes" or not spec.strip():
+        return None
+    first = spec.split(",")[0].strip()
+    start_text, sep, end_text = first.partition("-")
+    if sep == "":
+        return None
+    try:
+        if start_text == "":
+            # 后缀范围：bytes=-N（末尾 N 字节）
+            suffix = int(end_text)
+            if suffix <= 0 or total == 0:
+                return None
+            start = max(0, total - suffix)
+            end = total - 1
+        else:
+            start = int(start_text)
+            end = int(end_text) if end_text else total - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= total or start > end:
+        return None
+    return start, min(end, total - 1)
+
+
+def _range_response(request: Request, published: PublishedMap) -> Response:
+    """地图数据下载响应：支持断点续传（Accept-Ranges/206/416），ETag 304 短路优先。"""
+    if _etag_hit(request, published):
+        return Response(
+            status_code=304,
+            headers={"ETag": published.etag, "Accept-Ranges": "bytes"},
+        )
+    raw = published.raw
+    total = len(raw)
+    headers = {"ETag": published.etag, "Accept-Ranges": "bytes"}
+    range_header = request.headers.get("range")
+    if not range_header:
+        return Response(content=raw, media_type="application/json", headers=headers)
+    parsed = _parse_range_header(range_header, total)
+    if parsed is None:
+        return Response(
+            status_code=416,
+            headers={**headers, "Content-Range": f"bytes */{total}"},
+        )
+    start, end = parsed
+    return Response(
+        content=raw[start : end + 1],
+        status_code=206,
+        media_type="application/json",
+        headers={**headers, "Content-Range": f"bytes {start}-{end}/{total}"},
+    )
+
+
 def _floor_summaries(published: PublishedMap) -> list[FloorSummary]:
     return [
         FloorSummary(floorId=floor_id, displayName=floor.displayName, level=floor.level)
@@ -103,13 +161,7 @@ def get_map_data(
     repo: MapRepository = Depends(get_map_repository),
 ) -> Response:
     published = _resolve_published(repo, site_id, version)
-    if _etag_hit(request, published):
-        return Response(status_code=304, headers={"ETag": published.etag})
-    return Response(
-        content=published.raw,
-        media_type="application/json",
-        headers={"ETag": published.etag},
-    )
+    return _range_response(request, published)
 
 
 def _match_rank(place: PlaceEntry, q: str) -> int | None:
