@@ -2,12 +2,13 @@
 """M7 行为测试：API-05 三点定位估计（docs/24 §8）。
 
 mock 数据使用真实地图包 2026-10-25.1 的信标目录（1 层 52 个、2 层 9 个，
-txPower=-10），RSSI 按真实坐标反推。
+txPower=-12），RSSI 按真实坐标与 RSSI@1m 参考值反推。
 """
 from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,15 +22,15 @@ SAMPLE = "2026-10-25.1"
 BK_A = ("BK-01-001", -30.25, -75.08)
 BK_B = ("BK-01-004", -18.777, -83.987)
 BK_C = ("BK-01-005", -36.91, -59.51)
-#: 真实信标 txPower（dBm）。
-TX_POWER = -10.0
+#: 部署档位（E5 3 档 -12 dBm）推算的 1m 参考 RSSI（measured power）。
+RSSI_AT_1M = -71.0
 #: 可解算的公共期望点：距三信标 8.8/17.2/14.6m，均 ≥4m（RSSI 上限内）。
 EXPECT_P = (-25.0, -68.0)
 
 
 def _rssi_for(p: tuple[float, float], beacon: tuple[str, float, float]) -> int:
-    """按期望点与真实信标坐标反推整数 RSSI（txPower 对数路径损耗模型）。"""
-    return round(TX_POWER - 20 * math.log10(math.dist(p, beacon[1:])))
+    """按期望点与真实信标坐标反推整数 RSSI（对数路径损耗模型，n=2）。"""
+    return round(RSSI_AT_1M - 20 * math.log10(math.dist(p, beacon[1:])))
 
 
 def _obs_at_expect_p() -> list[tuple[str, int]]:
@@ -134,10 +135,10 @@ class TestAuthAndVersioning:
 
 class TestTrilateration:
     def test_reliable_estimate_near_true_position(self, client, auth_headers, rich_maps):
-        # 期望点 (-25,-68)：距三真实信标 8.8/17.2/14.6m（均 ≥4m，RSSI 上限内），
-        # txPower=-10 反推整数 RSSI 后解算偏差经真实 solver 验证 <1m
+        # 期望点 (-25,-68)：距三真实信标 8.8/17.2/14.6m，
+        # 按 RSSI@1m=-71 反推整数 RSSI 后解算偏差经真实 solver 验证 <1m
         obs = _obs_at_expect_p()
-        # 几何前提：三观测点距期望点均 ≥4m（RSSI 上限 -20 对应 3.16m）
+        # 几何前提：三观测点距期望点均 ≥4m（对应 RSSI 约 -83 dBm，仍高于噪声底）
         assert min(math.dist(EXPECT_P, b[1:]) for b in (BK_A, BK_B, BK_C)) >= 4.0
         body = _estimate(client, auth_headers, obs)
         assert body["quality"] == "reliable"
@@ -148,6 +149,7 @@ class TestTrilateration:
         assert body["confidence"] >= 0.8
         assert body["ignoredBeaconIds"] == []
         assert body["algorithmVersion"] == "location-0.1"
+        assert body["paramsVersion"] == "unset"
         assert body["estimateId"].startswith("loc_")
         assert body["sequence"] == 1
 
@@ -165,10 +167,10 @@ class TestTrilateration:
         assert body["ignoredBeaconIds"] == ["BK-02-001", "BK-02-002", "BK-02-003"]
 
     def test_auto_floor_by_majority_and_rssi(self, client, auth_headers, rich_maps):
-        # 两层各 3 条观测数量并列；一层信号更强（RSSI 更大）→ 选一层
+        # 两层各 3 条观测数量并列；一层平均 RSSI 更强（二层取弱信号）→ 选一层
         obs = [
             *_obs_at_expect_p(),
-            ("BK-02-001", -90), ("BK-02-002", -90), ("BK-02-003", -90),
+            ("BK-02-001", -100), ("BK-02-002", -100), ("BK-02-003", -100),
         ]
         body = _estimate(client, auth_headers, obs)
         assert body["position"]["floorId"] == "1"
@@ -204,6 +206,38 @@ class TestTrilateration:
         body = _estimate(client, auth_headers, obs)
         assert body["matchedArea"] is not None
         assert set(body["matchedArea"].keys()) == {"placeId", "name"}
+
+
+class TestLocationParamsConfig:
+    """解算参数配置注入与 fail-safe 反例（docs/28 §5.4 / §7）。"""
+
+    def test_configured_baseline_injected_and_versioned(
+        self, client, auth_headers, rich_maps, settings
+    ):
+        # 以 -60 dBm 为 1m 基准反推同一期望点的观测；若服务端仍用默认 -71，
+        # 距离会整体放大约 3.5 倍、几何不一致而降级，故 reliable 即证明配置已生效。
+        rich_maps.state.settings = replace(
+            settings, location_rssi_at_1m=-60.0, location_params_version="loc-test.1"
+        )
+        obs = [
+            (b[0], round(-60.0 - 20 * math.log10(math.dist(EXPECT_P, b[1:]))))
+            for b in (BK_A, BK_B, BK_C)
+        ]
+        body = _estimate(client, auth_headers, obs)
+        assert body["paramsVersion"] == "loc-test.1"
+        assert body["quality"] == "reliable"
+        assert abs(body["position"]["x"] - EXPECT_P[0]) < 1.5
+        assert abs(body["position"]["y"] - EXPECT_P[1]) < 1.5
+
+    def test_tx_power_baseline_misuse_is_unreliable(
+        self, client, auth_headers, rich_maps, settings
+    ):
+        # 反例保护：把 1m 参考误设为广播档位（如 -10 dBm）时距离被严重低估，
+        # 必须 fail-safe 为 unreliable 且不返回坐标。
+        rich_maps.state.settings = replace(settings, location_rssi_at_1m=-10.0)
+        body = _estimate(client, auth_headers, _obs_at_expect_p())
+        assert body["quality"] == "unreliable"
+        assert body["position"] is None
 
 
 class TestSequenceGuard:

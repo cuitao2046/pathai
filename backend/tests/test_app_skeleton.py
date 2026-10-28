@@ -129,3 +129,26 @@ class TestDatabaseUrlRules:
     def test_settings_default_env_is_local(self):
         assert Settings.from_env({}).env == "local"
         assert Settings.from_env({"PATHAI_ENV": "demo"}).env == "demo"
+
+    def test_location_params_defaults_and_env_override(self):
+        defaults = Settings.from_env({})
+        assert defaults.location_rssi_at_1m == -71.0
+        assert defaults.location_path_loss_n == 2.0
+        assert defaults.location_residual_reliable_m == 1.5
+        assert defaults.location_residual_degraded_m == 4.0
+        assert defaults.location_params_version == "unset"
+
+        overridden = Settings.from_env(
+            {
+                "PATHAI_LOCATION_RSSI_AT_1M": "-69.2",
+                "PATHAI_LOCATION_PATH_LOSS_N": "2.31",
+                "PATHAI_LOCATION_RESIDUAL_RELIABLE_M": "1.2",
+                "PATHAI_LOCATION_RESIDUAL_DEGRADED_M": "3.5",
+                "PATHAI_LOCATION_PARAMS_VERSION": "loc-2026-11-01.1",
+            }
+        )
+        assert overridden.location_rssi_at_1m == -69.2
+        assert overridden.location_path_loss_n == 2.31
+        assert overridden.location_residual_reliable_m == 1.2
+        assert overridden.location_residual_degraded_m == 3.5
+        assert overridden.location_params_version == "loc-2026-11-01.1"

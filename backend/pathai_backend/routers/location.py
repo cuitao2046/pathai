@@ -15,8 +15,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth
+from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
-from pathai_backend.location_solver import BeaconInput, estimate_location
+from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.models import LocationSequence
 from pathai_backend.routers.map import get_map_repository
@@ -88,6 +89,7 @@ def estimate(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> PositionEstimateResponse:
     if not repo.is_known_site(body.siteId):
         raise ApiError(404, "SITE_NOT_FOUND", f"场所不存在：{body.siteId}")
@@ -110,10 +112,18 @@ def estimate(
 
     _check_sequence(db, user.subject_id, body.siteId, body.sequence)
 
+    params = LocationParams(
+        rssi_at_1m=settings.location_rssi_at_1m,
+        path_loss_n=settings.location_path_loss_n,
+        residual_reliable_m=settings.location_residual_reliable_m,
+        residual_degraded_m=settings.location_residual_degraded_m,
+        params_version=settings.location_params_version,
+    )
     estimate = estimate_location(
         pkg=published.pkg,
         observations=[BeaconInput(beacon_id=b.beaconId, rssi=b.rssi) for b in body.beacons],
         floor_hint=body.floorHint,
+        params=params,
     )
 
     position = (
@@ -144,6 +154,7 @@ def estimate(
         if area is None
         else {"placeId": area.placeId, "name": area.name},
         algorithmVersion="location-0.1",
+        paramsVersion=params.params_version,
         observedAt=body.collectedAt,
         ignoredBeaconIds=list(estimate.ignored_beacon_ids),
     )

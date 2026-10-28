@@ -38,6 +38,7 @@ const ESTIMATE: PositionEstimateResponse = {
   confidence: 0.9,
   quality: 'reliable',
   algorithmVersion: 'location-0.1',
+  paramsVersion: 'unset',
   observedAt: '2026-10-25T00:00:00Z',
   ignoredBeaconIds: [],
 };

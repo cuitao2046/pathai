@@ -82,6 +82,8 @@ class CreateSessionResponse(StrictModel):
     sessionId: str = Field(pattern=_SESSION_ID_PATTERN)
     status: SessionStatus
     mapVersion: str = Field(min_length=1)
+    #: 会话创建时固化的定位参数版本（docs/28 §5.4）
+    paramsVersion: str = Field(min_length=1)
     destination: PlaceCandidate
     route: RouteInfo
     createdAt: datetime
@@ -146,6 +148,7 @@ class SessionQueryResponse(StrictModel):
     status: SessionStatus
     siteId: str = Field(min_length=1)
     mapVersion: str = Field(min_length=1)
+    paramsVersion: str = Field(min_length=1)
     destination: PlaceCandidate
     currentInstruction: CurrentInstructionSummary | None = None
     lastProcessedSequence: int | None = Field(default=None, ge=1)

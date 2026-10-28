@@ -49,6 +49,7 @@ function estimateOf(over: Partial<PositionEstimateResponse>): PositionEstimateRe
     quality: 'reliable',
     matchedArea: null,
     algorithmVersion: 'tri-v1',
+    paramsVersion: 'unset',
     observedAt: '2026-10-26T08:00:00.000Z',
     ignoredBeaconIds: [],
     ...over,

@@ -45,6 +45,14 @@ class Settings:
     map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
     # 对外可访问基地址：拼接 API-02 dataUrl；必须 HTTPS（契约校验强制）
     public_base_url: str = "https://localhost"
+    # 定位解算参数（docs/28 §5.4）：默认值均为工程占位，现场标定后冻结。
+    # rssi_at_1m 是 1 m 处 measured power，不是信标广播档位 txPower。
+    location_rssi_at_1m: float = -71.0
+    location_path_loss_n: float = 2.0
+    location_residual_reliable_m: float = 1.5
+    location_residual_degraded_m: float = 4.0
+    #: 参数版本号（写入 API-05 响应与导航会话，便于跨版本追溯）
+    location_params_version: str = "unset"
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
@@ -66,6 +74,15 @@ class Settings:
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
             public_base_url=env.get("PATHAI_PUBLIC_BASE_URL", "https://localhost"),
+            location_rssi_at_1m=float(env.get("PATHAI_LOCATION_RSSI_AT_1M", "-71")),
+            location_path_loss_n=float(env.get("PATHAI_LOCATION_PATH_LOSS_N", "2.0")),
+            location_residual_reliable_m=float(
+                env.get("PATHAI_LOCATION_RESIDUAL_RELIABLE_M", "1.5")
+            ),
+            location_residual_degraded_m=float(
+                env.get("PATHAI_LOCATION_RESIDUAL_DEGRADED_M", "4.0")
+            ),
+            location_params_version=env.get("PATHAI_LOCATION_PARAMS_VERSION", "unset"),
         )
 
     @staticmethod

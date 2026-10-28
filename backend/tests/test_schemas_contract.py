@@ -263,10 +263,12 @@ class TestApi05Location:
             "quality": "reliable",
             "matchedArea": {"placeId": "main-corridor", "name": "一楼走廊"},
             "algorithmVersion": "location-0.1",
+            "paramsVersion": "loc-test.1",
             "observedAt": "2026-10-23T08:00:00Z",
         }
         resp = PositionEstimateResponse.model_validate(payload)
         assert resp.quality.value == "reliable"
+        assert resp.paramsVersion == "loc-test.1"
         assert resp.position is not None
 
     def test_unreliable_allows_null_position(self):
@@ -280,6 +282,7 @@ class TestApi05Location:
             "quality": "unreliable",
             "matchedArea": None,
             "algorithmVersion": "location-0.1",
+            "paramsVersion": "loc-test.1",
             "observedAt": "2026-10-23T08:00:00Z",
             "ignoredBeaconIds": ["UNKNOWN-1"],
         }
@@ -312,6 +315,7 @@ class TestApi06CreateSession:
             "sessionId": "nav_abc12345",
             "status": "active",
             "mapVersion": "2026-10-25.1",
+            "paramsVersion": "loc-test.1",
             "destination": _destination(),
             "route": _route_payload(),
             "createdAt": "2026-10-23T08:00:01Z",
@@ -419,6 +423,7 @@ class TestApi08SessionQuery:
             "status": "active",
             "siteId": "school-building-01",
             "mapVersion": "2026-10-25.1",
+            "paramsVersion": "loc-test.1",
             "destination": _destination(),
             "currentInstruction": {
                 "instructionId": "ins_2",
@@ -437,6 +442,7 @@ class TestApi08SessionQuery:
             "status": "ended",
             "siteId": "school-building-01",
             "mapVersion": "2026-10-25.1",
+            "paramsVersion": "loc-test.1",
             "destination": _destination(),
             "currentInstruction": None,
             "lastProcessedSequence": 19,
