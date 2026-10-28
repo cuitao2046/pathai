@@ -8,8 +8,8 @@ analyze_trilateration_coverage.py — 评估「全楼层信标部署方案」对
   - 读取 beacon_deployment_plan.json(全楼 264 个) 与 school_building_01_map_v9.geojson。
   - 对每层 walkable_regions 的并集做 1m 网格采样(仅保留落在可行走区内的点)。
   - 对每个采样点，对每个同层信标：
-      * 信标发射功率统一视为 TxPower=-10 dBm(三角定位要求功率一致)。
-      * RSSI_ref@1m = -50 dBm (由 -10dBm 输出经 2.4GHz 自由空间 1m 损耗≈40dB 推出)。
+      * 信标发射功率统一视为 TxPower=-12 dBm(三角定位要求功率一致，3 档/约15m)。
+      * RSSI_ref@1m = -52 dBm (由 -12dBm 输出经 2.4GHz 自由空间 1m 损耗≈40dB 推出)。
       * 路径损耗: RSSI = RSSI_ref - 10*n*log10(d), n=3.5(室内)。
       * 穿墙衰减: 射线与每层墙体相交一次累加材质对应 dB(brick 12 / concrete 15 /
         partition 8 / 无标注 12 / glass 6)。
@@ -34,8 +34,8 @@ GEO = ROOT / "result" / "school_building_01_map_v9.geojson"
 PLAN = ROOT / "result" / "beacon_deployment_plan.json"
 
 # ---- 无线模型参数 ----
-TX_POWER = -10          # dBm，统一(三角定位要求一致)
-RSSI_REF_1M = -50      # dBm，TxPower=-10 时 1m 参考(RSSI_ref = TX - FSPL@1m, FSPL≈40dB)
+TX_POWER = -12          # dBm，统一 3 档(三角定位要求功率一致)
+RSSI_REF_1M = -52      # dBm，TxPower=-12 时 1m 参考(RSSI_ref = TX - FSPL@1m, FSPL≈40dB)
 N = 3.5                # 室内路径损耗指数
 WALL_ATTEN = {         # 每穿透一面墙的附加衰减 dB
     "brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12,

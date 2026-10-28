@@ -130,7 +130,7 @@ def main():
             "locationDesc": "P0 补点(5m覆盖/降GDOP)",
             "mountType": "wall",
             "installHeight": 2.2,
-            "txPower": -10,
+            "txPower": -12,
             "broadcastInterval": 300,
             "batteryModel": "CR2477",
             "expectedLifespan": 5,

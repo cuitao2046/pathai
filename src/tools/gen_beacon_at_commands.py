@@ -4,7 +4,7 @@
 gen_beacon_at_commands.py
 --------------------------
 由**现行信标台账** `result/ble_deployment.json` 生成：
-  1. `docs/reference/beacon_at_commands_ledger.md` —— RF-B-SR1 逐枚 AT 配置命令清单（供 nRF Connect 现场使用）
+  1. `docs/reference/beacon_at_commands_ledger.md` —— E5 信标（nRF52）逐枚 AT 配置命令清单（供 App / nRF Connect 现场使用）
   2. `result/beacon_provisioning_plan.json` —— 机器可读配置计划（beacon-provisioner 小程序的输入契约）
 
 设计依据 `docs/27-蓝牙信标配置工具方案.md` §5；设备语法依据
@@ -13,8 +13,8 @@ gen_beacon_at_commands.py
   AT+NAME=<名>                         设备名称，**上限 11 字节**
   AT+BEACON=<CID>,<Major4>,<Minor4>,<RSSI@1m>,<UUID32>
                                        Major/Minor 须 4 位 hex 前补零；
-                                       RSSI@1m 为有符号字节，负值取补码（-59 → C5）
-  AT+POWER=<dBm>                       本方案统一 -10（设备档位无 -8/-12）
+                                       RSSI@1m 为有符号字节，负值取补码（-71 → B9）
+  AT+POWER=<dBm>                       统一 -12（3 档，覆盖半径约 15 m；E5/nRF52 实际档位见 docs/07 §2.3）
   AT+ADS=,1,<间隔ms>                   模式必须=1（可连接）；设 0 将永久无法再改参数
   AT+AUTH=0 / AT+ENCRYPT=0             保持关闭（鉴权/加密开启后扫描端解析不出三元组）
 
@@ -46,9 +46,15 @@ DEFAULT_OUT_MD = os.path.join(ROOT, "docs", "reference", "beacon_at_commands_led
 DEFAULT_OUT_PLAN = os.path.join(ROOT, "result", "beacon_provisioning_plan.json")
 
 COMPANY_ID = "004C"           # Apple iBeacon 标准 Company ID
-DEFAULT_TX_POWER = -10        # 统一档位（设备支持 -28/-20/-10/-5/-3/0/1/2/4/6）
+#: 统一档位：E5（nRF52）3 档 = -12 dBm，厂商标称覆盖半径约 15 m。
+#: 设备实际档位：最低档 -30（nRF51）/-40（nRF52），1 档 -20，2 档 -16，3 档 -12，
+#: 4 档 -8，5 档 -4，6 档 0，7 档 +4 dBm（厂商 App 实测，见 docs/07 §2.3）。
+DEFAULT_TX_POWER = -12
 DEFAULT_INTERVAL_MS = 300     # 台账 broadcastInterval 缺省值
-DEFAULT_RSSI_AT_1M = -59      # 1m 参考 RSSI 占位值，须现场标定后替换（见 docs/28）
+#: 1m 参考 RSSI（measured power）占位值：由 0 dBm 档典型 -59 dBm 按功率下降 12 dB 推算；
+#: 与 15 m 覆盖半径自洽（15 m 处约 -94.5 dBm，接近 nRF52 灵敏度 -96 dBm）。
+#: 仍须现场标定后替换（见 docs/28）。
+DEFAULT_RSSI_AT_1M = -71
 NAME_MAX_BYTES = 11           # 手册 P10：AT+NAME 上限
 REQUIRED_FIELDS = ("beaconId", "uuid", "major", "minor", "floor", "coordinates")
 
@@ -58,7 +64,7 @@ class LedgerError(Exception):
 
 
 def rssi_hex(rssi: int) -> str:
-    """有符号 8 位：负值取补码（-59 → C5）。"""
+    """有符号 8 位：负值取补码（-71 → B9）。"""
     return f"{(256 + rssi) & 0xFF if rssi < 0 else rssi & 0xFF:02X}"
 
 
@@ -215,10 +221,12 @@ def render_markdown(plan: dict, title_tag: str) -> str:
     renamed = [b for b in beacons if b["deviceName"] != b["beaconId"]]
     rssi = plan["defaults"]["rssiAt1mPlaceholder"]
     lines: list[str] = []
-    lines.append(f"# RF-B-SR1 信标 AT 配置命令清单（{title_tag}）\n")
+    lines.append(f"# E5 信标 AT 配置命令清单（{title_tag}）\n")
     lines.append(f"> 生成依据：现行台账 `{plan['sourceLedger']}`（{len(beacons)} 枚）  ")
     lines.append(f"> 目标 UUID：`{plan['defaults']['uuid']}`  ")
-    lines.append(f"> 发射功率统一 **{plan['defaults']['txPower']} dBm**（设备档位无 -8/-12，见 docs/08 §1.3）  ")
+    lines.append(f"> 发射功率统一 **{plan['defaults']['txPower']} dBm**"
+                 "（3 档，覆盖半径约 15 m；E5/nRF52 档位：最低档 -30/-40、"
+                 "1 档 -20、2 档 -16、3 档 -12、4 档 -8、5 档 -4、6 档 0、7 档 +4 dBm，见 docs/07 §2.3）  ")
     lines.append(f"> 广播间隔：取台账 `broadcastInterval`（当前全部 {plan['defaults']['interval']} ms）  ")
     lines.append(f"> ⚠️ **RSSI@1m 为占位值 {rssi} dBm（`{rssi_hex(rssi)}`）**，须现场标定后替换"
                  "（标定流程见 `docs/28-定位参数现场标定方案.md`）\n")
@@ -278,12 +286,12 @@ def render_markdown(plan: dict, title_tag: str) -> str:
 
     lines.append("\n## 四、RSSI@1m 现场标定（替换清单中的占位值）\n")
     lines.append("`RSSI@1m` 是 **1 米处的参考 RSSI**（measured power），与发射功率 `AT+POWER` 是两个不同的量：")
-    lines.append("本方案把发射功率降到 -10 dBm，1m 参考值会同步下降约 10 dB，"
-                 "因此**不能照抄 -59**（该值是 0 dBm 档设备的典型值），必须现场实测。\n")
+    lines.append("本方案把发射功率设为 -12 dBm，1m 参考值同步下降约 12 dB（0 dBm 档典型 -59 → 约 -71），"
+                 "因此**不能照抄 -59**，必须现场实测替换。\n")
     lines.append("步骤（完整流程见 `docs/28`）：")
     lines.append("1. 信标按本清单配置并固定到位后，手机置于其正下方 **1 m** 处；")
     lines.append("2. 用扫描工具读该信标 RSSI，多次采样取中位数（避免手抖/遮挡）；")
-    lines.append("3. 负值转补码 hex：`字节 = (256 + RSSI) & 0xFF`（-57 → C7、-62 → C2、-69 → BB）；")
+    lines.append("3. 负值转补码 hex：`字节 = (256 + RSSI) & 0xFF`（-57 → C7、-62 → C2、-69 → BB、-71 → B9）；")
     lines.append("4. 把该值替换进对应信标的 `AT+BEACON` 第 4 参数后重发（其余参数不变）；")
     lines.append("5. 全楼统一典型值时，可批量替换清单中所有占位值。\n")
 
@@ -293,7 +301,7 @@ def render_markdown(plan: dict, title_tag: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="由现行台账生成 RF-B-SR1 信标 AT 配置清单与配置计划")
+    parser = argparse.ArgumentParser(description="由现行台账生成蓝牙信标（E5/nRF52）AT 配置清单与配置计划")
     parser.add_argument("--ledger", default=DEFAULT_LEDGER, help="信标台账 JSON（默认 result/ble_deployment.json）")
     parser.add_argument("--out", default=DEFAULT_OUT_MD, help="输出 markdown 清单")
     parser.add_argument("--plan", default=DEFAULT_OUT_PLAN, help="输出机器可读配置计划 JSON")

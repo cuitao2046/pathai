@@ -12,7 +12,7 @@ gen_trilateration_plan.py — 在当前「全楼层信标部署方案」(beacon_
      缺口数，反复选取覆盖最多的位置布放新信标，直到无缺口或达上限。
   3. 将补点吸附到最近墙线段(<=4m)以贴墙安装(遵循避免天花板部署原则)；若无处吸附则
      标 ceiling(极少)。
-  4. 全部信标 txPower 统一 -10 dBm(三角定位要求功率一致)，写 augmented 计划。
+  4. 全部信标 txPower 统一 -12 dBm(三角定位要求功率一致，E5 3 档)，写 augmented 计划。
   5. 用真实穿墙模型对 augmented 计划重仿真，输出最终 >=3 覆盖率。
 
 输出:
@@ -34,8 +34,8 @@ ROOT = Path(__file__).resolve().parents[2]
 GEO = ROOT / "result" / "school_building_01_map_v9.geojson"
 PLAN = ROOT / "result" / "beacon_deployment_plan.json"
 
-TX_POWER = -10
-RSSI_REF_1M = -50
+TX_POWER = -12
+RSSI_REF_1M = -52
 N = 3.5
 WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}
 VISIBLE = -85

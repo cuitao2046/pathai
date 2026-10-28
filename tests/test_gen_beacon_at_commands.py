@@ -51,7 +51,7 @@ class TestEncoding(unittest.TestCase):
         # 手册 P13：RSSI@1m 为有符号字节，负值取补码
         self.assertEqual(rssi_hex(-57), "C7")
         self.assertEqual(rssi_hex(-62), "C2")
-        self.assertEqual(rssi_hex(DEFAULT_RSSI_AT_1M), "C5")
+        self.assertEqual(rssi_hex(DEFAULT_RSSI_AT_1M), "B9")
         self.assertEqual(rssi_hex(-69), "BB")
         self.assertEqual(rssi_hex(-1), "FF")
         self.assertEqual(rssi_hex(0), "00")
@@ -112,7 +112,7 @@ class TestPlanFromRealLedger(unittest.TestCase):
             self.assertEqual(beacon["atCommands"][0], "AT+MODE=0")
             self.assertTrue(beacon["atCommands"][1].startswith("AT+NAME="))
             self.assertTrue(beacon["atCommands"][2].startswith("AT+BEACON="))
-            self.assertEqual(beacon["atCommands"][3], "AT+POWER=-10")
+            self.assertEqual(beacon["atCommands"][3], "AT+POWER=-12")
             # 模式位恒为 1：设 0 后设备永久不可连接（手册 P11）
             self.assertTrue(beacon["atCommands"][4].startswith("AT+ADS=,1,"))
             self.assertEqual(beacon["atCommands"][5], "AT+AUTH=0")
@@ -125,7 +125,7 @@ class TestPlanFromRealLedger(unittest.TestCase):
             cmd = next(c for c in beacon["atCommands"] if c.startswith("AT+BEACON="))
             parts = cmd.split(",")
             self.assertEqual(parts[0], "AT+BEACON=004C")
-            self.assertEqual(parts[3], "C5")  # -59 占位（待现场标定替换）
+            self.assertEqual(parts[3], "B9")  # -71 占位（待现场标定替换）
             self.assertEqual(parts[4], uuid32)
 
     def test_plan_contract_fields(self):

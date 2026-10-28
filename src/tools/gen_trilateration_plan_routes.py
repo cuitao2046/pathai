@@ -16,7 +16,7 @@ gen_trilateration_plan_routes.py — 仅针对"选定导航测试路径"的三�
      最近墙(走廊墙, 贴墙安装)。吸附失败(SNAP_MAX 内无墙)的候选一律丢弃并记入
      summary.unplaceableDetail —— 不降级为天花板吊装, 因为视障导航要求信标必须在
      公共空间墙面/柱体上(可触及校准 + 可施工)。
-  4. 全部信标 txPower 统一 -10 dBm，写 augmented 计划。
+  4. 全部信标 txPower 统一 -12 dBm（E5 3 档），写 augmented 计划。
   5. 用真实穿墙模型重仿真，输出最终 >=3 覆盖率。
 
 物理模型与 gen_trilateration_plan.py 完全一致，保证可比性。
@@ -41,8 +41,8 @@ GEO = ROOT / "result" / "school_building_01_map_v9.geojson"
 BASE_PLAN = ROOT / "result" / "beacon_deployment_plan_routes.json"
 TARGET = ROOT / "result" / "fingerprint_grid_routes.json"
 
-TX_POWER = -10
-RSSI_REF_1M = -50
+TX_POWER = -12
+RSSI_REF_1M = -52
 N = 3.5
 WALL_ATTEN = {"brick": 12, "concrete": 15, "partition": 8, "glass": 6, None: 12}
 VISIBLE = -85

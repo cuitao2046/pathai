@@ -55,7 +55,7 @@
 | `locationDesc` | string | ✅ | 位置人类可读描述，如 `1F 电梯口（II-01#EL）· 门套或呼梯板旁` |
 | `mountType` | string | ✅ | 安装方式：`wall`（壁装，54）/ `door_frame`（门框，7） |
 | `installHeight` | number | ✅ | 安装高度（米），统一 `2.2` |
-| `txPower` | number | ✅ | 发射功率（dBm），统一 `-10` |
+| `txPower` | number | ✅ | 发射功率（dBm），**统一 `-12`（E5 3 档，覆盖半径约 15 m）**。注意：它**只描述广播档位，不参与测距**；距离解算使用 `RSSI@1m`（measured power，占位 -71 dBm，待现场标定） |
 | `broadcastInterval` | number | ✅ | 广播间隔（ms），统一 `300` |
 | `batteryModel` | string | ✅ | 电池型号，统一 `CR2477` |
 | `expectedLifespan` | number | ✅ | 预期寿命（年），统一 `5` |
