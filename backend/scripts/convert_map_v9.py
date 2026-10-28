@@ -517,7 +517,7 @@ def verify(pkg_dict: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="2026-10-28.1", help="输出地图版本号")
+    parser.add_argument("--version", default="2026-10-28.2", help="输出地图版本号")
     parser.add_argument("--verify-only", action="store_true", help="只校验不写文件")
     args = parser.parse_args()
 

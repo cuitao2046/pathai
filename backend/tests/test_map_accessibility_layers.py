@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """地图包无障碍图层与防火门状态契约（spec REQ-VOICE-05）。
 
-验证 2026-10-28.1 起发布包携带 accessibility 图层、防火门状态由门几何回填，
+验证 2026-10-28.2 起发布包携带 accessibility 图层、防火门状态由门几何回填，
 并把「全部防火门常闭导致的目的地丢失」固定为可回归的数据评估结论。
 """
 from __future__ import annotations

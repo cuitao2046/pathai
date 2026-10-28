@@ -286,6 +286,13 @@ export class MapService {
     if (saved !== null && saved.mapVersion === version && saved.dataSha256 === summary.dataSha256) {
       offset = Math.min(saved.downloadedBytes, await readMapPartialSize(siteId, version));
       total = saved.totalBytes;
+      // 已下载到（或超过）总长度但尚未转正（上次校验/转正中断）：再发 Range 必然 416，
+      // 直接清空重下，避免把服务端合法的 416 暴露给用户（真机实测坑）。
+      if (total !== null && offset >= total) {
+        await this.resetPartial(version);
+        offset = 0;
+        total = null;
+      }
     } else {
       if (saved !== null) {
         await removeMapPartial(siteId, saved.mapVersion); // 目标版本变了：丢弃旧半成品
@@ -322,10 +329,9 @@ export class MapService {
             headers,
           });
         } catch (err) {
-          // 仅当服务端明确判定半成品越界（416）时才清空重下；
-          // 网络中断必须原样抛出，由下次启动按已下载偏移续传。
+          // 416 = 续传偏移越界：无论偏移是否 >0（首片也可能因服务端版本变化而越界），
+          // 都清空半成品并从头重下一次；网络中断必须原样抛出，由下次启动续传。
           if (
-            offset > 0 &&
             !resetTried &&
             err instanceof ApiClientError &&
             err.statusCode === 416
@@ -333,6 +339,7 @@ export class MapService {
             resetTried = true;
             await this.resetPartial(version);
             offset = 0;
+            total = null;
             continue;
           }
           throw err;

@@ -26,7 +26,7 @@
 
 - 唯一事实源是**已发布地图包**（`backend/maps_data/<site>/<version>.json`）。词典只能由导出脚本生成，禁止手工编辑实例、`node_id`、楼层。
 - 人工标注（口语别名、`is_public_utility`、`zone_hint`、类别别名、弱相关推荐）统一维护在 `src/voice_agent/config/poi_alias_overrides.json`；导出时按 `standard_name` 合并，**重导出不得丢失**。
-- 输出 `src/voice_agent/config/poi_semantic_dict.json`，携带 `map_version`（= 发布包 `mapVersion`，如 `2026-10-28.1`）与 `exported_at`。
+- 输出 `src/voice_agent/config/poi_semantic_dict.json`，携带 `map_version`（= 发布包 `mapVersion`，如 `2026-10-28.2`）与 `exported_at`。
 - 收录口径：
   - `pois`：**可导航目的地**（地图包 `places` 全集，当前 55 个），按 `standard_name`（= `places[].name`）聚合，每项含 `instances[]`。
   - `non_navigable_rooms`：全部命名房间中不可作为目的地的部分（当前 81 个），带 `reason`（`not_destination` / `unreachable` / `no_room_node`）。
@@ -117,7 +117,7 @@
 - `src/voice_agent` 单测（仓库根 `python -m unittest discover -s tests`）。
 - 词典导出与地图包契约测试（`pytest backend/tests`，固定仓库根 cwd）。
 - LLM 测试一律用注入的假 transport，**禁止真实网络**；真实密钥只做人工冒烟。
-- **mock 数据必须是真实地图包**（当前 `2026-10-28.1`），禁止虚构房间名。
+- **mock 数据必须是真实地图包**（当前 `2026-10-28.2`），禁止虚构房间名。
 
 ---
 

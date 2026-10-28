@@ -14,6 +14,7 @@ from src.voice_agent.services.disambiguation_engine import (
 from src.voice_agent.services.dictionary_store import DictionaryStale, PoiDictionary
 from src.voice_agent.services.rule_intent_resolver import resolve
 from src.voice_agent.services.session_store import SessionStateStore
+from testutil import CURRENT_MAP_VERSION
 
 
 class FakePlanner:
@@ -56,7 +57,7 @@ class BaseCase(unittest.TestCase):
 
 class TestDictionaryVersion(BaseCase):
     def test_version_stamp_matches_latest_map(self):
-        self.assertEqual(self.dictionary.map_version, "2026-10-28.1")
+        self.assertEqual(self.dictionary.map_version, CURRENT_MAP_VERSION)
 
     def test_stale_version_rejected(self):
         with self.assertRaises(DictionaryStale):

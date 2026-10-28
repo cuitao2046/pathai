@@ -7,7 +7,7 @@
 
 用法（仓库根目录）：
     python backend/scripts/export_poi_semantic_dict.py [--site school-building-01]
-        [--version latest|2026-10-28.1] [--out src/voice_agent/config/poi_semantic_dict.json]
+        [--version latest|2026-10-28.2] [--out src/voice_agent/config/poi_semantic_dict.json]
 
 校验不通过时非零退出（node_id/place_id 不在包内、数量不符、版本戳缺失）。
 """

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """空间语义转换测试（spec REQ-VOICE-02）：时钟方向边界、步数、周边要素。
 
-使用真实地图包 2026-10-28.1（含 accessibility 图层与防火门真实状态）。
+使用当前真实地图包（见 testutil.CURRENT_MAP_VERSION，含 accessibility 图层与防火门真实状态）。
 """
 import json
 import math
 import unittest
-from pathlib import Path
 
 from src.voice_agent.services.context_builder import SpatialIndex, build_spatial_context
 from src.voice_agent.services.spatial_transformer import (
@@ -15,9 +14,9 @@ from src.voice_agent.services.spatial_transformer import (
     steps_for,
     target_bearing_deg,
 )
+from testutil import CURRENT_MAP_PATH
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MAP_PATH = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-10-28.1.json"
+MAP_PATH = CURRENT_MAP_PATH
 
 
 def _load_package() -> dict:
