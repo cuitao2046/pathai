@@ -1,12 +1,18 @@
-"""全链路 golden 回归：以当前源码重跑 CAD PDF 解析管线，断言统计与参照一致。
+"""全链路 golden 回归：CAD PDF 解析 + 拓扑后处理，断言与已验收产物一致。
 
-覆盖 parse_floor + build_geojson 全链路（含手动骨架优先路径），
-可发现「静态校验通过但管线漂移」的回归。依赖 shapely/fitz，缺失时跳过。
-解析 PDF 较慢且日志冗长，输出重定向到缓冲区。
+已验收产物 `result/school_building_01_map_v9.geojson` 的生成链路是：
+  1) `parse_floor` × 2 → `build_geojson`（含手绘骨架优先路径）；
+  2) `src.tools.fix_topology_walls.FloorRepair`（公共空间边不得穿墙、门/设施/出入口重挂）；
+  3) `src.tools.merge_nearby_tis.merge_floor`（合并同层 <0.5m 的 TI↔TI）。
+只跑 1) 会比产物多 24 个 TI 且边集不同，因此本测试按完整链路复跑，
+参数与 CLI 默认值同源（DEFAULT_REPAIR_OPTS / DEFAULT_RADIUS）。
+
+依赖 shapely/fitz，缺失时跳过；管线较慢且日志冗长，整链只跑一次并复用。
 """
 import contextlib
 import io
 import unittest
+from types import SimpleNamespace
 
 from testutil import (
     assert_golden,
@@ -17,31 +23,48 @@ from testutil import (
     load_struct_golden,
     skip_if_missing,
 )
+from src.tools.fix_topology_walls import DEFAULT_REPAIR_OPTS, FloorRepair
+from src.tools.merge_nearby_tis import DEFAULT_RADIUS, merge_floor
+
+
+def _run_full_chain(mod):
+    """解析管线 + 两道拓扑后处理（原地修改 dict，不落盘）。"""
+    opts = SimpleNamespace(**DEFAULT_REPAIR_OPTS)
+    with contextlib.redirect_stdout(io.StringIO()):
+        f1 = mod.parse_floor(mod.PDF_F1, 1)
+        f2 = mod.parse_floor(mod.PDF_F2, 2)
+        geo = mod.build_geojson(f1, f2)
+        for floor_id in sorted(geo["floors"]):
+            FloorRepair(floor_id, geo["floors"][floor_id], opts).run()
+        for floor_id in sorted(geo["floors"]):
+            merge_floor(geo["floors"][floor_id], DEFAULT_RADIUS)
+    return geo
 
 
 class TestPipelineGolden(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_missing("shapely", "fitz")
+        import src.parsing.parse_cad_pdf as mod
+
+        cls.geo = _run_full_chain(mod)
+
+    def test_pipeline_reproduces_golden(self):
+        golden = load_golden()
+        self.assertEqual(self.geo.get("venueId"), golden["venueId"])
+        self.assertEqual(self.geo.get("version"), golden["version"])
+        assert_golden(self, compute_stats(self.geo), golden)
+
+    def test_pipeline_reproduces_struct_fingerprint(self):
+        assert_struct_golden(self, compute_struct_fingerprint(self.geo), load_struct_golden())
+
+
+class TestCandidateIsolation(unittest.TestCase):
     def setUp(self):
         skip_if_missing("shapely", "fitz")
         import src.parsing.parse_cad_pdf as mod
+
         self.mod = mod
-        # B4 后手动骨架无进程级缓存：build_geojson(manual_skeleton=None) 每次
-        # 按 result/skeleton_manual_parsed.json 独立读取，无需再重置全局状态。
-
-    def _run_pipeline(self):
-        mod = self.mod
-        with contextlib.redirect_stdout(io.StringIO()):
-            f1 = mod.parse_floor(mod.PDF_F1, 1)
-            f2 = mod.parse_floor(mod.PDF_F2, 2)
-            geo = mod.build_geojson(f1, f2)
-        return geo
-
-    def test_pipeline_reproduces_golden(self):
-        geo = self._run_pipeline()
-        golden = load_golden()
-        self.assertEqual(geo.get("venueId"), golden["venueId"])
-        self.assertEqual(geo.get("version"), golden["version"])
-        actual = compute_stats(geo)
-        assert_golden(self, actual, golden)
 
     def test_detect_doors_preserves_each_arc_candidate(self):
         """相同位置的独立摆弧候选不得被聚类合并。"""
@@ -57,12 +80,6 @@ class TestPipelineGolden(unittest.TestCase):
             [((-20.0, 0.0), (20.0, 0.0))],
         )
         self.assertEqual(len(openings), 2)
-
-    def test_pipeline_reproduces_struct_fingerprint(self):
-        geo = self._run_pipeline()
-        golden = load_struct_golden()
-        actual = compute_struct_fingerprint(geo)
-        assert_struct_golden(self, actual, golden)
 
 
 if __name__ == "__main__":

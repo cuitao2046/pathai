@@ -29,6 +29,8 @@ from src.tools.fix_topology_walls import (  # noqa: E402
     WallIndex, _cross_dists, _pt_seg_dist)
 
 DEFAULT_GEO = ROOT / "result" / "school_building_01_map_v9.geojson"
+#: 默认合并半径（CLI 与全链路回归测试共用同一来源）
+DEFAULT_RADIUS = 0.5
 START_RADIUS = {"doorway": 1.5, "facility_entrance": 1.5, "facility": 2.5,
                 "intersection": 0.1}
 
@@ -139,7 +141,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--geo", default=str(DEFAULT_GEO))
     ap.add_argument("--out", default=None)
-    ap.add_argument("--radius", type=float, default=0.5)
+    ap.add_argument("--radius", type=float, default=DEFAULT_RADIUS)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 

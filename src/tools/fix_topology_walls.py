@@ -35,6 +35,18 @@ PUBLIC_ROOM_TYPES = {"corridor", "lobby", "activity", "atrium", "elevator_lobby"
 WALK_SPEED = 0.8
 CELL = 3.0
 
+#: 拓扑整改默认参数（CLI 与全链路回归测试共用同一来源）
+DEFAULT_REPAIR_OPTS = {
+    "td_cap": 6.0,
+    "ten_cap": 12.0,
+    "tf_cap_elevator": 3.0,
+    "tf_cap_stair": 8.0,
+    "door_radius": 1.5,
+    "door_adjacency": 0.8,
+    "ten_radius": 1.5,
+    "connect_cap": 20.0,
+}
+
 
 # ---------------------------------------------------------------- geometry
 def _cross_dists(p1, p2, a, b):
@@ -470,16 +482,18 @@ def main():
     ap.add_argument("--geo", default=str(DEFAULT_GEO))
     ap.add_argument("--out", default=None, help="输出路径（默认原地改写并备份 .bak）")
     ap.add_argument("--dry-run", action="store_true", help="只统计不写文件")
-    ap.add_argument("--td-cap", type=float, default=6.0, help="公共门→TI 距离上限（m）")
-    ap.add_argument("--ten-cap", type=float, default=12.0, help="出入口→门/走廊上限（m）")
-    ap.add_argument("--tf-cap-elevator", type=float, default=3.0)
-    ap.add_argument("--tf-cap-stair", type=float, default=8.0)
-    ap.add_argument("--door-radius", type=float, default=1.5,
+    ap.add_argument("--td-cap", type=float, default=DEFAULT_REPAIR_OPTS["td_cap"],
+                    help="公共门→TI 距离上限（m）")
+    ap.add_argument("--ten-cap", type=float, default=DEFAULT_REPAIR_OPTS["ten_cap"],
+                    help="出入口→门/走廊上限（m）")
+    ap.add_argument("--tf-cap-elevator", type=float, default=DEFAULT_REPAIR_OPTS["tf_cap_elevator"])
+    ap.add_argument("--tf-cap-stair", type=float, default=DEFAULT_REPAIR_OPTS["tf_cap_stair"])
+    ap.add_argument("--door-radius", type=float, default=DEFAULT_REPAIR_OPTS["door_radius"],
                     help="门口本体墙放行半径（m，覆盖门框/双线墙/门凹槽）")
-    ap.add_argument("--door-adjacency", type=float, default=0.8,
+    ap.add_argument("--door-adjacency", type=float, default=DEFAULT_REPAIR_OPTS["door_adjacency"],
                     help="门点距公共空间面域边界的判定半径（m）")
-    ap.add_argument("--ten-radius", type=float, default=1.5)
-    ap.add_argument("--connect-cap", type=float, default=20.0,
+    ap.add_argument("--ten-radius", type=float, default=DEFAULT_REPAIR_OPTS["ten_radius"])
+    ap.add_argument("--connect-cap", type=float, default=DEFAULT_REPAIR_OPTS["connect_cap"],
                     help="断连兜底挂接搜索半径（m）")
     args = ap.parse_args()
 

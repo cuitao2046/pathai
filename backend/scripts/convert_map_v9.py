@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from datetime import datetime, timezone
@@ -40,6 +41,17 @@ NON_DESTINATION_ROOM_TYPES = {
     "staircase",
     "stair_lobby",
     "elevator_lobby",
+}
+
+#: 防火门状态缺失时的兜底（specs/voice-agent-semantic-nav §5-D8）：默认常闭并标注来源。
+DEFAULT_FIRE_DOOR_NORMALLY_OPEN = False
+
+#: 建筑级无障碍事实（人工确认，spec §6）：施工图无无障碍专篇，本楼无盲道/坡道、地面为正常材质。
+ACCESSIBILITY_DEFAULTS = {
+    "tactilePaving": "none",
+    "ramps": "none",
+    "groundMaterial": "normal",
+    "source": "施工图无无障碍设计专篇；经用户确认为普通地面、未铺设盲道、无坡道",
 }
 
 #: v9 与后端 schema 的枚举差异映射
@@ -223,6 +235,38 @@ def promote_articulation_rooms(
     return promoted
 
 
+def propagate_fire_door_states(floors: dict[str, dict]) -> dict[str, int]:
+    """把 geometry.doors 的 isNormallyOpen 经 sourceDoorIds 回填到防火门节点。
+
+    v9 拓扑门节点该字段全为 null，但门几何图层有真实取值（常开/常闭）。
+    若不回填而按「全部常闭」处理，会让 3 个目的地盲不可达（spec §6）。
+    多门共享节点取「任一常开即常开」；仍无值时按 DEFAULT 常闭并标注来源。
+    """
+    stats = {"open": 0, "closed": 0, "assumed_closed": 0}
+    for floor in floors.values():
+        doors = (floor.get("geometry") or {}).get("doors") or []
+        state_by_door = {
+            d["id"]: (d.get("properties") or {}).get("isNormallyOpen") for d in doors
+        }
+        for node in floor["topology"]["nodes"]:
+            if node.get("type") != "doorway" or node.get("doorType") != "fire":
+                continue
+            resolved = [
+                state_by_door.get(sid)
+                for sid in (node.get("sourceDoorIds") or [])
+                if state_by_door.get(sid) is not None
+            ]
+            if resolved:
+                node["isNormallyOpen"] = any(resolved)
+                node["isNormallyOpenSource"] = "geometry.doors"
+            else:
+                node["isNormallyOpen"] = DEFAULT_FIRE_DOOR_NORMALLY_OPEN
+                node["isNormallyOpenSource"] = "assumed_closed"
+                stats["assumed_closed"] += 1
+            stats["open" if node["isNormallyOpen"] else "closed"] += 1
+    return stats
+
+
 def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tuple[dict, list[str]]:
     floors: dict[str, dict] = {}
     for floor_id, floor in geo["floors"].items():
@@ -234,11 +278,14 @@ def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tu
             "topology": {"nodes": nodes, "edges": floor["topology"]["edges"]},
             "geometry": floor.get("geometry", {"walls": []}),
             "semantic": floor.get("semantic", {"rooms": []}),
+            # 无障碍图层（风险点/盲道/坡道/材质）随包携带：voice_agent 空间上下文的数据源
+            "accessibility": floor.get("accessibility", {}),
         }
 
     cross_floor = [convert_cross_floor_edge(e) for e in geo.get("crossFloorEdges", [])]
     floors, cross_floor, removed = prune_unreachable(floors, cross_floor)
     promoted = promote_articulation_rooms(floors, cross_floor)
+    propagate_fire_door_states(floors)
 
     places: list[dict] = []
     for floor_id, floor in floors.items():
@@ -262,6 +309,8 @@ def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tu
         # 保留 CAD 映射参数（extra），便于回溯坐标
         "cadOriginPt": geo.get("origin"),
         "cadScale": geo.get("scale"),
+        # 建筑级无障碍事实（人工确认口径），供 voice_agent 播报与上下文降级使用
+        "accessibilityDefaults": ACCESSIBILITY_DEFAULTS,
         "floors": floors,
         "crossFloorEdges": cross_floor,
         "places": places,
@@ -365,6 +414,49 @@ def verify_no_public_wall_crossing(pkg_dict: dict) -> None:
         "请先运行 src/tools/fix_topology_walls.py 整改源 GeoJSON")
 
 
+def blind_reachable_nodes(pkg_dict: dict, force_closed_fire: bool = False) -> tuple[set[str], object]:
+    """盲模式可达节点集合（权威口径 = 路由引擎自身的邻接构建规则）。
+
+    force_closed_fire=True 用于评估「全部防火门常闭」假设的连通性影响。
+    """
+    for p in REPO_ROOT, BACKEND_DIR:
+        if str(p) not in sys.path:
+            sys.path.insert(0, str(p))
+    from src.topology.route_rules import RouteGraph  # noqa: E402
+
+    data = copy.deepcopy(pkg_dict) if force_closed_fire else pkg_dict
+    if force_closed_fire:
+        for floor in data["floors"].values():
+            for node in floor["topology"]["nodes"]:
+                if node.get("type") == "doorway" and node.get("doorType") == "fire":
+                    node["isNormallyOpen"] = False
+    graph = RouteGraph(data)
+    adjacency = graph._build_adjacency("blind", door_filter=True)  # noqa: SLF001
+
+    start = next(
+        nid
+        for nid, node in graph.nodes.items()
+        if node["type"] in ("facility", "facility_entrance")
+        and node["facilityType"] == "elevator"
+        and node["floor"] == 1
+    )
+    seen = {start}
+    stack = [start]
+    while stack:
+        current = stack.pop()
+        for neighbor, _w, _eid in adjacency.get(current, ()):
+            if neighbor not in seen:
+                seen.add(neighbor)
+                stack.append(neighbor)
+    return seen, graph
+
+
+def verify_blind_destinations(pkg_dict: dict) -> list[str]:
+    """发布门槛：全部可导航目的地在盲模式下可达，否则返回不可达清单。"""
+    reachable, _ = blind_reachable_nodes(pkg_dict)
+    return [place["placeId"] for place in pkg_dict["places"] if place["nodeId"] not in reachable]
+
+
 def verify(pkg_dict: dict) -> None:
     """用后端加载器与导航服务做发布前冒烟：schema 校验、地点节点存在、规划可达。"""
     for p in REPO_ROOT, BACKEND_DIR:
@@ -396,27 +488,14 @@ def verify(pkg_dict: dict) -> None:
     )
     origin = index.nodes[elevator_id]
 
-    # 盲模式数据可达集：只按盲模式边约束（edge_allowed）做 BFS。
-    # v9 部分区域（如 F2 东翼）仅经 staircase 平台（accessibilityLevel=999）
-    # 连通，源数据本身判定盲不可达；此类目的地允许返回
-    # ACCESSIBLE_ROUTE_NOT_FOUND，不视为转换失败。
-    from src.topology.route_rules import RouteGraph  # noqa: E402
-
-    graph = RouteGraph(pkg_dict)
-    blind_adj: dict[str, list[str]] = {}
-    for edge in graph.edges:
-        if not graph.edge_allowed(edge, "blind"):
-            continue
-        blind_adj.setdefault(edge["from"], []).append(edge["to"])
-        blind_adj.setdefault(edge["to"], []).append(edge["from"])
-    blind_reachable = {elevator_id}
-    stack = [elevator_id]
-    while stack:
-        current = stack.pop()
-        for neighbor in blind_adj.get(current, ()):
-            if neighbor not in blind_reachable:
-                blind_reachable.add(neighbor)
-                stack.append(neighbor)
+    # 盲模式数据可达集：按路由引擎完整规则（含常闭防火门禁行/门优先级/管井门剔除）。
+    # 发布门槛：所有可导航目的地必须可达，否则不允许发布（spec §2 REQ-VOICE-05）。
+    blind_reachable, _graph = blind_reachable_nodes(pkg_dict)
+    unreachable = [p.placeId for p in pkg.places if p.nodeId not in blind_reachable]
+    assert not unreachable, (
+        f"盲模式不可达目的地 {len(unreachable)} 个：{unreachable[:10]}；"
+        "请检查常闭防火门/门优先级/拓扑连通性"
+    )
 
     failures = []
     blind_inaccessible: list[str] = []
@@ -433,16 +512,12 @@ def verify(pkg_dict: dict) -> None:
                     continue
                 failures.append((place.placeId, mode.value, repr(err)))
     assert not failures, f"路线规划失败 {len(failures)} 项，前 5：{failures[:5]}"
-    if blind_inaccessible:
-        print(
-            f"提示：{len(blind_inaccessible)} 个地点在源数据中盲不可达"
-            f"（楼梯平台 accessibilityLevel=999 隔断）：{sorted(set(blind_inaccessible))}"
-        )
+    assert not blind_inaccessible, f"盲模式规划失败 {len(blind_inaccessible)} 项"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", default="2026-10-25.1", help="输出地图版本号")
+    parser.add_argument("--version", default="2026-10-28.1", help="输出地图版本号")
     parser.add_argument("--verify-only", action="store_true", help="只校验不写文件")
     args = parser.parse_args()
 
@@ -463,7 +538,15 @@ def main() -> None:
 
     verify(pkg)
     verify_no_public_wall_crossing(pkg)
-    print("发布前校验通过：schema / 地点节点 / 双模式全目的地路线规划 / 公共空间边穿墙=0")
+
+    # 防火门「全部常闭」假设的连通性影响评估（spec §6）：仅诊断，不阻断发布。
+    forced_reachable, _ = blind_reachable_nodes(pkg, force_closed_fire=True)
+    forced_lost = [p["name"] for p in pkg["places"] if p["nodeId"] not in forced_reachable]
+    print(
+        f"盲模式可达 {len(pkg['places']) - len(verify_blind_destinations(pkg))}/{len(pkg['places'])}；"
+        f"若全部防火门常闭则丢失 {len(forced_lost)} 个目的地：{forced_lost}"
+    )
+    print("发布前校验通过：schema / 地点节点 / 双模式全目的地路线规划 / 盲模式全目的地可达 / 公共空间边穿墙=0")
 
     if args.verify_only:
         return

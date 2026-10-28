@@ -38,6 +38,13 @@ class Settings:
     xfyun_tts_api_secret: str = field(default="", repr=False)
     #: 超拟人合成控制台接入地址，形如 wss://cbm01.cn-huabei-1.xf-yun.com/v1/private/xxx
     xfyun_tts_url: str = ""
+    # LLM（OpenAI 兼容）：语音 Agent 意图解析；缺任一字段即视为未启用并降级规则解析
+    llm_base_url: str = ""
+    llm_api_key: str = field(default="", repr=False)
+    llm_model: str = ""
+    llm_timeout_s: float = 8.0
+    #: 结构化输出模式：json_object（DeepSeek/Qwen 通用）或 json_schema（OpenAI 系）
+    llm_structured_mode: str = "json_object"
     token_ttl_seconds: int = 7200
     # 本地联调假微信客户端开关：仅 env=local 允许开启（code 以 fake-<openid> 形式直换）
     wechat_fake: bool = False
@@ -70,6 +77,11 @@ class Settings:
             xfyun_tts_api_key=env.get("PATHAI_XFYUN_TTS_API_KEY", ""),
             xfyun_tts_api_secret=env.get("PATHAI_XFYUN_TTS_API_SECRET", ""),
             xfyun_tts_url=env.get("PATHAI_XFYUN_TTS_URL", ""),
+            llm_base_url=env.get("PATHAI_LLM_BASE_URL", ""),
+            llm_api_key=env.get("PATHAI_LLM_API_KEY", ""),
+            llm_model=env.get("PATHAI_LLM_MODEL", ""),
+            llm_timeout_s=float(env.get("PATHAI_LLM_TIMEOUT_S", "8")),
+            llm_structured_mode=env.get("PATHAI_LLM_STRUCTURED_MODE", "json_object"),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
@@ -93,6 +105,11 @@ class Settings:
     def resolved_database_url(self) -> str:
         """按环境规则解析数据库连接串；Demo 缺显式配置时启动失败。"""
         return resolve_database_url(env=self.env, explicit_url=self.database_url)
+
+    @property
+    def llm_configured(self) -> bool:
+        """LLM 三要素齐备才启用；缺一即降级为规则解析（不阻启动）。"""
+        return bool(self.llm_base_url and self.llm_api_key and self.llm_model)
 
 
 def resolve_database_url(env: str, explicit_url: str) -> str:

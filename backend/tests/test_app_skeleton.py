@@ -152,3 +152,25 @@ class TestDatabaseUrlRules:
         assert overridden.location_residual_reliable_m == 1.2
         assert overridden.location_residual_degraded_m == 3.5
         assert overridden.location_params_version == "loc-2026-11-01.1"
+
+    def test_llm_config_from_env(self):
+        settings = Settings.from_env(
+            {
+                "PATHAI_LLM_BASE_URL": "https://api.example/v1",
+                "PATHAI_LLM_API_KEY": "k-123",
+                "PATHAI_LLM_MODEL": "deepseek-chat",
+                "PATHAI_LLM_TIMEOUT_S": "5.5",
+                "PATHAI_LLM_STRUCTURED_MODE": "json_schema",
+            }
+        )
+        assert settings.llm_configured
+        assert settings.llm_timeout_s == 5.5
+        assert settings.llm_structured_mode == "json_schema"
+        assert "k-123" not in repr(settings)
+
+    def test_llm_not_configured_without_full_triplet(self):
+        assert not Settings.from_env({}).llm_configured
+        partial = Settings.from_env(
+            {"PATHAI_LLM_BASE_URL": "https://api.example/v1", "PATHAI_LLM_MODEL": "m"}
+        )
+        assert not partial.llm_configured

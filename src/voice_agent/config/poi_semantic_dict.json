@@ -1,0 +1,1487 @@
+{
+  "building_name": "初中学部1#教学楼",
+  "site_id": "school-building-01",
+  "map_version": "2026-10-28.1",
+  "exported_at": "2026-10-28T13:56:59+00:00",
+  "pois": [
+    {
+      "standard_name": "书法教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "书法室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0008",
+          "node_id": "F1-TR-0008",
+          "zone_hint": "一楼西侧"
+        }
+      ]
+    },
+    {
+      "standard_name": "仪器室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "仪器间"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0014",
+          "node_id": "F2-TR-0014",
+          "zone_hint": "二楼北段"
+        }
+      ]
+    },
+    {
+      "standard_name": "任课老师准备室（兼讨论）",
+      "category": "general",
+      "is_public_utility": false,
+      "aliases": [
+        "任课老师准备室",
+        "老师准备室",
+        "讨论室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0019",
+          "node_id": "F2-TR-0019",
+          "zone_hint": "二楼东北角"
+        }
+      ]
+    },
+    {
+      "standard_name": "会议室（接待）",
+      "category": "meeting",
+      "is_public_utility": false,
+      "aliases": [
+        "会客室",
+        "会议室",
+        "接待室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0019",
+          "node_id": "F1-TR-0019",
+          "zone_hint": "一楼南段"
+        }
+      ]
+    },
+    {
+      "standard_name": "传达室",
+      "category": "security",
+      "is_public_utility": true,
+      "aliases": [
+        "保安室",
+        "值班室",
+        "收发室",
+        "门卫室",
+        "门房"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0007",
+          "node_id": "F1-TR-0007",
+          "zone_hint": "一楼西南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "化学教室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "化学实验室",
+        "化学室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0005",
+          "node_id": "F2-TR-0005",
+          "zone_hint": "二楼西侧，第1间"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0009",
+          "node_id": "F2-TR-0009",
+          "zone_hint": "二楼西侧，第2间"
+        }
+      ]
+    },
+    {
+      "standard_name": "卫生室",
+      "category": "medical",
+      "is_public_utility": true,
+      "aliases": [
+        "保健室",
+        "医务室",
+        "医疗室",
+        "卫生所",
+        "拿药",
+        "校医室",
+        "看病"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0039",
+          "node_id": "F1-TR-0039",
+          "zone_hint": "一楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "历史教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "历史室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0018",
+          "node_id": "F2-TR-0018",
+          "zone_hint": "二楼南段"
+        }
+      ]
+    },
+    {
+      "standard_name": "双边实验室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "实验室",
+        "综合实验室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0013",
+          "node_id": "F2-TR-0013",
+          "zone_hint": "二楼北段"
+        }
+      ]
+    },
+    {
+      "standard_name": "史地工作室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "史地室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0020",
+          "node_id": "F2-TR-0020",
+          "zone_hint": "二楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "合班教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "合班课教室",
+        "大教室",
+        "阶梯教室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0050",
+          "node_id": "F1-TR-0050",
+          "zone_hint": "一楼东侧"
+        }
+      ]
+    },
+    {
+      "standard_name": "地理教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "地理室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0027",
+          "node_id": "F2-TR-0027",
+          "zone_hint": "二楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "女卫生间",
+      "category": "restroom",
+      "is_public_utility": true,
+      "aliases": [
+        "卫生间",
+        "厕所",
+        "女厕",
+        "女厕所",
+        "女洗手间",
+        "女茅房",
+        "洗手间"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0002",
+          "node_id": "F1-TR-0002",
+          "zone_hint": "一楼西北角"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0038",
+          "node_id": "F1-TR-0038",
+          "zone_hint": "一楼东南角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0002",
+          "node_id": "F2-TR-0002",
+          "zone_hint": "二楼西北角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0023",
+          "node_id": "F2-TR-0023",
+          "zone_hint": "二楼东北角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0029",
+          "node_id": "F2-TR-0029",
+          "zone_hint": "二楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "广播室",
+      "category": "equipment",
+      "is_public_utility": false,
+      "aliases": [
+        "广播站",
+        "播音室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0040",
+          "node_id": "F1-TR-0040",
+          "zone_hint": "一楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "打印",
+      "category": "general",
+      "is_public_utility": false,
+      "aliases": [
+        "复印室",
+        "打印复印室",
+        "打印室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0028",
+          "node_id": "F1-TR-0028",
+          "zone_hint": "一楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "教师办公室",
+      "category": "office",
+      "is_public_utility": false,
+      "aliases": [
+        "任课老师办公室",
+        "教研室",
+        "老师办公室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0033",
+          "node_id": "F1-TR-0033",
+          "zone_hint": "一楼东北角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0025",
+          "node_id": "F2-TR-0025",
+          "zone_hint": "二楼东北角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0031",
+          "node_id": "F2-TR-0031",
+          "zone_hint": "二楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "智慧管控中心",
+      "category": "equipment",
+      "is_public_utility": false,
+      "aliases": [
+        "中控室",
+        "监控室",
+        "管控中心"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0013",
+          "node_id": "F1-TR-0013",
+          "zone_hint": "一楼中段"
+        }
+      ]
+    },
+    {
+      "standard_name": "档案",
+      "category": "storage",
+      "is_public_utility": false,
+      "aliases": [
+        "档案室",
+        "档案资料室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0023",
+          "node_id": "F1-TR-0023",
+          "zone_hint": "一楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "物理工作室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "物理准备室",
+        "物理器材室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0015",
+          "node_id": "F2-TR-0015",
+          "zone_hint": "二楼北段"
+        }
+      ]
+    },
+    {
+      "standard_name": "物理（声光电）",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "光学实验室",
+        "声光电实验室",
+        "声光电物理实验室",
+        "物理实验室",
+        "电学实验室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0017",
+          "node_id": "F2-TR-0017",
+          "zone_hint": "二楼北段"
+        }
+      ]
+    },
+    {
+      "standard_name": "物理（热）",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "热学",
+        "热学实验室",
+        "热学物理实验室",
+        "物理实验室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0021",
+          "node_id": "F2-TR-0021",
+          "zone_hint": "二楼东北角"
+        }
+      ]
+    },
+    {
+      "standard_name": "生物工作室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "生物准备室",
+        "生物实验室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0003",
+          "node_id": "F2-TR-0003",
+          "zone_hint": "二楼西北角"
+        }
+      ]
+    },
+    {
+      "standard_name": "生物（观察）",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "生物观察实验室",
+        "观察实验室"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0010",
+          "node_id": "F2-TR-0010",
+          "zone_hint": "二楼中段，第1间"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0012",
+          "node_id": "F2-TR-0012",
+          "zone_hint": "二楼中段，第2间"
+        }
+      ]
+    },
+    {
+      "standard_name": "男卫生间",
+      "category": "restroom",
+      "is_public_utility": true,
+      "aliases": [
+        "卫生间",
+        "厕所",
+        "洗手间",
+        "男厕",
+        "男厕所",
+        "男洗手间",
+        "男茅房"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0004",
+          "node_id": "F1-TR-0004",
+          "zone_hint": "一楼西侧"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0035",
+          "node_id": "F1-TR-0035",
+          "zone_hint": "一楼东北角"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0041",
+          "node_id": "F1-TR-0041",
+          "zone_hint": "一楼东南角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0006",
+          "node_id": "F2-TR-0006",
+          "zone_hint": "二楼西侧"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0026",
+          "node_id": "F2-TR-0026",
+          "zone_hint": "二楼东北角"
+        },
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0032",
+          "node_id": "F2-TR-0032",
+          "zone_hint": "二楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "组织办公",
+      "category": "office",
+      "is_public_utility": false,
+      "aliases": [
+        "党务办公室",
+        "党支部",
+        "党组织办公室",
+        "组织办公室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0027",
+          "node_id": "F1-TR-0027",
+          "zone_hint": "一楼南侧走廊东段，第1间"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0031",
+          "node_id": "F1-TR-0031",
+          "zone_hint": "一楼南侧走廊东段，第2间"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0036",
+          "node_id": "F1-TR-0036",
+          "zone_hint": "一楼南侧走廊东段，第3间"
+        }
+      ]
+    },
+    {
+      "standard_name": "美术书法资料室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "书法资料室",
+        "美术资料室",
+        "资料室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0009",
+          "node_id": "F1-TR-0009",
+          "zone_hint": "一楼西侧"
+        }
+      ]
+    },
+    {
+      "standard_name": "美术工作室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "美术准备室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0005",
+          "node_id": "F1-TR-0005",
+          "zone_hint": "一楼西北角"
+        }
+      ]
+    },
+    {
+      "standard_name": "美术教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "美术室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0014",
+          "node_id": "F1-TR-0014",
+          "zone_hint": "一楼北段"
+        }
+      ]
+    },
+    {
+      "standard_name": "药品室",
+      "category": "classroom_lab",
+      "is_public_utility": false,
+      "aliases": [
+        "药品间",
+        "药库",
+        "药房"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0004",
+          "node_id": "F2-TR-0004",
+          "zone_hint": "二楼西北角"
+        }
+      ]
+    },
+    {
+      "standard_name": "资源教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "资源中心",
+        "资源室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0003",
+          "node_id": "F1-TR-0003",
+          "zone_hint": "一楼西侧"
+        }
+      ]
+    },
+    {
+      "standard_name": "配电室",
+      "category": "equipment",
+      "is_public_utility": false,
+      "aliases": [
+        "配电房",
+        "配电间"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0025",
+          "node_id": "F1-TR-0025",
+          "zone_hint": "一楼东侧"
+        }
+      ]
+    },
+    {
+      "standard_name": "音乐教室",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [
+        "唱游教室",
+        "音乐室",
+        "音乐课教室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0015",
+          "node_id": "F1-TR-0015",
+          "zone_hint": "一楼北侧走廊西端"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0016",
+          "node_id": "F1-TR-0016",
+          "zone_hint": "一楼北侧走廊东端"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0018",
+          "node_id": "F1-TR-0018",
+          "zone_hint": "一楼主走廊西段"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0021",
+          "node_id": "F1-TR-0021",
+          "zone_hint": "一楼主走廊中段"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0032",
+          "node_id": "F1-TR-0032",
+          "zone_hint": "一楼主走廊东段"
+        }
+      ]
+    },
+    {
+      "standard_name": "领导办公",
+      "category": "office",
+      "is_public_utility": false,
+      "aliases": [
+        "主任办公室",
+        "副校长室",
+        "校长办公室",
+        "校长室",
+        "校领导",
+        "行政办公室",
+        "领导室"
+      ],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0020",
+          "node_id": "F1-TR-0020",
+          "zone_hint": "一楼南侧走廊，自西向东第1间"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0022",
+          "node_id": "F1-TR-0022",
+          "zone_hint": "一楼南侧走廊，自西向东第2间"
+        },
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0024",
+          "node_id": "F1-TR-0024",
+          "zone_hint": "一楼南侧走廊，自西向东第3间"
+        }
+      ]
+    },
+    {
+      "standard_name": "饮水",
+      "category": "service",
+      "is_public_utility": true,
+      "aliases": [
+        "开水间",
+        "打水",
+        "打水处",
+        "接水的地方",
+        "直饮水",
+        "茶水间",
+        "饮水处"
+      ],
+      "instances": [
+        {
+          "floor": "2F",
+          "floor_id": "2",
+          "place_id": "F2-RM-0008",
+          "node_id": "F2-TR-0008",
+          "zone_hint": "二楼西北角"
+        }
+      ]
+    }
+  ],
+  "non_navigable_rooms": [
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-AC-0046",
+      "label": "学生活动区",
+      "type": "room",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-AC-0047",
+      "label": "社团",
+      "type": "room",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0042",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0043",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0044",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0048",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0050",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0051",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0052",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0053",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0054",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0055",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0056",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0058",
+      "label": "走道",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0060",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0061",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-CR-0062",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-ELL-05",
+      "label": "电梯前室",
+      "type": "elevator_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-LB-0045",
+      "label": "门厅无障碍出入口",
+      "type": "lobby",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-LB-0049",
+      "label": "门厅",
+      "type": "lobby",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-LB-0057",
+      "label": "门厅无障碍出入口",
+      "type": "lobby",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-LB-0059",
+      "label": "门厅无障碍出入口",
+      "type": "lobby",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0001",
+      "label": "风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0006",
+      "label": "水井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0010",
+      "label": "人防楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0011",
+      "label": "风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0012",
+      "label": "楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0017",
+      "label": "乐器存放室无障碍楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0026",
+      "label": "风井水井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0029",
+      "label": "水井排风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0030",
+      "label": "女卫生间",
+      "type": "toilet",
+      "reason": "no_room_node"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0034",
+      "label": "室外疏散楼梯",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0037",
+      "label": "水井排风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0064",
+      "label": "楼梯间1",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0066",
+      "label": "楼梯间2",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0067",
+      "label": "楼梯间3",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0068",
+      "label": "楼梯间4",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0069",
+      "label": "楼梯间5",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0070",
+      "label": "楼梯间6",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0071",
+      "label": "楼梯间7",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-RM-0072",
+      "label": "楼梯间8",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-01",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-02",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-03",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-04",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-06",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-07",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-08",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-09",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-10",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0035",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0036",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0037",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0038",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0039",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0040",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0041",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0046",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0047",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-CR-0048",
+      "label": "走道",
+      "type": "corridor",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-ELL-04",
+      "label": "电梯前室",
+      "type": "elevator_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0001",
+      "label": "风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0007",
+      "label": "水井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0011",
+      "label": "楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0016",
+      "label": "室外楼梯（非疏散）",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0022",
+      "label": "水井排风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0024",
+      "label": "楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0028",
+      "label": "水井排风井",
+      "type": "infrastructure",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0030",
+      "label": "楼梯间",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0049",
+      "label": "楼梯间1",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0050",
+      "label": "楼梯间2",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0051",
+      "label": "楼梯间3",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0052",
+      "label": "楼梯间4",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0053",
+      "label": "楼梯间5",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0054",
+      "label": "楼梯间6",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-RM-0055",
+      "label": "楼梯间7",
+      "type": "staircase",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-STL-01",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-STL-02",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-STL-03",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-STL-05",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "2F",
+      "floor_id": "2",
+      "room_id": "F2-STL-06",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    }
+  ],
+  "category_aliases": {
+    "厕所": [
+      "男卫生间",
+      "女卫生间"
+    ],
+    "卫生间": [
+      "男卫生间",
+      "女卫生间"
+    ],
+    "洗手间": [
+      "男卫生间",
+      "女卫生间"
+    ],
+    "物理实验室": [
+      "物理（声光电）",
+      "物理（热）",
+      "物理工作室"
+    ],
+    "生物实验室": [
+      "生物（观察）",
+      "生物工作室"
+    ],
+    "办公室": [
+      "领导办公",
+      "组织办公",
+      "教师办公室"
+    ]
+  },
+  "related_fallbacks": {
+    "食堂": "饮水",
+    "小卖部": "饮水",
+    "超市": "饮水"
+  }
+}
