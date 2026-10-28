@@ -42,7 +42,8 @@ class Settings:
     llm_base_url: str = ""
     llm_api_key: str = field(default="", repr=False)
     llm_model: str = ""
-    llm_timeout_s: float = 8.0
+    #: 实测火山方舟首 token 1.5~5.1s，8s 会误判超时；15s 为工程默认值
+    llm_timeout_s: float = 15.0
     #: 结构化输出模式：json_object（DeepSeek/Qwen 通用）或 json_schema（OpenAI 系）
     llm_structured_mode: str = "json_object"
     token_ttl_seconds: int = 7200
@@ -80,7 +81,7 @@ class Settings:
             llm_base_url=env.get("PATHAI_LLM_BASE_URL", ""),
             llm_api_key=env.get("PATHAI_LLM_API_KEY", ""),
             llm_model=env.get("PATHAI_LLM_MODEL", ""),
-            llm_timeout_s=float(env.get("PATHAI_LLM_TIMEOUT_S", "8")),
+            llm_timeout_s=float(env.get("PATHAI_LLM_TIMEOUT_S", "15")),
             llm_structured_mode=env.get("PATHAI_LLM_STRUCTURED_MODE", "json_object"),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),

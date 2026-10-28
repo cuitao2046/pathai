@@ -33,6 +33,7 @@ FRONT_CLOCK = {11, 12, 1}
 FRONT_RADIUS_M = 6.0
 
 _SENTENCE_END = "，。！？；、"
+_SENTENCE_FINAL = "。！？"
 _CLOCK_PHRASE = {12: "正前方", 11: "左前方", 1: "右前方", 9: "正左方", 3: "正右方", 6: "正后方"}
 
 ParseSource = Literal["fast_path", "llm", "rules"]
@@ -84,14 +85,20 @@ def _front_element(ctx: UserSpatialContext) -> NearbyElement | None:
 
 
 def _clamp_speech(text: str, motion_state: str) -> str:
-    """按安全上限截断播报：静止 65 字、行走 20 字（spec D14）。"""
+    """按安全上限截断播报：静止 65 字、行走 20 字（spec D14）。
+
+    优先在句末标点处收尾；只有逗号/分号可切时补句号，避免 TTS 以「，」结束。
+    """
     limit = WALKING_MAX_CHARS if motion_state == "walking" else STATIONARY_MAX_CHARS
     cleaned = re.sub(r"\s+", "", text)
     if len(cleaned) <= limit:
         return cleaned
+    final_cut = max((cleaned.rfind(p, 0, limit) for p in _SENTENCE_FINAL), default=-1)
+    if final_cut >= max(8, limit // 3):
+        return cleaned[: final_cut + 1]
     cut = max((cleaned.rfind(p, 0, limit) for p in _SENTENCE_END), default=-1)
     if cut >= max(8, limit // 3):
-        return cleaned[: cut + 1]
+        return cleaned[:cut] + "。"
     return cleaned[: limit - 1] + "。"
 
 
@@ -183,7 +190,7 @@ class IntentParser:
             return fast
 
         if self._llm is None:
-            return self._degrade(text, pending, reason="LLM 未配置")
+            return self._degrade(text, pending, "LLM 未配置", spatial_context)
 
         try:
             messages, cache_key = build_intent_messages(
@@ -207,7 +214,7 @@ class IntentParser:
                 cache_key=cache_key,
             )
         except (LlmError, ValidationError, ValueError, TypeError, KeyError) as err:
-            return self._degrade(text, pending, reason=str(err))
+            return self._degrade(text, pending, str(err), spatial_context)
 
     # ------------------------------------------------------------------ #
     def _fast_path(
@@ -246,11 +253,14 @@ class IntentParser:
         return result
 
     def _degrade(
-        self, text: str, pending: Sequence[dict], reason: str
+        self,
+        text: str,
+        pending: Sequence[dict],
+        reason: str,
+        ctx: UserSpatialContext | None = None,
     ) -> ParseOutcome:
         logger.warning("意图解析降级为规则解析：%s", reason)
-        return ParseOutcome(
-            result=resolve_by_rules(text, self._dictionary, pending),
-            source="rules",
-            degraded=True,
-        )
+        result = resolve_by_rules(text, self._dictionary, pending)
+        # 位置/环境问答即使降级也要有可播报文本（模板兜底，避免"识别成功但没声音"）
+        result = self._fill_direct_speech(result, ctx)
+        return ParseOutcome(result=result, source="rules", degraded=True)

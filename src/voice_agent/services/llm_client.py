@@ -29,7 +29,7 @@ class LlmConfig:
     base_url: str = ""
     api_key: str = field(default="", repr=False)
     model: str = ""
-    timeout_s: float = 8.0
+    timeout_s: float = 15.0
     temperature: float = 0.0
     max_tokens: int = 900
     #: json_object | json_schema | none

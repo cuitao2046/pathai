@@ -76,7 +76,8 @@
 ### REQ-VOICE-06 LLM 意图解析与降级（M3）
 
 - **接入方式**：OpenAI 兼容 `/chat/completions`（SSE 流式聚合），配置项 `PATHAI_LLM_BASE_URL` /
-  `PATHAI_LLM_API_KEY` / `PATHAI_LLM_MODEL` / `PATHAI_LLM_TIMEOUT_S`（默认 8s）；
+  `PATHAI_LLM_API_KEY` / `PATHAI_LLM_MODEL` / `PATHAI_LLM_TIMEOUT_S`（默认 15s；
+  实测火山方舟首 token 1.5~5.1s，8s 会把长上下文直答误判为超时）；
   密钥仅存后端环境变量，禁止入库、禁止打日志。
 - **结构化输出**：system 提示词包含 JSON Schema 约束；`response_format` 默认 `json_object`
   （兼容 DeepSeek/Qwen），OpenAI 系可配置 `json_schema`（决策 D12）。
@@ -139,6 +140,8 @@
 | D13 | 快路径「我在哪」用模板生成播报，不走 LLM | 目标 TTFA ≤350ms，且该场景无需语义理解 |
 | D14 | LLM 直答超长时按句读截断（静止 65 / 行走 20 字） | 行走中长播报会遮挡近距安全提示，硬上限必须由代码保证 |
 | D15 | LLM 客户端用 `httpx` + 可注入 transport | 单测零网络；SSE 聚合同时产出 TTFT 指标 |
+| D16 | LLM 失败/超时后，位置与环境问答仍用模板播报兜底 | 实测长上下文直答首 token 可达 7s，降级不能变成"没声音" |
+| D17 | 默认超时 15s；P5 必须以「模板先出声 + LLM 竞速」保住 TTFA | 云 LLM 首 token 实测 1.4~7.0s，无法直接满足 800ms 目标 |
 
 ---
 

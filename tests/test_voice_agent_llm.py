@@ -13,6 +13,7 @@ from src.voice_agent.config.prompts import (
     build_intent_messages,
     compact_dictionary_text,
     intent_json_schema,
+    intent_system_prompt,
     prompt_cache_key,
 )
 from src.voice_agent.schemas.spatial_context import NearbyElement, UserSpatialContext
@@ -176,6 +177,11 @@ class TestPrompts(LlmBase):
         for token in ("navigate_to_destination", "ambiguous_concepts", "standard_name", "direct_response_speech"):
             self.assertIn(token, schema)
 
+    def test_fallbacks_and_accessibility_facts_in_prefix(self):
+        system = intent_system_prompt(self.dictionary)
+        self.assertIn("食堂→饮水", system)
+        self.assertIn("未铺设盲道", system)
+
 
 class TestParserLlmCases(LlmBase):
     def test_case_a_unique_destination(self):
@@ -232,10 +238,14 @@ class TestParserLlmCases(LlmBase):
         )
         outcome = IntentParser(self.dictionary, llm).parse("我周围有什么", _ctx("stationary"))
         self.assertEqual(outcome.source, "llm")
-        self.assertLessEqual(len(outcome.result.direct_response_speech or ""), 65)
+        speech = outcome.result.direct_response_speech or ""
+        self.assertLessEqual(len(speech), 65)
+        self.assertNotIn(speech[-1], "，；、")
 
         walking = IntentParser(self.dictionary, llm).parse("我周围有什么", _ctx("walking"))
-        self.assertLessEqual(len(walking.result.direct_response_speech or ""), 20)
+        walking_speech = walking.result.direct_response_speech or ""
+        self.assertLessEqual(len(walking_speech), 20)
+        self.assertNotIn(walking_speech[-1], "，；、")
 
     def test_direct_answer_filled_from_context_when_missing(self):
         llm = FakeLlm({"intent_type": "check_hazard_or_door"})
@@ -319,6 +329,21 @@ class TestParserDegradation(LlmBase):
             }
         )
         self._degraded(llm)
+
+    def test_degraded_direct_answer_still_speaks(self):
+        class BadJson:
+            def chat(self, messages, response_schema=None, schema_name="x"):
+                return LlmResult(text="not json", ttft_ms=10, total_ms=20)
+
+        outcome = IntentParser(self.dictionary, BadJson()).parse(
+            "我现在在哪儿，前面门是开着的吗？", _ctx()
+        )
+        self.assertEqual(outcome.source, "rules")
+        self.assertTrue(outcome.degraded)
+        self.assertEqual(outcome.result.intent_type, "query_where_am_i")
+        speech = outcome.result.direct_response_speech or ""
+        self.assertIn("一楼中段走道", speech)
+        self.assertIn("盲道", speech)
 
 
 class TestFastPath(LlmBase):

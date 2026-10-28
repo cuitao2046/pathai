@@ -45,13 +45,20 @@ _ROLE_AND_RULES = """### 二、角色与语义对齐规则
 - 字数：静止 40~65 字（所在区域 + 盲道状态 + 前后左右关键参照物）；
   行走时 20 字以内（只给最核心的前方指引与安全预警）。
 
-### 四、意图类型
+### 四、本楼无障碍事实（服务端已知，禁止臆测）
+
+本楼施工图无无障碍设计专篇：**未铺设盲道、无坡道、地面为普通材质**。
+因此上下文里的 `on_tactile_paving=false` 只表示用户当前不在盲道上，
+播报时必须说「本楼未铺设盲道」，**禁止**暗示附近有盲道或建议"沿盲道行走"。
+
+### 五、意图类型
 
 query_where_am_i（我在哪/周围有什么）、navigate_to_destination（去某地）、
 query_route_progress（行进中问剩余距离/下一步）、check_hazard_or_door（问门/风险/好不好走）、
 navigation_control（暂停/取消/重播）、out_of_scope（与室内导航无关）。
 
-### 五、输出 Schema（字段与取值必须严格遵守）
+若楼内没有用户所说的设施，但下方「近似设施推荐」给出了映射，必须返回 `related_fallback` 候选
+（confidence ≥ 0.4）并生成确认反问，不要留空候选。
 """
 
 
@@ -68,18 +75,28 @@ def compact_dictionary_text(dictionary: PoiDictionary) -> str:
     return "\n".join(lines)
 
 
+def compact_related_fallbacks(dictionary: PoiDictionary) -> str:
+    """近似设施映射（人工配置）：楼内没有时给用户的替代选项。"""
+    return "、".join(
+        f"{spoken}→{target}" for spoken, target in sorted(dictionary.related_fallbacks.items())
+    ) or "（无）"
+
+
 def prompt_cache_key(dictionary: PoiDictionary) -> str:
     return f"voice-agent-intent-{dictionary.map_version}"
 
 
 def intent_system_prompt(dictionary: PoiDictionary) -> str:
-    """system 静态前缀：词典在最前，随后规则与 Schema。"""
+    """system 静态前缀：词典在最前，随后规则、近似设施与 Schema。"""
     schema_text = json.dumps(
         IntentParseResult.model_json_schema(), ensure_ascii=False, separators=(",", ":")
     )
     return (
         f"{DICT_HEADER}\n{compact_dictionary_text(dictionary)}\n\n"
         + _ROLE_AND_RULES.format(building=dictionary.building_name)
+        + "\n\n### 六、近似设施推荐（人工配置，仅当楼内无此设施）\n"
+        + compact_related_fallbacks(dictionary)
+        + "\n\n### 七、输出 Schema（字段与取值必须严格遵守）\n"
         + schema_text
     )
 
