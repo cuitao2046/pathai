@@ -1,7 +1,7 @@
 /**
  * Jest 全局 wx 桩（setupFiles：每个测试文件执行前重新加载，天然隔离）。
- * 提供内存 storage、可编程 request 应答器、用户目录文件系统（支持二进制追加 /
- * stat / rename / unlink，覆盖地图断点续传）、wx.login 桩与震动记录器。
+ * 提供内存 storage、可编程 request 应答器、用户目录文件系统（二进制追加要求文件
+ * 已存在，与真机 appendFile 语义一致；覆盖地图断点续传）、wx.login 桩与震动记录器。
  */
 export interface WxRequestOptionsStub {
   url: string;
@@ -149,15 +149,16 @@ export const wxStub: WxStub = {
       },
       appendFile(options) {
         const prev = files.get(options.filePath);
-        const next = toBytes(options.data);
+        // 贴近真机：微信 appendFile 不会隐式建档，目标不存在即失败
         if (prev === undefined) {
-          files.set(options.filePath, next);
-        } else {
-          const merged = new Uint8Array(prev.length + next.length);
-          merged.set(prev, 0);
-          merged.set(next, prev.length);
-          files.set(options.filePath, merged);
+          options.fail({ errMsg: 'appendFile:fail no such file or directory' });
+          return;
         }
+        const next = toBytes(options.data);
+        const merged = new Uint8Array(prev.length + next.length);
+        merged.set(prev, 0);
+        merged.set(next, prev.length);
+        files.set(options.filePath, merged);
         options.success();
       },
       stat(options) {

@@ -92,20 +92,28 @@ export function readMapPartialSize(siteId: string, mapVersion: string): Promise<
   });
 }
 
-/** 追加一段下载字节到半成品（二进制，不做 UTF-8 解码，避免分片切断多字节字符）。 */
+/**
+ * 写入一段下载字节到半成品（二进制，不做 UTF-8 解码，避免分片切断多字节字符）。
+ * 微信 appendFile 要求目标文件已存在（首片必报 no such file or directory），
+ * 故 offset===0（含整包覆盖重下）时用 writeFile 建档，其余分片才追加。
+ */
 export function appendMapPartial(
   siteId: string,
   mapVersion: string,
   chunk: ArrayBuffer,
+  offset: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const fs = wx.getFileSystemManager();
+    const filePath = partialPath(siteId, mapVersion);
+    const fail = (err: { errMsg?: string }): void =>
+      reject(new Error(err.errMsg ?? '地图半成品写入失败'));
     try {
-      wx.getFileSystemManager().appendFile({
-        filePath: partialPath(siteId, mapVersion),
-        data: chunk,
-        success: () => resolve(),
-        fail: (err) => reject(new Error(err.errMsg ?? '地图半成品写入失败')),
-      });
+      if (offset === 0) {
+        fs.writeFile({ filePath, data: chunk, success: () => resolve(), fail });
+        return;
+      }
+      fs.appendFile({ filePath, data: chunk, success: () => resolve(), fail });
     } catch (err) {
       reject(err instanceof Error ? err : new Error('地图半成品写入失败'));
     }

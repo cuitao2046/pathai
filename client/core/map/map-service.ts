@@ -361,7 +361,7 @@ export class MapService {
           if (range.total !== null) {
             total = range.total;
           }
-          await appendMapPartial(siteId, version, body);
+          await appendMapPartial(siteId, version, body, offset);
           offset = range.end + 1;
         } else if (resp.statusCode === 200) {
           // 服务端未实现 Range（或本次从 0 开始）：整包写入，覆盖半成品
@@ -369,7 +369,7 @@ export class MapService {
             await removeMapPartial(siteId, version);
             offset = 0;
           }
-          await appendMapPartial(siteId, version, body);
+          await appendMapPartial(siteId, version, body, offset);
           offset = body.byteLength;
           total = body.byteLength;
         } else {

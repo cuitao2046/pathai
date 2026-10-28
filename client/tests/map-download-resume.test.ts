@@ -12,7 +12,7 @@ import {
 import { createHttpStack } from '../core/http/api-client';
 import { sha256, utf8Bytes } from '../utils/sha256';
 import { getJson, remove } from '../utils/kv';
-import { partialPath } from '../utils/map-cache';
+import { partialPath, appendMapPartial } from '../utils/map-cache';
 import { wxStub } from './setup-wx';
 import { REAL_MAP } from './fixtures/real-map';
 import { API_BASE_URL, MAP_DOWNLOAD_CHUNK_BYTES } from '../config/env';
@@ -227,6 +227,14 @@ test('无缓存且下载失败：前台下载事件 + 保留状态（不落正�
   expect(service.isLoaded).toBe(false);
   expect(service.pendingDownload?.active).toBe(false);
   expect(wxStub.__files.has(CACHE_FILE)).toBe(false);
+});
+
+test('半成品写入契约：offset=0 需建档（真机 appendFile 不自动创建文件）', async () => {
+  const path = partialPath(SITE, REAL_MAP.mapVersion);
+  await appendMapPartial(SITE, REAL_MAP.mapVersion, toArrayBuffer(BYTES.slice(0, 16)), 0);
+  expect(wxStub.__files.has(path)).toBe(true);
+  await appendMapPartial(SITE, REAL_MAP.mapVersion, toArrayBuffer(BYTES.slice(16, 32)), 16);
+  expect(wxStub.__files.get(path)?.length).toBe(32);
 });
 
 test('过旧判定按 mapVersion 日期差（默认 7 天）', () => {
