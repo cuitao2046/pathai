@@ -270,6 +270,101 @@ def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tu
     return package, promoted
 
 
+def _cross_dists(p1, p2, a, b):
+    """线段 p1-p2 与墙线 a-b 是否真正相交；返回 (距 p1, 距 p2)，否则 None。"""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    ex, ey = p2[0] - p1[0], p2[1] - p1[1]
+    s1 = dx * (p1[1] - a[1]) - dy * (p1[0] - a[0])
+    s2 = dx * (p2[1] - a[1]) - dy * (p2[0] - a[0])
+    if (s1 == 0 and s2 == 0) or s1 * s2 > 0:
+        return None
+    det = dx * ey - dy * ex
+    if abs(det) < 1e-12:
+        return None
+    t = (dy * (p1[0] - a[0]) - dx * (p1[1] - a[1])) / det
+    u = (ex * (a[1] - p1[1]) - ey * (a[0] - p1[0])) / det
+    if not (-1e-9 <= u <= 1 + 1e-9) or not (0 <= t <= 1):
+        return None
+    seg_len = ((ex * ex + ey * ey) ** 0.5)
+    return t * seg_len, (1 - t) * seg_len
+
+
+def _pt_seg_dist(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    l2 = dx * dx + dy * dy
+    if l2 < 1e-12:
+        return ((p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2) ** 0.5
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2
+    t = max(0.0, min(1.0, t))
+    return ((p[0] - (a[0] + t * dx)) ** 2 + (p[1] - (a[1] + t * dy)) ** 2) ** 0.5
+
+
+#: 公共空间边起点本体墙放行半径（门/出入口 1.5m、设施 2.5m、走廊 0.1m）
+_START_RADIUS = {"doorway": 1.5, "facility_entrance": 1.5, "facility": 2.5,
+                 "intersection": 0.1}
+
+
+def verify_no_public_wall_crossing(pkg_dict: dict) -> None:
+    """发布门槛（spec v0.2.6 / 决策 8）：公共空间拓扑边穿墙数必须为 0。
+
+    公共空间边 = TI↔TI、TD↔TI、TEN↔TD/TI；TR↔TD 与 TF↔TD 为语义边不计。
+    """
+    for p in REPO_ROOT, BACKEND_DIR:
+        if str(p) not in sys.path:
+            sys.path.insert(0, str(p))
+    from src.topology.route_rules import RouteGraph  # noqa: E402
+
+    graph = RouteGraph(pkg_dict)
+    public_types = {"intersection", "doorway", "facility_entrance"}
+    # 穿堂房间提升为 intersection 后仍是"房间质心↔门"语义边，不计公共空间边
+    promoted = {
+        node["id"]
+        for floor in (pkg_dict.get("floors") or {}).values()
+        for node in (floor.get("topology") or {}).get("nodes") or []
+        if node.get("promotedFromRoom")
+    }
+    bad = []
+    for edge in graph.edges:
+        a = graph.nodes.get(edge["from"])
+        b = graph.nodes.get(edge["to"])
+        if not a or not b or edge.get("crossFloor") or a["floor"] != b["floor"]:
+            continue
+        if edge["from"] in promoted or edge["to"] in promoted:
+            continue
+        types = {a["type"], b["type"]}
+        if not types <= public_types:
+            continue
+        if types == {"doorway", "doorway"} or types == {"facility_entrance",
+                                                        "facility_entrance"}:
+            continue
+        if not a["coords"] or not b["coords"]:
+            continue
+        radius = _START_RADIUS.get(a["type"], 0.1)
+        minx = min(a["coords"][0], b["coords"][0])
+        maxx = max(a["coords"][0], b["coords"][0])
+        miny = min(a["coords"][1], b["coords"][1])
+        maxy = max(a["coords"][1], b["coords"][1])
+        for wl, wb, wf in zip(graph.wall_lines, graph.wall_bounds, graph.wall_floors):
+            if wf != a["floor"]:
+                continue
+            if wb[0] > maxx or wb[2] < minx or wb[1] > maxy or wb[3] < miny:
+                continue
+            wa, wb_ = wl.coords[0], wl.coords[-1]
+            hit = _cross_dists(a["coords"], b["coords"], wa, wb_)
+            if not hit:
+                continue
+            if hit[0] <= radius or hit[1] <= 0.2:
+                continue
+            if _pt_seg_dist(a["coords"], wa, wb_) <= radius:
+                continue
+            bad.append((a["floor"], edge["id"], edge["from"], edge["to"],
+                        round(edge.get("distance") or 0.0, 2)))
+            break
+    assert not bad, (
+        f"公共空间拓扑边穿墙 {len(bad)} 条（必须为 0）：{bad[:5]}；"
+        "请先运行 src/tools/fix_topology_walls.py 整改源 GeoJSON")
+
+
 def verify(pkg_dict: dict) -> None:
     """用后端加载器与导航服务做发布前冒烟：schema 校验、地点节点存在、规划可达。"""
     for p in REPO_ROOT, BACKEND_DIR:
@@ -367,7 +462,8 @@ def main() -> None:
     )
 
     verify(pkg)
-    print("发布前校验通过：schema / 地点节点 / 双模式全目的地路线规划")
+    verify_no_public_wall_crossing(pkg)
+    print("发布前校验通过：schema / 地点节点 / 双模式全目的地路线规划 / 公共空间边穿墙=0")
 
     if args.verify_only:
         return

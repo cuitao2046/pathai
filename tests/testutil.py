@@ -145,12 +145,14 @@ def _collect_diffs(a, e, prefix=""):
 
 def assert_golden(testcase, actual, golden, source_path=GEOJSON_PATH):
     """断言 actual == golden["stats"]；不一致时列出差异，REGEN_GOLDEN=1 时自动更新。"""
-    expected = golden["stats"]
-    if actual == expected:
-        return
     if regen_enabled():
+        # 先重写基线：即使统计未变，也要同步 source_sha256（仅格式/字节变化时
+        # 统计相等会提前 return，导致 sha 永远停留在旧字节上）。
         save_golden(actual, source_path)
         print(f"[REGEN_GOLDEN] 统计已更新 -> {GOLDEN_PATH.name}")
+        return
+    expected = golden["stats"]
+    if actual == expected:
         return
     testcase.maxDiff = None
     raise AssertionError(
@@ -191,11 +193,12 @@ def assert_struct_golden(testcase, actual, golden, source_path=GEOJSON_PATH):
             "（首次生成请以 REGEN_GOLDEN=1 重跑）"
         )
     expected = golden["fingerprint"]
-    if actual == expected:
-        return
     if regen_enabled():
+        # 先重写基线：结构未变但字节变化（如重排缩进）时，也要刷新 source_sha256。
         save_struct_golden(actual, source_path)
         print(f"[REGEN_GOLDEN] 结构指纹已更新 -> {STRUCT_GOLDEN_PATH.name}")
+        return
+    if actual == expected:
         return
     testcase.maxDiff = None
     raise AssertionError(
