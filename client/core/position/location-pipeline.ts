@@ -38,7 +38,8 @@ export interface LocationPipelineOptions {
   map: LocationMapProvider;
   source: BeaconSourceLike;
   sequence: { next(): number };
-  onEstimate: (estimate: PositionEstimateResponse) => void;
+  /** 可信估计回调；meta 供标定模式记录可见信标数（不影响生产逻辑）。 */
+  onEstimate: (estimate: PositionEstimateResponse, meta: { visibleBeaconCount: number }) => void;
   onUnusable: (err: ApiClientError) => void;
   /** 窗口时长（毫秒），默认 2000；测试可缩短。 */
   windowMs?: number;
@@ -158,7 +159,7 @@ export class LocationPipeline {
     }
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;
     if (estimate.quality === 'reliable' || estimate.quality === 'degraded') {
-      this.opts.onEstimate(estimate);
+      this.opts.onEstimate(estimate, { visibleBeaconCount: body.beacons.length });
     } else {
       this.opts.onUnusable(
         new ApiClientError({

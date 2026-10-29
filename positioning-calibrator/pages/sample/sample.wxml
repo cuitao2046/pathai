@@ -1,0 +1,56 @@
+<view class="container">
+  <view class="card">
+    <view class="title">采样设置</view>
+    <view wx:if="{{points.length === 0}}" class="subtitle">还没有标定点，请先到「标定点管理」新增。</view>
+    <block wx:else>
+      <view class="form-row">
+        <text class="label">标定点</text>
+        <picker class="picker" range="{{points}}" range-key="pointId" value="{{pointIndex}}" bindchange="onPointChange" disabled="{{sampling}}">
+          <view>{{currentPoint ? currentPoint.pointId + '（F' + currentPoint.floor + ' · ' + currentPoint.scene + '）' : '请选择'}}</view>
+        </picker>
+        <view wx:if="{{currentPoint}}" class="subtitle">真值 ({{currentPoint.truth[0]}}, {{currentPoint.truth[1]}}) · 标记 {{currentPoint.markType || '未填'}}</view>
+      </view>
+      <view class="form-row">
+        <text class="label">停留时长（秒）</text>
+        <picker class="picker" range="{{durations}}" value="{{durationIndex}}" bindchange="onDurationChange" disabled="{{sampling}}">
+          <view>{{durations[durationIndex]}} 秒</view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <text class="label">时段</text>
+        <picker class="picker" range="{{trafficLabels}}" value="{{trafficIndex}}" bindchange="onTrafficChange" disabled="{{sampling}}">
+          <view>{{trafficLabels[trafficIndex]}}</view>
+        </picker>
+      </view>
+    </block>
+  </view>
+
+  <view class="card">
+    <view class="row">
+      <text class="label">状态</text>
+      <text>{{statusText}}</text>
+    </view>
+    <view class="row" wx:if="{{sampling}}">
+      <text class="label">剩余</text>
+      <text class="mono">{{remaining}} 秒</text>
+    </view>
+    <view class="row">
+      <text class="label">可解析信标</text>
+      <text>{{observations.length}}（未登记 {{unknownCount}}）</text>
+    </view>
+    <button wx:if="{{!sampling}}" class="btn ok" bindtap="onStart" disabled="{{points.length === 0}}">开始采样</button>
+    <button wx:else class="btn warn" bindtap="onStop">结束并保存</button>
+    <view wx:if="{{lastSaved}}" class="subtitle" style="margin-top:12rpx">{{lastSaved}}</view>
+  </view>
+
+  <view class="card" wx:if="{{observations.length > 0}}">
+    <view class="title">实时信标（按中位数排序）</view>
+    <view class="row" wx:for="{{observations}}" wx:key="beaconId">
+      <view>
+        <view class="mono">{{item.beaconId}} · {{item.rssiMedian}} dBm</view>
+        <view class="subtitle">min {{item.rssiMin}} / max {{item.rssiMax}} / σ {{item.rssiStd}} · n={{item.n}}</view>
+      </view>
+      <view class="tag">{{item.truthDistanceM}} m</view>
+    </view>
+  </view>
+</view>

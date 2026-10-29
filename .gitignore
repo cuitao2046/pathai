@@ -50,6 +50,11 @@ result/*
 !result/fingerprint_coverage_compare.html
 !result/fingerprint_coverage_compare.json
 
+# 现场标定：原始样本不入库，仅参数版本文件可入库（docs/28 §4.5/§5.3）
+!result/calibration/
+result/calibration/*
+!result/calibration/location_params_*.json
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb

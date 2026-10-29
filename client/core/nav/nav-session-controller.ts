@@ -83,6 +83,11 @@ export class NavSessionController {
     return this.session?.sessionId ?? null;
   }
 
+  /** 当前生效指令序号（标定模式记录用）；无会话/无指令时为 null。 */
+  get currentInstructionSequence(): number | null {
+    return this.tracker.currentInstruction?.instructionSequence ?? null;
+  }
+
   /**
    * 创建会话（API-06）。上一次创建失败后再次调用会复用同一
    * Idempotency-Key 与冻结 body（忽略新的参数差异），2xx 后清除。

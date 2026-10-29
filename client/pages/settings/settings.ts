@@ -29,6 +29,13 @@ Page({
     ttsEngine: '',
     asrEngine: '',
     selfTestResult: '',
+    /** 标定模式：本次启动实际是否记录（重启生效）。 */
+    calibrationMode: false,
+    /** 设置页开关的最新值（可能与本次启动实际生效值不同）。 */
+    calibrationSetting: false,
+    calibrationCount: 0,
+    calibrationOperator: '',
+    calibrationExportPath: '',
     busy: false,
   },
 
@@ -44,6 +51,10 @@ Page({
       voiceMock: appContext.getVoiceMockSetting(),
       ttsEngine,
       asrEngine,
+      calibrationMode: appContext.calibrationMode,
+      calibrationSetting: appContext.getCalibrationModeSetting(),
+      calibrationCount: appContext.calibration.count,
+      calibrationOperator: appContext.getCalibrationOperator(),
     });
     // 未完成下载的百分比只在这里展示（REQ-MAP），随下载进度实时刷新
     this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
@@ -66,6 +77,10 @@ Page({
       dataSource: appContext.dataSource,
       voiceMock: appContext.getVoiceMockSetting(),
       mockText: appContext.getMockAsrText() || '带我去图书馆',
+      calibrationMode: appContext.calibrationMode,
+      calibrationSetting: appContext.getCalibrationModeSetting(),
+      calibrationCount: appContext.calibration.count,
+      calibrationOperator: appContext.getCalibrationOperator(),
     });
   },
 
@@ -149,6 +164,84 @@ Page({
     const text = event.detail.value;
     this.setData({ mockText: text }); // 受控 input 必须回显，否则二次进入显示旧 data
     appContext.setMockAsrText(text);
+  },
+
+  /** 标定模式开关：只记录、不改算法；写缓存后重启生效。 */
+  onChangeCalibrationMode(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setCalibrationModeSetting(on);
+    this.setData({ calibrationSetting: on });
+    wx.showToast({ title: '已保存，重启小程序生效', icon: 'none', duration: 2500 });
+  },
+
+  onCalibrationOperatorInput(event: WechatMiniprogram.Input) {
+    const name = event.detail.value;
+    this.setData({ calibrationOperator: name });
+    appContext.setCalibrationOperator(name);
+  },
+
+  /** 导出标定轨迹 JSON（写入 USER_DATA_PATH 并复制剪贴板）。 */
+  onExportCalibration() {
+    if (this.data.calibrationCount === 0) {
+      wx.showToast({ title: '暂无标定记录', icon: 'none' });
+      return;
+    }
+    let device: unknown = null;
+    try {
+      const info = wx.getSystemInfoSync();
+      device = { model: info.model, system: info.system, platform: info.platform };
+    } catch {
+      device = null;
+    }
+    const payload = appContext.calibration.buildExport({
+      venueId: DEFAULT_SITE_ID,
+      operator: this.data.calibrationOperator,
+      device,
+      appVersion: '1.0.0',
+    });
+    const json = JSON.stringify(payload, null, 2);
+    const fs = wx.getFileSystemManager();
+    const path = `${wx.env.USER_DATA_PATH}/calibration_dynamic_${Date.now()}.json`;
+    fs.writeFile({
+      filePath: path,
+      data: json,
+      encoding: 'utf8',
+      success: () => {
+        this.setData({ calibrationExportPath: path });
+        wx.setClipboardData({
+          data: json,
+          success: () => {
+            try {
+              if (wx.shareFileMessage) wx.shareFileMessage({ filePath: path, fail: () => {} });
+            } catch {
+              // 分享不可用时仍可从开发者工具文件系统导出
+            }
+            wx.showModal({
+              title: '导出成功',
+              content: `JSON 已复制到剪贴板，并写入文件：\n${path}`,
+              showCancel: false,
+            });
+          },
+        });
+      },
+      fail: () => wx.showModal({ title: '导出失败', content: '写文件失败', showCancel: false }),
+    });
+  },
+
+  onClearCalibration() {
+    wx.showModal({
+      title: '清空标定记录',
+      content: '将删除本机标定模式轨迹缓冲，不可恢复。确认？',
+      confirmColor: '#dc2626',
+      success: (res) => {
+        if (!res.confirm) {
+          return;
+        }
+        appContext.calibration.clear();
+        this.setData({ calibrationCount: 0, calibrationExportPath: '' });
+        wx.showToast({ title: '已清空', icon: 'success' });
+      },
+    });
   },
 
   onSelfTestTts() {

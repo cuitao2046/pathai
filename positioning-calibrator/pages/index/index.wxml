@@ -1,0 +1,27 @@
+<view class="container">
+  <view class="card">
+    <view class="title">标定任务</view>
+    <view class="subtitle">{{venueId}} · 地图 {{mapVersion}} · 信标 {{beaconCount}} 枚</view>
+    <view class="subtitle mono">台账 sha256：{{ledgerPrefix}}…</view>
+    <view class="form-row" style="margin-top:16rpx">
+      <text class="label">操作人</text>
+      <input class="input" value="{{operator}}" bindinput="onOperatorInput" placeholder="姓名/工号" aria-label="操作人" />
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">进度</view>
+    <view class="row"><text class="label">标定点</text><text>{{pointCount}}</text></view>
+    <view class="row"><text class="label">已采样点</text><text>{{sampledPointCount}}</text></view>
+    <view class="row"><text class="label">采样会话</text><text>{{sessionCount}}</text></view>
+    <view class="row"><text class="label">信标观测对</text><text>{{beaconPairs}}</text></view>
+    <view class="subtitle" style="margin-top:12rpx">建议 20 个点（F1 16 / F2 4），每点 3–5 次并覆盖高峰/低谷。</view>
+  </view>
+
+  <view class="card">
+    <button class="btn" bindtap="goPoints">标定点管理</button>
+    <button class="btn ok" bindtap="goSample">开始采样</button>
+    <button class="btn ghost" bindtap="goExport">复核并导出</button>
+    <button class="btn danger" bindtap="clearSessions">清空采样会话</button>
+  </view>
+</view>

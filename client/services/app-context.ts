@@ -25,6 +25,8 @@ import { createWssUrlProvider } from '../utils/wss-url';
 import { createLogger } from '../utils/logger';
 import { getString, getJson, setJson, setString } from '../utils/kv';
 import { resolveVoiceMock, VOICE_MOCK_KEY } from './voice-mock';
+import { TrajectoryRecorder } from '../core/calibration/trajectory-recorder';
+import type { CalibrationRecord } from '../core/calibration/trajectory-recorder';
 
 const log = createLogger('app');
 
@@ -33,6 +35,15 @@ export const DATA_SOURCE_KEY = 'cfg:dataSource';
 
 /** mock 模拟识别文本的持久化 key（设置页写入，重启后 MockAsrEngine 自动恢复）。 */
 export const MOCK_ASR_TEXT_KEY = 'cfg:mockAsrText';
+
+/** 标定模式开关（设置页写入，重启生效；只记录不改算法）。 */
+export const CALIBRATION_MODE_KEY = 'cfg:calibrationMode';
+
+/** 标定操作人（写入 static/dynamic 导出的 operator 字段）。 */
+export const CALIBRATION_OPERATOR_KEY = 'cfg:calibrationOperator';
+
+/** 标定模式轨迹缓冲 key。 */
+export const CALIBRATION_RECORDS_KEY = 'cal:trajectory:v1';
 
 function resolveDataSource(): DataSource {
   const stored = getJson<DataSource>(DATA_SOURCE_KEY);
@@ -62,6 +73,13 @@ class AppContext {
   readonly map = new MapService({ client: this.http.client, siteId: DEFAULT_SITE_ID });
   /** 启动提示音（本地音频，离线可播；按住说话可打断）。 */
   readonly voicePrompts = new LocalVoice({ createAudio: createWxAudio });
+  /** 标定模式是否开启（启动时读取；设置页写入后需重启生效）。 */
+  readonly calibrationMode: boolean = getJson<boolean>(CALIBRATION_MODE_KEY) === true;
+  /** 标定轨迹记录器：仅标定模式开启时由地图页写入。 */
+  readonly calibration = new TrajectoryRecorder({
+    load: () => getJson<CalibrationRecord[]>(CALIBRATION_RECORDS_KEY) ?? [],
+    save: (records) => setJson(CALIBRATION_RECORDS_KEY, records),
+  });
 
   private readonly ttsInstance: TtsEngine;
   private readonly asrInstance: AsrEngine;
@@ -123,6 +141,24 @@ class AppContext {
   /** 设置页回显：语音 mock 的最新设置值（未设置过则跟随数据源）。 */
   getVoiceMockSetting(): boolean {
     return resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
+  }
+
+  /** 设置页：写入标定模式开关（重启小程序后生效）。 */
+  setCalibrationModeSetting(on: boolean): void {
+    setJson(CALIBRATION_MODE_KEY, on);
+  }
+
+  /** 设置页回显：标定模式的最新设置值（区别于本次启动实际生效的 calibrationMode）。 */
+  getCalibrationModeSetting(): boolean {
+    return getJson<boolean>(CALIBRATION_MODE_KEY) === true;
+  }
+
+  setCalibrationOperator(name: string): void {
+    setString(CALIBRATION_OPERATOR_KEY, name);
+  }
+
+  getCalibrationOperator(): string {
+    return getString(CALIBRATION_OPERATOR_KEY) ?? '';
   }
 }
 
