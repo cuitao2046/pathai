@@ -1,0 +1,52 @@
+<view class="container">
+  <view class="card">
+    <view class="title">{{editingId ? '编辑 ' + editingId : '新增标定点'}}</view>
+    <view class="form-row">
+      <text class="label">楼层</text>
+      <picker class="picker" range="{{floors}}" value="{{floorIndex}}" bindchange="onFloorChange">
+        <view>{{floors[floorIndex]}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <text class="label">真值坐标（地图局部米制）</text>
+      <view style="display:flex;gap:12rpx">
+        <input class="input" style="flex:1" type="digit" value="{{truthX}}" bindinput="onTruthXInput" placeholder="x" aria-label="真值 x" />
+        <input class="input" style="flex:1" type="digit" value="{{truthY}}" bindinput="onTruthYInput" placeholder="y" aria-label="真值 y" />
+      </view>
+      <view class="subtitle">来自图纸 + 激光测距，不得用信标坐标代替。</view>
+    </view>
+    <view class="form-row">
+      <text class="label">场景</text>
+      <picker class="picker" range="{{scenes}}" value="{{sceneIndex}}" bindchange="onSceneChange">
+        <view>{{scenes[sceneIndex]}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <text class="label">标记方式</text>
+      <input class="input" value="{{markType}}" bindinput="onMarkTypeInput" placeholder="如：地面美纹纸" aria-label="标记方式" />
+    </view>
+    <view class="form-row">
+      <text class="label">环境备注</text>
+      <input class="input" value="{{envNote}}" bindinput="onEnvNoteInput" placeholder="人流/遮挡/门窗等" aria-label="环境备注" />
+    </view>
+    <button class="btn" bindtap="onSave">{{editingId ? '保存修改' : '新增标定点'}}</button>
+    <button wx:if="{{editingId}}" class="btn ghost" bindtap="onCancelEdit">取消编辑</button>
+  </view>
+
+  <view class="card">
+    <view class="title">已建标定点（{{points.length}}）</view>
+    <view wx:if="{{points.length === 0}}" class="subtitle">还没有标定点，请先新增。</view>
+    <view wx:for="{{points}}" wx:key="pointId" class="row">
+      <view>
+        <view><text class="badge primary">{{item.pointId}}</text> <text>F{{item.floor}} · {{item.scene}}</text></view>
+        <view class="subtitle">真值 ({{item.truthText}}) · {{item.markType || '未标记'}}</view>
+        <view class="subtitle">会话 {{item.sessionCount}} 次 {{item.envNote ? '· ' + item.envNote : ''}}</view>
+      </view>
+      <view>
+        <button class="mini" data-id="{{item.pointId}}" bindtap="onEdit">编辑</button>
+        <button class="mini danger" data-id="{{item.pointId}}" bindtap="onDelete">删除</button>
+      </view>
+    </view>
+    <button class="btn danger" bindtap="onClearAll">清空全部标定点</button>
+  </view>
+</view>

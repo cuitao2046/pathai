@@ -42,6 +42,23 @@
   </view>
 
   <view class="section">
+    <view class="section-title">标定模式（现场工具）</view>
+    <view class="row">
+      <text class="label">记录可信位置估计</text>
+      <switch checked="{{calibrationSetting}}" bindchange="onChangeCalibrationMode" aria-label="切换标定模式是否记录轨迹" />
+    </view>
+    <view class="hint">开启后只把可信位置估计（含可见信标数、指令序号、会话状态）写入本地缓冲，<text style="color:#1f2937">不改定位/导航算法与播报</text>；重启小程序生效。本次启动：{{calibrationMode ? '已记录' : '未记录'}}。</view>
+    <view class="row">
+      <text class="label">操作人</text>
+      <input class="mock-input" value="{{calibrationOperator}}" bindinput="onCalibrationOperatorInput" placeholder="姓名/工号" aria-label="标定操作人" />
+    </view>
+    <view class="row"><text class="label">已记录</text><text>{{calibrationCount}} 条</text></view>
+    <button class="action" bindtap="onExportCalibration" aria-label="导出标定记录">导出标定记录</button>
+    <button class="action danger" bindtap="onClearCalibration" aria-label="清空标定记录">清空标定记录</button>
+    <view wx:if="{{calibrationExportPath}}" class="hint" user-select>{{calibrationExportPath}}</view>
+  </view>
+
+  <view class="section">
     <view class="section-title">自检</view>
     <view class="result" aria-live="polite" wx:if="{{selfTestResult !== ''}}">{{selfTestResult}}</view>
     <button class="action" bindtap="onSelfTestTts" disabled="{{busy}}" aria-label="语音自检">语音自检</button>

@@ -1,0 +1,24 @@
+<view class="container">
+  <view class="card">
+    <view class="title">导出前复核</view>
+    <view class="subtitle">{{venueId}} · 地图 {{mapVersion}} · 窗口 2000 ms</view>
+    <view class="row"><text class="label">标定点</text><text>{{stats.pointCount}}</text></view>
+    <view class="row"><text class="label">已采样点</text><text>{{stats.sampledPointCount}}</text></view>
+    <view class="row"><text class="label">采样会话</text><text>{{stats.sessionCount}}</text></view>
+    <view class="row"><text class="label">信标观测对</text><text>{{stats.beaconPairs}}</text></view>
+    <view wx:if="{{warnings.length > 0}}" class="warning">
+      <view wx:for="{{warnings}}" wx:key="*this">• {{item}}</view>
+    </view>
+    <button class="btn ok" bindtap="doExport">导出 static_samples.json</button>
+    <button class="btn ghost" bindtap="copyJson">仅复制 JSON</button>
+    <view wx:if="{{exportedPath}}" class="subtitle mono" style="margin-top:12rpx">{{exportedPath}}</view>
+    <view class="subtitle" style="margin-top:12rpx">原始样本不入库：请放到仓库 result/calibration/（该目录不提交）。</view>
+  </view>
+
+  <view class="card">
+    <view class="title">JSON 预览</view>
+    <scroll-view class="scrollbox" scroll-y>
+      <text class="mono" user-select>{{preview}}</text>
+    </scroll-view>
+  </view>
+</view>
