@@ -945,7 +945,7 @@ Page({
       map: appContext.map,
       source,
       sequence: new SequenceCounter(),
-      onEstimate: (estimate) => this.handleEstimate(estimate),
+      onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
       onUnusable: (err) => {
         log.warn('定位不可用', err.code);
         vibrateShort();
@@ -1031,7 +1031,13 @@ Page({
   },
 
   /** 定位 → 会话（首个可信估计作为起点）；可信位置驱动显示跟随。 */
-  handleEstimate(estimate: PositionEstimateResponse): void {
+  handleEstimate(
+    estimate: PositionEstimateResponse,
+    meta?: { visibleBeaconCount: number },
+  ): void {
+    if (meta) {
+      this.recordCalibration(estimate, meta.visibleBeaconCount);
+    }
     const position = estimate.position;
     if (position !== undefined && position !== null) {
       // pipeline 仅把 reliable/degraded 交给本回调 → 恢复态(unreliable)天然不推进显示
@@ -1051,6 +1057,23 @@ Page({
       return;
     }
     controller.handleEstimate(estimate);
+  },
+
+  /**
+   * 标定模式：记录可信估计与当前导航状态（只写本地缓冲，不改算法/播报）。
+   * 关闭标定模式时为零开销（启动时读取开关）。
+   */
+  recordCalibration(estimate: PositionEstimateResponse, visibleBeaconCount: number): void {
+    if (!appContext.calibrationMode) {
+      return;
+    }
+    const controller = this.controller;
+    appContext.calibration.record({
+      estimate,
+      visibleBeaconCount,
+      instructionSequence: controller?.currentInstructionSequence ?? null,
+      sessionStatus: controller?.state ?? null,
+    });
   },
 
   /**

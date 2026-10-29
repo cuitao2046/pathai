@@ -1,0 +1,9 @@
+.warning {
+  margin-top: 12rpx;
+  padding: 16rpx;
+  border-radius: 10rpx;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 24rpx;
+  line-height: 1.6;
+}

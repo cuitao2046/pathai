@@ -41,6 +41,9 @@
 - [x] T-016 实现导航会话状态机、位置更新、偏航重规划、恢复、到达判定、查询和幂等结束。（`nav_service.py` + `routers/nav.py`）
 - [ ] T-017 实现最小数据留存、脱敏日志、到期删除及授权安全测试。（仅落地结构化脱敏日志字段约定；**留存/到期删除流程未实现**）
 - [x] T-030 定位参数配置化与版本追溯：`Settings` 新增 `PATHAI_LOCATION_*`，`location_solver` 接收可注入 `LocationParams`；API-05 响应与会话（创建/查询）返回 `paramsVersion`，`NavSession` 增 `location_params_version` 列（alembic `0005`）；pytest 覆盖配置注入生效、缺省回落、响应字段及「基准误用 txPower 必判 unreliable」反例。（`config.py` / `location_solver.py` / `schemas/location.py` / `routers/location.py` / `schemas/nav.py` / `routers/nav.py` / `models.py` / `alembic/versions/0005_*.py`；`test_location_api` / `test_schemas_contract` / `test_nav_api` / `test_app_skeleton`）
+- [x] T-031 新建 `positioning-calibrator` 标定小程序：现场手输标定点、2 s 窗口/中位数/截断采样、60–120 s 停留与高峰/低谷标记、导出 `static_samples.json`；台账→`data/reference_beacons.js` 生成工具与 JS 单测。（`positioning-calibrator/`；`node --test`）
+- [x] T-032 主小程序「标定模式」：设置页开关（重启生效）、操作人、可信估计+可见信标数+指令序号+会话状态本地记录、JSON 导出/清空；不改变算法，附 jest 单测。（`client/core/calibration/`、`pages/map`、`pages/settings`）
+- [x] T-033 新建 `src/tools/fit_location_params.py`：台账重算校验、OLS 拟合 `A`/`n`、`R²`/RMSE、按楼层分组判据（≥50 对且 RMSE 降幅 >30%）、生产解算回放 CEP/阈值建议、参数文件+报告；pytest 覆盖合成反演、分组边界与错误路径。（`src/tools/fit_location_params.py`；`tests/test_fit_location_params.py`）
 
 ## Gate 3：小程序能力
 

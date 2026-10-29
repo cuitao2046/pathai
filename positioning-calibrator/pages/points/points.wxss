@@ -1,0 +1,12 @@
+.mini {
+  display: inline-block;
+  padding: 0 18rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  font-size: 24rpx;
+  border-radius: 8rpx;
+  background: #eef2ff;
+  color: #2563eb;
+  margin-left: 8rpx;
+}
+.mini.danger { background: #fee2e2; color: #dc2626; }
