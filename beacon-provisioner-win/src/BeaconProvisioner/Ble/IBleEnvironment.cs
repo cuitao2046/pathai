@@ -8,6 +8,10 @@ public interface IBleEnvironment
     bool IsMock { get; }
     IReadOnlyList<BleDeviceInfo> Devices { get; }
     event EventHandler? DevicesChanged;
+
+    /// <summary>扫描/连接前检查运行环境（适配器与蓝牙开关）；Mock 恒为就绪。</summary>
+    Task EnsureReadyAsync();
+
     void StartScan();
     void StopScan();
     Task<IBleSession> ConnectAsync(BleDeviceInfo device);

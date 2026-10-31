@@ -37,6 +37,13 @@ public sealed class MainViewModel : ObservableObject
     private BeaconConfigItem? _selectedLedgerBeacon;
     private PendingUpload? _selectedPendingUpload;
     private DeploymentRecord? _selectedRecord;
+    private DeploymentRecord? _selectedEditRecord;
+    private double? _editTxPowerDbm;
+    private int? _editIntervalMs;
+    private BeaconConfigItem? _activeTarget;
+    private double? _activeTxPower;
+    private int? _activeInterval;
+    private string _activeSource = "intake";
     private string? _selectedUnboundId;
     private BleDeviceInfo? _selectedDevice;
     private IBleSession? _session;
@@ -61,6 +68,8 @@ public sealed class MainViewModel : ObservableObject
         DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
         WriteCommand = new RelayCommand(WriteAsync,
             () => !IsBusy && IsConnected && SelectedBeacon is not null && SelectedUnboundId is not null);
+        WriteEditCommand = new RelayCommand(WriteEditAsync,
+            () => !IsBusy && IsConnected && CanWriteEdit());
         VerifyCommand = new RelayCommand(VerifyAsync,
             () => !IsBusy && _restarted && IsConnected && !_verified);
         UploadCommand = new RelayCommand(UploadAsync, () => !IsBusy && _verified && _lastPayload is not null);
@@ -82,6 +91,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ConnectCommand { get; }
     public RelayCommand DisconnectCommand { get; }
     public RelayCommand WriteCommand { get; }
+    public RelayCommand WriteEditCommand { get; }
     public RelayCommand VerifyCommand { get; }
     public RelayCommand UploadCommand { get; }
     public RelayCommand RetryPendingCommand { get; }
@@ -321,6 +331,82 @@ public sealed class MainViewModel : ObservableObject
             SelectedRecord,
             Beacons.FirstOrDefault(b => b.BeaconId == SelectedRecord.BeaconId));
 
+    public IReadOnlyList<double> PowerLevels => BeaconCodec.PowerLevelsDbm;
+
+    public DeploymentRecord? SelectedEditRecord
+    {
+        get => _selectedEditRecord;
+        set
+        {
+            if (!Set(ref _selectedEditRecord, value))
+            {
+                return;
+            }
+
+            if (value is not null)
+            {
+                var planned = Beacons.FirstOrDefault(b => b.BeaconId == value.BeaconId);
+                var power = value.Written.TxPower;
+                if (power == 0 && planned?.TxPower is not null)
+                {
+                    power = planned.TxPower.Value;
+                }
+
+                var interval = value.Written.Interval;
+                if (interval == 0 && planned?.BroadcastInterval is not null)
+                {
+                    interval = planned.BroadcastInterval.Value;
+                }
+
+                EditTxPowerDbm = power;
+                EditIntervalMs = interval;
+            }
+
+            Raise(nameof(EditDetails));
+            ResetProgress();
+            RefreshCommands();
+        }
+    }
+
+    public double? EditTxPowerDbm
+    {
+        get => _editTxPowerDbm;
+        set
+        {
+            if (Set(ref _editTxPowerDbm, value))
+            {
+                RefreshCommands();
+            }
+        }
+    }
+
+    public int? EditIntervalMs
+    {
+        get => _editIntervalMs;
+        set
+        {
+            if (Set(ref _editIntervalMs, value))
+            {
+                RefreshCommands();
+            }
+        }
+    }
+
+    public string EditDetails
+    {
+        get
+        {
+            if (SelectedEditRecord is null)
+            {
+                return "请在左侧选择一条已入库记录；仅发射功率与广播间隔可编辑";
+            }
+
+            var planned = Beacons.FirstOrDefault(b => b.BeaconId == SelectedEditRecord.BeaconId);
+            return DeploymentRecordDetailFormatter.Format(SelectedEditRecord, planned)
+                   + "\n\n可编辑：发射功率 / 广播间隔（写入后更新真实台账，source=field_edit）";
+        }
+    }
+
     public string? SelectedUnboundId
     {
         get => _selectedUnboundId;
@@ -364,6 +450,7 @@ public sealed class MainViewModel : ObservableObject
         ConnectCommand.RaiseCanExecuteChanged();
         DisconnectCommand.RaiseCanExecuteChanged();
         WriteCommand.RaiseCanExecuteChanged();
+        WriteEditCommand.RaiseCanExecuteChanged();
         VerifyCommand.RaiseCanExecuteChanged();
         UploadCommand.RaiseCanExecuteChanged();
         RetryPendingCommand.RaiseCanExecuteChanged();
@@ -515,10 +602,11 @@ public sealed class MainViewModel : ObservableObject
         return Task.CompletedTask;
     }
 
-    private Task ScanAsync()
+    private async Task ScanAsync()
     {
         try
         {
+            await _ble.EnsureReadyAsync();
             _ble.StartScan();
             SyncDevices();
             StatusText = _ble.IsMock
@@ -529,8 +617,6 @@ public sealed class MainViewModel : ObservableObject
         {
             StatusText = $"扫描失败：{ex.Message}（请检查蓝牙适配器与系统蓝牙开关）";
         }
-
-        return Task.CompletedTask;
     }
 
     private void SyncDevices()
@@ -628,6 +714,10 @@ public sealed class MainViewModel : ObservableObject
         _restarted = false;
         _verified = false;
         _lastPayload = null;
+        _activeTarget = null;
+        _activeTxPower = null;
+        _activeInterval = null;
+        _activeSource = "intake";
         RefreshCommands();
     }
 
@@ -641,18 +731,71 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        await DoWriteAsync(target, target.TxPower.Value, target.BroadcastInterval.Value, "intake");
+    }
+
+    private bool CanWriteEdit()
+    {
+        if (SelectedEditRecord is null || EditTxPowerDbm is null || EditIntervalMs is null)
+        {
+            return false;
+        }
+
+        var planned = Beacons.FirstOrDefault(b => b.BeaconId == SelectedEditRecord.BeaconId);
+        return planned?.Uuid is not null && planned.Major is not null && planned.Minor is not null
+               && BeaconCodec.IsValidInterval(EditIntervalMs.Value)
+               && BeaconCodec.PowerCodeFor(EditTxPowerDbm.Value) >= 0;
+    }
+
+    private async Task WriteEditAsync()
+    {
+        var record = SelectedEditRecord;
+        var target = record is null ? null : Beacons.FirstOrDefault(b => b.BeaconId == record.BeaconId);
+        if (_session is null || target is null || target.Uuid is null || target.Major is null ||
+            target.Minor is null || EditTxPowerDbm is null || EditIntervalMs is null)
+        {
+            StatusText = "请先连接设备，并选择可编辑的已入库记录（仅功率/间隔可改）";
+            return;
+        }
+
+        if (!BeaconCodec.IsValidInterval(EditIntervalMs.Value))
+        {
+            StatusText = "广播间隔需在 100~10000 ms";
+            return;
+        }
+
+        if (BeaconCodec.PowerCodeFor(EditTxPowerDbm.Value) < 0)
+        {
+            StatusText = $"功率 {EditTxPowerDbm} dBm 不在设备档位列表";
+            return;
+        }
+
+        await DoWriteAsync(target, EditTxPowerDbm.Value, EditIntervalMs.Value, "field_edit");
+    }
+
+    private async Task DoWriteAsync(
+        BeaconConfigItem target,
+        double txPowerDbm,
+        int intervalMs,
+        string source)
+    {
+        _activeTarget = target;
+        _activeTxPower = txPowerDbm;
+        _activeInterval = intervalMs;
+        _activeSource = source;
+
         IsBusy = true;
         try
         {
-            var deviceMac = _session.Device.Mac;
+            var deviceMac = _session!.Device.Mac;
             var request = new BeaconWriteRequest
             {
-                Uuid = target.Uuid,
-                Major = target.Major.Value,
-                Minor = target.Minor.Value,
+                Uuid = target.Uuid!,
+                Major = target.Major!.Value,
+                Minor = target.Minor!.Value,
                 Name = target.DeviceName,
-                TxPowerDbm = target.TxPower.Value,
-                IntervalMs = target.BroadcastInterval.Value,
+                TxPowerDbm = txPowerDbm,
+                IntervalMs = intervalMs,
             };
 
             var writeResult = _session.Write(request);
@@ -688,6 +831,7 @@ public sealed class MainViewModel : ObservableObject
                 OnlyUnwrittenDevices = false;
             }
 
+            await _ble.EnsureReadyAsync();
             _ble.StartScan();
             SyncDevices();
             _restarted = true;
@@ -706,7 +850,7 @@ public sealed class MainViewModel : ObservableObject
 
     private Task VerifyAsync()
     {
-        var target = SelectedBeacon;
+        var target = _activeTarget;
         if (_session is null || !IsConnected || target is null)
         {
             StatusText = "请先点「连接设备」重新连接已重启的信标，再校验";
@@ -717,7 +861,7 @@ public sealed class MainViewModel : ObservableObject
         {
             var current = _session.ReadCurrent();
             ShowCurrent(current);
-            var verify = Verify(target, current);
+            var verify = Verify(target, current, _activeTxPower, _activeInterval);
             if (!verify.Passed)
             {
                 StatusText = $"步骤 2/3 校验未通过：{verify.Message}（可重新写入并重启后再校验）";
@@ -743,7 +887,7 @@ public sealed class MainViewModel : ObservableObject
     private async Task UploadAsync()
     {
         var payload = _lastPayload;
-        var target = SelectedBeacon;
+        var target = _activeTarget;
         if (payload is null || target is null)
         {
             StatusText = "没有待上传的校验结果";
@@ -784,7 +928,11 @@ public sealed class MainViewModel : ObservableObject
         public string Message { get; init; } = "";
     }
 
-    private static VerifyOutcome Verify(BeaconConfigItem target, BeaconCurrentState current)
+    private static VerifyOutcome Verify(
+        BeaconConfigItem target,
+        BeaconCurrentState current,
+        double? expectedTxPower,
+        int? expectedInterval)
     {
         var expectedUuid = BeaconCodec.UuidFromBytes(BeaconCodec.UuidToBytes(target.Uuid!));
         if (!string.Equals(current.Uuid, expectedUuid, StringComparison.OrdinalIgnoreCase))
@@ -806,7 +954,7 @@ public sealed class MainViewModel : ObservableObject
             return new VerifyOutcome { Passed = false, Message = $"名称不一致：{current.Name}" };
         }
 
-        if (target.TxPower is not null && Math.Abs(current.TxPowerDbm - target.TxPower.Value) > 0.01)
+        if (expectedTxPower is not null && Math.Abs(current.TxPowerDbm - expectedTxPower.Value) > 0.01)
         {
             return new VerifyOutcome
             {
@@ -815,7 +963,7 @@ public sealed class MainViewModel : ObservableObject
             };
         }
 
-        if (current.IntervalMs != target.BroadcastInterval)
+        if (expectedInterval is not null && current.IntervalMs != expectedInterval.Value)
         {
             return new VerifyOutcome
             {
@@ -837,17 +985,17 @@ public sealed class MainViewModel : ObservableObject
             MapVersion = MapVersion,
             DeviceMac = _session?.Device.Mac,
             DeviceName = target.DeviceName,
-            NameWrite = "written",
+            NameWrite = _activeSource == "field_edit" ? "unchanged" : "written",
             Operator = _api.Username,
-            Source = "intake",
+            Source = _activeSource,
             Written = new WrittenValues
             {
                 Uuid = target.Uuid!,
                 Major = target.Major!.Value,
                 Minor = target.Minor!.Value,
                 Name = target.DeviceName,
-                TxPower = target.TxPower!.Value,
-                Interval = target.BroadcastInterval!.Value,
+                TxPower = _activeTxPower ?? target.TxPower!.Value,
+                Interval = _activeInterval ?? target.BroadcastInterval!.Value,
             },
             Verify = new VerifyResult
             {

@@ -39,6 +39,8 @@ public sealed class MockBleEnvironment : IBleEnvironment
 
     public event EventHandler? DevicesChanged;
 
+    public Task EnsureReadyAsync() => Task.CompletedTask;
+
     public void StartScan()
     {
         _devices.Clear();

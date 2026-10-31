@@ -3,6 +3,7 @@ using BeaconProvisioner.Protocol;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Radios;
 using Windows.Foundation;
 using Windows.Storage.Streams;
 
@@ -61,7 +62,58 @@ public sealed class WinRtBleEnvironment : IBleEnvironment
         _watcher = null;
     }
 
+    public async Task EnsureReadyAsync()
+    {
+        var adapter = await BluetoothAdapter.GetDefaultAsync();
+        if (adapter is null)
+        {
+            throw new InvalidOperationException("未检测到蓝牙适配器，请插入 BLE 适配器后重试");
+        }
+
+        if (!adapter.IsLowEnergySupported)
+        {
+            throw new InvalidOperationException("当前蓝牙适配器不支持低功耗蓝牙（BLE）");
+        }
+
+        if (!adapter.IsCentralRoleSupported)
+        {
+            throw new InvalidOperationException("当前蓝牙适配器不支持中央设备角色");
+        }
+
+        var radios = await Radio.GetRadiosAsync();
+        var bluetoothRadio = radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
+        if (bluetoothRadio is not null && bluetoothRadio.State != RadioState.On)
+        {
+            throw new InvalidOperationException("系统蓝牙未开启，请打开蓝牙后重试");
+        }
+    }
+
     public async Task<IBleSession> ConnectAsync(BleDeviceInfo device)
+    {
+        // WinRT 同时扫描+连接易失败：连接前先停止广播扫描
+        StopScan();
+
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                return await ConnectOnceAsync(device);
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                if (attempt == 0)
+                {
+                    await Task.Delay(300).ConfigureAwait(false);
+                }
+            }
+        }
+
+        throw lastError ?? new InvalidOperationException($"无法连接 {device.Mac}");
+    }
+
+    private async Task<IBleSession> ConnectOnceAsync(BleDeviceInfo device)
     {
         var address = _addresses.TryGetValue(device.Mac, out var known) ? known : ParseMac(device.Mac);
         var ledevice = await BluetoothLEDevice.FromBluetoothAddressAsync(address);

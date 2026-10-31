@@ -154,6 +154,77 @@
                 </Grid>
             </TabItem>
 
+            <!-- 现场编辑 -->
+            <TabItem Header="现场编辑">
+                <Grid Margin="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+
+                    <DockPanel Grid.Column="0">
+                        <TextBlock DockPanel.Dock="Top" Text="已入库记录（选中后仅可改功率/间隔）"
+                                   Foreground="#555" Margin="0,0,0,4" />
+                        <ListView ItemsSource="{Binding Records}" SelectedItem="{Binding SelectedEditRecord}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Header="beaconId" Width="130" DisplayMemberBinding="{Binding BeaconId}" />
+                                    <GridViewColumn Header="设备名" Width="90" DisplayMemberBinding="{Binding DeviceName}" />
+                                    <GridViewColumn Header="来源" Width="90" DisplayMemberBinding="{Binding Source}" />
+                                    <GridViewColumn Header="操作人" Width="100" DisplayMemberBinding="{Binding Operator}" />
+                                    <GridViewColumn Header="更新时间" Width="180" DisplayMemberBinding="{Binding UpdatedAt}" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+
+                    <Border Grid.Column="1" Margin="10,0,0,0" Padding="12" Background="#FAFAFA" CornerRadius="4">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                <Button Content="{Binding ScanButtonText}" Command="{Binding ScanCommand}" Padding="12,4" />
+                                <ComboBox Width="250" Margin="8,0" ItemsSource="{Binding VisibleDevices}"
+                                          DisplayMemberPath="DisplayText" SelectedItem="{Binding SelectedDevice}" />
+                                <Button Content="连接设备" Command="{Binding ConnectCommand}" Padding="12,4" />
+                                <Button Content="断开" Command="{Binding DisconnectCommand}" Margin="8,0" Padding="12,4" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1" Text="{Binding CurrentSettingsText}" Foreground="#555"
+                                       Margin="0,6,0,0" TextWrapping="Wrap" />
+
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="发射功率" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <ComboBox Width="110" ItemsSource="{Binding PowerLevels}"
+                                          SelectedItem="{Binding EditTxPowerDbm}" />
+                                <TextBlock Text="dBm" VerticalAlignment="Center" Margin="6,0,16,0" />
+                                <TextBlock Text="广播间隔" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBox Width="100" Text="{Binding EditIntervalMs, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="ms（100~10000）" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="1 写入编辑（含保存）" Command="{Binding WriteEditCommand}" Padding="12,4" />
+                                <Button Content="2 校验" Command="{Binding VerifyCommand}" Margin="8,0" Padding="12,4" />
+                                <Button Content="3 上传" Command="{Binding UploadCommand}" Padding="12,4" />
+                                <TextBlock Text="仅功率/间隔可改；写入后人工重启再校验" Foreground="#888"
+                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </StackPanel>
+
+                            <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                <TextBlock Text="{Binding EditDetails}" TextWrapping="Wrap" LineHeight="22" />
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <!-- 记录 -->
             <TabItem Header="记录">
                 <Grid Margin="6">
