@@ -21,7 +21,7 @@ STRUCT_GOLDEN_PATH = Path(__file__).with_name("parsing_result_golden.json")
 
 #: 语音 Agent 测试用的当前发布包（换版时只改这里；与 backend/maps_data 文件名一致）
 MAP_PACKAGE_DIR = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01"
-CURRENT_MAP_VERSION = "2026-10-28.2"
+CURRENT_MAP_VERSION = "2026-10-30.1"
 CURRENT_MAP_PATH = MAP_PACKAGE_DIR / f"{CURRENT_MAP_VERSION}.json"
 
 FLOOR_STAT_KEYS = [

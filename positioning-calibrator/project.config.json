@@ -1,5 +1,5 @@
 {
-  "description": "室内定位参数现场标定采集小程序 - pathai positioning-calibrator",
+  "description": "电子量角器小程序工程 - e-protractor",
   "packOptions": {
     "ignore": [],
     "include": []
@@ -11,11 +11,29 @@
     "postcss": true,
     "minified": true,
     "newFeature": true,
-    "bigPackageSizeSupport": true
+    "bigPackageSizeSupport": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
   "compileType": "miniprogram",
-  "libVersion": "3.4.0",
-  "appid": "wxREPLACE_WITH_YOUR_APPID",
-  "projectname": "positioning-calibrator",
-  "condition": {}
+  "libVersion": "3.5.5",
+  "appid": "wxfb14b7d8613b6794",
+  "projectname": "e-protractor",
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "editorSetting": {}
 }

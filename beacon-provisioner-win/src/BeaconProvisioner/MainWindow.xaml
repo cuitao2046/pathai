@@ -1,0 +1,233 @@
+<Window x:Class="BeaconProvisioner.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding AppTitle}" Height="760" Width="1180" Icon="Assets/app.ico"
+        FontFamily="Microsoft YaHei UI" FontSize="13">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 登录 / 连接 -->
+        <Border Grid.Row="0" Padding="10" Background="#F3F5F7" CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="120" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="服务器" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBox Grid.Column="1" Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Grid.Column="2" Text="用户名" VerticalAlignment="Center" Margin="12,0,6,0" />
+                <TextBox Grid.Column="3" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBlock Grid.Column="4" Text="密码" VerticalAlignment="Center" Margin="12,0,6,0" />
+                <PasswordBox Grid.Column="5" x:Name="PasswordBox" PasswordChanged="PasswordBox_OnPasswordChanged"
+                             KeyDown="PasswordBox_OnKeyDown" />
+                <Button Grid.Column="6" Content="{Binding LoginButtonText}" Command="{Binding LoginCommand}"
+                        Margin="12,0" Padding="14,4" />
+                <TextBlock Grid.Column="7" VerticalAlignment="Center" Foreground="#666"
+                           Text="{Binding MapVersion, StringFormat=地图版本：{0}}" />
+            </Grid>
+        </Border>
+
+        <TabControl Grid.Row="1" Margin="0,10,0,0">
+            <!-- 台账 -->
+            <TabItem Header="台账">
+                <Grid Margin="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+                    <DockPanel Grid.Column="0">
+                        <Button DockPanel.Dock="Top" Content="刷新台账" Command="{Binding RefreshCommand}"
+                                HorizontalAlignment="Left" Padding="12,4" Margin="0,0,0,6" />
+                        <ListBox ItemsSource="{Binding Beacons}" DisplayMemberPath="ListText"
+                                 SelectedItem="{Binding SelectedLedgerBeacon}" />
+                    </DockPanel>
+                    <Border Grid.Column="1" Margin="10,0,0,0" Padding="12" Background="#FAFAFA" CornerRadius="4">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="台账详情（只读）" Foreground="#555" Margin="0,0,0,6" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <TextBlock Text="{Binding LedgerDetails}" TextWrapping="Wrap" LineHeight="22" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- 入库 -->
+            <TabItem Header="{Binding IntakeTabTitle}">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="{Binding ScanButtonText}" Command="{Binding ScanCommand}" Padding="12,4" />
+                        <TextBlock Text="{Binding ModeHintText}" Foreground="#888"
+                                   VerticalAlignment="Center" Margin="12,0,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="扫码 / 输入 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBox Width="240" Text="{Binding ScanText, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="ScanBox_OnKeyDown" />
+                        <Button Content="定位" Command="{Binding LocateCommand}" Margin="8,0" Padding="12,4" />
+                    </StackPanel>
+
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="3*" />
+                        </Grid.ColumnDefinitions>
+
+                        <DockPanel Grid.Column="0">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="扫描到的信标（按 RSSI 排序）" Foreground="#555"
+                                           VerticalAlignment="Center" />
+                                <CheckBox Content="只显示未写入" IsChecked="{Binding OnlyUnwrittenDevices}"
+                                          Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ListView ItemsSource="{Binding VisibleDevices}"
+                                      SelectedItem="{Binding SelectedDevice}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="设备名" Width="110" DisplayMemberBinding="{Binding Name}" />
+                                        <GridViewColumn Header="MAC" Width="130" DisplayMemberBinding="{Binding Mac}" />
+                                        <GridViewColumn Header="UUID" Width="110" DisplayMemberBinding="{Binding UuidShort}" />
+                                        <GridViewColumn Header="RSSI" Width="55" DisplayMemberBinding="{Binding Rssi}" />
+                                        <GridViewColumn Header="写入时间" Width="145" DisplayMemberBinding="{Binding WriteTimeText}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+
+                        <Border Grid.Column="1" Margin="10,0,0,0" Padding="12" Background="#FAFAFA" CornerRadius="4">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button Content="连接设备" Command="{Binding ConnectCommand}" Padding="12,4" />
+                                    <Button Content="断开" Command="{Binding DisconnectCommand}" Margin="8,0" Padding="12,4" />
+                                    <TextBlock Text="{Binding CurrentSettingsText}" Foreground="#555"
+                                               VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="未入库 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox Width="180" ItemsSource="{Binding UnboundIds}"
+                                                  SelectedItem="{Binding SelectedUnboundId}" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="1 写入（含保存）" Command="{Binding WriteCommand}" Padding="12,4" />
+                                        <Button Content="2 校验" Command="{Binding VerifyCommand}" Margin="8,0" Padding="12,4" />
+                                        <Button Content="3 上传" Command="{Binding UploadCommand}" Padding="12,4" />
+                                        <TextBlock Text="保存后断连；人工重启 → OK → 重新连接 → 校验" Foreground="#888"
+                                                   VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding SelectedDetails}" TextWrapping="Wrap" LineHeight="22" />
+                                </ScrollViewer>
+
+                                <TextBlock Grid.Row="3" Text="设备当前参数见上方；写入值只来自左侧台账（只读）。"
+                                           Foreground="#888" Margin="0,6,0,0" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- 记录 -->
+            <TabItem Header="记录">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                        <TextBlock Text="{Binding RecordSummary}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                        <TextBlock Text="{Binding PendingText}" VerticalAlignment="Center" Foreground="#A33" Margin="0,0,12,0" />
+                        <Button Content="重试上传" Command="{Binding RetryPendingCommand}" Padding="12,4" Margin="0,0,8,0" />
+                        <Button Content="commit 汇总" Command="{Binding CommitCommand}" Padding="12,4" />
+                    </StackPanel>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="2*" />
+                        </Grid.ColumnDefinitions>
+                        <DockPanel Grid.Column="0">
+                            <TextBlock DockPanel.Dock="Top" Text="真实部署台账记录" Foreground="#555" Margin="0,0,0,4" />
+                            <ListView ItemsSource="{Binding Records}"
+                                      SelectedItem="{Binding SelectedRecord}">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="beaconId" Width="130" DisplayMemberBinding="{Binding BeaconId}" />
+                                        <GridViewColumn Header="设备名" Width="90" DisplayMemberBinding="{Binding DeviceName}" />
+                                        <GridViewColumn Header="来源" Width="90" DisplayMemberBinding="{Binding Source}" />
+                                        <GridViewColumn Header="操作人" Width="100" DisplayMemberBinding="{Binding Operator}" />
+                                        <GridViewColumn Header="更新时间" Width="180" DisplayMemberBinding="{Binding UpdatedAt}" />
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </DockPanel>
+                        <Border Grid.Column="1" Margin="10,0,0,0" Padding="12" Background="#FAFAFA" CornerRadius="4">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="100" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="130" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="上传记录详情（点击左侧记录）" Foreground="#555" Margin="0,0,0,4" />
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding RecordDetails}" TextWrapping="Wrap" LineHeight="22" />
+                                </ScrollViewer>
+                                <TextBlock Grid.Row="2" Text="待上传队列（本地）" Foreground="#555" Margin="0,0,0,4" />
+                                <ListBox Grid.Row="3" ItemsSource="{Binding PendingUploads}"
+                                         SelectedItem="{Binding SelectedPendingUpload}" DisplayMemberPath="Summary" />
+                                <TextBlock Grid.Row="4" Text="待上传详情" Foreground="#555" Margin="0,8,0,4" />
+                                <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding PendingDetails}" TextWrapping="Wrap" LineHeight="22" />
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <!-- 设置 -->
+            <TabItem Header="设置">
+                <StackPanel Margin="12">
+                    <CheckBox Content="使用 Mock 蓝牙（无需硬件）"
+                              IsChecked="{Binding UseMockBle, Mode=TwoWay}" />
+                    <TextBlock Margin="0,8,0,0" Foreground="#666" TextWrapping="Wrap"
+                               Text="取消勾选 = 实物 BLE（WinRT，需蓝牙适配器与信标）。切换立即生效、无需重启程序；切换前请先断开连接。" />
+                    <TextBlock Margin="0,8,0,0" Foreground="#666" TextWrapping="Wrap"
+                               Text="实物模式下：FFF5 档位码表与部分读回格式需按 docs/30 用真机确认；写入后仍需人工断电重启。" />
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Padding="10,6" Background="#EEF1F4" CornerRadius="4" Margin="0,10,0,0">
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#333" />
+        </Border>
+    </Grid>
+</Window>

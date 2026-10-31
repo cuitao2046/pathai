@@ -1,6 +1,7 @@
 /**
  * LocationPipeline 测试（C6）：聚合→API-05 上报、待命 8s/导航 2.5s 节流、
- * 信标不足跳过、unreliable/服务端错误 → onUnusable、floorHint 续接、stop 清理。
+ * 待命信标不足跳过、导航信标不足 vs 请求失败 → onUnusable、
+ * 任意 quality → onEstimate、floorHint 续接、stop 清理。
  * fake timers（保留 setImmediate 用于微任务冲刷）+ 假时钟联动推进。
  */
 import { createHttpStack } from '../core/http/api-client';
@@ -224,7 +225,7 @@ describe('LocationPipeline 定位管线', () => {
     expect((second.data as { floorHint: string | null }).floorHint).toBe('1');
   });
 
-  it('quality=unreliable → onUnusable（LOCATION_UNRELIABLE）', async () => {
+  it('quality=unreliable → onEstimate（position 为空，坐标不上报）', async () => {
     wxStub.__requestResponder = (options) => {
       if (options.url.endsWith('/api/v1/auth/wechat')) {
         options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
@@ -241,9 +242,26 @@ describe('LocationPipeline 定位管线', () => {
     await flush();
     source.emitAll(now);
     await advance(8000);
-    expect(estimates).toHaveLength(0);
+    expect(unusable).toHaveLength(0);
+    expect(estimates).toHaveLength(1);
+    expect(estimates[0].quality).toBe('unreliable');
+    expect(estimates[0].position).toBeNull();
+  });
+
+  it('导航档可解析信标不足 3 个 → onUnusable（LOCATION_UNRELIABLE），不发请求', async () => {
+    const pipeline = makePipeline();
+    await pipeline.start();
+    pipeline.setMode('navigating');
+    await flush();
+
+    source.handler?.({ uuid: UUID, major: 1, minor: 10101, rssi: -60, observedAtMs: now });
+    source.handler?.({ uuid: UUID, major: 1, minor: 10104, rssi: -60, observedAtMs: now });
+    await advance(2500);
+
+    expect(estimateRequests()).toHaveLength(0);
     expect(unusable).toHaveLength(1);
     expect(unusable[0].code).toBe('LOCATION_UNRELIABLE');
+    expect(seq).toBe(0); // 未发请求：不消费序号
   });
 
   it('服务端 409 STALE_LOCATION_BATCH → onUnusable 透出稳定错误码', async () => {

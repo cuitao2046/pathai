@@ -5,7 +5,7 @@
  * （绕开 standby 8s 节流，轮询等窗口积累出首个估计）→ 按质量生成播报文本：
  *  - reliable：播报匹配区域/楼层（"您当前在X附近"）；
  *  - degraded：仅播报楼层+精度提示（FE-01：低置信度不报精确点位）；
- *  - 请求失败 / unreliable / 超时：统一安全文案，绝不播报伪造位置。
+ *  - 请求失败 / unreliable / lost / 超时：统一安全文案，绝不播报伪造位置。
  *
  * query() 永不 reject（失败收敛为安全文案），调用方只负责播报；
  * 内部防并发：上一次查询未结束时再次 query 直接返回 null（调用方忽略）。
@@ -108,7 +108,11 @@ export class LocationQueryService {
       windowMs: this.deps.windowMs ?? WINDOW_MS,
       onEstimate: (estimate) => {
         settled = true;
-        text = describePositionText(estimate, floorName);
+        // 管线会把任意质量都交上来：unreliable/lost 只给安全文案，不报点位
+        text =
+          estimate.quality === 'reliable' || estimate.quality === 'degraded'
+            ? describePositionText(estimate, floorName)
+            : UNRESOLVED_TEXT;
       },
       onUnusable: (err) => {
         settled = true;

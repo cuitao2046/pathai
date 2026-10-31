@@ -197,6 +197,18 @@ describe('LocationQueryService.query', () => {
     expect(source.stopCount).toBe(1);
   });
 
+  test('quality=unreliable（API 返回成功但无坐标）→ 安全文案且不伪造位置', async () => {
+    const source = new FakeSource();
+    const { client } = fakeClient(() =>
+      estimateOf({ quality: 'unreliable', position: null, confidence: 0 }),
+    );
+    const svc = makeService({ client, source });
+
+    const text = await drive(svc.query());
+    expect(text).toBe(UNRESOLVED_TEXT);
+    expect(source.stopCount).toBe(1);
+  });
+
   test('API 返回 LOCATION_UNRELIABLE → 安全文案且不伪造位置', async () => {
     const source = new FakeSource();
     const err = new ApiClientError({

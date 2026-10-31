@@ -18,6 +18,7 @@ from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.map_repository import MapRepository, PublishedMap
 from pathai_backend.models import NavIdempotency, NavSession
+from pathai_backend.nav_text import rewrite_route_texts
 from pathai_backend.nav_service import (
     ARRIVAL_RADIUS_M,
     DECISION_POINT_RADIUS_M,
@@ -125,10 +126,13 @@ def create_session(
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode
     )
+    place = index.places[body.destinationId]
+    # 第一阶段：创建会话时一次性改写播报文案（docs/29 §3）；失败自动回退原文，
+    # 动作/距离/触发节点与播报时机保持不变。
+    route_info = rewrite_route_texts(route_info, published, settings, place.name)
 
     session_id = f"nav_{uuid.uuid4().hex[:20]}"
     now = _now_epoch()
-    place = index.places[body.destinationId]
     session = NavSession(
         session_id=session_id,
         subject_id=user.subject_id,

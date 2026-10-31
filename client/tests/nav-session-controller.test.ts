@@ -495,7 +495,7 @@ describe('NavSessionController 会话编排', () => {
     expect(h.controller.state).toBe('active');
   });
 
-  it('首次 relocalizing：safety 播报一次 + 停采集 + 状态 recovering；再次进入不重播', async () => {
+  it('首次 relocalizing：safety 播报一次 + 保持采集 + 状态 recovering；再次进入不重播', async () => {
     const h = makeHarness();
     await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
     let updates = 0;
@@ -524,7 +524,7 @@ describe('NavSessionController 会话编排', () => {
     h.controller.handleEstimate(ESTIMATE_RELIABLE);
     await flush();
     expect(h.controller.state).toBe('recovering');
-    expect(h.pipeline.calls).toEqual(['startNavigating', 'stop']);
+    expect(h.pipeline.calls).toEqual(['startNavigating']); // recovering 不停止采集
     expect(h.tts.spoken).toContain('正在重新定位，请原地稍候。');
 
     // 第二拍仍 recovering：新 instructionId 但不重复播报
@@ -569,7 +569,46 @@ describe('NavSessionController 会话编排', () => {
     await flush();
 
     expect(h.states).toEqual(['active', 'recovering', 'active']);
-    expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'startNavigating']);
+    // recovering 期间未停采集，恢复 active 时仅再切一次导航档（幂等）
+    expect(h.pipeline.calls).toEqual(['startNavigating', 'startNavigating']);
+  });
+
+  it('reportUnavailable：只报 quality=unreliable（无坐标），服务端转 recovering', async () => {
+    const h = makeHarness();
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      options.success({
+        statusCode: 200,
+        header: {},
+        data: updateResponse({
+          processedSequence: 1,
+          status: 'recovering',
+          event: 'relocalizing',
+          instruction: RELOC_INSTR,
+        }),
+      });
+    };
+
+    h.controller.reportUnavailable();
+    await flush();
+
+    const req = updateRequests()[0];
+    expect(req.data).toMatchObject({
+      sequence: 1,
+      location: {
+        x: null,
+        y: null,
+        floorId: null,
+        confidence: 0,
+        quality: 'unreliable',
+      },
+    });
+    expect(h.controller.state).toBe('recovering');
+    expect(h.pipeline.calls).toEqual(['startNavigating']); // 仍保持采集
   });
 
   it('arrived 高置信度：播「已到达目的地。」、停采集、onEnded(byArrival)', async () => {
@@ -826,6 +865,50 @@ describe('NavSessionController 会话编排', () => {
     expect(h.controller.state).toBe('active'); // 保持现状
     expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'startNavigating']);
     expect(h.ended).toHaveLength(0);
+  });
+
+  it('recovering 态回前台：恢复采集并重播安全提示（不播旧方向指令）', async () => {
+    const h = makeHarness();
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      options.success({
+        statusCode: 200,
+        header: {},
+        data: updateResponse({
+          processedSequence: 1,
+          status: 'recovering',
+          event: 'relocalizing',
+          instruction: RELOC_INSTR,
+        }),
+      });
+    };
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    expect(h.controller.state).toBe('recovering');
+
+    h.controller.handleBackground();
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      options.success({
+        statusCode: 200,
+        header: {},
+        data: { ...QUERY_RESPONSE, status: 'recovering' },
+      });
+    };
+
+    await h.controller.handleForeground();
+
+    expect(h.controller.state).toBe('recovering');
+    expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'startNavigating']);
+    expect(h.tts.spoken.filter((t) => t === '正在重新定位，请原地稍候。')).toHaveLength(2);
+    expect(h.tts.spoken.filter((t) => t === '沿走廊直行 5 米。')).toHaveLength(1); // 不回放旧方向
   });
 
   // ------------------------------------------------------------------

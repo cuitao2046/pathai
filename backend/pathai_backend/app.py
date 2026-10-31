@@ -17,6 +17,7 @@ from pathai_backend.request_context import RequestContextMiddleware
 from pathai_backend.routers import auth as auth_router
 from pathai_backend.routers import admin_auth as admin_auth_router
 from pathai_backend.routers import admin_maps as admin_maps_router
+from pathai_backend.routers import beacons as beacons_router
 from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import location as location_router
 from pathai_backend.routers import map as map_router
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(admin_auth_router.router)
     app.include_router(admin_maps_router.router)
+    app.include_router(beacons_router.router)
     app.include_router(map_router.router)
     app.include_router(intent_router.router)
     app.include_router(location_router.router)

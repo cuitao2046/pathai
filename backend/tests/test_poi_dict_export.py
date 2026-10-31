@@ -113,7 +113,7 @@ class TestRuntimeContract:
     def test_dictionary_round_trip(self, dictionary_data, published):
         dictionary = PoiDictionary(dictionary_data)
         dictionary.ensure_version(published.map_version)
-        assert len(dictionary.pois) == 34
+        assert len(dictionary.pois) == 35
         male = dictionary.get("男卫生间")
         assert male is not None and len(male.instances) == 6
         assert {i.floor_id for i in male.instances} == {"1", "2"}

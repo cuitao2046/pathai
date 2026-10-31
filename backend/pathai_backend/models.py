@@ -2,7 +2,7 @@
 """ORM 模型基类。"""
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -153,4 +153,53 @@ class AdminAuditEvent(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
     details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BeaconDeploymentRecord(Base):
+    """真实部署台账：每场地每 beaconId 一条（幂等 upsert）；规划台账保持只读。
+
+    written/verify 以 JSON 保存完整写入值与校验结果（docs/27 §6.8）。
+    """
+
+    __tablename__ = "beacon_deployment_records"
+    __table_args__ = (
+        UniqueConstraint("site_id", "beacon_id", name="uq_beacon_record_site_beacon"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    beacon_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    map_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    device_mac: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    name_write: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    written_json: Mapped[str] = mapped_column(Text, nullable=False)
+    verify_json: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    operator: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    configured_at_epoch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_beacon_records_site", BeaconDeploymentRecord.site_id)
+
+
+class BeaconProvisioningRound(Base):
+    """入库轮次汇总（commit 时生成）：完整性校验结果快照，用于发布 gate 与审计。"""
+
+    __tablename__ = "beacon_provisioning_rounds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    map_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    operator: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    total: Mapped[int] = mapped_column(Integer, nullable=False)
+    recorded: Mapped[int] = mapped_column(Integer, nullable=False)
+    verified: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_beacon_rounds_site", BeaconProvisioningRound.site_id)
 

@@ -11,8 +11,10 @@
 > **当前状态（2026-10-27 用户确认）：全部 61 枚信标均未上墙。**
 > 本文件是**基于交互渲染图（`render_interactive.py` 部署模式）生成的部署点位建议**，
 > 属"规划态"而非"竣工台账"：`installDate` 全为空、`locationDesc` 部分是坐标回显，均属正常。
-> 后续按这些点位**现场实际部署**，并逐枚配置 AT 参数（`major`/`minor` 照抄本文件，见 `docs/08` §3 第 3 步）。
-> 配置完成后应回填 `installDate` 与实测 `rssiAt1m`，届时本文件才转为"竣工态"。
+> 后续按这些点位**现场实际部署**，并逐枚配置参数（`major`/`minor` 照抄本文件，见 `docs/08` §3 第 3 步）。
+> 现行 61 枚为 **Minew E5**，参数由 `beacon-provisioner` Windows 桌面程序从服务端台账读取后直接写入信标（见 `docs/27`）。
+> 设备名短码（≤7 字符 `F{floor}-{minor后三位}`）与标签二维码（内容 = `beaconId`）在**发布阶段生成**，不回写本文件。
+> 配置完成后应回填 `installDate` 与实测 `rssiAt1m`（仅用于后端参数标定，**不写入设备**），届时本文件才转为"竣工态"。
 
 - 通过 `sourceNodeId` 关联到 geojson 的拓扑节点（`topology.nodes` 中的 TR/TD/TI 等）。
 - 通过 `adjacentRooms` 关联到 geojson 的房间要素。

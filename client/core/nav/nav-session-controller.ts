@@ -4,7 +4,8 @@
  * - API-07 更新：会话内 sequence 单调；在途锁 + 仅保留最新待发估计；
  *   409 STALE_NAV_UPDATE → API-08 重对齐后继续；409 SESSION_NOT_ACTIVE → 查询收尾；
  * - 事件映射：instruction→按优先级入队（tracker 去重）、reroute→clearNormal+
- *   播新首条+更新 route、relocalizing→进入 recovering 时 safety 提示一次、
+ *   播新首条+更新 route、relocalizing→进入 recovering 时 safety 提示一次
+ *   （期间不停止采集，可信位置回来后由服务端恢复 active）、
  *   arrived→按 confidence 播「已到达/已到达附近」+停采集；
  * - 前台恢复（FE-05 次序）：先 API-08 校验 status/mapVersion/sequence →
  *   重启采集 → 重播有效指令；切后台先停采集；
@@ -72,6 +73,8 @@ export class NavSessionController {
   /** 幂等创建暂存：失败重试复用（key + 冻结 body）。 */
   private pendingIdempotencyKey: string | null = null;
   private frozenCreateBody: CreateSessionRequest | null = null;
+  /** 最近一次 relocalizing 安全提示：recovering 态回前台时重播用。 */
+  private lastRelocalizeText: string | null = null;
 
   constructor(private readonly opts: NavSessionControllerOptions) {}
 
@@ -130,6 +133,7 @@ export class NavSessionController {
     this.session = data;
     this.sessionSeq = 0;
     this.lastConfidence = 0;
+    this.lastRelocalizeText = null;
     this.tracker.reset();
     this.transition({ type: 'SESSION_CREATED', status: data.status });
     this.opts.onRoute?.(data.route);
@@ -138,7 +142,7 @@ export class NavSessionController {
     return data;
   }
 
-  /** 定位估计入口（LocationPipeline.onEstimate）。 */
+  /** 定位估计入口（LocationPipeline.onEstimate）；不可信质量只报 quality。 */
   handleEstimate(estimate: PositionEstimateResponse): void {
     if (this.session === null || this.machine.isTerminal) {
       return;
@@ -157,6 +161,25 @@ export class NavSessionController {
     }
     // 服务端规则：unreliable/lost 只带 quality（服务端转 recovering），坐标不报
     void this.sendUpdate(location);
+  }
+
+  /**
+   * 采集侧没有可用估计（导航中信标不足 / API-05 请求失败）：
+   * 按服务端规则只报 quality=unreliable，让会话进入 recovering 并播安全提示，
+   * 不伪造坐标。
+   */
+  reportUnavailable(): void {
+    if (this.session === null || this.machine.isTerminal) {
+      return;
+    }
+    void this.sendUpdate({
+      x: null,
+      y: null,
+      floorId: null,
+      confidence: 0,
+      quality: 'unreliable',
+      observedAt: new Date().toISOString(),
+    });
   }
 
   /** 切后台（FE-05）：停采集；恢复流程交给 handleForeground。 */
@@ -214,8 +237,8 @@ export class NavSessionController {
       this.sessionSeq = serverSeq;
     }
 
-    // 重启采集：active 态（recovering 等服务端更新结果再恢复）
-    if (this.machine.state === 'active') {
+    // 重启采集：active/recovering 都继续扫（recovering 需新可信位置才能回 active）
+    if (this.machine.state === 'active' || this.machine.state === 'recovering') {
       await this.opts.pipeline.startNavigating();
     }
 
@@ -224,11 +247,14 @@ export class NavSessionController {
       this.opts.onEnded?.({ reason: query.endReason ?? null, byArrival: query.status === 'arrived' });
       return;
     }
-    if (this.machine.state === 'active' || this.machine.state === 'recovering') {
+    // 重播：active 重播当前转向指令；recovering 重播安全提示（不播旧方向）
+    if (this.machine.state === 'active') {
       const replay = this.tracker.replayText();
       if (replay !== null) {
         this.opts.speech.enqueue(replay, 'normal');
       }
+    } else if (this.machine.state === 'recovering' && this.lastRelocalizeText !== null) {
+      this.opts.speech.enqueue(this.lastRelocalizeText, 'safety');
     }
   }
 
@@ -344,6 +370,7 @@ export class NavSessionController {
       // 仅在刚进入 recovering 时播报一次，避免持续重播
       if (prevState !== 'recovering' && this.machine.state === 'recovering') {
         const text = data.instruction?.text ?? '正在重新定位，请原地稍候。';
+        this.lastRelocalizeText = text;
         this.opts.speech.enqueue(text, 'safety');
       }
       return;

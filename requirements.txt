@@ -7,3 +7,4 @@ networkx>=3.5              # 骨架图论（拓扑）
 scikit-image>=0.26         # 中轴提取（skeleton 模式）
 shapely>=2.1               # 几何运算 / STRtree
 matplotlib>=3.10           # 调试渲染
+segno>=1.6                 # 信标标签二维码（src/tools/gen_beacon_labels.py）

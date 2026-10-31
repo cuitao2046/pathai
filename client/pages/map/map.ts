@@ -178,6 +178,8 @@ Page({
   sessionEnded: false,
   parseInFlight: false,
   locationInFlight: false,
+  /** 定位不可用日志去噪：只在连续不可用的第一拍打日志（恢复后重置）。 */
+  locationWarned: false,
   ctx: null as Canvas2d | null,
   viewport: null as FloorMapViewport | null,
   wallSegs: {} as Record<string, Float32Array>,
@@ -947,8 +949,19 @@ Page({
       sequence: new SequenceCounter(),
       onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
       onUnusable: (err) => {
-        log.warn('定位不可用', err.code);
-        vibrateShort();
+        // 导航中信号丢失/信标不足：只报 quality 让服务端转 recovering，
+        // 不伪造坐标；进入 recovering 的状态迁移由 onStateChange 负责长震动。
+        if (
+          this.controller !== null &&
+          this.controller.sessionId !== null &&
+          !this.sessionEnded
+        ) {
+          this.controller.reportUnavailable();
+        }
+        if (!this.locationWarned) {
+          this.locationWarned = true;
+          log.warn('定位不可用，已进入恢复流程', err.code);
+        }
       },
     });
     this.pipeline = pipeline;
@@ -1030,7 +1043,10 @@ Page({
     }
   },
 
-  /** 定位 → 会话（首个可信估计作为起点）；可信位置驱动显示跟随。 */
+  /**
+   * 定位 → 会话（首个可信估计作为起点）；可信位置驱动显示跟随。
+   * 不可信估计（unreliable/lost）只上送服务端转 recovering，不推进显示与到达。
+   */
   handleEstimate(
     estimate: PositionEstimateResponse,
     meta?: { visibleBeaconCount: number },
@@ -1040,7 +1056,8 @@ Page({
     }
     const position = estimate.position;
     if (position !== undefined && position !== null) {
-      // pipeline 仅把 reliable/degraded 交给本回调 → 恢复态(unreliable)天然不推进显示
+      this.locationWarned = false; // 可信位置恢复：允许下一次不可用重新记日志
+      // 只有 reliable/degraded 才带坐标 → 恢复态(unreliable)天然不推进显示
       this.navPosition = {
         floorId: position.floorId ?? this.navPosition?.floorId ?? this.floorList[0]?.floorId ?? '1',
         x: position.x,

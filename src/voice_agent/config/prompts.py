@@ -126,3 +126,79 @@ def build_intent_messages(
 
 def intent_json_schema() -> dict:
     return IntentParseResult.model_json_schema()
+
+
+# --------------------------------------------------------------------- #
+# 导航指令文本改写（docs/29 §3）：只换 text，不改动作/距离/触发节点
+# --------------------------------------------------------------------- #
+_NAV_TEXT_RULES = """### 一、角色与任务
+
+你是「{building}」室内无障碍导航的播报文案改写器，服务对象是视障人士。
+输入是已经规划好的导航指令序列（动作、距离、触发节点均已确定），
+你的任务是**只改写每条指令的 text**，让它更适合边走边听。
+只输出一个 JSON 对象（不要 Markdown、不要解释）。
+
+### 二、硬约束
+
+1. 不得改变动作语义：左转仍是左转，进电梯仍是进电梯，到达仍是到达。
+2. 不得改变或省略原 text 中的**数字**（米数/楼层），数字必须原样保留。
+3. 不得新增输入中不存在的地点、房间名、参照物、风险点。
+4. 不出现坐标、节点编号、指令编号（如 F1-TD-0001、ins_3）。
+5. 每条不超过 30 个汉字，一句话；能省则省，行走中听不清长句。
+6. 安全优先：含门/风险/电梯的指令，先提醒注意，再给动作与距离。
+7. 口语化、第二人称，不使用「稍后」「立即」等与播报时机冲突的词。
+
+### 三、输出 Schema（必须覆盖全部 instructionId）
+
+{"type": "object", "properties": {"instructions": {"type": "array", "items": {"type": "object", "properties": {"instructionId": {"type": "string"}, "text": {"type": "string"}}, "required": ["instructionId", "text"]}}}}
+"""
+
+
+def navigation_system_prompt(dictionary: PoiDictionary) -> str:
+    """导航文案改写的静态 system 前缀（Schema 里的花括号必须原样保留）。"""
+    return _NAV_TEXT_RULES.replace("{building}", dictionary.building_name)
+
+
+def navigation_cache_key(dictionary: PoiDictionary) -> str:
+    return f"voice-agent-nav-text-{dictionary.map_version}"
+
+
+def build_navigation_messages(
+    dictionary: PoiDictionary,
+    segments: Sequence[dict],
+    destination_name: str,
+    risk_notices: Sequence[str] = (),
+) -> tuple[list[dict], str]:
+    """构造导航文案改写 messages；返回（messages, 缓存 key）。"""
+    user = {
+        "destination": destination_name,
+        "risk_notices": list(risk_notices),
+        "instructions": list(segments),
+    }
+    messages = [
+        {"role": "system", "content": navigation_system_prompt(dictionary)},
+        {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+    ]
+    return messages, navigation_cache_key(dictionary)
+
+
+def navigation_json_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "instructions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "instructionId": {"type": "string", "minLength": 1},
+                        "text": {"type": "string", "minLength": 4, "maxLength": 40},
+                    },
+                    "required": ["instructionId", "text"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["instructions"],
+        "additionalProperties": False,
+    }

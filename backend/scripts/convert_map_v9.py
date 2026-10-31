@@ -107,9 +107,52 @@ def build_places(floor_id: str, rooms: list[dict], nodes: list[dict]) -> list[di
     return places
 
 
+#: 全站统一的 iBeacon UUID（docs/27 §3）；windows 配置工具按此写入
+SYSTEM_BEACON_UUID = "B9407F30-F5F8-466E-AFF9-25556B57FE6D"
+#: 设备名短码长度上限（Minew E5 实机上限 7，docs/27 §5.3）
+MAX_DEVICE_NAME_LEN = 7
+
+
+def derive_device_name(floor_id: str, minor: int) -> str:
+    """短码设备名：`F{floor}-{minor 后三位}`（如 F1-101），与 beaconId 一对一。"""
+    return f"F{floor_id}-{minor % 1000:03d}"
+
+
+def validate_beacon_configs(beacons: list[dict]) -> None:
+    """发布前预检（docs/27 §5.1）：UUID 统一、`(major,minor)` 唯一、短码唯一且 ≤7。"""
+    ids: set[str] = set()
+    triplets: set[tuple[int, int]] = set()
+    names: set[str] = set()
+    for b in beacons:
+        beacon_id = b["beaconId"]
+        if beacon_id in ids:
+            raise ValueError(f"beaconId 重复：{beacon_id}")
+        ids.add(beacon_id)
+        if b["uuid"] != SYSTEM_BEACON_UUID:
+            raise ValueError(f"{beacon_id} UUID 与系统预定义值不一致：{b['uuid']}")
+        triplet = (b["major"], b["minor"])
+        if triplet in triplets:
+            raise ValueError(f"(major,minor) 重复：{triplet}（{beacon_id}）")
+        triplets.add(triplet)
+        name = b["deviceName"]
+        if len(name) > MAX_DEVICE_NAME_LEN:
+            raise ValueError(f"{beacon_id} 设备名超长（{len(name)}）：{name}")
+        if name in names:
+            raise ValueError(f"设备名重复：{name}（{beacon_id}）")
+        names.add(name)
+
+
 def convert_beacons(entries: list[dict]) -> list[dict]:
     beacons = []
     for b in entries:
+        if "broadcastInterval" not in b:
+            raise ValueError(f"{b['beaconId']} 缺少 broadcastInterval（台账必填，不猜默认值）")
+        major, minor = int(b["major"]), int(b["minor"])
+        if not (0 <= major <= 65535 and 0 <= minor <= 65535):
+            raise ValueError(f"{b['beaconId']} major/minor 超出 [0,65535]：{major}/{minor}")
+        interval = int(b["broadcastInterval"])
+        if not (100 <= interval <= 10000):
+            raise ValueError(f"{b['beaconId']} broadcastInterval 超出 [100,10000] ms：{interval}")
         beacons.append(
             {
                 "beaconId": b["beaconId"],
@@ -117,16 +160,19 @@ def convert_beacons(entries: list[dict]) -> list[dict]:
                 "x": float(b["coordinates"][0]),
                 "y": float(b["coordinates"][1]),
                 "txPower": float(b["txPower"]),
+                "broadcastInterval": interval,
+                "deviceName": derive_device_name(str(b["floor"]), minor),
                 "installHeightM": float(b["installHeight"]),
                 "uuid": b["uuid"],
-                "major": int(b["major"]),
-                "minor": int(b["minor"]),
+                "major": major,
+                "minor": minor,
                 # 部署元数据随包携带（schema 容忍 extra）
                 "locationDesc": b.get("locationDesc"),
                 "mountType": b.get("mountType"),
                 "semanticTag": b.get("semanticTag"),
             }
         )
+    validate_beacon_configs(beacons)
     return beacons
 
 

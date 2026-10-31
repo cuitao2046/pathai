@@ -122,9 +122,13 @@ def build_dictionary(pkg: dict, overrides: dict) -> dict:
                 "standard_name": place["name"],
                 "category": category,
                 "is_public_utility": is_public,
-                "aliases": sorted(set(aliases.get(place["name"], []))),
+                "aliases": [],
                 "instances": [],
             },
+        )
+        # 别名 = 人工标注 overrides ∪ 地图包 place.aliases（包内标注是唯一事实源）
+        entry["aliases"] = sorted(
+            set(entry["aliases"]) | set(aliases.get(place["name"], [])) | set(place.get("aliases") or [])
         )
         hint = zone_hints.get(place["placeId"]) or _zone_hint(
             place["floorId"], room["centroid"] if room else [0.0, 0.0], bounds[place["floorId"]]

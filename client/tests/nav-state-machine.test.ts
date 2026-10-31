@@ -19,12 +19,11 @@ describe('NavStateMachine 状态迁移表', () => {
     expect(m.state).toBe('idle');
   });
 
-  it('active + recovering → recovering：clearNormal + stopPipeline', () => {
+  it('active + recovering → recovering：clearNormal（保留采集以等待恢复）', () => {
     const m = new NavStateMachine();
     m.handle({ type: 'SESSION_CREATED', status: 'active' });
     expect(m.handle({ type: 'UPDATE_RESULT', status: 'recovering', event: 'relocalizing' })).toEqual({
       clearNormal: true,
-      stopPipeline: true,
     });
     expect(m.state).toBe('recovering');
   });

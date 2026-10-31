@@ -20,7 +20,7 @@ export interface NavEffects {
   announce?: NavAnnouncement;
   /** 清空待播 normal（进入 recovering / reroute 接管时）。 */
   clearNormal?: boolean;
-  /** 停止定位采集（recovering/arrived/ended/切后台）。 */
+  /** 停止定位采集（到达/结束/切后台）。 */
   stopPipeline?: boolean;
   /** 重启定位采集（恢复 active / 回前台校验通过）。 */
   startPipeline?: boolean;
@@ -85,7 +85,8 @@ export class NavStateMachine {
     }
     if (status === 'recovering') {
       this.stateValue = 'recovering';
-      return { clearNormal: true, stopPipeline: true };
+      // 不停止采集：必须继续扫描，服务端收到新的可信位置后才能回到 active
+      return { clearNormal: true };
     }
     if (status === 'active') {
       const resume = this.stateValue === 'recovering';

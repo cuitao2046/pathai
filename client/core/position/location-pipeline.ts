@@ -1,9 +1,11 @@
 /**
  * 定位管线：BeaconSource → ScanWindowAggregator → API-05 → 节流回调。
  * - 节流：待命 8s / 导航 2.5s（NAV_UPDATE_TIMEOUT_MS 快速失败）；
- * - 窗口内可解析信标不足 3 个 → 跳过本拍（不视为错误，等样本积累）；
- * - quality=reliable/degraded → onEstimate；
- *   unreliable/lost 或请求失败 → onUnusable（含 STALE_LOCATION_BATCH 等
+ * - 窗口内可解析信标不足 3 个：待命静默跳过（等样本积累）；导航档
+ *   视为信号丢失，走 onUnusable（上层据此上报服务端进入 recovering）；
+ * - 任一 quality（含 unreliable/lost，position 可能为空）→ onEstimate，
+ *   由上层决定能否驱动导航（导航中不可信位置只报 quality，不报坐标）；
+ * - 请求失败/响应异常 → onUnusable（含 STALE_LOCATION_BATCH 等
  *   ApiClientError，交由上层导航状态机处置）。
  */
 import { NAV_UPDATE_TIMEOUT_MS } from '../../config/env';
@@ -38,8 +40,9 @@ export interface LocationPipelineOptions {
   map: LocationMapProvider;
   source: BeaconSourceLike;
   sequence: { next(): number };
-  /** 可信估计回调；meta 供标定模式记录可见信标数（不影响生产逻辑）。 */
+  /** 已完成的一拍估计（任意 quality；unreliable/lost 时 position 可能为空）。 */
   onEstimate: (estimate: PositionEstimateResponse, meta: { visibleBeaconCount: number }) => void;
+  /** 本拍没有可用估计（请求失败/响应异常；导航档信标不足也走这里）。 */
   onUnusable: (err: ApiClientError) => void;
   /** 窗口时长（毫秒），默认 2000；测试可缩短。 */
   windowMs?: number;
@@ -121,7 +124,17 @@ export class LocationPipeline {
       nowMs(),
     );
     if (snapshot === null) {
-      return; // 信标不足：等下一拍
+      // 待命：等样本积累，不视为错误；导航中：持续无解即信号丢失，交给上层上报
+      if (this.mode === 'navigating') {
+        this.opts.onUnusable(
+          new ApiClientError({
+            code: 'LOCATION_UNRELIABLE',
+            message: '窗口内可解析信标不足',
+            retryable: true,
+          }),
+        );
+      }
+      return;
     }
     const body: LocationEstimateRequest = {
       siteId: this.opts.map.siteId,
@@ -158,17 +171,8 @@ export class LocationPipeline {
       return;
     }
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;
-    if (estimate.quality === 'reliable' || estimate.quality === 'degraded') {
-      this.opts.onEstimate(estimate, { visibleBeaconCount: body.beacons.length });
-    } else {
-      this.opts.onUnusable(
-        new ApiClientError({
-          code: 'LOCATION_UNRELIABLE',
-          message: `定位质量不可用：${estimate.quality}`,
-          retryable: true,
-        }),
-      );
-    }
+    // 质量交给上层：导航只用 trusted 坐标推进，unreliable/lost 仅上报 quality
+    this.opts.onEstimate(estimate, { visibleBeaconCount: body.beacons.length });
   }
 }
 
