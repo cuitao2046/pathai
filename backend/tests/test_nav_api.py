@@ -240,6 +240,9 @@ class TestNavUpdate:
         assert body["event"] == "relocalizing"
         assert body["instruction"]["action"] == "relocalize"
         assert body["instruction"]["priority"] == "safety"
+        # spec 0.3.1：恢复提示必须说明原因与用户可采取的措施
+        assert "导航已暂停" in body["instruction"]["text"]
+        assert "原地稍候" in body["instruction"]["text"]
 
     def test_recovering_then_trusted_returns_active(self, client, session, auth_headers):
         _update(client, auth_headers, session["sessionId"], 1, None, None, quality="lost")

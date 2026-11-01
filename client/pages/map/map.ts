@@ -59,7 +59,7 @@ const PTT_TEXT: Record<PttState, string> = {
 const NAV_TEXT: Record<NavState, string> = {
   idle: '正在定位…',
   active: '导航中',
-  recovering: '信号弱，正在重新定位，请原地稍候',
+  recovering: '附近定位信标不足或信号不稳定，导航已暂停；请原地稍候或移至信号覆盖较好处',
   arrived: '已到达目的地',
   ended: '导航结束',
 };

@@ -1,6 +1,10 @@
 /**
  * Mock 信标源：沿给定点列轨迹匀速行走，按对数路径损耗模型
  * rssi = RSSI@1m − 10·n·log10(d)（n=2，与后端解算互逆）合成观测。
+ * 距离 d 为信标与手机的空间斜距（spec 0.3.1 高度补偿模型）：
+ * 平面距离与垂直差（信标 installHeightM − PHONE_HEIGHT_M）合成；
+ * 信标缺 installHeightM 时按同层（dz=0）处理——真实地图包统一携带安装高度，
+ * 缺高度信标后端解算本就会忽略，此处仅影响无高度的非真实数据。
  * 参考值是 1m 处 RSSI（measured power），**不是**信标发射功率 txPower：
  * txPower 只描述广播档位，与距离不同量纲（docs/28 §1）。
  * 只注入地图包已登记三元组；走与 live 完全相同的聚合/节流路径。
@@ -11,7 +15,7 @@
  * 走完末点驻留（持续观测直到服务端判定到达）。
  */
 import { nowMs } from '../../utils/clock';
-import { BEACON_RSSI_AT_1M_DBM } from '../../config/env';
+import { BEACON_RSSI_AT_1M_DBM, PHONE_HEIGHT_M } from '../../config/env';
 import type { MapBeaconEntry } from '../../typings/api';
 import type { BeaconSourceLike } from './beacon-source';
 import type { BeaconSample } from './scan-window';
@@ -134,8 +138,10 @@ export class MockBeaconSource implements BeaconSourceLike {
     const at = nowMs();
     // 按当前所在楼层发射（跨层后自动切换信标组）
     for (const beacon of this.beaconsByFloor.get(pos.floorId) ?? []) {
+      // 高度补偿斜距（spec 0.3.1）：planar 与垂直差 dz 合成空间距离
+      const dz = (beacon.installHeightM ?? PHONE_HEIGHT_M) - PHONE_HEIGHT_M;
       const distance = Math.max(
-        Math.hypot(beacon.x - pos.x, beacon.y - pos.y),
+        Math.hypot(beacon.x - pos.x, beacon.y - pos.y, dz),
         MIN_DISTANCE_M,
       );
       const rssi = Math.round(

@@ -176,11 +176,17 @@ def create_session(
 
 
 def _relocalize_instruction(sequence: int) -> NavigationInstruction:
+    # spec 0.3.1 REQ-NAV：恢复提示必须说明原因与用户可采取的措施，
+    # 不得只播报笼统的"正在重新定位"。
     return NavigationInstruction(
         instructionId=f"ins_re_{uuid.uuid4().hex[:8]}",
         instructionSequence=sequence,
         action=InstructionAction.RELOCALIZE,
-        text="正在重新确定位置，请暂缓前行。",
+        text=(
+            "附近定位信标不足或信号不稳定，导航已暂停。"
+            "请原地稍候或缓步移至信号覆盖较好处；"
+            "持续未恢复时请寻求周围人员协助或结束导航。"
+        ),
         distanceM=None,
         landmark=None,
         priority=InstructionPriority.SAFETY,

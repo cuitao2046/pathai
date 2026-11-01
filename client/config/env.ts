@@ -33,6 +33,12 @@ export const NAV_UPDATE_TIMEOUT_MS = 5000;
 export const BEACON_RSSI_AT_1M_DBM = -71;
 
 /**
+ * 手机参考高度（米，所在楼层地面以上）：成人手持手机的工程参考（spec 0.3.1 决策 13）。
+ * mock 信标源按「信标安装高度 − 该值」的垂直差合成斜距 RSSI，与后端高度补偿解算互逆。
+ */
+export const PHONE_HEIGHT_M = 1.2;
+
+/**
  * 地图过旧阈值（天）：服务端最新版本日期 − 本地缓存版本日期 > 该值 → 判为过旧，
  * 启动时播「地图过旧」（旧版仍可用，新版后台静默下载）。按 mapVersion 日期部分比较。
  */
