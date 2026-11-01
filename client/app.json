@@ -1,7 +1,6 @@
 {
   "pages": [
-    "pages/map/map",
-    "pages/settings/settings"
+    "pages/p0-probe/p0-probe"
   ],
   "window": {
     "navigationBarTitleText": "PathAI 室内导航",
