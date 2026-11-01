@@ -18,19 +18,30 @@ from pathai_backend.map_repository import MapRepository
 
 URL = "/api/v1/locations/estimate"
 SAMPLE = "2026-10-25.1"
-#: 1 层三点定位用真实信标（坐标取自地图包，局部米制）。
+#: 1 层三点定位用真实信标（坐标/安装高度取自地图包，局部米制；统一 2.2 m）。
 BK_A = ("BK-01-001", -30.25, -75.08)
 BK_B = ("BK-01-004", -18.777, -83.987)
 BK_C = ("BK-01-005", -36.91, -59.51)
 #: 部署档位（E5 3 档 -12 dBm）推算的 1m 参考 RSSI（measured power）。
 RSSI_AT_1M = -71.0
-#: 可解算的公共期望点：距三信标 8.8/17.2/14.6m，均 ≥4m（RSSI 上限内）。
+#: 真实地图包统一安装高度（m）；spec 0.3.1 高度补偿模型的信标 z。
+INSTALL_HEIGHT_M = 2.2
+#: 手机参考高度（m）：spec 0.3.1 决策 13（成人手持工程参考）。
+PHONE_HEIGHT_M = 1.2
+#: 可解算的公共期望点：平面距三信标 8.8/17.2/14.6m（斜距另加 1m 垂直差），
+#: 平面距离均 ≥4m（RSSI 上限内）。
 EXPECT_P = (-25.0, -68.0)
 
 
+def _slant_m(p: tuple[float, float], beacon: tuple[str, float, float]) -> float:
+    """期望点与信标的空间斜距：平面距离与垂直差（安装高度−手机高度）合成。"""
+    dz = INSTALL_HEIGHT_M - PHONE_HEIGHT_M
+    return math.hypot(math.dist(p, beacon[1:]), dz)
+
+
 def _rssi_for(p: tuple[float, float], beacon: tuple[str, float, float]) -> int:
-    """按期望点与真实信标坐标反推整数 RSSI（对数路径损耗模型，n=2）。"""
-    return round(RSSI_AT_1M - 20 * math.log10(math.dist(p, beacon[1:])))
+    """按期望点与真实信标坐标反推整数 RSSI（对数路径损耗 n=2，斜距模型）。"""
+    return round(RSSI_AT_1M - 20 * math.log10(_slant_m(p, beacon)))
 
 
 def _obs_at_expect_p() -> list[tuple[str, int]]:
@@ -135,10 +146,10 @@ class TestAuthAndVersioning:
 
 class TestTrilateration:
     def test_reliable_estimate_near_true_position(self, client, auth_headers, rich_maps):
-        # 期望点 (-25,-68)：距三真实信标 8.8/17.2/14.6m，
-        # 按 RSSI@1m=-71 反推整数 RSSI 后解算偏差经真实 solver 验证 <1m
+        # 期望点 (-25,-68)：平面距三真实信标 8.8/17.2/14.6m，
+        # 按 RSSI@1m=-71 斜距反推整数 RSSI 后解算偏差经真实 solver 验证 <1.5m
         obs = _obs_at_expect_p()
-        # 几何前提：三观测点距期望点均 ≥4m（对应 RSSI 约 -83 dBm，仍高于噪声底）
+        # 几何前提：三观测点平面距期望点均 ≥4m（对应 RSSI 约 -83 dBm，仍高于噪声底）
         assert min(math.dist(EXPECT_P, b[1:]) for b in (BK_A, BK_B, BK_C)) >= 4.0
         body = _estimate(client, auth_headers, obs)
         assert body["quality"] == "reliable"
@@ -148,7 +159,7 @@ class TestTrilateration:
         assert abs(body["position"]["y"] - EXPECT_P[1]) < 1.5
         assert body["confidence"] >= 0.8
         assert body["ignoredBeaconIds"] == []
-        assert body["algorithmVersion"] == "location-0.1"
+        assert body["algorithmVersion"] == "location-0.2"
         assert body["paramsVersion"] == "unset"
         assert body["estimateId"].startswith("loc_")
         assert body["sequence"] == 1
@@ -190,6 +201,25 @@ class TestTrilateration:
         assert body["position"] is None
         assert body["confidence"] == 0.0
 
+    def test_missing_install_height_beacons_ignored_lost(
+        self, client, auth_headers, rich_maps, maps_dir
+    ):
+        # spec 0.3.1：缺 installHeightM 属部署数据错误——信标不参与解算、
+        # 不按无高度模型静默替代；有效信标不足 3 个时 lost 且不回退 2D。
+        path = maps_dir / "school-building-01" / f"{SAMPLE}.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        stripped = {BK_A[0], BK_B[0], BK_C[0]}
+        for beacon in data["beacons"]:
+            if beacon["beaconId"] in stripped:
+                del beacon["installHeightM"]
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        _reload(rich_maps, maps_dir)
+
+        body = _estimate(client, auth_headers, _obs_at_expect_p())
+        assert body["quality"] == "lost"
+        assert body["position"] is None
+        assert body["ignoredBeaconIds"] == sorted(stripped)
+
     def test_unknown_floor_hint_lost(self, client, auth_headers, rich_maps):
         body = _estimate(client, auth_headers, [(BK_A[0], -60)], floor_hint="9")
         assert body["quality"] == "lost"
@@ -214,13 +244,13 @@ class TestLocationParamsConfig:
     def test_configured_baseline_injected_and_versioned(
         self, client, auth_headers, rich_maps, settings
     ):
-        # 以 -60 dBm 为 1m 基准反推同一期望点的观测；若服务端仍用默认 -71，
+        # 以 -60 dBm 为 1m 基准反推同一期望点的观测（斜距模型）；若服务端仍用默认 -71，
         # 距离会整体放大约 3.5 倍、几何不一致而降级，故 reliable 即证明配置已生效。
         rich_maps.state.settings = replace(
             settings, location_rssi_at_1m=-60.0, location_params_version="loc-test.1"
         )
         obs = [
-            (b[0], round(-60.0 - 20 * math.log10(math.dist(EXPECT_P, b[1:]))))
+            (b[0], round(-60.0 - 20 * math.log10(_slant_m(EXPECT_P, b))))
             for b in (BK_A, BK_B, BK_C)
         ]
         body = _estimate(client, auth_headers, obs)

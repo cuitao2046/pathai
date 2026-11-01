@@ -91,6 +91,15 @@ BEACON_COLORS = {
     "placement_quality_fill": "#EF6C00",    # 放置质量后处理补点（深橙）
 }
 
+# 路线三点定位方案的冗余信标清理候选（F1 12 枚 + F2 1 枚），依据路线掩码贪心剔除 +
+# 抗单点故障校验（docs/13、docs/17）。交互图「隐藏13枚冗余信标」开关据此隐藏显示，
+# 不改 data-info、坐标与导出数据。
+REDUNDANT_BEACON_IDS = frozenset({
+    "BK-01-006", "BK-01-009", "BK-01-018", "BK-01-019", "BK-01-031",
+    "BK-01-033", "BK-01-040", "BK-01-043", "BK-TR-F1-005", "BK-TR-F1-007",
+    "BK-TR-F1-008", "BK-M-1-002", "BK-02-003",
+})
+
 # 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
 OUTLINE_MIN_AREA = 100.0
 
@@ -2130,7 +2139,7 @@ def main():
             )
 
         # 11-12. 方案相关图层（指纹采集点 + 三点覆盖 + 信标部署点），按模式分组
-        # 全局模式（默认显示）与测试路线模式（隐藏，顶部开关切换），两套数据并存
+        # 测试路线模式（默认显示）与全局模式（隐藏，顶部开关切换），两套数据并存
         cov_fk = cov_index.get(str(fk))
 
         def render_scheme_group(fp_fd, bc_fk, mode):
@@ -2143,7 +2152,7 @@ def main():
                 for _r in geo["floors"][_fk]["geometry"].get("rooms", []):
                     _p = _r["properties"]
                     room_labels[_p.get("roomId") or _r["id"]] = _p.get("label", "")
-            hide = ' style="display:none"' if mode == "route" else ""
+            hide = ' style="display:none"' if mode == "global" else ""
             parts.append(f'<g class="mode-{mode}" data-floor="{fk}"{hide}>\n')
             # 指纹采集点
             if fp_fd:
@@ -2246,8 +2255,9 @@ def main():
                     det["rows"].insert(-1, ("原始坐标",
                         f"({float(_op[0]):.2f}, {float(_op[1]):.2f})"))
                 attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid, "b": b})
+                extra_cls = " beacon-redundant" if bid in REDUNDANT_BEACON_IDS else ""
                 parts.append(
-                    f'<g class="layer_beacon" data-floor="{fk}" data-mode="{mode}" {attr}>'
+                    f'<g class="layer_beacon{extra_cls}" data-floor="{fk}" data-mode="{mode}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
                     f'fill-opacity="0.9" stroke="#ffffff" stroke-width="0.5"/>'
                     f'<text x="{fmt(float(sx) + 4)}" y="{fmt(float(sy) + 1.5)}" '

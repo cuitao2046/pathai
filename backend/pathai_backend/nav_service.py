@@ -27,7 +27,7 @@ from pathai_backend.schemas.common import (
 from pathai_backend.schemas.nav import RouteInfo
 
 ROUTE_RULES_VERSION = "1.0.0"
-LOCATION_ALGORITHM_VERSION = "location-0.1"
+LOCATION_ALGORITHM_VERSION = "location-0.2"  # 0.3.1：高度补偿斜距模型
 #: 工程初始阈值。
 ORIGIN_MIN_CONFIDENCE = 0.5
 ARRIVAL_RADIUS_M = 5.0

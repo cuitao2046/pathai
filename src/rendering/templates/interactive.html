@@ -103,6 +103,8 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 .layer_beacon:hover circle { stroke: #FFC107; stroke-width: 1.4; }
 .layer_beacon.beacon-hit circle { stroke: #FFC107; stroke-width: 3; }
 .layer_beacon.beacon-hit text { fill: #E65100 !important; }
+/* 隐藏冗余信标（清理调研候选）：仅影响显示，不改 data-info / 坐标 / 导出数据 */
+body.hide-redundant .layer_beacon.beacon-redundant { display: none !important; }
 .zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
 .zoom-btn { width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 #mode-switch { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.95); border: 1px solid #d0d0d0; border-radius: 6px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); z-index: 25; }
@@ -281,6 +283,7 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
   <button type="button" id="btn-deploy-toggle" onclick="deployToggleMode()">进入部署模式</button>
   <button type="button" id="btn-deploy-delete" onclick="deployDeleteSelected()" title="删除当前选中的测试路线信标（也可按 Delete 键）" disabled>删除选中信标</button>
   <button type="button" onclick="deployExport()" title="导出当前测试路线信标状态（含新增/删除/移动后坐标）为 ble_deployment.json">导出部署方案(JSON)</button>
+  <label title="仅隐藏显示：清理调研判定可删的 13 枚冗余信标，数据与导出不受影响"><input type="checkbox" id="chk-hide-redundant" onchange="toggleRedundantBeacons(this.checked)"> 隐藏13枚冗余信标</label>
   <span class="hint" id="deploy-hint">进入部署模式后自动切到「测试路线」方案，点击地图空白处新增测试路线信标；点击信标选中（橙色高亮），再点「删除选中信标」或按 Delete 键删除；任意模式下可直接拖拽信标移动位置；导出后请保存到 result/ 目录。</span>
   <span class="result" id="deploy-list"></span>
 </div>
@@ -291,8 +294,8 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 </div>
 <div id="mode-switch" title="切换信标部署/指纹采集/三点覆盖所对应方案">
   <span class="mode-label">方案：</span>
-  <button id="mode-btn-global" class="mode-btn active" onclick="setMode('global')">全局</button>
-  <button id="mode-btn-route" class="mode-btn" onclick="setMode('route')">测试路线</button>
+  <button id="mode-btn-global" class="mode-btn" onclick="setMode('global')">全局</button>
+  <button id="mode-btn-route" class="mode-btn active" onclick="setMode('route')">测试路线</button>
 </div>
 <div id="floor-jump"></div>
 <div class="zoom-controls">

@@ -413,7 +413,7 @@ var allLayers = ['room','infrastructure','corridor','lobby','activity','atrium',
   'door_swing','door_opening','door_fire',
   'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon','coverage'];
 // ---- 方案模式开关（全局 / 测试路线）：切换信标部署/指纹采集/三点覆盖三套数据 ----
-var CUR_MODE = 'global';
+var CUR_MODE = 'route';
 function setMode(m) {
   CUR_MODE = m;
   document.querySelectorAll('.mode-global').forEach(function(el){ el.style.display = (m === 'global') ? '' : 'none'; });
@@ -432,6 +432,10 @@ function setAll(v) {
     document.querySelectorAll('.layer_' + n).forEach(function(el){ el.style.display = v ? '' : 'none'; });
   });
   document.querySelectorAll('#layerControls input[type=checkbox]').forEach(function(cb){ cb.checked = v; });
+}
+// ---- 隐藏冗余信标（清理调研判定可删的 13 枚）：仅切换显示，不改数据 ----
+function toggleRedundantBeacons(on) {
+  document.body.classList.toggle('hide-redundant', !!on);
 }
 
 // ---- 导出所选图层为独立 SVG 图片 ----
