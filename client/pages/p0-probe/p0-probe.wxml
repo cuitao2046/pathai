@@ -1,9 +1,9 @@
 <view class="page">
   <view class="card">
     <view class="title">局域网连接能力探测</view>
-    <view class="hint">本次构建只检测手机与 Windows 电脑之间的 UDP 广播和 HTTP 连通性，不会登录、加载地图或启动导航。</view>
-    <button class="probe-button" bindtap="onProbe" disabled="{{busy}}" aria-label="开始局域网连通性探测">{{busy ? '探测中…' : '开始探测'}}</button>
+    <view class="hint">启动后同时检查缓存地址与局域网发现；仅进行无凭据网络检查，不会登录、加载地图或启动导航。</view>
+    <button class="probe-button" bindtap="onProbe" disabled="{{busy}}" aria-label="重新检查局域网连通性">{{busy ? '检查中…' : '重新检查'}}</button>
     <view class="result" aria-live="polite">{{result}}</view>
-    <view class="hint">探测响应未经身份认证，不会用于设置业务地址。请让手机和电脑接入同一可互访网络，并在电脑启动独立探测服务。</view>
+    <view class="hint">网络可达不代表服务身份已验证。发现结果不会用于更改业务地址；两路失败时可检查网络并重试。</view>
   </view>
 </view>
