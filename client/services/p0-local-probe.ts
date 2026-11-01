@@ -4,12 +4,14 @@ const RANDOM_TIMEOUT_MS = 1500;
 const OFFER_TIMEOUT_MS = 3000;
 const HTTP_TIMEOUT_MS = 1500;
 
-function requestIdForProbe(): Promise<string | null> {
-  if (typeof wx.getUserCryptoManager !== 'function') return Promise.resolve(null);
+type P0RandomResult = { requestId: string } | { error: 'random-unavailable' | 'random-failed' | 'random-timeout' };
+
+function requestIdForProbe(): Promise<P0RandomResult> {
+  if (typeof wx.getUserCryptoManager !== 'function') return Promise.resolve({ error: 'random-unavailable' });
   return new Promise((resolve) => {
     let completed = false;
-    const timer = setTimeout(() => finish(null), RANDOM_TIMEOUT_MS);
-    function finish(result: string | null) {
+    const timer = setTimeout(() => finish({ error: 'random-timeout' }), RANDOM_TIMEOUT_MS);
+    function finish(result: P0RandomResult) {
       if (completed) return;
       completed = true;
       clearTimeout(timer);
@@ -20,38 +22,53 @@ function requestIdForProbe(): Promise<string | null> {
         length: 16,
         success: ({ randomValues }) => {
           if (randomValues.byteLength !== 16) {
-            finish(null);
+            finish({ error: 'random-failed' });
             return;
           }
-          finish(Array.from(new Uint8Array(randomValues), (value) => value.toString(16).padStart(2, '0')).join(''));
+          finish({ requestId: Array.from(new Uint8Array(randomValues), (value) => value.toString(16).padStart(2, '0')).join('') });
         },
-        fail: () => finish(null),
+        fail: () => finish({ error: 'random-failed' }),
       });
     } catch {
-      finish(null);
+      finish({ error: 'random-failed' });
     }
   });
 }
 
-export type P0ProbeResult = 'udp-and-http' | 'udp-only' | 'timeout' | 'unsupported';
+export type P0ProbeResult = 'udp-and-http' | 'udp-only' | 'timeout' |
+  'random-unavailable' | 'random-failed' | 'random-timeout' |
+  'udp-unavailable' | 'udp-create-failed' | 'udp-send-failed' | 'udp-error';
 
-export async function runP0LocalProbe(): Promise<P0ProbeResult> {
-  if (typeof wx.createUDPSocket !== 'function') return Promise.resolve('unsupported');
-  const requestId = await requestIdForProbe();
-  if (requestId === null) return Promise.resolve('unsupported');
+export interface P0ProbeDiagnostic {
+  result: P0ProbeResult;
+  phase: 'binding' | 'listening' | 'requesting' | null;
+  errorCode: string | null;
+}
+
+function errorCodeFromMessage(message: string): string | null {
+  return /(?:errCode|errorCode|code)\s*[:=]\s*(-?\d{1,6})\b/i.exec(message)?.[1] ?? null;
+}
+
+export async function runP0LocalProbe(): Promise<P0ProbeDiagnostic> {
+  if (typeof wx.createUDPSocket !== 'function') return { result: 'udp-unavailable', phase: null, errorCode: null };
+  const random = await requestIdForProbe();
+  if ('error' in random) return { result: random.error, phase: null, errorCode: null };
+  const requestId = random.requestId;
   return new Promise((resolve) => {
     let socket: WechatMiniprogram.UDPSocket;
     try {
       socket = wx.createUDPSocket();
     } catch {
-      resolve('unsupported');
+      resolve({ result: 'udp-create-failed', phase: null, errorCode: null });
       return;
     }
     let finished = false;
     let checking = false;
+    let sent = false;
+    let phase: P0ProbeDiagnostic['phase'] = 'binding';
     let timer: ReturnType<typeof setTimeout> | null = null;
     let request: WechatMiniprogram.RequestTask | null = null;
-    const complete = (result: P0ProbeResult) => {
+    const complete = (result: P0ProbeResult, errorCode: string | null = null) => {
       if (finished) return;
       finished = true;
       if (timer) clearTimeout(timer);
@@ -65,10 +82,10 @@ export async function runP0LocalProbe(): Promise<P0ProbeResult> {
       try {
         socket.close();
       } catch {
-        resolve(result);
+        resolve({ result, phase, errorCode });
         return;
       }
-      resolve(result);
+      resolve({ result, phase, errorCode });
     };
     socket.onMessage(({ message, remoteInfo }) => {
       if (finished || checking || message.byteLength > 1200) return;
@@ -77,6 +94,7 @@ export async function runP0LocalProbe(): Promise<P0ProbeResult> {
         const offer = parseP0Offer(JSON.parse(text) as unknown, remoteInfo.address, requestId);
         if (!offer) return;
         checking = true;
+        phase = 'requesting';
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => complete('udp-only'), HTTP_TIMEOUT_MS + 100);
         request = wx.request({
@@ -95,24 +113,33 @@ export async function runP0LocalProbe(): Promise<P0ProbeResult> {
         return;
       }
     });
-    socket.onError(() => complete(checking ? 'udp-only' : 'unsupported'));
+    socket.onError(({ errMsg }) => complete(checking ? 'udp-only' : 'udp-error', errorCodeFromMessage(errMsg)));
+    socket.onListening(() => {
+      if (finished || sent) return;
+      phase = 'listening';
+      sent = true;
+      try {
+        socket.send({
+          address: '255.255.255.255',
+          port: 39001,
+          setBroadcast: true,
+          message: JSON.stringify({
+            protocol: P0_DISCOVERY_PROTOCOL,
+            version: 1,
+            type: 'DISCOVER',
+            serviceName: P0_DISCOVERY_SERVICE,
+            requestId,
+          }),
+        });
+      } catch {
+        complete('udp-send-failed');
+      }
+    });
+    timer = setTimeout(() => complete('timeout'), OFFER_TIMEOUT_MS);
     try {
       socket.bind();
-      timer = setTimeout(() => complete('timeout'), OFFER_TIMEOUT_MS);
-      socket.send({
-        address: '255.255.255.255',
-        port: 39001,
-        setBroadcast: true,
-        message: JSON.stringify({
-          protocol: P0_DISCOVERY_PROTOCOL,
-          version: 1,
-          type: 'DISCOVER',
-          serviceName: P0_DISCOVERY_SERVICE,
-          requestId,
-        }),
-      });
     } catch {
-      complete('unsupported');
+      complete('udp-send-failed');
     }
   });
 }

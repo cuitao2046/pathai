@@ -10,6 +10,7 @@ import { describeError } from '../../core/http/error-messages';
 import { ApiClientError } from '../../core/http/errors';
 import { appContext } from '../../services/app-context';
 import { runP0LocalProbe } from '../../services/p0-local-probe';
+import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
 import { remove } from '../../utils/kv';
 import type { DataSource } from '../../config/env';
@@ -72,14 +73,8 @@ Page({
 
   async onProbeLocalNetwork() {
     this.setData({ localProbeResult: '正在探测局域网 UDP 与 HTTP…' });
-    const result = await runP0LocalProbe();
-    const labels = {
-      'udp-and-http': '已收到 UDP 响应并连通 HTTP 探测端口；仅验证网络能力，未建立可信业务连接。',
-      'udp-only': '收到 UDP 响应，但 HTTP 探测失败；请检查同网、端口与防火墙。',
-      timeout: '未收到 UDP 响应；请检查同网、探测服务、权限和广播限制。',
-      unsupported: 'UDP 或安全随机数能力不可用；请检查微信版本与系统权限。',
-    };
-    this.setData({ localProbeResult: labels[result] });
+    const diagnostic = await runP0LocalProbe();
+    this.setData({ localProbeResult: P0_PROBE_RESULT_LABELS[diagnostic.result] });
   },
 
   onShow() {
