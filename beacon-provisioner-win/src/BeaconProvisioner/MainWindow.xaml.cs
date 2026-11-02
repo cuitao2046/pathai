@@ -12,6 +12,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _viewModel;
+        Loaded += async (_, _) => await _viewModel.InitializeAsync();
     }
 
     private void PasswordBox_OnPasswordChanged(object sender, RoutedEventArgs e) =>

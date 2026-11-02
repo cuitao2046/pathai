@@ -100,6 +100,8 @@ public sealed class MockBleEnvironment : IBleEnvironment
             _state = state;
         }
 
+        public bool IsAlive => true;
+
         public BleDeviceInfo Device => new()
         {
             Mac = _state.Mac,

@@ -96,12 +96,14 @@
                                            VerticalAlignment="Center" />
                                 <CheckBox Content="只显示未写入" IsChecked="{Binding OnlyUnwrittenDevices}"
                                           Margin="12,0,0,0" VerticalAlignment="Center" />
+                                <CheckBox Content="只显示本项目信标" IsChecked="{Binding OnlyProjectDevices}"
+                                          Margin="12,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
                             <ListView ItemsSource="{Binding VisibleDevices}"
                                       SelectedItem="{Binding SelectedDevice}">
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="设备名" Width="110" DisplayMemberBinding="{Binding Name}" />
+                                        <GridViewColumn Header="设备名" Width="110" DisplayMemberBinding="{Binding DisplayName}" />
                                         <GridViewColumn Header="MAC" Width="130" DisplayMemberBinding="{Binding Mac}" />
                                         <GridViewColumn Header="UUID" Width="110" DisplayMemberBinding="{Binding UuidShort}" />
                                         <GridViewColumn Header="RSSI" Width="55" DisplayMemberBinding="{Binding Rssi}" />
@@ -123,8 +125,6 @@
                                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                                     <Button Content="连接设备" Command="{Binding ConnectCommand}" Padding="12,4" />
                                     <Button Content="断开" Command="{Binding DisconnectCommand}" Margin="8,0" Padding="12,4" />
-                                    <TextBlock Text="{Binding CurrentSettingsText}" Foreground="#555"
-                                               VerticalAlignment="Center" Margin="12,0,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Margin="0,0,0,8">
@@ -137,13 +137,18 @@
                                         <Button Content="1 写入（含保存）" Command="{Binding WriteCommand}" Padding="12,4" />
                                         <Button Content="2 校验" Command="{Binding VerifyCommand}" Margin="8,0" Padding="12,4" />
                                         <Button Content="3 上传" Command="{Binding UploadCommand}" Padding="12,4" />
-                                        <TextBlock Text="保存后断连；人工重启 → OK → 重新连接 → 校验" Foreground="#888"
+                                        <TextBlock Text="保存即生效，无需重启；连接已写入的信标后可校验" Foreground="#888"
                                                    VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
                                 </StackPanel>
 
                                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                                    <TextBlock Text="{Binding SelectedDetails}" TextWrapping="Wrap" LineHeight="22" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding CurrentSettingsText}" Foreground="#333"
+                                                   TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,10" />
+                                        <TextBlock Text="— 选中 beaconId 台账详情 —" Foreground="#888" Margin="0,0,0,4" />
+                                        <TextBlock Text="{Binding SelectedDetails}" TextWrapping="Wrap" LineHeight="22" />
+                                    </StackPanel>
                                 </ScrollViewer>
 
                                 <TextBlock Grid.Row="3" Text="设备当前参数见上方；写入值只来自左侧台账（只读）。"
@@ -213,7 +218,7 @@
                                 <Button Content="1 写入编辑（含保存）" Command="{Binding WriteEditCommand}" Padding="12,4" />
                                 <Button Content="2 校验" Command="{Binding VerifyCommand}" Margin="8,0" Padding="12,4" />
                                 <Button Content="3 上传" Command="{Binding UploadCommand}" Padding="12,4" />
-                                <TextBlock Text="仅功率/间隔可改；写入后人工重启再校验" Foreground="#888"
+                                <TextBlock Text="仅功率/间隔可改；保存即生效，无需重启" Foreground="#888"
                                            VerticalAlignment="Center" Margin="12,0,0,0" />
                             </StackPanel>
 
@@ -292,7 +297,7 @@
                     <TextBlock Margin="0,8,0,0" Foreground="#666" TextWrapping="Wrap"
                                Text="取消勾选 = 实物 BLE（WinRT，需蓝牙适配器与信标）。切换立即生效、无需重启程序；切换前请先断开连接。" />
                     <TextBlock Margin="0,8,0,0" Foreground="#666" TextWrapping="Wrap"
-                               Text="实物模式下：FFF5 档位码表与部分读回格式需按 docs/30 用真机确认；写入后仍需人工断电重启。" />
+                               Text="实物模式下：FFF5 档位码表与部分读回格式需按 docs/30 用真机确认；写入后保存即生效，无需断电重启。" />
                 </StackPanel>
             </TabItem>
         </TabControl>
