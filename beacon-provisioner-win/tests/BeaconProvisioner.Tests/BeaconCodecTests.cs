@@ -45,6 +45,37 @@ public class BeaconCodecTests
         Assert.Equal(valid, BeaconCodec.IsValidInterval(ms));
     }
 
+    [Theory]
+    [InlineData(300, new byte[] { 0x03 })]
+    [InlineData(500, new byte[] { 0x05 })]
+    [InlineData(100, new byte[] { 0x01 })]
+    [InlineData(10_000, new byte[] { 0x64 })]
+    public void Interval_encodes_one_byte_in_100ms_units(int ms, byte[] expected)
+    {
+        Assert.Equal(expected, BeaconCodec.IntervalToBytes(ms, 1));
+    }
+
+    [Fact]
+    public void Interval_one_byte_rejects_non_multiple_of_100()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => BeaconCodec.IntervalToBytes(150, 1));
+    }
+
+    [Fact]
+    public void Interval_two_byte_keeps_big_endian_milliseconds()
+    {
+        Assert.Equal(new byte[] { 0x01, 0x2C }, BeaconCodec.IntervalToBytes(300, 2));
+    }
+
+    [Fact]
+    public void Interval_decodes_by_payload_length()
+    {
+        Assert.Equal(500, BeaconCodec.IntervalFromBytes(new byte[] { 0x05 }));
+        Assert.Equal(300, BeaconCodec.IntervalFromBytes(new byte[] { 0x01, 0x2C }));
+        Assert.Equal(0, BeaconCodec.IntervalFromBytes(null));
+        Assert.Equal(0, BeaconCodec.IntervalFromBytes(Array.Empty<byte>()));
+    }
+
     [Fact]
     public void Power_code_maps_dbm()
     {

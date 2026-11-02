@@ -20,6 +20,9 @@ public interface IBleEnvironment
 public interface IBleSession : IDisposable
 {
     BleDeviceInfo Device { get; }
+
+    /// <summary>GATT 会话是否仍然可用（真机超过 5 分钟自动断开 / 信标重启后为 false）。</summary>
+    bool IsAlive { get; }
     BeaconCurrentState ReadCurrent();
     BleWriteResult Write(BeaconWriteRequest request);
     Task CommitAsync(string password);

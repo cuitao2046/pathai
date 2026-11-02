@@ -230,3 +230,42 @@ test('并发 ensureLoaded 单飞：只加载一次', async () => {
   expect(summaryServed).toBe(1);
   expect(dataServed).toBe(1);
 });
+
+test('运行时地址：摘要与 Range 分片下载同一动态源，不使用固定 IP', async () => {
+  const dynamic = 'http://10.9.9.9:8000';
+  const summaryUrl = `${dynamic}/api/v1/sites/${SITE}/map`;
+  const dataUrl = `${dynamic}/api/v1/sites/${SITE}/map/data?version=${REAL_MAP.mapVersion}`;
+  wxStub.__requestResponder = (o) => {
+    if (o.url === `${dynamic}/api/v1/auth/wechat`) {
+      o.success({
+        statusCode: 200,
+        header: {},
+        data: { accessToken: 'tok-dyn', tokenType: 'Bearer', expiresIn: 7200, userId: 'anon_1' },
+      });
+      return;
+    }
+    if (o.url === summaryUrl) {
+      o.success({ statusCode: 200, header: { ETag: 'etag-dyn' }, data: SUMMARY });
+      return;
+    }
+    if (o.url === dataUrl) {
+      o.success({ statusCode: 200, header: { ETag: 'etag-dyn' }, data: RAW });
+      return;
+    }
+    o.success({ statusCode: 404, header: {}, data: {} });
+  };
+  const { client } = createHttpStack(dynamic);
+  const service = new MapService({
+    client,
+    siteId: SITE,
+    rewriteDataUrlToLocalApi: true,
+    baseUrl: () => dynamic,
+  });
+  await service.ensureLoaded();
+  expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+  expect(wxStub.__requestLog.some((r) => r.url === summaryUrl)).toBe(true);
+  expect(wxStub.__requestLog.some((r) => r.url === dataUrl)).toBe(true);
+  // 编译期固定 IP 不参与本次会话
+  expect(wxStub.__requestLog.some((r) => r.url === REWRITE_DATA_URL)).toBe(false);
+  expect(wxStub.__requestLog.some((r) => r.url === SUMMARY_URL)).toBe(false);
+});

@@ -11,6 +11,7 @@ import {
   parseErrorEnvelope,
 } from './errors';
 import { getHeader, request as transportRequest, type TransportResponse } from './transport';
+import { resolveBaseUrl, type BaseUrlProvider } from './base-url';
 import { WechatTokenManager, type TokenManager } from './token-manager';
 
 const log = createLogger('api');
@@ -50,7 +51,7 @@ export interface HttpStack {
   tokens: TokenManager;
 }
 
-export function createHttpStack(baseUrl: string): HttpStack {
+export function createHttpStack(baseUrl: BaseUrlProvider): HttpStack {
   const tokens = new WechatTokenManager(baseUrl);
   return { tokens, client: new ApiClient(baseUrl, tokens) };
 }
@@ -64,7 +65,7 @@ interface SendResult {
 
 export class ApiClient {
   constructor(
-    private readonly baseUrl: string,
+    private readonly baseUrl: BaseUrlProvider,
     private readonly tokens: TokenManager,
   ) {}
 
@@ -97,7 +98,7 @@ export class ApiClient {
     if (opts.headers !== undefined) {
       Object.assign(header, opts.headers);
     }
-    const url = opts.url ?? this.baseUrl + (opts.path ?? '');
+    const url = opts.url ?? resolveBaseUrl(this.baseUrl) + (opts.path ?? '');
     const resp = await transportRequest({
       url,
       method: opts.method,

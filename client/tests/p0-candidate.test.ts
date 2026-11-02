@@ -1,5 +1,5 @@
-import { isP0CandidateUrl, resolveP0Candidate } from '../core/discovery/p0-candidate';
-import { checkP0Candidate, getP0Candidate } from '../services/p0-candidate';
+import { isP0CandidateUrl, resolveBusinessCandidate, resolveP0Candidate } from '../core/discovery/p0-candidate';
+import { checkP0Candidate, getP0Candidate, saveP0Candidate } from '../services/p0-candidate';
 
 describe('P0 候选缓存与并发预检', () => {
   const storage = new Map<string, string>();
@@ -39,6 +39,12 @@ describe('P0 候选缓存与并发预检', () => {
     expect(await pending).toBe(true);
   });
 
+  test('仅有效业务端口地址可作为未认证候选缓存', () => {
+    expect(saveP0Candidate('http://192.168.1.44:39002')).toBe(false);
+    expect(saveP0Candidate('http://192.168.1.44:8000')).toBe(true);
+    expect(getP0Candidate()).toBe('http://192.168.1.44:8000');
+  });
+
   test('损坏的候选缓存不发请求，仅重新写入 hardcode 初始候选', () => {
     storage.set('pathai:discovery:p0-candidate-url', 'http://evil.example:8000');
     expect(getP0Candidate()).toBe('http://192.168.1.28:8000');
@@ -72,5 +78,24 @@ describe('P0 候选缓存与并发预检', () => {
     finish(true);
     expect(await result).toBe('discovery-reachable');
     expect(await resolveP0Candidate(() => Promise.reject(new Error()), () => Promise.reject(new Error()))).toBe('unavailable');
+  });
+
+  test('发现先完成也不抢占可达缓存；缓存失败才写入新候选', async () => {
+    const persist = jest.fn();
+    expect(await resolveBusinessCandidate(() => Promise.resolve(true),
+      () => Promise.resolve('http://192.168.1.44:8000'), () => true, persist)).toBe('cached-reachable');
+    expect(persist).not.toHaveBeenCalled();
+    expect(await resolveBusinessCandidate(() => Promise.resolve(false),
+      () => Promise.resolve('http://192.168.1.44:8000'), () => true, persist)).toBe('discovery-reachable');
+    expect(persist).toHaveBeenCalledWith('http://192.168.1.44:8000');
+  });
+
+  test('旧轮次和双路失败均不写入候选', async () => {
+    const persist = jest.fn();
+    expect(await resolveBusinessCandidate(() => Promise.resolve(false),
+      () => Promise.resolve('http://192.168.1.44:8000'), () => false, persist)).toBe('unavailable');
+    expect(await resolveBusinessCandidate(() => Promise.resolve(false),
+      () => Promise.resolve(null), () => true, persist)).toBe('unavailable');
+    expect(persist).not.toHaveBeenCalled();
   });
 });

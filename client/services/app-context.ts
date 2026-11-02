@@ -4,13 +4,13 @@
  * 数据源可在设置页覆盖（写 kv，重启小程序后生效）。
  */
 import {
-  API_BASE_URL,
   DEFAULT_DATA_SOURCE,
   DEFAULT_SITE_ID,
   type DataSource,
 } from '../config/env';
 import { createHttpStack } from '../core/http/api-client';
 import { MapService } from '../core/map/map-service';
+import { currentServiceBaseUrl } from './service-endpoint';
 import type { AsrEngine } from '../core/asr/asr-engine';
 import { XfyunAsrEngine } from '../core/asr/xfyun-asr';
 import type { TtsEngine } from '../core/speech/tts-engine';
@@ -69,8 +69,13 @@ class AppContext {
   readonly dataSource: DataSource = resolveDataSource();
   /** 语音交互（ASR+TTS）是否用 mock 引擎：独立开关，未设置过则跟随数据源。 */
   readonly voiceMock: boolean = resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
-  readonly http = createHttpStack(API_BASE_URL);
-  readonly map = new MapService({ client: this.http.client, siteId: DEFAULT_SITE_ID });
+  /** HTTP 栈与地图服务共用同一运行时地址（启动时由 service-endpoint 解析）。 */
+  readonly http = createHttpStack(() => currentServiceBaseUrl());
+  readonly map = new MapService({
+    client: this.http.client,
+    siteId: DEFAULT_SITE_ID,
+    baseUrl: () => currentServiceBaseUrl(),
+  });
   /** 启动提示音（本地音频，离线可播；按住说话可打断）。 */
   readonly voicePrompts = new LocalVoice({ createAudio: createWxAudio });
   /** 标定模式是否开启（启动时读取；设置页写入后需重启生效）。 */

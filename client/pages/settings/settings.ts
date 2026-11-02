@@ -5,10 +5,11 @@
  * - 自检：TTS 播一句、登录态探测、地图重载；
  * - 清缓存：地图摘要/数据与本地令牌（联调用）。
  */
-import { API_BASE_URL, DEFAULT_SITE_ID } from '../../config/env';
+import { DEFAULT_SITE_ID } from '../../config/env';
 import { describeError } from '../../core/http/error-messages';
 import { ApiClientError } from '../../core/http/errors';
 import { appContext } from '../../services/app-context';
+import { currentServiceBaseUrl } from '../../services/service-endpoint';
 import { runP0LocalProbe } from '../../services/p0-local-probe';
 import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
@@ -19,7 +20,7 @@ const log = createLogger('settings');
 
 Page({
   data: {
-    apiUrl: API_BASE_URL,
+    apiUrl: currentServiceBaseUrl(),
     siteId: DEFAULT_SITE_ID,
     dataSource: 'mock' as DataSource,
     voiceMock: true,
@@ -84,6 +85,7 @@ Page({
     this.refreshDownload();
     this.setData({
       dataSource: appContext.dataSource,
+      apiUrl: currentServiceBaseUrl(),
       voiceMock: appContext.getVoiceMockSetting(),
       mockText: appContext.getMockAsrText() || '带我去图书馆',
       calibrationMode: appContext.calibrationMode,

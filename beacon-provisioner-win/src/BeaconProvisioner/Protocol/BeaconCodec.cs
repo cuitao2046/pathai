@@ -54,6 +54,44 @@ public static class BeaconCodec
     /// <summary>间隔合法范围（官方手册 100 ms~10 s）。</summary>
     public static bool IsValidInterval(int intervalMs) => intervalMs is >= 100 and <= 10_000;
 
+    /// <summary>
+    /// 间隔负载。固件有两种：nRF52 版为 2 字节大端毫秒；部分国产固件（实测 F1-105）为 1 字节、单位 100 ms。
+    /// 调用方按读回长度决定 <paramref name="length"/>。
+    /// </summary>
+    public static byte[] IntervalToBytes(int intervalMs, int length)
+    {
+        if (!IsValidInterval(intervalMs))
+        {
+            throw new ArgumentOutOfRangeException(nameof(intervalMs), intervalMs, "间隔需在 100~10000 ms");
+        }
+
+        if (length == 1)
+        {
+            if (intervalMs % 100 != 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(intervalMs), intervalMs, "该固件的间隔以 100 ms 为单位，只能填 100 ms 的整数倍");
+            }
+
+            var units = intervalMs / 100;
+            if (units is < 1 or > 255)
+            {
+                throw new ArgumentOutOfRangeException(nameof(intervalMs), intervalMs, "1 字节间隔只支持 100~25500 ms");
+            }
+
+            return new[] { (byte)units };
+        }
+
+        return UInt16BigEndian(intervalMs);
+    }
+
+    /// <summary>间隔读回 → 毫秒：1 字节按 100 ms 单位，2 字节按大端毫秒。</summary>
+    public static int IntervalFromBytes(byte[]? data) => data switch
+    {
+        { Length: 1 } => data[0] * 100,
+        { Length: >= 2 } => (data[0] << 8) | data[1],
+        _ => 0,
+    };
+
     /// <summary>dBm → 档位码；不在列表则返回 -1。</summary>
     public static int PowerCodeFor(double dbm) =>
         PowerLevelsDbm.ToList().FindIndex(p => Math.Abs(p - dbm) < 0.01);

@@ -4,15 +4,23 @@
   "private": true,
   "description": "PathAI 视障室内导航微信小程序客户端（原生 TS）",
   "scripts": {
+    "build:p1-crypto": "node scripts/build-p1-crypto.cjs",
+    "pretypecheck": "npm run build:p1-crypto",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:p1-crypto",
     "test": "jest",
     "test:watch": "jest --watch"
   },
   "devDependencies": {
     "@types/jest": "^29.5.13",
+    "esbuild": "0.28.2",
     "jest": "^29.7.0",
     "miniprogram-api-typings": "^5.2.3",
     "ts-jest": "^29.2.5",
     "typescript": "~5.6.3"
+  },
+  "dependencies": {
+    "@noble/hashes": "1.8.0",
+    "canonicalize": "2.1.0"
   }
 }

@@ -1,3 +1,5 @@
 node_modules/
 coverage/
 *.log
+# 开发者工具「构建 npm」生成物；密码依赖已由 scripts/build-p1-crypto.cjs 打包进 core/discovery
+miniprogram_npm/

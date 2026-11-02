@@ -8,7 +8,7 @@ using BeaconProvisioner.Services;
 namespace BeaconProvisioner.ViewModels;
 
 /// <summary>
-/// 主视图模型：登录 → 台账 → 未入库清单 → 扫描（mock）→ 连接 → 读回 → 写入 → 重启 → 校验 → 上传。
+/// 主视图模型：登录 → 台账 → 未入库清单 → 扫描（mock）→ 连接 → 读回 → 写入（保存即生效）→ 连接校验 → 上传。
 /// 真机 BLE 后续替换 `MockBleEnvironment`，业务状态机不变（docs/27 §6）。
 /// </summary>
 public sealed class MainViewModel : ObservableObject
@@ -21,6 +21,7 @@ public sealed class MainViewModel : ObservableObject
     private IBleEnvironment _ble;
     private bool _useMockBle;
     private bool _onlyUnwrittenDevices;
+    private bool _onlyProjectDevices = true;
 
     private string _serverUrl = "http://127.0.0.1:8000";
     private string _username = "admin";
@@ -47,7 +48,6 @@ public sealed class MainViewModel : ObservableObject
     private string? _selectedUnboundId;
     private BleDeviceInfo? _selectedDevice;
     private IBleSession? _session;
-    private bool _restarted;
     private bool _verified;
     private DeploymentRecordRequest? _lastPayload;
 
@@ -71,7 +71,7 @@ public sealed class MainViewModel : ObservableObject
         WriteEditCommand = new RelayCommand(WriteEditAsync,
             () => !IsBusy && IsConnected && CanWriteEdit());
         VerifyCommand = new RelayCommand(VerifyAsync,
-            () => !IsBusy && _restarted && IsConnected && !_verified);
+            () => !IsBusy && IsConnected && !_verified && _activeTarget is not null);
         UploadCommand = new RelayCommand(UploadAsync, () => !IsBusy && _verified && _lastPayload is not null);
         RetryPendingCommand = new RelayCommand(RetryPendingAsync, () => !IsBusy && _pending.Count > 0);
         SyncPendingUploads();
@@ -106,7 +106,7 @@ public sealed class MainViewModel : ObservableObject
 
     public string ModeHintText => _ble.IsMock
         ? "Mock 模式：3 台模拟信标，写入只作用于选中的信标"
-        : "实物模式（WinRT）：写入只作用于选中的信标；写入后只能人工断电重启";
+        : "实物模式（WinRT）：写入只作用于选中的信标；保存后立即生效，无需重启";
 
     /// <summary>扫描列表过滤：只显示本机尚未写入过的信标。</summary>
     public bool OnlyUnwrittenDevices
@@ -115,6 +115,22 @@ public sealed class MainViewModel : ObservableObject
         set
         {
             if (Set(ref _onlyUnwrittenDevices, value))
+            {
+                ApplyDeviceFilter();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 扫描列表过滤：只显示本项目信标（带 FFF0 配置服务的 E5、台账 UUID、或出厂全 F 的未写参设备），
+    /// 剔除周围其他项目的 iBeacon 与无关蓝牙设备。
+    /// </summary>
+    public bool OnlyProjectDevices
+    {
+        get => _onlyProjectDevices;
+        set
+        {
+            if (Set(ref _onlyProjectDevices, value))
             {
                 ApplyDeviceFilter();
             }
@@ -415,7 +431,6 @@ public sealed class MainViewModel : ObservableObject
             if (Set(ref _selectedUnboundId, value))
             {
                 SelectedBeacon = Beacons.FirstOrDefault(b => b.BeaconId == value);
-                ResetProgress();
             }
         }
     }
@@ -473,7 +488,23 @@ public sealed class MainViewModel : ObservableObject
         RefreshCommands();
     }
 
-    private async Task LoginAsync()
+    /// <summary>窗口加载后调用：本地有 7 天内有效的登录缓存则免密登录。</summary>
+    public async Task InitializeAsync()
+    {
+        if (!_settings.TryLoadSession(out var serverUrl, out var username, out var password))
+        {
+            return;
+        }
+
+        ServerUrl = serverUrl;
+        Username = username;
+        Password = password;
+        await LoginAsync(useCachedSession: true);
+    }
+
+    private Task LoginAsync() => LoginAsync(useCachedSession: false);
+
+    private async Task LoginAsync(bool useCachedSession)
     {
         if (string.IsNullOrWhiteSpace(ServerUrl) || string.IsNullOrWhiteSpace(Username))
         {
@@ -481,31 +512,50 @@ public sealed class MainViewModel : ObservableObject
             return;
         }
 
+        var serverUrl = ServerUrl.Trim();
+        var username = Username.Trim();
+        var password = Password;
+
         IsBusy = true;
         try
         {
-            _api.BaseUrl = ServerUrl.Trim();
-            await _api.LoginAsync(Username.Trim(), Password);
+            _api.BaseUrl = serverUrl;
+            await _api.LoginAsync(username, password);
             if (_api.MustChangePassword)
             {
+                _settings.ClearSession();
+                Password = "";
                 StatusText = "该账号尚未完成首次改密，请先在管理后台改密后再登录";
                 return;
             }
 
             IsLoggedIn = true;
             Password = "";
-            StatusText = "登录成功";
+            _settings.SaveSession(serverUrl, username, password);
+            StatusText = useCachedSession
+                ? "已使用本地缓存登录（7 天内免密，过期后需重新输入密码）"
+                : "登录成功";
             Raise(nameof(PendingText));
             await RefreshAsync();
             await ScanAsync();
         }
         catch (LedgerApiException ex)
         {
-            StatusText = $"登录失败：{ex.Message}（{ex.Code}）";
+            // 仅凭据错误才清缓存：网络/服务端故障不应让用户重新输密码
+            if (ex.StatusCode is 401 or 403)
+            {
+                _settings.ClearSession();
+            }
+
+            StatusText = useCachedSession
+                ? $"本地缓存登录失败：{ex.Message}（{ex.Code}），请输入密码重新登录"
+                : $"登录失败：{ex.Message}（{ex.Code}）";
         }
         catch (Exception ex)
         {
-            StatusText = $"登录失败：{ex.Message}";
+            StatusText = useCachedSession
+                ? $"本地缓存登录失败：{ex.Message}，请检查服务器后重新登录"
+                : $"登录失败：{ex.Message}";
         }
         finally
         {
@@ -611,7 +661,7 @@ public sealed class MainViewModel : ObservableObject
             SyncDevices();
             StatusText = _ble.IsMock
                 ? $"Mock 扫描：{_devices.Count} 台（出厂三元组相同，按 MAC 区分）"
-                : "实物扫描中（WinRT）：等待 FFF0/iBeacon 广播…";
+                : $"实物扫描中（WinRT）：已发现 {VisibleDevices.Count} 台本项目信标，等待 iBeacon / FFF0 广播…";
         }
         catch (Exception ex)
         {
@@ -635,9 +685,15 @@ public sealed class MainViewModel : ObservableObject
     private void ApplyDeviceFilter()
     {
         var keepMac = SelectedDevice?.Mac;
+        var projectUuids = ProjectUuids();
         VisibleDevices.Clear();
         foreach (var device in _devices)
         {
+            if (OnlyProjectDevices && !IsProjectDevice(device, projectUuids))
+            {
+                continue;
+            }
+
             if (OnlyUnwrittenDevices && device.WriteTimeText.Length > 0)
             {
                 continue;
@@ -650,6 +706,49 @@ public sealed class MainViewModel : ObservableObject
         RefreshCommands();
     }
 
+    /// <summary>本项目信标的 UUID 集合：系统 UUID + 台账里出现过的 UUID。</summary>
+    private HashSet<string> ProjectUuids()
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            LedgerValidator.SystemUuid,
+        };
+        foreach (var beacon in Beacons)
+        {
+            if (!string.IsNullOrWhiteSpace(beacon.Uuid))
+            {
+                set.Add(beacon.Uuid);
+            }
+        }
+
+        return set;
+    }
+
+    /// <summary>
+    /// 是否属于本项目：带 FFF0 配置服务（本工具能连），或 UUID 命中台账/系统 UUID，
+    /// 或 UUID 为全 F / 全 0（出厂未写参，必须放行才能首次入库）。
+    /// </summary>
+    private static bool IsProjectDevice(BleDeviceInfo device, HashSet<string> projectUuids)
+    {
+        if (device.IsE5)
+        {
+            return true;
+        }
+
+        if (device.Uuid.Length == 0 || IsUnprovisionedUuid(device.Uuid))
+        {
+            return true;
+        }
+
+        return projectUuids.Contains(device.Uuid);
+    }
+
+    private static bool IsUnprovisionedUuid(string uuid)
+    {
+        var hex = uuid.Replace("-", "");
+        return hex.All(c => c is 'F' or 'f' or '0');
+    }
+
     private async Task ConnectAsync()
     {
         if (SelectedDevice is null)
@@ -660,22 +759,31 @@ public sealed class MainViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            _session?.Dispose();
-            _session = await _ble.ConnectAsync(SelectedDevice);
+            CloseSession();
+            var newSession = await _ble.ConnectAsync(SelectedDevice);
+            _session = newSession;
             IsConnected = true;
-            if (!_restarted)
+            ResetProgress();
+            var restored = RestoreWrittenTarget(newSession.Device.Mac);
+
+            // GATT 读写内部同步等待 WinRT 回调；放到线程池执行，避免 UI 线程参与等待而死锁/挂起。
+            var current = await Task.Run(() => newSession.ReadCurrent());
+            ShowCurrent(current);
+
+            // 广播可能拿不到名称（部分固件只在 FFF9 里保存），连接后用读回值补全列表。
+            if (SelectedDevice is { } scanned && current.Name.Length > 0)
             {
-                // 首次连接才重置进度；重启后的重连用于校验，不能清掉「已重启」状态
-                ResetProgress();
+                scanned.Name = current.Name;
+                ApplyDeviceFilter();
             }
 
-            ShowCurrent(_session.ReadCurrent());
-            StatusText = _restarted
-                ? $"已重新连接 {SelectedDevice.Name}；请点「2 校验」"
-                : $"已连接 {SelectedDevice.Name}，请选择目标 beaconId";
+            StatusText = restored is not null
+                ? $"已连接 {SelectedDevice?.DisplayName}；本机记录该信标已写入 {restored} 且未上传，可点「2 校验」"
+                : $"已连接 {SelectedDevice?.DisplayName}，请选择目标 beaconId";
         }
         catch (Exception ex)
         {
+            IsConnected = false;
             StatusText = $"连接失败：{ex.Message}";
         }
         finally
@@ -684,10 +792,62 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private static void LogBle(string message)
+    {
+        try
+        {
+            var dir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "BeaconProvisioner");
+            System.IO.Directory.CreateDirectory(dir);
+            System.IO.File.AppendAllText(
+                System.IO.Path.Combine(dir, "ble.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}");
+        }
+        catch (Exception)
+        {
+            // 日志失败不影响主流程
+        }
+    }
+
+    private bool SessionAlive()
+    {
+        try
+        {
+            return _session is not null && _session.IsAlive;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private void CloseSession()
+    {
+        try
+        {
+            _session?.Dispose();
+        }
+        catch (Exception)
+        {
+            // 已失效的会话可能重复 Dispose，忽略
+        }
+
+        _session = null;
+    }
+
+    private void DropSession(string message)
+    {
+        CloseSession();
+        IsConnected = false;
+        CurrentSettingsText = "未连接设备";
+        StatusText = message;
+        ResetProgress();
+    }
+
     private Task DisconnectAsync()
     {
-        _session?.Dispose();
-        _session = null;
+        CloseSession();
         IsConnected = false;
         ResetProgress();
         CurrentSettingsText = "未连接设备";
@@ -695,9 +855,40 @@ public sealed class MainViewModel : ObservableObject
         return Task.CompletedTask;
     }
 
+    /// <summary>连接的设备若「已写入且未上传」，按本机写入记录恢复写入目标，用于对照展示与校验。</summary>
+    private string? RestoreWrittenTarget(string mac)
+    {
+        if (!_writeHistory.IsWrittenPendingUpload(mac))
+        {
+            return null;
+        }
+
+        var record = _writeHistory.GetRecord(mac)!;
+        var target = Beacons.FirstOrDefault(b => b.BeaconId == record.BeaconId);
+        if (target is null)
+        {
+            return null;
+        }
+
+        _activeTarget = target;
+        _activeTxPower = record.TxPowerDbm ?? target.TxPower;
+        _activeInterval = record.IntervalMs ?? target.BroadcastInterval;
+        _activeSource = record.Source;
+        if (UnboundIds.Contains(target.BeaconId))
+        {
+            _selectedUnboundId = target.BeaconId;
+            Raise(nameof(SelectedUnboundId));
+        }
+
+        SelectedBeacon = target;
+        RefreshCommands();
+        return target.BeaconId;
+    }
+
     private void ShowCurrent(BeaconCurrentState state)
     {
-        CurrentSettingsText = $"""
+        var readback = $"""
+            【蓝牙读回】
             MAC：{_session?.Device.Mac ?? "—"}
             名称：{state.Name}
             UUID：{state.Uuid}
@@ -707,11 +898,30 @@ public sealed class MainViewModel : ObservableObject
             校准 RSSI：{state.CalibratedRssi}
             模式：{state.Mode}
             """;
+        var target = _activeTarget;
+        if (target is null)
+        {
+            CurrentSettingsText = readback;
+            return;
+        }
+
+        static string Mark(bool same) => same ? "一致" : "不一致";
+        var expectedUuid = target.Uuid ?? "—";
+        var power = _activeTxPower;
+        var interval = _activeInterval;
+        var expected = $"""
+            【写入配置：{target.BeaconId}（{(_activeSource == "field_edit" ? "现场编辑" : "入库")}）】
+            名称：{target.DeviceName}（{Mark(state.Name == target.DeviceName)}）
+            UUID：{expectedUuid}（{Mark(string.Equals(state.Uuid, expectedUuid, StringComparison.OrdinalIgnoreCase))}）
+            Major/Minor：{target.Major} / {target.Minor}（{Mark(state.Major == target.Major && state.Minor == target.Minor)}）
+            功率：{power} dBm（{Mark(power is not null && Math.Abs(state.TxPowerDbm - power.Value) < 0.01)}）
+            间隔：{interval} ms（{Mark(state.IntervalMs == interval)}）
+            """;
+        CurrentSettingsText = expected + "\n\n" + readback;
     }
 
     private void ResetProgress()
     {
-        _restarted = false;
         _verified = false;
         _lastPayload = null;
         _activeTarget = null;
@@ -784,10 +994,32 @@ public sealed class MainViewModel : ObservableObject
         _activeInterval = intervalMs;
         _activeSource = source;
 
+        var connectedMac = _session?.Device.Mac ?? SelectedDevice?.Mac;
+        var device = _devices.FirstOrDefault(d => d.Mac == connectedMac) ?? SelectedDevice;
+        if (device is null)
+        {
+            DropSession("请先扫描并选择要写入的信标");
+            return;
+        }
+
         IsBusy = true;
         try
         {
-            var deviceMac = _session!.Device.Mac;
+            // 写入前刷新 GATT 会话：规避 WinRT 闲置回收/旧会话特征失效
+            StatusText = "正在刷新设备连接…";
+            CloseSession();
+            try
+            {
+                _session = await _ble.ConnectAsync(device);
+                IsConnected = true;
+            }
+            catch (Exception ex)
+            {
+                DropSession($"重新连接设备失败：{ex.Message}；请重新「扫描 → 连接设备」后再写入");
+                return;
+            }
+
+            var deviceMac = _session.Device.Mac;
             var request = new BeaconWriteRequest
             {
                 Uuid = target.Uuid!,
@@ -798,48 +1030,122 @@ public sealed class MainViewModel : ObservableObject
                 IntervalMs = intervalMs,
             };
 
-            var writeResult = _session.Write(request);
+            var writeResult = await Task.Run(() => _session.Write(request));
+            if (!writeResult.Success && writeResult.NeedsReconnect && SelectedDevice is not null)
+            {
+                // GATT 会话可能被系统回收；自动重连一次并重试写入
+                StatusText = "GATT 会话已失效，正在重新连接并重试写入…";
+                CloseSession();
+                try
+                {
+                    var retrySession = await _ble.ConnectAsync(SelectedDevice);
+                    _session = retrySession;
+                    IsConnected = true;
+                    deviceMac = _session.Device.Mac;
+                    writeResult = await Task.Run(() => _session.Write(request));
+                }
+                catch (Exception ex)
+                {
+                    DropSession($"自动重连失败：{ex.Message}；请重新「扫描 → 连接设备」后再写入");
+                    return;
+                }
+            }
+
             if (!writeResult.Success)
             {
-                StatusText = $"步骤 1/3 写入失败：{writeResult.Message}";
+                if (writeResult.NeedsReconnect)
+                {
+                    DropSession($"步骤 1/3 写入失败：{writeResult.Message}");
+                }
+                else
+                {
+                    ResetProgress();
+                    StatusText = $"步骤 1/3 写入失败：{writeResult.Message}";
+                }
+
                 return;
             }
 
             StatusText = "参数已写入，正在提交 FFFF 保存…";
-            await _session.CommitAsync("minew123");
-            _writeHistory.MarkWritten(deviceMac, DateTime.Now);
+            try
+            {
+                await _session.CommitAsync("minew123");
+            }
+            catch (ObjectDisposedException ex)
+            {
+                // 提交阶段会话失效：参数通常已在设备内存中，重连后再提交一次
+                LogBle($"{deviceMac} 提交 FFFF 时会话失效：{ex}");
+                StatusText = "保存阶段连接失效，正在重新连接并重新提交…";
+                CloseSession();
+                _session = await _ble.ConnectAsync(device);
+                IsConnected = true;
+                await _session.CommitAsync("minew123");
+            }
 
-            // 保存后设备会断开；真机重启后原 GATT 连接也不存在 → 主动丢弃会话，要求重新连接
-            _session?.Dispose();
-            _session = null;
-            IsConnected = false;
-            CurrentSettingsText = "设备已断开（参数已保存，等待人工重启）";
+            _writeHistory.MarkWritten(deviceMac, DateTime.Now, target.BeaconId, source, txPowerDbm, intervalMs);
 
-            System.Windows.MessageBox.Show(
-                $"{target.BeaconId} 参数已保存到信标。\n\n"
-                + "E5 不支持指令重启，请人工断电重启该信标：\n"
-                + "断电 → 等待 3~5 秒 → 上电，广播恢复后点击 OK。",
-                "请人工重启信标",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
+            // E5 保存后自动生效，无需重启；部分固件提交 FFFF 后会主动断开，读回失败时重连再读一次
+            var readOk = false;
+            try
+            {
+                if (SessionAlive())
+                {
+                    ShowCurrent(await Task.Run(() => _session!.ReadCurrent()));
+                    readOk = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogBle($"{deviceMac} 保存后读回失败：{ex.Message}");
+            }
 
-            // 返回主窗口即清空上次写入的参数，等重新连接后显示从信标读回的值
-            CurrentSettingsText = "未连接设备";
-            // 刚写入的信标需要重新连接校验；确保它不会被「只显示未写入」过滤掉
+            if (!readOk)
+            {
+                try
+                {
+                    StatusText = "保存完成，正在重新连接设备以读回参数…";
+                    CloseSession();
+                    _session = await _ble.ConnectAsync(device);
+                    IsConnected = true;
+                    ShowCurrent(await Task.Run(() => _session.ReadCurrent()));
+                    readOk = true;
+                }
+                catch (Exception ex)
+                {
+                    LogBle($"{deviceMac} 保存后重连读回失败：{ex.Message}");
+                }
+            }
+
+            // 刚写入的信标要能继续校验，确保不被「只显示未写入」过滤掉
             if (OnlyUnwrittenDevices)
             {
                 OnlyUnwrittenDevices = false;
             }
 
-            await _ble.EnsureReadyAsync();
-            _ble.StartScan();
             SyncDevices();
-            _restarted = true;
-            StatusText = $"{target.BeaconId} 已确认人工重启；请重新「连接设备」，连接成功后再点「2 校验」";
+            if (readOk)
+            {
+                StatusText = $"{target.BeaconId} 已写入并保存（立即生效）；请点「2 校验」";
+            }
+            else
+            {
+                CloseSession();
+                IsConnected = false;
+                CurrentSettingsText = "未连接设备";
+                StatusText = $"{target.BeaconId} 已写入并保存（立即生效），设备已断开；请选中该信标「连接设备」后点「2 校验」";
+            }
         }
         catch (Exception ex)
         {
-            StatusText = $"步骤 1/3 写入/保存异常：{ex.Message}";
+            if (_session is not null && !SessionAlive())
+            {
+                DropSession($"步骤 1/3 写入/保存失败：连接已失效，请重新连接后再试（{ex.Message}）");
+            }
+            else
+            {
+                ResetProgress();
+                StatusText = $"步骤 1/3 写入/保存异常：{ex.Message}";
+            }
         }
         finally
         {
@@ -848,24 +1154,65 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private Task VerifyAsync()
+    private async Task VerifyAsync()
     {
         var target = _activeTarget;
         if (_session is null || !IsConnected || target is null)
         {
-            StatusText = "请先点「连接设备」重新连接已重启的信标，再校验";
-            return Task.CompletedTask;
+            StatusText = "请先选中已写入且未上传的信标并「连接设备」，再校验";
+            return;
+        }
+
+        if (!SessionAlive() && SelectedDevice is null)
+        {
+            DropSession("连接已失效（信标可能已断电/重启，或连接超过 5 分钟自动断开），请重新「扫描 → 连接设备」后再校验");
+            return;
         }
 
         try
         {
-            var current = _session.ReadCurrent();
+            if (!SessionAlive())
+            {
+                // 提交 FFFF 后固件会释放特征，旧会话已不可用：先自动重连再读回，
+                // 而不是让用户重新「扫描 → 连接设备」。
+                if (SelectedDevice is null)
+                {
+                    DropSession("连接已失效（信标可能已断电/重启，或连接超过 5 分钟自动断开），请重新「扫描 → 连接设备」后再校验");
+                    return;
+                }
+
+                StatusText = "连接已失效，正在重新连接设备后校验…";
+                CloseSession();
+                IsConnected = false;
+                _session = await _ble.ConnectAsync(SelectedDevice);
+                IsConnected = true;
+            }
+
+            BeaconCurrentState current;
+            try
+            {
+                current = await Task.Run(() => _session.ReadCurrent());
+            }
+            catch (Exception ex) when (SelectedDevice is not null)
+            {
+                // 提交 FFFF 后固件常会主动断连（特征全部释放），读回必然失败：
+                // 自动重连一次再读，避免把“连接断了”误报成“校验不通过”。
+                LogBle($"校验读回失败，尝试自动重连：{ex.Message}");
+                StatusText = "读回失败，正在重新连接设备后重试…";
+                CloseSession();
+                IsConnected = false;
+                var retrySession = await _ble.ConnectAsync(SelectedDevice);
+                _session = retrySession;
+                IsConnected = true;
+                current = await Task.Run(() => retrySession.ReadCurrent());
+            }
+
             ShowCurrent(current);
             var verify = Verify(target, current, _activeTxPower, _activeInterval);
             if (!verify.Passed)
             {
-                StatusText = $"步骤 2/3 校验未通过：{verify.Message}（可重新写入并重启后再校验）";
-                return Task.CompletedTask;
+                StatusText = $"步骤 2/3 校验未通过：{verify.Message}（可重新写入后再校验）";
+                return;
             }
 
             _lastPayload = BuildRecordPayload(target, current, verify);
@@ -874,14 +1221,12 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = $"步骤 2/3 校验异常：{ex.Message}";
+            DropSession($"步骤 2/3 校验失败：{ex.Message}；请重新「扫描 → 连接设备」后再校验");
         }
         finally
         {
             RefreshCommands();
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task UploadAsync()
@@ -899,6 +1244,11 @@ public sealed class MainViewModel : ObservableObject
         {
             await _api.PutDeploymentRecordAsync(target.BeaconId, payload);
             _pending.Remove(target.BeaconId);
+            if (!string.IsNullOrEmpty(payload.DeviceMac))
+            {
+                _writeHistory.MarkUploaded(payload.DeviceMac);
+            }
+
             StatusText = $"步骤 3/3：{target.BeaconId} 已上传真实部署台账";
         }
         catch (Exception ex)

@@ -202,10 +202,11 @@ function yieldToUi(): Promise<void> {
   });
 }
 
-/** 每片压缩块数（1024 块 = 64KB），单片在真机上约数毫秒。 */
-const BLOCKS_PER_SLICE = 1024;
-/** 每片 UTF-8 编码字符数（512K UTF-16 码元 ≈ 0.5~1.5MB 字节）。 */
-const UTF8_CHARS_PER_SLICE = 524288;
+/** 每片压缩块数（4096 块 = 256KB）。真机调试模式下每次 macrotask 让出都有固定开销，
+ *  4.6MB 按 64KB 切片要让出 70 多次，累计可达数十秒；256KB 约 18 次，仍能保持 UI 可交互。 */
+const BLOCKS_PER_SLICE = 4096;
+/** 每片 UTF-8 编码字符数（1M UTF-16 码元 ≈ 1~3MB 字节），配合压缩切片减少让出次数。 */
+const UTF8_CHARS_PER_SLICE = 1048576;
 
 /**
  * 异步 UTF-8 编码：预分配后按片写入，片间让出主线程。

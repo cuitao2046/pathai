@@ -6,6 +6,7 @@
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
 import { appContext } from '../../services/app-context';
+import { ensureServiceEndpoint } from '../../services/service-endpoint';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
@@ -277,6 +278,20 @@ Page({
   async bootstrap(): Promise<void> {
     this.setData({ loading: true, loadError: '' });
     try {
+      // 先解析业务地址：缓存优先，失败则 UDP 广播发现。
+      const endpoint = await ensureServiceEndpoint();
+      if (endpoint === null) {
+        log.warn('未发现局域网服务，停止加载地图');
+        this.setData({
+          loading: false,
+          mapReady: false,
+          loadError: '未发现局域网服务：请确认后端已启动，且手机与电脑在同一网络后重试',
+        });
+        void appContext.voicePrompts.play('map-load-failed');
+        vibrateLong();
+        return;
+      }
+      log.info('业务地址已就绪', endpoint);
       await appContext.map.ensureLoaded();
       const floorsData = appContext.map.floors;
       const floors = floorsSortedByLevel(floorsData);

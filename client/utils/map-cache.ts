@@ -22,11 +22,6 @@ function cachePath(siteId: string): string {
   return `${wx.env.USER_DATA_PATH}/map-cache-${siteId}.json`;
 }
 
-/** 转正中的暂存文件路径（校验通过后 rename 覆盖正式缓存）。 */
-function stagingPath(siteId: string): string {
-  return `${wx.env.USER_DATA_PATH}/map-next-${siteId}.json`;
-}
-
 /** 半成品文件路径（按站点 + 目标版本隔离，支持断点续传）。 */
 export function partialPath(siteId: string, mapVersion: string): string {
   return `${wx.env.USER_DATA_PATH}/map-partial-${siteId}-${mapVersion}.json`;
@@ -48,32 +43,28 @@ export function readMapCache(siteId: string): Promise<string | null> {
   });
 }
 
-/** 校验通过后转正缓存：staging 写入 → 删旧 → rename（失败抛错交调用方记录）。 */
-export function commitMapCache(siteId: string, raw: string): Promise<void> {
+/**
+ * 校验通过后直接用半成品转正：删旧缓存 → rename 半成品为正式缓存。
+ * 半成品已是完整字节，无需再写一份 staging（4.6MB 级文件在真机上写入耗时明显）。
+ */
+export function commitMapPartial(siteId: string, mapVersion: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const fs = wx.getFileSystemManager();
-    const staging = stagingPath(siteId);
-    fs.writeFile({
-      filePath: staging,
-      encoding: 'utf8',
-      data: raw,
-      success: () => {
-        // 目标已存在时部分平台 rename 会失败：先删旧缓存再 rename
-        fs.unlink({
-          filePath: cachePath(siteId),
-          success: () => rename(),
-          fail: () => rename(),
-        });
-        function rename(): void {
-          fs.rename({
-            oldPath: staging,
-            newPath: cachePath(siteId),
-            success: () => resolve(),
-            fail: (err) => reject(new Error(err.errMsg ?? '地图缓存转正失败')),
-          });
-        }
-      },
-      fail: (err) => reject(new Error(err.errMsg ?? '地图缓存写入失败')),
+    const from = partialPath(siteId, mapVersion);
+    const to = cachePath(siteId);
+    const rename = (): void => {
+      fs.rename({
+        oldPath: from,
+        newPath: to,
+        success: () => resolve(),
+        fail: (err) => reject(new Error(err.errMsg ?? '地图缓存转正失败')),
+      });
+    };
+    // 目标已存在时部分平台 rename 会失败：先删旧缓存再 rename
+    fs.unlink({
+      filePath: to,
+      success: () => rename(),
+      fail: () => rename(),
     });
   });
 }

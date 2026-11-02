@@ -22,6 +22,8 @@
     "ignore": [
       { "type": "folder", "value": "node_modules" },
       { "type": "folder", "value": "tests" },
+      { "type": "folder", "value": "scripts" },
+      { "type": "file", "value": "core/discovery/p1-crypto-entry.js" },
       { "type": "folder", "value": "typings" },
       { "type": "file", "value": "jest.config.js" },
       { "type": "file", "value": "tsconfig.json" },

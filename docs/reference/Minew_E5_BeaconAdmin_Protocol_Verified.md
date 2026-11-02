@@ -19,7 +19,7 @@
 | `0000fff4-…` | `p` | 校准 RSSI@1m（calibratedTxPower） | 1 字节有符号 | 1 字节 |
 | `0000fff5-…` | `q` | 射频发射功率 | 1 字节 **档位码/索引**（非 dBm） | hex 字符串（nRF 设备为 `FF` 开头的档位列表格式，见 §4） |
 | `0000fff6-…` | `r` | 设备密码 | ASCII 字节 | 连接时跳过 |
-| `0000fff7-…` | `s` | 广播间隔（单位 ms） | 2 字节大端（300 ms = `0x012C`；范围 100 ms~10 s） | `getIntValue(FORMAT_UINT16)` |
+| `0000fff7-…` | `s` | 广播间隔 | nRF52 固件：2 字节大端毫秒（300 ms = `0x012C`）；国产固件（实测 F1-105）：**1 字节、单位 100 ms**（500 ms = `0x05`）。**按读回长度判定** | nRF52：`FORMAT_UINT16`；国产：1 字节整数 |
 | `0000fff8-…` | `t` | Device ID | 4 字节大端（Long→hex 补 8 位） | hex 字符串 |
 | `0000fff9-…` | `u` | **设备名称** | ASCII 字节（无长度补位） | `getStringValue(0)`（ASCII） |
 | `0000fffa-…` | `v` | 未在 SDK 流程中使用 | — | 连接时跳过 |
@@ -42,7 +42,7 @@ FFF2 ← Major 2B BE         （若 majorChange）
 FFF3 ← Minor 2B BE         （若 minorChange）
 FFF4 ← 校准 RSSI 1B        （若 calibratChange，本项目不写）
 FFF5 ← 功率档位码 1B       （若 txpowerChange）
-FFF7 ← 间隔 2B BE          （若 broadcasetintervalChange）
+FFF7 ← 间隔 按固件长度      （若 broadcasetintervalChange）
 FFF8 ← DeviceID 4B         （若 deviceIdChange，本项目不写）
 FFF9 ← 名称 ASCII          （若 nameChange）
 FFFE ← mode 1B             （若 modeChange，本项目不写）
@@ -52,12 +52,15 @@ FFFF ← password ASCII      （提交/生效；每次配置必发）
 
 - **设备侧单位是毫秒**：写入 `FFF7` 的是 ms（300 → `0x012C`）；官方 App 的输入框以 100 ms 为单位（输入 20 → 实际 2000 ms），
   不要把 UI 输入值直接当 ms 写。合法范围 **100 ms ~ 10 s**（`0x0064` ~ `0x2710`）。
+- **例外：部分国产固件 fff7 为 1 字节、单位 100 ms**（实测 `F1-105`：读回 1B `[05]`，写 2 字节被 ATT `0x8065000D`
+  `INVALID_ATTRIBUTE_VALUE_LENGTH` 拒绝；改写 1 字节 `0x1E`/`0x64` 均 `Success` 且读回一致）。
+  代码按**连接时读回的长度**自适应：1 字节 → `intervalMs / 100`（需为 100 的整数倍）；2 字节 → 大端毫秒。
 - **无 AES、无 16 字节报文头、无随机填充**：`b.a` 的 Base64 只是 SDK 内部编码，`b.c.a(String)=Base64.decode` 会还原成上面的原始字节。
 - **无槽位（Slot）概念**：BeaconSET 固件只有一个广播配置，不存在 Slot 0~5。
 - **无需订阅通知**：连接后 SDK 只做「逐特征 Read」，写入完成靠 GATT 写回调（`onCharacteristicWrite`）计数，没有依赖 CCCD 通知。
 - 写完 `FFFF` 后 SDK 只做「写成功 → 延迟断开 GATT」，**没有重启指令**（`MinewBeaconConnection` 仅有
-  `writeSetting / writeBatchSetting / writePowerOffByAuth`，无 restart/reboot）。保存后设备可能自行停止广播，
-  但**不可依赖**：校验前必须**人工断电重启**（见 `docs/30` 步骤 E）。
+  `writeSetting / writeBatchSetting / writePowerOffByAuth`，无 restart/reboot）。参数在提交时即保存并生效，
+  **无需重启**；设备可能自行停止广播、部分固件会主动断开 GATT，重新连接后读回校验即可（见 `docs/30` 步骤 E）。
 
 ## 3. 连接后自动读回（`ConnectService` 特征遍历）
 
@@ -68,7 +71,7 @@ FFFF ← password ASCII      （提交/生效；每次配置必发）
 |---|---|
 | UUID | 返回 32 位 hex，按 8-4-4-4-12 格式化 |
 | Major / Minor | hex → 整数 |
-| 间隔 | `FORMAT_UINT16`（大端 2 字节） |
+| 间隔 | 1 字节则 ×100 ms；2 字节则大端毫秒 |
 | 名称 | ASCII 字符串 |
 | 功率 | 见 §4 |
 | 模式 | 整数（读完即连接完成） |
@@ -122,7 +125,7 @@ FFFF ← password ASCII      （提交/生效；每次配置必发）
 | Major / Minor | **0 ~ 65535** | `FFF2` / `FFF3` 2 字节大端 |
 | 校验距离（校准 RSSI） | **-127 ~ 0**，常见 `-55` / `-59`；**不建议修改**；广播中不可见，连上才可读 | `FFF4`（只读，本项目不写） |
 | 广播功率 | **从设备档位列表勾选**（非任意值）；广播中不可见，连上才可读 | `FFF5` 档位码（见 §4） |
-| 广播周期 | **100 ms ~ 10 s**；App 手动输入值 ×100 = 实际 ms（输入 20 → 2000 ms） | `FFF7` 直接写 **ms**（300 → `0x012C`） |
+| 广播周期 | **100 ms ~ 10 s**；App 手动输入值 ×100 = 实际 ms（输入 20 → 2000 ms） | nRF52：`FFF7` 写 **ms**（300 → `0x012C`）；国产固件：`FFF7` 写 **100 ms 单位**（500 ms → `0x05`） |
 | 设备名称 | 手动输入（手册未给长度上限） | `FFF9` ASCII；本项目 ≤7 |
 | 连接模式 | `YES`=可连接，`NO`=不可连接；设 `NO` 后**仍可连接 5 分钟**，之后不广播设备名称 | `FFFE`；本项目固定 `YES` |
 | 重启密码 | **8 位**；保存参数时输入 | `FFFF` 提交用；`FFF6` 不改 |

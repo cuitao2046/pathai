@@ -53,6 +53,9 @@ class Settings:
     map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
     # 对外可访问基地址：拼接 API-02 dataUrl；必须 HTTPS（契约校验强制）
     public_base_url: str = "https://localhost"
+    local_discovery_port: int = 0
+    local_business_port: int = 0
+    local_pairing_admin_token: str = field(default="", repr=False)
     # 定位解算参数（docs/28 §5.4）：默认值均为工程占位，现场标定后冻结。
     # rssi_at_1m 是 1 m 处 measured power，不是信标广播档位 txPower。
     location_rssi_at_1m: float = -71.0
@@ -87,6 +90,9 @@ class Settings:
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
             public_base_url=env.get("PATHAI_PUBLIC_BASE_URL", "https://localhost"),
+            local_discovery_port=int(env.get("PATHAI_LOCAL_DISCOVERY_PORT", "39001" if env.get("PATHAI_ENV", LOCAL_ENV) == LOCAL_ENV else "0")),
+            local_business_port=int(env.get("PATHAI_LOCAL_BUSINESS_PORT", "8000" if env.get("PATHAI_ENV", LOCAL_ENV) == LOCAL_ENV else "0")),
+            local_pairing_admin_token=env.get("PATHAI_LOCAL_PAIRING_ADMIN_TOKEN", ""),
             location_rssi_at_1m=float(env.get("PATHAI_LOCATION_RSSI_AT_1M", "-71")),
             location_path_loss_n=float(env.get("PATHAI_LOCATION_PATH_LOSS_N", "2.0")),
             location_residual_reliable_m=float(

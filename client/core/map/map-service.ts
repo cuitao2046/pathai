@@ -26,7 +26,7 @@ import { createLogger } from '../../utils/logger';
 import { getJson, getString, remove, setJson, setString } from '../../utils/kv';
 import {
   appendMapPartial,
-  commitMapCache,
+  commitMapPartial,
   readMapCache,
   readMapPartialSize,
   readMapPartialText,
@@ -41,6 +41,7 @@ import type {
 } from '../../typings/api';
 import { ApiClientError } from '../http/errors';
 import { getHeader } from '../http/transport';
+import { resolveBaseUrl, type BaseUrlProvider } from '../http/base-url';
 import type { ApiClient } from '../http/api-client';
 import { BeaconRegistry } from '../ble/beacon-registry';
 
@@ -53,6 +54,11 @@ const DOWNLOAD_KEY = (siteId: string) => `map:download:${siteId}`;
 export interface MapServiceOptions {
   client: ApiClient;
   siteId: string;
+  /**
+   * 业务根地址来源（默认编译期配置）。联调重写下载源时必须与
+   * 登录/业务请求使用同一地址，避免分片下载打到旧 IP。
+   */
+  baseUrl?: BaseUrlProvider;
   /** 联调开关：重写下载源为 API 同源（默认读环境配置）。 */
   rewriteDataUrlToLocalApi?: boolean;
 }
@@ -279,6 +285,7 @@ export class MapService {
     const siteId = this.opts.siteId;
     const version = summary.mapVersion;
     const url = this.dataUrlFor(summary);
+    const startedAtMs = nowMs();
 
     let offset = 0;
     let total: number | null = null;
@@ -395,17 +402,27 @@ export class MapService {
       // 用文本读取而非二进制 ArrayBuffer：真机/工具 readFile 不带 encoding 时的返回值
       // 未必能被宿主环境的 instanceof ArrayBuffer 命中，文本读取是已验证可靠的路径；
       // sha256Async 内部按 UTF-8 编码后分片哈希，JSON 文本往返编码字节一致。
+      const chunksDoneAtMs = nowMs();
+      log.info('地图分片下载完成', version, `${chunksDoneAtMs - startedAtMs}ms`, `${offset} 字节`);
       const raw = await readMapPartialText(siteId, version);
       if (raw === null || raw.length === 0) {
         throw mapUnavailable('地图半成品读取失败');
       }
+      const readAtMs = nowMs();
       const digest = await sha256Async(raw);
+      const hashAtMs = nowMs();
       if (digest !== summary.dataSha256) {
         await removeMapPartial(siteId, version);
         throw mapUnavailable('地图数据摘要校验失败');
       }
-      await commitMapCache(siteId, raw);
-      await removeMapPartial(siteId, version);
+      // 校验通过后直接把半成品 rename 为正式缓存，不再另写 4.6MB staging 文件
+      await commitMapPartial(siteId, version);
+      log.info(
+        '地图校验与转正耗时',
+        `读取=${readAtMs - chunksDoneAtMs}ms`,
+        `摘要=${hashAtMs - readAtMs}ms`,
+        `转正=${nowMs() - hashAtMs}ms`,
+      );
       this.clearDownloadState();
       this.persistMeta(summary, etag);
       return raw;
@@ -417,8 +434,9 @@ export class MapService {
 
   private dataUrlFor(summary: MapVersionResponse): string {
     const useRewrite = this.opts.rewriteDataUrlToLocalApi ?? DEBUG_REWRITE_DATA_URL;
+    const base = resolveBaseUrl(this.opts.baseUrl ?? API_BASE_URL);
     return useRewrite
-      ? `${API_BASE_URL}/api/v1/sites/${this.opts.siteId}/map/data?version=${encodeURIComponent(summary.mapVersion)}`
+      ? `${base}/api/v1/sites/${this.opts.siteId}/map/data?version=${encodeURIComponent(summary.mapVersion)}`
       : summary.dataUrl;
   }
 
