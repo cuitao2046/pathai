@@ -20,3 +20,19 @@ export async function resolveP0Candidate(
   if (cached) return 'cached-reachable';
   return await discovered ? 'discovery-reachable' : 'unavailable';
 }
+
+export async function resolveBusinessCandidate(
+  checkCached: () => Promise<boolean>,
+  discover: () => Promise<string | null>,
+  isCurrent: () => boolean,
+  persist: (url: string) => void,
+): Promise<P0CandidateOutcome> {
+  const discovered = Promise.resolve().then(discover).catch(() => null);
+  const cached = await Promise.resolve().then(checkCached).catch(() => false);
+  if (!isCurrent()) return 'unavailable';
+  if (cached) return 'cached-reachable';
+  const candidate = await discovered;
+  if (!isCurrent() || candidate === null) return 'unavailable';
+  persist(candidate);
+  return 'discovery-reachable';
+}

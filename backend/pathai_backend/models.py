@@ -37,6 +37,23 @@ class AccessToken(Base):
 Index("ix_access_tokens_subject", AccessToken.subject_id)
 
 
+class LocalDeviceIdentity(Base):
+    __tablename__ = "local_device_identities"
+
+    slot: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+
+
+class LocalPairing(Base):
+    __tablename__ = "local_pairings"
+
+    pair_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    key_b64: Mapped[str] = mapped_column(String(43), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    expires_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class LocationSequence(Base):
     """定位批次序号。"""
 

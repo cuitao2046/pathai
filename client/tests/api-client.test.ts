@@ -211,6 +211,42 @@ describe('传输层映射', () => {
 });
 
 describe('请求装配', () => {
+  test('动态地址来源：每次请求按当前解析结果构造 URL', async () => {
+    let base = 'http://10.1.2.3:8000';
+    respondWith((o) => o.success({ statusCode: 200, header: {}, data: {} }));
+    const { client } = createHttpStack(() => base);
+    await client.request({ method: 'GET', path: '/api/v1/ping', auth: false });
+    const first = wxStub.__requestLog[wxStub.__requestLog.length - 1];
+    expect(first?.url).toBe('http://10.1.2.3:8000/api/v1/ping');
+
+    base = 'http://10.9.9.9:8000';
+    await client.request({ method: 'GET', path: '/api/v1/ping', auth: false });
+    const second = wxStub.__requestLog[wxStub.__requestLog.length - 1];
+    expect(second?.url).toBe('http://10.9.9.9:8000/api/v1/ping');
+  });
+
+  test('动态地址下登录换码与业务请求同源', async () => {
+    const base = 'http://10.9.9.9:8000';
+    const loginUrl = `${base}/api/v1/auth/wechat`;
+    respondWith((o) => {
+      if (o.url === loginUrl) {
+        o.success({
+          statusCode: 200,
+          header: {},
+          data: { accessToken: 'tok-dyn', tokenType: 'Bearer', expiresIn: 7200, userId: 'anon_1' },
+        });
+        return;
+      }
+      o.success({ statusCode: 200, header: {}, data: { ok: true } });
+    });
+    const { client } = createHttpStack(() => base);
+    await client.request<{ ok: boolean }>({ method: 'GET', path: '/api/v1/nav/x' });
+    const login = wxStub.__requestLog.find((r) => r.url === loginUrl);
+    const business = wxStub.__requestLog.find((r) => r.url === `${base}/api/v1/nav/x`);
+    expect(login).toBeDefined();
+    expect(business?.header?.Authorization).toBe('Bearer tok-dyn');
+  });
+
   test('304 视为成功分支返回（ETag 短路，C3 消费）', async () => {
     respondWith((o) => o.success({ statusCode: 304, header: {}, data: '' }));
     const { client } = createHttpStack(BASE);

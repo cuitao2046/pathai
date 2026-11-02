@@ -2,6 +2,7 @@
 """FastAPI 应用工厂。"""
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from pathai_backend.admin import service as admin_service
 from pathai_backend.config import LOCAL_ENV, Settings
 from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
+from pathai_backend.local_discovery_v1 import LocalDiscoveryServer
+from pathai_backend.local_pairing import LocalPairingService
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.request_context import RequestContextMiddleware
 from pathai_backend.routers import auth as auth_router
@@ -20,6 +23,7 @@ from pathai_backend.routers import admin_maps as admin_maps_router
 from pathai_backend.routers import beacons as beacons_router
 from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import location as location_router
+from pathai_backend.routers import local_pairing as local_pairing_router
 from pathai_backend.routers import map as map_router
 from pathai_backend.routers import nav as nav_router
 from pathai_backend.routers import voice as voice_router
@@ -36,21 +40,40 @@ _CSP = (
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    if settings.local_discovery_port and (
+        not 1 <= settings.local_discovery_port <= 65535 or
+        not 1 <= settings.local_business_port <= 65535
+    ):
+        raise RuntimeError("局域网发现需配置合法的 UDP/业务端口")
+    if settings.local_business_port and not settings.local_discovery_port:
+        raise RuntimeError("业务端口不得在关闭发现服务时单独启用")
     init_engine(settings.resolved_database_url)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        discovery = None
         try:
             # 管理后台固定账户初始化：数据库表须已由 Alembic/create_all 建立
             admin_service.ensure_admin_account()
+            if settings.local_discovery_port:
+                discovery = LocalDiscoveryServer(
+                    app.state.local_pairing, settings.local_business_port, settings.local_discovery_port,
+                    unpaired=True,
+                )
+                discovery.start()
             yield
         finally:
+            app.state.local_pairing_ready = False
+            if discovery is not None:
+                discovery.close()
             dispose_engine()
 
     app = FastAPI(
         title="PathAI API", version="0.1.0", docs_url=None, redoc_url=None, lifespan=lifespan
     )
     app.state.settings = settings
+    app.state.local_pairing = LocalPairingService(f"boot-{secrets.token_hex(16)}")
+    app.state.local_pairing_ready = False
     if settings.wechat_fake:
         if settings.env != LOCAL_ENV:
             raise RuntimeError("PATHAI_WECHAT_FAKE 仅允许在 PATHAI_ENV=local 下开启")
@@ -81,6 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(map_router.router)
     app.include_router(intent_router.router)
     app.include_router(location_router.router)
+    app.include_router(local_pairing_router.router)
     app.include_router(nav_router.router)
     # 讯飞 WebSocket 签名 URL 签发（live 语音 ASR/TTS）
     app.include_router(voice_router.router)

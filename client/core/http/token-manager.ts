@@ -11,6 +11,7 @@ import { createLogger } from '../../utils/logger';
 import { getJson, remove, setJson } from '../../utils/kv';
 import type { AuthResponse } from '../../typings/api';
 import { ApiClientError, parseErrorEnvelope } from './errors';
+import { resolveBaseUrl, type BaseUrlProvider } from './base-url';
 import { request as transportRequest } from './transport';
 
 const log = createLogger('token');
@@ -67,7 +68,7 @@ export class WechatTokenManager implements TokenManager {
   private cached: StoredToken | null;
   private inflight: Promise<StoredToken> | null = null;
 
-  constructor(private readonly baseUrl: string) {
+  constructor(private readonly baseUrl: BaseUrlProvider) {
     this.cached = getJson<StoredToken>(STORAGE_KEY);
   }
 
@@ -103,7 +104,7 @@ export class WechatTokenManager implements TokenManager {
   private async login(): Promise<StoredToken> {
     const code = await wxLoginCode();
     const resp = await transportRequest({
-      url: this.baseUrl + LOGIN_PATH,
+      url: resolveBaseUrl(this.baseUrl) + LOGIN_PATH,
       method: 'POST',
       data: { code },
       timeoutMs: REQUEST_TIMEOUT_MS,

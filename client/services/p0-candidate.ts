@@ -18,6 +18,12 @@ export function getP0Candidate(): string | null {
   return API_BASE_URL;
 }
 
+export function saveP0Candidate(url: string): boolean {
+  if (!allowedCandidate(url)) return false;
+  setString(CACHE_KEY, url);
+  return getString(CACHE_KEY) === url;
+}
+
 export function checkP0Candidate(url: string): Promise<boolean> {
   if (!allowedCandidate(url)) return Promise.resolve(false);
   return new Promise((resolve) => {
