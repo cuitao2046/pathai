@@ -16,6 +16,7 @@ import type { BeaconSample } from '../../../core/ble/scan-window';
 import { LocationPipeline } from '../../../core/position/location-pipeline';
 import { SequenceCounter } from '../../../core/position/sequence-counter';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
+import { pickPointOnScreen } from '../../../core/collection/hit-test';
 import { createTeeSource, estimateSnapshot } from '../../../core/collection/collect-scan';
 import { StaticSampler } from '../../../core/collection/static-sampler';
 import { StaticPointsStore } from '../../../core/collection/points-store';
@@ -187,7 +188,7 @@ Page({
             currentFloor: this.mapView?.floorId ?? '1',
           });
         },
-        onTap: (world) => this.handleMapTap(world),
+        onTap: (_world, screen) => this.handleMapTap(screen),
         onLongPress: (world) => this.handleLongPress(world),
         onFloorChanged: (floorId) => {
           const item = (this.data.floors.length > 0 ? this.data.floors : this.mapView?.floorList ?? [])
@@ -236,32 +237,50 @@ Page({
   },
 
   // ------------------------------------------------------------------
-  // 地图交互
+  // 手势转发 / 地图交互
   // ------------------------------------------------------------------
 
-  handleMapTap(world: { x: number; y: number }): void {
+  // touch 事件绑定在 canvas 自身（WXML），页面只做转发：
+  // 手势绑定在容器上会吞掉覆盖控件的 bindtap（已知坑）
+  onTouchStart(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchStart(e);
+  },
+
+  onTouchMove(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchMove(e);
+  },
+
+  onTouchEnd(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchEnd(e);
+  },
+
+  onTouchCancel(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchCancel(e);
+  },
+
+  onLongPressEvent(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onLongPressEvent(e);
+  },
+
+  handleMapTap(screen: { x: number; y: number }): void {
     if (this.data.collecting || this.data.card !== null) {
       return;
     }
     const vp = this.mapView?.vp;
-    if (vp === null || vp === undefined || this.mapView === null) {
+    if (vp === null || vp === undefined) {
       return;
     }
     const pts = this.pointsByFloor.get(vp.floorId) ?? [];
-    let best: CalibrationPointRec | null = null;
-    let bestDist = HIT_RADIUS_PX;
-    for (const p of pts) {
-      // 世界距离 × scale = 屏幕像素距离
-      const wdx = p.truth[0] - world.x;
-      const wdy = p.truth[1] - world.y;
-      const screenDist = Math.hypot(wdx, wdy) * vp.scale;
-      if (screenDist <= bestDist) {
-        best = p;
-        bestDist = screenDist;
-      }
-    }
-    if (best !== null) {
-      this.openCard(best);
+    // 屏幕空间命中：点位按当前视口投影后再比距离，缩放/平移后不偏移
+    const hit = pickPointOnScreen(
+      pts,
+      (p) => ({ x: p.truth[0], y: p.truth[1] }),
+      vp,
+      screen,
+      HIT_RADIUS_PX,
+    );
+    if (hit !== null) {
+      this.openCard(hit.point);
     }
   },
 
@@ -502,6 +521,19 @@ Page({
   onSwitchFloor(e: WechatMiniprogram.TouchEvent): void {
     const floorId = String(e.currentTarget.dataset.floor ?? '');
     this.mapView?.setFloor(floorId);
+  },
+
+  /** 缩放控件：单指精细调整（双指缩放之外的补充） */
+  onZoomIn(): void {
+    this.mapView?.zoomIn();
+  },
+
+  onZoomOut(): void {
+    this.mapView?.zoomOut();
+  },
+
+  onResetView(): void {
+    this.mapView?.fit();
   },
 
   onDurationChange(e: WechatMiniprogram.PickerChange): void {

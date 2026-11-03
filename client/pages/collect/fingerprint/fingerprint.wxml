@@ -33,6 +33,13 @@
     aria-label="指纹网格地图，走到网格点后点击该点采集"
   />
 
+  <!-- 缩放控件：单指精细调整（双指缩放之外的补充）；显式 z-index 保证可点按 -->
+  <view class="map-tools" aria-label="地图缩放控制">
+    <button class="zoom-btn" bindtap="onZoomIn" aria-label="放大地图">＋</button>
+    <button class="zoom-btn" bindtap="onZoomOut" aria-label="缩小地图">－</button>
+    <button class="zoom-btn zoom-reset" bindtap="onResetView" aria-label="回到全图">全图</button>
+  </view>
+
   <!-- 快照倒计时 -->
   <view class="collect-panel" wx:if="{{collecting}}" aria-live="polite">
     <view class="countdown-row">
