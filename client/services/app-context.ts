@@ -39,6 +39,9 @@ export const MOCK_ASR_TEXT_KEY = 'cfg:mockAsrText';
 /** 标定模式开关（设置页写入，重启生效；只记录不改算法）。 */
 export const CALIBRATION_MODE_KEY = 'cfg:calibrationMode';
 
+/** 现场采集工具开关（设置页写入；只控制首页「采集」入口可见性，即时生效）。 */
+export const FIELD_COLLECTION_TOOL_KEY = 'cfg:fieldCollectionTool';
+
 /** 标定操作人（写入 static/dynamic 导出的 operator 字段）。 */
 export const CALIBRATION_OPERATOR_KEY = 'cfg:calibrationOperator';
 
@@ -164,6 +167,16 @@ class AppContext {
 
   getCalibrationOperator(): string {
     return getString(CALIBRATION_OPERATOR_KEY) ?? '';
+  }
+
+  /** 设置页：写入现场采集工具开关（即时生效，仅控制入口可见性）。 */
+  setFieldCollectionToolSetting(on: boolean): void {
+    setJson(FIELD_COLLECTION_TOOL_KEY, on);
+  }
+
+  /** 首页/设置页回显：现场采集工具开关（默认关闭）。 */
+  getFieldCollectionToolSetting(): boolean {
+    return getJson<boolean>(FIELD_COLLECTION_TOOL_KEY) === true;
   }
 }
 

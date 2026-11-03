@@ -1,0 +1,66 @@
+<view class="page">
+  <!-- 顶栏：楼层 / 网格版本 / 导出 -->
+  <view class="topbar">
+    <view class="floor-pills" aria-label="楼层选择">
+      <button
+        wx:for="{{floors}}"
+        wx:key="floorId"
+        class="pill {{item.floorId === currentFloor ? 'active' : ''}}"
+        data-floor="{{item.floorId}}"
+        bindtap="onSwitchFloor"
+        aria-label="切换到{{item.displayName}}"
+      >{{item.level}}F</button>
+    </view>
+    <button class="pill" bindtap="onExport" aria-label="导出指纹记录">导出</button>
+  </view>
+
+  <view class="stats-bar" aria-live="polite">
+    <text>网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
+    <text class="legend">蓝点=待采 绿=已采</text>
+  </view>
+
+  <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
+
+  <!-- 地图画布 -->
+  <canvas
+    type="2d"
+    id="collectCanvas"
+    class="collect-canvas"
+    catchtouchstart="onTouchStart"
+    catchtouchmove="onTouchMove"
+    catchtouchend="onTouchEnd"
+    catchtouchcancel="onTouchCancel"
+    aria-label="指纹网格地图，走到网格点后点击该点采集"
+  />
+
+  <!-- 快照倒计时 -->
+  <view class="collect-panel" wx:if="{{collecting}}" aria-live="polite">
+    <view class="countdown-row">
+      <text class="countdown">{{countdownText}}</text>
+      <text class="meta">快照采集中，请原地站立保持不动</text>
+    </view>
+  </view>
+
+  <!-- 点位确认卡 -->
+  <view class="card-mask" wx:if="{{card !== null}}" bindtap="onCardCancel">
+    <view class="card" catchtap="noop" aria-label="网格点确认">
+      <view class="card-title">{{card.fpId}}</view>
+      <view class="card-row"><text class="label">区域</text><text>{{card.regionText}}</text></view>
+      <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
+      <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>
+      <view class="card-row"><text class="label">已采次数</text><text>{{card.recordCount}}</text></view>
+      <view class="card-row"><text class="label">定位距离</text><text>{{card.distanceText}}</text></view>
+      <view class="card-hint">请通过现场参照物确认已站在网格点上；确认后 3 秒快照采集，期间请原地站立。</view>
+      <view class="card-actions">
+        <button class="btn ghost" bindtap="onCardCancel" aria-label="取消">取消</button>
+        <button class="btn ghost" bindtap="onManageRecords" aria-label="记录管理">管理</button>
+        <button class="btn primary" bindtap="onCardConfirm" aria-label="确认到点，开始快照">确认采集</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="overlay" wx:if="{{loading}}">
+    <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
+    <button class="retry-btn" wx:if="{{loadError !== ''}}" bindtap="onRetry">重试</button>
+  </view>
+</view>

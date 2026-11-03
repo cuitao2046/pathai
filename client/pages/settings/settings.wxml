@@ -42,6 +42,15 @@
   </view>
 
   <view class="section">
+    <view class="section-title">现场采集工具</view>
+    <view class="row">
+      <text class="label">首页「采集」入口</text>
+      <switch checked="{{fieldCollectionSetting}}" bindchange="onChangeFieldCollection" aria-label="切换首页是否显示现场采集工具入口" />
+    </view>
+    <view class="hint">开启后首页右上角显示「采集」按键（静态标定 / 网格指纹采集），<text style="color:#1f2937">即时生效</text>；默认关闭（不对视障终端用户展示）。</view>
+  </view>
+
+  <view class="section">
     <view class="section-title">标定模式（现场工具）</view>
     <view class="row">
       <text class="label">记录可信位置估计</text>

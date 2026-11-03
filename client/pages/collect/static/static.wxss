@@ -1,0 +1,242 @@
+/* 静态标定采集页样式（顶栏 + 全屏画布 + 采集面板/确认卡浮层） */
+.page {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #eef3f8;
+}
+
+.topbar {
+  position: absolute;
+  top: 16rpx;
+  left: 16rpx;
+  right: 16rpx;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.floor-pills {
+  display: flex;
+  gap: 8rpx;
+}
+
+.pill {
+  margin: 0;
+  padding: 0 22rpx;
+  height: 60rpx;
+  line-height: 56rpx;
+  font-size: 26rpx;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2rpx solid #cbd5e1;
+  border-radius: 30rpx;
+}
+
+.pill.active {
+  background: #1a56db;
+  border-color: #1a56db;
+  color: #ffffff;
+}
+
+.stats-bar {
+  position: absolute;
+  top: 92rpx;
+  left: 24rpx;
+  z-index: 3;
+  display: flex;
+  gap: 16rpx;
+  font-size: 22rpx;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+}
+
+.legend {
+  color: #94a3b8;
+}
+
+.mock-hint {
+  position: absolute;
+  top: 140rpx;
+  left: 24rpx;
+  z-index: 3;
+  font-size: 22rpx;
+  color: #b45309;
+  background: rgba(254, 243, 199, 0.95);
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+}
+
+.collect-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* 采集中面板：底部悬浮 */
+.collect-panel {
+  position: absolute;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 32rpx;
+  z-index: 4;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.18);
+}
+
+.countdown-row {
+  display: flex;
+  align-items: baseline;
+  gap: 20rpx;
+}
+
+.countdown {
+  font-size: 56rpx;
+  font-weight: 700;
+  color: #1a56db;
+}
+
+.meta {
+  font-size: 24rpx;
+  color: #475569;
+}
+
+.no-sample {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #b91c1c;
+}
+
+.obs-table {
+  margin-top: 12rpx;
+  border-top: 2rpx solid #e2e8f0;
+  padding-top: 8rpx;
+}
+
+.obs-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 22rpx;
+  color: #334155;
+  padding: 4rpx 0;
+}
+
+.obs-row text {
+  flex: 1;
+  text-align: center;
+}
+
+.obs-row text:first-child {
+  text-align: left;
+  flex: 1.6;
+}
+
+.obs-head {
+  color: #94a3b8;
+}
+
+/* 确认卡 */
+.card-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  width: 560rpx;
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 32rpx;
+}
+
+.card-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 16rpx;
+}
+
+.card-row {
+  display: flex;
+  font-size: 26rpx;
+  padding: 6rpx 0;
+  color: #1f2937;
+}
+
+.card-row .label {
+  width: 160rpx;
+  color: #64748b;
+}
+
+.card-hint {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: #b45309;
+  background: #fffbeb;
+  border-radius: 8rpx;
+  padding: 12rpx;
+}
+
+.card-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.btn {
+  flex: 1;
+  margin: 0;
+  font-size: 26rpx;
+  border-radius: 12rpx;
+  line-height: 2.4;
+}
+
+.btn.primary {
+  background: #1a56db;
+  color: #ffffff;
+}
+
+.btn.ghost {
+  background: #f1f5f9;
+  color: #1f2937;
+}
+
+/* 加载/错误浮层 */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: #eef3f8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+}
+
+.overlay-text {
+  font-size: 28rpx;
+  color: #475569;
+  padding: 0 48rpx;
+  text-align: center;
+}
+
+.retry-btn {
+  background: #1a56db;
+  color: #ffffff;
+  font-size: 28rpx;
+  border-radius: 12rpx;
+  padding: 0 48rpx;
+}

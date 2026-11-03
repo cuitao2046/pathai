@@ -150,6 +150,9 @@ Page({
     candidates: [] as PlaceCandidate[],
     destination: null as PlaceCandidate | null,
     isMockSource: appContext.dataSource === 'mock',
+    // 现场采集工具（设置页开关控制入口可见性，即时生效；导航中隐藏）
+    collectEntry: false,
+    collectMenuOpen: false,
     // 导航态（REQ-PAGE：导航融合进地图页，原独立导航页退役）
     navActive: false,
     state: 'idle' as NavState,
@@ -224,6 +227,8 @@ Page({
   },
 
   onShow(): void {
+    // 从设置页返回后刷新采集入口可见性（开关即时生效）
+    this.setData({ collectEntry: appContext.getFieldCollectionToolSetting() });
     const controller = this.controller;
     if (controller !== null && controller.sessionId !== null && !this.sessionEnded) {
       void controller.handleForeground();
@@ -765,6 +770,35 @@ Page({
     wx.navigateTo({
       url: '/pages/settings/settings',
       fail: (err) => log.warn('navigateTo settings 失败', JSON.stringify(err)),
+    });
+  },
+
+  // ------------------------------------------------------------------
+  // 现场采集工具入口（横向弹出面板：静态标定 / 网格指纹）
+  // ------------------------------------------------------------------
+
+  onToggleCollectMenu(): void {
+    if (!this.data.collectEntry) {
+      return;
+    }
+    this.setData({ collectMenuOpen: !this.data.collectMenuOpen });
+  },
+
+  onGoCollectStatic(): void {
+    log.info('进入静态标定采集');
+    this.setData({ collectMenuOpen: false });
+    wx.navigateTo({
+      url: '/pages/collect/static/static',
+      fail: (err) => log.warn('navigateTo collect/static 失败', JSON.stringify(err)),
+    });
+  },
+
+  onGoCollectFingerprint(): void {
+    log.info('进入网格指纹采集');
+    this.setData({ collectMenuOpen: false });
+    wx.navigateTo({
+      url: '/pages/collect/fingerprint/fingerprint',
+      fail: (err) => log.warn('navigateTo collect/fingerprint 失败', JSON.stringify(err)),
     });
   },
 

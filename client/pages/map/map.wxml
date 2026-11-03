@@ -52,6 +52,29 @@
     >全图</button>
   </view>
 
+  <!-- 现场采集工具（设置页开关控制；导航中隐藏）：
+       右上角「采集」按键，点击横向弹出两个采集入口 -->
+  <view class="collect-area" wx:if="{{collectEntry && !navActive}}">
+    <button
+      class="tool-btn collect-btn"
+      bindtap="onToggleCollectMenu"
+      aria-label="现场采集工具"
+      aria-expanded="{{collectMenuOpen}}"
+    >采集</button>
+    <view class="collect-panel" wx:if="{{collectMenuOpen}}">
+      <button
+        class="tool-btn collect-option"
+        bindtap="onGoCollectStatic"
+        aria-label="打开静态标定采集"
+      >静态标定</button>
+      <button
+        class="tool-btn collect-option"
+        bindtap="onGoCollectFingerprint"
+        aria-label="打开网格指纹采集"
+      >网格指纹</button>
+    </view>
+  </view>
+
   <!-- 意图结果/候选/确认：屏幕居中浮层（REQ-PAGE；导航态时让位给导航 HUD） -->
   <view
     class="center-card"

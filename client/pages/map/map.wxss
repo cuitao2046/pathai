@@ -6,6 +6,29 @@
   background: #eef3f8; /* 与 canvas 外部底色一致，避免首帧闪白 */
 }
 
+/* 右上角「采集」入口 + 横向弹出面板（静态标定 / 网格指纹） */
+.collect-area {
+  position: absolute;
+  z-index: 10;
+  top: 24rpx;
+  right: 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+}
+
+.collect-panel {
+  display: flex;
+  flex-direction: row;
+  gap: 12rpx;
+}
+
+.collect-option {
+  box-shadow: 0 4rpx 16rpx rgba(15, 23, 42, 0.16);
+}
+
+
 .map-canvas {
   display: block;
   width: 100%;
