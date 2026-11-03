@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 """M7 行为测试：API-05 三点定位估计（docs/24 §8）。
 
-mock 数据使用真实地图包 2026-10-25.1 的信标目录（1 层 52 个、2 层 9 个，
-txPower=-12），RSSI 按真实坐标与 RSSI@1m 参考值反推。
+mock 数据使用真实地图包 2026-11-03.1 的信标目录（1 层 52 个、2 层 9 个，
+txPower=-12，全部贴墙且安装高度 2.5 m），RSSI 按真实坐标、安装高度与
+RSSI@1m 参考值反推三维斜距。
 """
 from __future__ import annotations
 
 import json
 import math
+import shutil
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,15 +19,17 @@ import pytest
 from pathai_backend.map_repository import MapRepository
 
 URL = "/api/v1/locations/estimate"
-SAMPLE = "2026-10-25.1"
-#: 1 层三点定位用真实信标（坐标/安装高度取自地图包，局部米制；统一 2.2 m）。
-BK_A = ("BK-01-001", -30.25, -75.08)
+SAMPLE = "2026-11-03.1"
+#: 真实地图包目录：定位用例固定用「全部贴墙 + 安装高度 2.5 m」的新版包。
+MAPS_DATA_DIR = Path(__file__).resolve().parent.parent / "maps_data" / "school-building-01"
+#: 1 层三点定位用真实信标（坐标/安装高度取自地图包，局部米制；统一 2.5 m）。
+BK_A = ("BK-01-001", -30.209008, -75.08)
 BK_B = ("BK-01-004", -18.777, -83.987)
-BK_C = ("BK-01-005", -36.91, -59.51)
+BK_C = ("BK-01-005", -37.131574, -59.51)
 #: 部署档位（E5 3 档 -12 dBm）推算的 1m 参考 RSSI（measured power）。
 RSSI_AT_1M = -71.0
 #: 真实地图包统一安装高度（m）；spec 0.3.1 高度补偿模型的信标 z。
-INSTALL_HEIGHT_M = 2.2
+INSTALL_HEIGHT_M = 2.5
 #: 手机参考高度（m）：spec 0.3.1 决策 13（成人手持工程参考）。
 PHONE_HEIGHT_M = 1.2
 #: 可解算的公共期望点：平面距三信标 8.8/17.2/14.6m（斜距另加 1m 垂直差），
@@ -78,6 +82,17 @@ def _reload(app, maps_dir: Path) -> None:
 
 
 @pytest.fixture()
+def maps_dir(tmp_path) -> Path:
+    """覆写 conftest 的公共夹具：定位用例固定用 2026-11-03.1（2.5 m 贴墙版）。"""
+    site_dir = tmp_path / "school-building-01"
+    site_dir.mkdir()
+    shutil.copyfile(
+        MAPS_DATA_DIR / f"{SAMPLE}.json", site_dir / f"{SAMPLE}.json"
+    )
+    return tmp_path
+
+
+@pytest.fixture()
 def rich_maps(maps_dir, app):
     """真实地图包每层自带信标（1 层 52 / 2 层 9），直接可用。"""
     _reload(app, maps_dir)
@@ -88,13 +103,13 @@ def rich_maps(maps_dir, app):
 def two_versions(maps_dir, app):
     """发布第二版地图（基于真实包派生）：触发 MAP_VERSION_CONFLICT 与 latest 选择。
 
-    派生版本 publishedAt 必须晚于真实包（2026-10-25T14:10:01Z），否则 latest 反转。
+    派生版本 publishedAt 必须晚于真实包（2026-11-03T00:32:06Z），否则 latest 反转。
     """
     path = maps_dir / "school-building-01" / f"{SAMPLE}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["mapVersion"] = "2026-10-26.1"
-    data["publishedAt"] = "2026-10-26T08:00:01Z"
-    (maps_dir / "school-building-01" / "2026-10-26.1.json").write_text(
+    data["mapVersion"] = "2026-11-04.1"
+    data["publishedAt"] = "2026-11-04T08:00:01Z"
+    (maps_dir / "school-building-01" / "2026-11-04.1.json").write_text(
         json.dumps(data, ensure_ascii=False), encoding="utf-8"
     )
     _reload(app, maps_dir)
@@ -141,7 +156,7 @@ class TestAuthAndVersioning:
     def test_latest_keyword_uses_newest_version(self, client, auth_headers, two_versions):
         body = _estimate(client, auth_headers, [(BK_A[0], -100), (BK_B[0], -100), (BK_C[0], -100)],
                          map_version="latest")
-        assert body["mapVersion"] == "2026-10-26.1"
+        assert body["mapVersion"] == "2026-11-04.1"
 
 
 class TestTrilateration:
@@ -159,7 +174,7 @@ class TestTrilateration:
         assert abs(body["position"]["y"] - EXPECT_P[1]) < 1.5
         assert body["confidence"] >= 0.8
         assert body["ignoredBeaconIds"] == []
-        assert body["algorithmVersion"] == "location-0.2"
+        assert body["algorithmVersion"] == "location-0.3"
         assert body["paramsVersion"] == "unset"
         assert body["estimateId"].startswith("loc_")
         assert body["sequence"] == 1
