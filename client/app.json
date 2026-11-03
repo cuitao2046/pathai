@@ -2,7 +2,9 @@
   "pages": [
     "pages/map/map",
     "pages/settings/settings",
-    "pages/p0-probe/p0-probe"
+    "pages/p0-probe/p0-probe",
+    "pages/collect/static/static",
+    "pages/collect/fingerprint/fingerprint"
   ],
   "window": {
     "navigationBarTitleText": "PathAI 室内导航",

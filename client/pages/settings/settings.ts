@@ -40,6 +40,8 @@ Page({
     calibrationCount: 0,
     calibrationOperator: '',
     calibrationExportPath: '',
+    /** 现场采集工具开关（首页「采集」入口可见性，即时生效）。 */
+    fieldCollectionSetting: false,
     busy: false,
   },
 
@@ -59,6 +61,7 @@ Page({
       calibrationSetting: appContext.getCalibrationModeSetting(),
       calibrationCount: appContext.calibration.count,
       calibrationOperator: appContext.getCalibrationOperator(),
+      fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
     });
     // 未完成下载的百分比只在这里展示（REQ-MAP），随下载进度实时刷新
     this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
@@ -92,6 +95,7 @@ Page({
       calibrationSetting: appContext.getCalibrationModeSetting(),
       calibrationCount: appContext.calibration.count,
       calibrationOperator: appContext.getCalibrationOperator(),
+      fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
     });
   },
 
@@ -183,6 +187,14 @@ Page({
     appContext.setCalibrationModeSetting(on);
     this.setData({ calibrationSetting: on });
     wx.showToast({ title: '已保存，重启小程序生效', icon: 'none', duration: 2500 });
+  },
+
+  /** 现场采集工具开关：控制首页「采集」入口可见性，即时生效。 */
+  onChangeFieldCollection(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setFieldCollectionToolSetting(on);
+    this.setData({ fieldCollectionSetting: on });
+    wx.showToast({ title: on ? '已开启，返回首页可见' : '已关闭', icon: 'none', duration: 2000 });
   },
 
   onCalibrationOperatorInput(event: WechatMiniprogram.Input) {
