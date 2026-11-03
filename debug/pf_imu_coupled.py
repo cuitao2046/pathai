@@ -34,9 +34,8 @@ HEAD_BIAS_DEG = 1.0      # 每步航向零偏 +1.0 deg（陀螺仪零偏，非�
 OBS_SIGMA = T.RAW_SIGMA / math.sqrt(T.N_SAMPLES)   # 时序平均后观测噪声 ~0.45m
 CORR_HALF_W = 1.5        # 走廊半宽（m），地图约束钳制
 SHRINK = T.SHRINK
-DZ = T.PHONE_Z - 2.2     # 手机与信标高度差（观测似然用 3D 距离对齐测距）
-if DZ == 0.0:
-    DZ = 1.0 - 2.2       # 保险：若 PHONE_Z 解析异常也保持负值
+#: 观测似然按三维斜距对齐：每枚信标取台账 installHeight，手机取 PHONE_Z。
+#: （早期脚本硬编码信标 2.2 m，2026-11-03 部署调整为统一 2.5 m，故改为逐信标读取。）
 
 
 def run_coupled(pts, walk, tree, wall_lines, sigma_theta_deg, p_acc,
@@ -91,8 +90,11 @@ def run_coupled(pts, walk, tree, wall_lines, sigma_theta_deg, p_acc,
                 # 无需单帧 WLS 的 SHRINK 缩水；残留仅标定 ±20% 散射，即现实标定误差）
                 corr = np.where(cls, pred_bias, 0.0)
                 z = meas - corr
-                # 观测似然：3D 距离对齐（粒子2D + 高度差 DZ）→ 与 meas 同基准
-                d3 = np.sqrt(((X[:, None, :] - bxyz[None, :, :2]) ** 2).sum(-1) + DZ ** 2)
+                # 观测似然：三维斜距（粒子 xy + 逐信标 dz）→ 与 meas 同基准
+                d3 = np.sqrt(
+                    ((X[:, None, :] - bxyz[None, :, :2]) ** 2).sum(-1)
+                    + (T.PHONE_Z - bxyz[None, :, 2]) ** 2
+                )
                 logw = -((z[None, :] - d3) ** 2) / (2.0 * OBS_SIGMA ** 2)
                 logw = logw.sum(1)
                 logw -= logw.max()

@@ -28,6 +28,7 @@ for _p in (str(BACKEND_DIR), str(PROJECT_ROOT)):
 
 from pathai_backend.location_solver import (  # noqa: E402
     BeaconInput,
+    PHONE_HEIGHT_M,
     LocationParams,
     estimate_location,
 )
@@ -110,6 +111,7 @@ def beacon_catalog(ledger: dict) -> dict[str, dict]:
             "floor": int(raw.get("floor")),
             "x": float(coords[0]),
             "y": float(coords[1]),
+            "z": float(raw["installHeight"]),
         }
     if not catalog:
         raise CalibrationError("信标台账为空")
@@ -155,7 +157,12 @@ def validate_samples(
                         f"{point_id}/{beacon_id} 的 rssiMedian 越界：{rssi!r}"
                     )
                 beacon = catalog[beacon_id]
-                distance = math.hypot(truth[0] - beacon["x"], truth[1] - beacon["y"])
+                # 真值取三维斜距：信标高 installHeight，手机取标定时的手持参考高度。
+                distance = math.sqrt(
+                    (truth[0] - beacon["x"]) ** 2
+                    + (truth[1] - beacon["y"]) ** 2
+                    + (beacon["z"] - PHONE_HEIGHT_M) ** 2
+                )
                 if distance < MIN_DISTANCE_M:
                     raise CalibrationError(
                         f"{point_id} 距 {beacon_id} 仅 {distance:.2f} m，"

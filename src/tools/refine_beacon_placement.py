@@ -1297,7 +1297,7 @@ def normalize_mount_types(plan):
     for b in plan.get("beacons", []):
         if b.get("mountType") == "ceiling":
             b["mountType"] = "wall"
-            b["installHeight"] = 2.2
+            b["installHeight"] = 2.5
             b["mountTypeNormalized"] = True
             desc = b.get("locationDesc", "")
             b["locationDesc"] = desc.replace(" / 无墙可吸附-需评估", "")
@@ -1477,10 +1477,10 @@ def main():
                 "coordinates": [round(new_c[0], 3), round(new_c[1], 3)],
                 "plannedCoordinates": [round(new_c[0], 3), round(new_c[1], 3)],
                 "floor": int(fl),
-                "locationDesc": (f"放置质量补点({col_tag} 2.2m, 非天花板)" if on_col
-                                 else "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.2m, 非天花板)"),
+                "locationDesc": (f"放置质量补点({col_tag} 2.5m, 非天花板)" if on_col
+                                 else "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"),
                 "mountType": "column" if on_col else "wall",
-                "installHeight": 2.2,
+                "installHeight": 2.5,
                 "txPower": TX_POWER,
                 "broadcastInterval": 300,
                 "batteryModel": "CR2477",

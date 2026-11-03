@@ -5,6 +5,8 @@
 const RSSI_MIN_DBM = -100
 const RSSI_MAX_DBM = -20
 const WINDOW_MS = 2000
+// 标定时手机手持高度（米）：与生产解算 PHONE_HEIGHT_M 同值（spec 0.3.3）。
+const PHONE_HEIGHT_M = 1.2
 
 function clampRssi(rssi) {
   if (typeof rssi !== 'number' || !Number.isFinite(rssi)) return null
@@ -32,11 +34,14 @@ function buildCatalog(beacons) {
   return map
 }
 
-// 真值距离：标定点真值坐标与台账信标坐标的平面欧氏距离（单位 m）。
+// 真值距离：标定点真值坐标与台账信标坐标的三维空间斜距（单位 m）。
+// 与生产 (x,y,z) 三维解算、PC 侧 fit_location_params.py 的重算口径一致：
+// 信标 z 取台账 installHeightM，手机 z 取手持参考高度 PHONE_HEIGHT_M。
 function truthDistance(point, beacon) {
   const a = point && point.truth
   if (!a || a.length !== 2) throw new Error('标定点缺少真值坐标')
-  return Math.hypot(a[0] - beacon.x, a[1] - beacon.y)
+  const dz = (beacon.installHeightM != null ? beacon.installHeightM : PHONE_HEIGHT_M) - PHONE_HEIGHT_M
+  return Math.hypot(a[0] - beacon.x, a[1] - beacon.y, dz)
 }
 
 function stdDev(values) {
@@ -122,6 +127,7 @@ module.exports = {
   RSSI_MIN_DBM,
   RSSI_MAX_DBM,
   WINDOW_MS,
+  PHONE_HEIGHT_M,
   clampRssi,
   medianInt,
   beaconKey,

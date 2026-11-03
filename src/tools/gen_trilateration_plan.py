@@ -189,7 +189,7 @@ def main():
         before = [p for p in pts_counts if p[2] < 3]
         # 贪心补点(跟踪实时可见数, 直到每个点 >=3)
         added = greedy_fill_counts(pts_counts, args.fill_cap, FILL_R)
-        # 补点保持房间内部坐标(保证 LOS 可视)，贴房间内墙/高处书架/支架 2.2m，非天花板
+        # 补点保持房间内部坐标(保证 LOS 可视)，贴房间内墙/高处书架/支架 2.5m，非天花板
         seq = 1
         for (cx, cy) in added:
             new_minor += 1
@@ -202,9 +202,9 @@ def main():
                 "coordinates": [cx, cy],
                 "plannedCoordinates": [cx, cy],
                 "floor": int(fl),
-                "locationDesc": "房间内部补点(三点定位覆盖, 建议贴房间内墙/高处书架/支架 2.2m, 非天花板)",
+                "locationDesc": "房间内部补点(三点定位覆盖, 建议贴房间内墙/高处书架/支架 2.5m, 非天花板)",
                 "mountType": "interior",
-                "installHeight": 2.2,
+                "installHeight": 2.5,
                 "txPower": TX_POWER,
                 "broadcastInterval": 300,
                 "batteryModel": "CR2477",

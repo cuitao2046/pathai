@@ -129,7 +129,7 @@ def main():
             "floor": 1,
             "locationDesc": "P0 补点(5m覆盖/降GDOP)",
             "mountType": "wall",
-            "installHeight": 2.2,
+            "installHeight": 2.5,
             "txPower": -12,
             "broadcastInterval": 300,
             "batteryModel": "CR2477",

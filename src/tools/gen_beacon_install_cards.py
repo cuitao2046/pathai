@@ -736,7 +736,7 @@ def render_plan_svg(plan: Plan, model: FloorModel) -> str:
 
 # ---------------------------------------------------------------- 安装卡
 def render_card(beacon: dict, plan: Plan, model: FloorModel, idx: int, total: int) -> str:
-    height = float(beacon.get("installHeightM") or 2.2)
+    height = float(beacon.get("installHeightM") or 2.5)
     mount = beacon.get("mountType") or ""
     mount_cn = {"wall": "壁装", "door_frame": "门套"}.get(mount, mount)
     qr = segno.make_qr(beacon["beaconId"], error="m").svg_inline(
@@ -853,7 +853,7 @@ def plan_row(seq: int, beacon: dict, plan: Plan) -> dict:
         "deviceName": beacon.get("deviceName", ""),
         "method": plan.method,
         "space": plan.space,
-        "height_m": beacon.get("installHeightM", 2.2),
+        "height_m": beacon.get("installHeightM", 2.5),
         "design_x_m": round(plan.x, 4),
         "design_y_m": round(plan.y, 4),
         "note": plan.note,

@@ -54,7 +54,7 @@ def load_beacons(floor):
         out.append({
             "id": x["beaconId"],
             "xy": np.array([cx, cy], float),
-            "z": float(x.get("installHeight", 2.2)),
+            "z": float(x["installHeight"]),
             "tx": x.get("txPower", -12),
         })
     return out

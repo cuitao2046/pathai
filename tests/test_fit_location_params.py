@@ -15,6 +15,7 @@ from pathlib import Path
 
 from tests.testutil import PROJECT_ROOT, RESULT_DIR, load_json
 from src.tools.fit_location_params import (
+    PHONE_HEIGHT_M,
     CalibrationError,
     FitResult,
     build_params_document,
@@ -26,7 +27,7 @@ from src.tools.fit_location_params import (
 
 LEDGER_PATH = RESULT_DIR / "ble_deployment.json"
 MAP_PATH = (
-    PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-10-25.1.json"
+    PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json"
 )
 LEDGER = load_json(LEDGER_PATH)
 MAP = load_json(MAP_PATH)
@@ -61,9 +62,10 @@ def build_samples(points_per_floor: dict[str, int] | None = None) -> dict:
             for beacon in BEACONS:
                 if beacon["floor"] != floor:
                     continue
-                distance = math.hypot(
-                    truth[0] - beacon["coordinates"][0],
-                    truth[1] - beacon["coordinates"][1],
+                distance = math.sqrt(
+                    (truth[0] - beacon["coordinates"][0]) ** 2
+                    + (truth[1] - beacon["coordinates"][1]) ** 2
+                    + (beacon["installHeight"] - PHONE_HEIGHT_M) ** 2
                 )
                 if distance < 0.5:
                     continue
@@ -108,7 +110,7 @@ def build_samples(points_per_floor: dict[str, int] | None = None) -> dict:
         "device": {"model": "test"},
         "appVersion": "1.0.0",
         "beaconLedgerSha256": "0" * 64,
-        "mapVersion": "2026-10-25.1",
+        "mapVersion": "2026-11-03.1",
         "windowMs": 2000,
         "points": out_points,
     }
