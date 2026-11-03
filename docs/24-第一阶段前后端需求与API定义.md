@@ -496,6 +496,8 @@ flowchart LR
 
 `imu`、`floorHint` 可空；第一阶段仅使用 BLE 快照做三点定位解算，惯性字段为接口预留。RSSI 接受范围、采样频率与快照窗口 `[TBD]`。
 
+解算口径（`algorithmVersion=location-0.3`）：手机位置 **(x, y, z) 三个分量同时作为未知量**参与三维高斯-牛顿解算，信标坐标取地图包 `installHeightM`（当前部署 2.5 m），距离按三维斜距建模；同层信标共面使 z 不可辨识，故对 z 施加手持高度软先验（中心 1.2 m、σ 0.5 m）。z 只用于解算内部，**响应只返回平面 x/y 与 `floorId`**；有效信标少于 3 个或缺 `installHeightM` 时按 `lost` 处理，不回退二维。
+
 成功 `200`：
 
 ```json
@@ -508,7 +510,7 @@ flowchart LR
   "confidence": 0.82,
   "quality": "reliable",
   "matchedArea": { "placeId": "main-corridor", "name": "一楼走廊" },
-  "algorithmVersion": "location-0.1",
+  "algorithmVersion": "location-0.3",
   "paramsVersion": "loc-2026-11-01.1",
   "observedAt": "2026-10-23T08:00:00Z"
 }

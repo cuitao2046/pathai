@@ -153,7 +153,7 @@ def estimate(
         matchedArea=None
         if area is None
         else {"placeId": area.placeId, "name": area.name},
-        algorithmVersion="location-0.2",  # 0.3.1：高度补偿斜距模型
+        algorithmVersion="location-0.3",  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
         paramsVersion=params.params_version,
         observedAt=body.collectedAt,
         ignoredBeaconIds=list(estimate.ignored_beacon_ids),

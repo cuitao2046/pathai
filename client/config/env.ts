@@ -33,8 +33,8 @@ export const NAV_UPDATE_TIMEOUT_MS = 5000;
 export const BEACON_RSSI_AT_1M_DBM = -71;
 
 /**
- * 手机参考高度（米，所在楼层地面以上）：成人手持手机的工程参考（spec 0.3.1 决策 13）。
- * mock 信标源按「信标安装高度 − 该值」的垂直差合成斜距 RSSI，与后端高度补偿解算互逆。
+ * 手机参考高度（米，所在楼层地面以上）：成人手持手机的工程参考（spec 决策 13/15）；
+ * 后端 location-0.3 将其作为 z 的先验中心。mock 信标源以此为手机 z 合成三维斜距 RSSI。
  */
 export const PHONE_HEIGHT_M = 1.2;
 
