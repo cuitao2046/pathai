@@ -4,6 +4,7 @@ const assert = require('node:assert')
 const {
   RSSI_MIN_DBM,
   RSSI_MAX_DBM,
+  PHONE_HEIGHT_M,
   clampRssi,
   medianInt,
   buildCatalog,
@@ -13,6 +14,7 @@ const {
 const ref = require('../data/reference_beacons.js')
 
 const UUID = 'B9407F30-F5F8-466E-AFF9-25556B57FE6D'
+// installHeightM 缺省时 dz=0（平面）；显式 2.5 时 dz=1.3，与台账/生产同口径。
 const CATALOG = buildCatalog([
   { beaconId: 'B-NEAR', floor: 1, x: 0, y: 3, uuid: UUID, major: 1, minor: 1 },
   { beaconId: 'B-FAR', floor: 1, x: 4, y: 0, uuid: UUID, major: 1, minor: 2 }
@@ -36,15 +38,23 @@ test('medianInt 与生产 scan-window 一致：偶数取中间均值后取整', 
   assert.equal(medianInt([-60, -61]), -60)
 })
 
-test('truthDistance 为平面欧氏距离（3-4-5）', () => {
+test('truthDistance 为三维斜距：平面 3-4-5 叠加高度差', () => {
+  // 缺 installHeightM 时 dz=0，退化为平面距离
   assert.equal(truthDistance({ truth: [0, 0] }, { x: 3, y: 4 }), 5)
-  assert.ok(Math.abs(truthDistance({ truth: [0, 0] }, { x: 0, y: 3 }) - 3) < 1e-9)
+  // 台账安装高度 2.5 m、手持 1.2 m → dz=1.3
+  const dz = 2.5 - PHONE_HEIGHT_M
+  assert.ok(
+    Math.abs(truthDistance({ truth: [0, 0] }, { x: 3, y: 4, installHeightM: 2.5 }) - Math.sqrt(25 + dz * dz)) < 1e-9
+  )
+  // 平面距离为 0 时仍为正：斜距不退化到 0（log10 不失真）
+  assert.ok(Math.abs(truthDistance({ truth: [0, 0] }, { x: 0, y: 0, installHeightM: 2.5 }) - dz) < 1e-9)
 })
 
 test('truthDistance 与真实台账坐标一致', () => {
   const first = ref.BEACONS[0]
   const point = { truth: [first.x + 3, first.y + 4] }
-  assert.ok(Math.abs(truthDistance(point, first) - 5) < 1e-9)
+  const dz = first.installHeightM - PHONE_HEIGHT_M
+  assert.ok(Math.abs(truthDistance(point, first) - Math.sqrt(25 + dz * dz)) < 1e-9)
 })
 
 test('采样会话按信标聚合并输出中位数/min/max/σ/真值距离', () => {

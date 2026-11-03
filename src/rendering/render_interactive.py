@@ -1208,7 +1208,7 @@ def main():
     deploy_defaults = {
         "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
         "major": 1,
-        "installHeight": 2.2,
+        "installHeight": 2.5,
         "txPower": -12,
         "broadcastInterval": 300,
         "batteryModel": "CR2477",

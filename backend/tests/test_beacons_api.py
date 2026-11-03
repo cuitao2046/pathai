@@ -279,7 +279,7 @@ class TestConvertBeacons:
             "floor": floor,
             "coordinates": [0.0, 0.0],
             "txPower": -12.0,
-            "installHeight": 2.2,
+            "installHeight": 2.5,
             "uuid": uuid,
             "major": major,
             "minor": minor,

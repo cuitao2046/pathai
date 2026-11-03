@@ -21,7 +21,7 @@
 | **L4** | **语义层** ⭐ | 身份/动作/风险（sourceNodeType/subType/riskLevel/adjacentRooms/locationDesc） | 61 枚信标 schema |
 | L3 | 拓扑层 | 路网节点与边（TR→TD→TI） | topology.nodes/edges |
 | **L2** | **定位层** 🔻 | 三点定位坐标 + 指纹网格（真值底座） | 61 信标 + 647 指纹点 |
-| L1 | 物理层 | 硬件/功率/挂装（RSSI 距离模型前提） | wall 54 + door_frame 7，均 2.2m；TxPower -10dBm |
+| L1 | 物理层 | 硬件/功率/挂装（RSSI 距离模型前提） | wall 54 + door_frame 7，均 2.5m；TxPower -10dBm |
 
 ---
 
@@ -36,7 +36,7 @@
 | `adjacentRooms` | 相邻房间 ID | 「正经过音乐教室门口」的经过提示 | 缺失 → 走到门口无感知 | ✅ 已注入（src/tools/inject_adjacent_rooms.py，半径 3m）；校验器已加 R6（ERROR=0） |
 | `sourceNodeId` | 与 `coordinates` 距离 ≤3m（R1 硬约束） | 保证"语音说交叉口55，人确在交叉口55" | BK-01-008 旧态：语义交叉口55、实际 5m 外 | ✅ R1 校验器 3m 硬约束；⚠️ 但 61 枚中 **29 枚为空串**（人工部署 `BK-M-*` 8 枚、测试路线补点等），无法参与 R1 |
 | `coordinates` | 唯一真值（单坐标 schema） | 定位锚点 | planned/coords 混用 → "哪份算数"歧义 | ✅ 已单坐标化（2bdef53） |
-| `mountType`/`installHeight` | 全站统一高度 2.2m | 稳定 RSSI 距离模型 | 混装 1.2/2.2/天花板 → 同 RSSI 不同距离 | ✅ 高度全 2.2m；挂装 `wall` 54 / `door_frame` 7 |
+| `mountType`/`installHeight` | 全站统一高度 2.5m | 稳定 RSSI 距离模型 | 混装 1.2/2.5/天花板 → 同 RSSI 不同距离 | ✅ 高度全 2.5m；挂装 `wall` 54 / `door_frame` 7 |
 | `txPower` | 全站一致 | RSSI→距离模型假设同功率 | 混型号必炸 | ✅ 61 枚全 -10dBm |
 | `uuid`/`major`/`minor` | 同 uuid；major/minor 分段 | 扫描阶段按 major+minor 索引 | 蓝牙扫描阶段复杂匹配 | ✅ `major == floor` 61/61（2026-10-27 修正 2 枚，见 **TODO-9**）；⚠️ `minor` 万位**不承诺**等于 `major`（7 枚 F2 主信标不符，属合规） |
 

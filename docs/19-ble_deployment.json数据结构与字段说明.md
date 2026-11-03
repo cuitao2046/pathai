@@ -1,8 +1,8 @@
-# `result/ble_deployment.json` 数据结构与字段说明
+﻿# `result/ble_deployment.json` 数据结构与字段说明
 
 > 文档版本：1.1 ｜ 对应数据版本：`schemaVersion 1.0`，**61 信标**（现行台账，`fix-rollback-ble-61` 回滚后状态）
 > 生成方式：`generatedBy = "pathai-manual-deploy"`，经 `render_interactive.py` 部署模式拖拽/点选导出，由人工确认后入库 `result/`。
-> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）；2026-10-27 修正 `minor`"万位对应 major"的错误不变量（实测 7 枚不符，见 §3.1 与 `docs/18` TODO-9），并记录 `major` 已统一为楼层（`BK-M-2-001/002` 由 1→2 修正）；2026-11-01 新增 **§8 部署时写入 `installHeightM` 的操作指引**（spec 0.3.1 高度补偿解算）。
+> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）；2026-10-27 修正 `minor`"万位对应 major"的错误不变量（实测 7 枚不符，见 §3.1 与 `docs/18` TODO-9），并记录 `major` 已统一为楼层（`BK-M-2-001/002` 由 1→2 修正）；2026-11-01 新增 **§8 部署时写入 `installHeightM` 的操作指引**（spec 0.3.1 高度补偿解算）；2026-11-03 部署调整为全部信标贴墙、统一安装高度 **2.5 m**，解算升级为 **(x,y,z) 三维联合解算**（spec 0.3.3 / `location-0.3`）并同步 §8 口径。
 
 ## 1. 文件定位
 
@@ -56,7 +56,7 @@
 | `floor` | number | ✅ | 物理楼层：`1`（52 枚）/ `2`（9 枚） |
 | `locationDesc` | string | ✅ | 位置人类可读描述，如 `1F 电梯口（II-01#EL）· 门套或呼梯板旁` |
 | `mountType` | string | ✅ | 安装方式：`wall`（壁装，54）/ `door_frame`（门框，7） |
-| `installHeight` | number | ✅ | 安装高度（米），统一 `2.2`。**所在楼层地面 → 信标壳体中心**的垂直距离；它是发布包 `installHeightM` 的唯一来源，参与高度补偿解算（spec 0.3.1）。变更与写入操作见 **§8** |
+| `installHeight` | number | ✅ | 安装高度（米），统一 `2.5`。**所在楼层地面 → 信标壳体中心**的垂直距离；它是发布包 `installHeightM` 的唯一来源，作为信标 z 坐标参与三维解算（spec 0.3.3）。变更与写入操作见 **§8** |
 | `txPower` | number | ✅ | 发射功率（dBm），**统一 `-12`（E5 3 档，覆盖半径约 15 m）**。注意：它**只描述广播档位，不参与测距**；距离解算使用 `RSSI@1m`（measured power，占位 -71 dBm，待现场标定） |
 | `broadcastInterval` | number | ✅ | 广播间隔（ms），统一 `300` |
 | `batteryModel` | string | ✅ | 电池型号，统一 `CR2477` |
@@ -129,14 +129,15 @@
 
 ## 8. 部署时写入 `installHeightM` 的操作指引
 
-> 适用：spec 0.3.1（高度补偿斜距解算）。所有命令均在**仓库根目录**执行。
+> 适用：spec 0.3.1 引入的斜距模型，0.3.3 起改为 **(x,y,z) 三维联合解算**（`location-0.3`）。所有命令均在**仓库根目录**执行。
 
 ### 8.1 口径（先读，避免改错层）
 
-- **统一安装高度**：一栋楼只用一个值（当前 `2.2` m），不允许"部分信标用另一个值"当作常态。
+- **统一安装高度**：一栋楼只用一个值（当前 `2.5` m），不允许"部分信标用另一个值"当作常态。
 - **测量定义**：所在**楼层地面** → 信标**壳体中心**的垂直距离；卷尺读数保留到 `0.1 m`，取值 `> 0`。
 - **只有发布包里的 `installHeightM` 参与解算**；台账 `result/ble_deployment.json` 的 `installHeight` 是它的唯一来源。
-- 手机参考高度固定 **1.2 m**，是代码常量（后端 `location_solver.py::PHONE_HEIGHT_M`、客户端 `config/env.ts::PHONE_HEIGHT_M`），**不**随本次信标高度调整。
+- **信标 z = `installHeightM`**：解算时每枚信标作为三维锚点 `(x_i, y_i, installHeightM)`，手机 `(x, y, z)` 三个分量同时求解，距离按三维斜距建模。
+- 手机高度 **1.2 m** 是代码常量（后端 `location_solver.py::PHONE_HEIGHT_M`、客户端 `config/env.ts::PHONE_HEIGHT_M`），自 spec 0.3.3 起作为 **z 的先验中心**（σ 0.5 m，同层信标共面使 z 无法仅靠测距确定），而不是固定值；它**不**随信标高度调整。z 不对外输出，API 只返回平面 x/y。
 - 缺失或 `≤ 0` 的 `installHeightM` 属部署数据错误：该信标被解算忽略（计入 `ignoredBeaconIds`）；若因此有效信标 < 3，定位判 `lost`、导航暂停并播报原因与措施（不会回退 2D）。
 - 管理后台（admin-web）的信标编辑**只能改 `locationDesc`**，`installHeightM` 在后台为只读展示，因此必须走下面 §8.4 的两条发布路径之一。
 
@@ -164,7 +165,7 @@ result/ble_deployment.json  ──installHeight──▶  backend/scripts/conver
 只改 `installHeight`，不要混入其它字段。逐枚手改或批量改：
 
 ```powershell
-python -c "import json,pathlib; p=pathlib.Path('result/ble_deployment.json'); d=json.loads(p.read_text(encoding='utf-8')); H=2.2; [b.update({'installHeight': H}) for b in d['beacons']]; p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding='utf-8'); print('updated', len(d['beacons']), 'beacons ->', H)"
+python -c "import json,pathlib; p=pathlib.Path('result/ble_deployment.json'); d=json.loads(p.read_text(encoding='utf-8')); H=2.5; [b.update({'installHeight': H}) for b in d['beacons']]; p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding='utf-8'); print('updated', len(d['beacons']), 'beacons ->', H)"
 ```
 
 > 该命令会按 `indent=2` 重写整个文件。若原文件排版不同，优先逐枚手改；批量改后必须用 `git diff` 确认无其它语义变化。
@@ -194,7 +195,7 @@ python -c "import json; bs=json.load(open('result/ble_deployment.json',encoding=
 
 ### 8.6 步骤 4：发布新地图版本（二选一）
 
-**新版本号** = 新日期 + 递增序号（示例 `2026-11-01.1`）。先确认当前 latest：
+**新版本号** = 新日期 + 递增序号（示例 `2026-11-04.1`）。先确认当前 latest：
 
 ```powershell
 Invoke-RestMethod "http://127.0.0.1:8000/api/v1/sites/school-building-01/map?version=latest" |
@@ -204,8 +205,8 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/v1/sites/school-building-01/map?ver
 **路径 A：全量重建（仅当当前 latest 没有管理后台编辑）**
 
 ```powershell
-python backend/scripts/convert_map_v9.py --verify-only --version 2026-11-01.1   # 只校验
-python backend/scripts/convert_map_v9.py --version 2026-11-01.1                # 写文件
+python backend/scripts/convert_map_v9.py --verify-only --version 2026-11-04.1   # 只校验
+python backend/scripts/convert_map_v9.py --version 2026-11-04.1                # 写文件
 ```
 
 ⚠️ `convert_map_v9.py` 以 **v9 GeoJSON 源**为基准全量重建，会**静默回滚**管理后台对 `places`（地名/别名等）的编辑
@@ -220,9 +221,9 @@ import json, pathlib
 from datetime import datetime, timezone
 
 site = "school-building-01"
-base = pathlib.Path("backend/maps_data") / site / "2026-10-30.1.json"   # ← 改成当前 latest
-new_version = "2026-11-01.1"
-H = 2.2                                                                  # ← 统一安装高度（米）
+base = pathlib.Path("backend/maps_data") / site / "2026-11-03.1.json"   # ← 改成当前 latest
+new_version = "2026-11-04.1"
+H = 2.5                                                                  # ← 统一安装高度（米）
 
 d = json.loads(base.read_text(encoding="utf-8"))
 for b in d["beacons"]:
@@ -242,7 +243,7 @@ print("written", out, len(d["beacons"]), "beacons, installHeightM =", H)
 发布产物的高度自检（必须全部有值且值统一）：
 
 ```powershell
-python -c "import json; d=json.load(open('backend/maps_data/school-building-01/2026-11-01.1.json',encoding='utf-8')); bs=d['beacons']; print(d['mapVersion'], len(bs), {b.get('installHeightM') for b in bs}); print('missing',[b['beaconId'] for b in bs if b.get('installHeightM') is None])"
+python -c "import json; d=json.load(open('backend/maps_data/school-building-01/2026-11-04.1.json',encoding='utf-8')); bs=d['beacons']; print(d['mapVersion'], len(bs), {b.get('installHeightM') for b in bs}); print('missing',[b['beaconId'] for b in bs if b.get('installHeightM') is None])"
 ```
 
 ### 8.7 步骤 5：让新版本生效并验证
@@ -284,5 +285,5 @@ python src/tools/gen_beacon_labels.py            # 标签页（含 beaconId 二�
 | 地名、别名莫名退回旧值 | 走了路径 A 全量重建，覆盖后台编辑 | 用 `git diff` 逐键比对非信标层，改走路径 B |
 | 某枚信标不参与定位 | `installHeightM` 缺失或 ≤0 | 补台账 `installHeight` 并重新发布 |
 | 有效信标 < 3、导航停在恢复态 | 高度缺失或同层信标不足 | 按提示原地稍候/移至覆盖区；持续发生则检查部署与包数据 |
-| 新增信标高度又是 2.2 | `render_interactive.py` 的部署默认值 | 导出后手改台账，或同步改 `src/rendering/render_interactive.py` L1211 默认值 |
+| 新增信标高度不是 2.5 | `render_interactive.py` 的部署默认值 | 导出后手改台账，或检查 `src/rendering/render_interactive.py` L1211 默认值（现行 `2.5`） |
 | 定位整体偏移、质量降级 | 台账高度与物理安装不符（个别信标实际不同） | 统一物理安装后重测重发；不得只改数据掩饰 |

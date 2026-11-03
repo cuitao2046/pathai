@@ -54,6 +54,8 @@ def build_reference(ledger: dict, venue_id: str, map_version: str, ledger_sha: s
         coords = raw.get("coordinates")
         if not beacon_id or not isinstance(coords, list) or len(coords) != 2:
             raise SystemExit(f"台账信标缺字段：{beacon_id!r}")
+        if raw.get("installHeight") is None:
+            raise SystemExit(f"台账信标缺安装高度：{beacon_id!r}")
         triplet = (str(raw.get("uuid") or ""), int(raw.get("major")), int(raw.get("minor")))
         if beacon_id in ids:
             raise SystemExit(f"台账 beaconId 重复：{beacon_id}")
@@ -67,6 +69,7 @@ def build_reference(ledger: dict, venue_id: str, map_version: str, ledger_sha: s
             "floor": int(raw.get("floor")),
             "x": float(coords[0]),
             "y": float(coords[1]),
+            "installHeightM": float(raw.get("installHeight")),
             "uuid": triplet[0],
             "major": triplet[1],
             "minor": triplet[2],
