@@ -61,9 +61,9 @@
 
   <!-- 缩放控件：单指精细调整（双指缩放之外的补充）；显式 z-index 保证可点按 -->
   <view class="map-tools" aria-label="地图缩放控制">
-    <button class="zoom-btn" bindtap="onZoomIn" aria-label="放大地图">＋</button>
-    <button class="zoom-btn" bindtap="onZoomOut" aria-label="缩小地图">－</button>
-    <button class="zoom-btn zoom-reset" bindtap="onResetView" aria-label="回到全图">全图</button>
+    <button class="zoom-hit" bindtap="onZoomIn" aria-label="放大地图"><view class="zoom-face">＋</view></button>
+    <button class="zoom-hit" bindtap="onZoomOut" aria-label="缩小地图"><view class="zoom-face">－</view></button>
+    <button class="zoom-hit zoom-reset" bindtap="onResetView" aria-label="回到全图"><view class="zoom-face">全图</view></button>
   </view>
 
   <!-- 快照倒计时 -->
