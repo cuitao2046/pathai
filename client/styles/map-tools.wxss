@@ -4,11 +4,13 @@
  * - 可视面 .zoom-face 56rpx（28 CSS px）见方，仅贴合文字；
  * - 点按热区 .zoom-hit 72rpx（36 CSS px）见方，透明、不吞事件；
  * - 「全图」按文字自适应宽度，热区最小 72rpx（36 CSS px），横向随文字增长。
- * 位置由各页面覆盖 .map-tools 的 top（避开顶栏/图例）。
+ * 位置：贴画布右边缘（right: 0），可视面右侧不留边距；热区向左展开、不溢出画布。
+ * 圆角：仅左侧圆角（右侧直角），避免贴边后出现悬空的白色圆角块。
+ * 纵向位置由各页面覆盖 .map-tools 的 top（避开顶栏/图例/筛选条）。
  */
 .map-tools {
   position: absolute;
-  right: 24rpx;
+  right: 0;
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -25,7 +27,7 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -47,21 +49,22 @@
   color: #1f2937;
   background: rgba(255, 255, 255, 0.72);
   border: 1rpx solid rgba(148, 163, 184, 0.35);
-  border-radius: 10rpx;
+  border-right: none;
+  border-radius: 10rpx 0 0 10rpx;
   box-sizing: border-box;
 }
 
 .zoom-reset {
   width: auto;
   min-width: 72rpx;
-  padding: 0 8rpx;
+  padding: 0;
 }
 
 .zoom-reset .zoom-face {
   width: auto;
   min-width: 56rpx;
   height: 56rpx;
-  padding: 0 12rpx;
+  padding: 0 10rpx 0 14rpx;
   font-size: 22rpx;
-  border-radius: 12rpx;
+  border-radius: 12rpx 0 0 12rpx;
 }
