@@ -66,7 +66,8 @@
 }
 
 /* 楼层选择：触发键常显当前楼层（高亮）；候选楼层为绝对定位浮层，
-   横向展开时不影响「设置」「全图」的位置（不参与竖向布局流） */
+   横向展开时不影响「设置」「全图」的位置（不参与竖向布局流）。
+   --open 时触发键右侧改为直角（不再右圆角），与右侧候选共用同一条分隔线 */
 .floor-menu {
   position: relative;
   display: flex;
@@ -74,15 +75,22 @@
   align-items: center;
 }
 
+/* 展开态：触发键不再是整条控件的右端，右侧圆角交给最后一个候选 */
+.floor-menu--open .floor-current {
+  border-radius: 0;
+}
+
 /* 候选楼层：横向单行、零间隙紧密相连，整组只保留两端圆角，
-   相邻处由每项右侧 1rpx 边框画出唯一一条分隔线（不出现双线/2px 粗线）。
-   宽度 = 层数 × 80rpx；当前楼栋 2 层约占 86px，画布宽 375px 时余量充足，
+   相邻处由每一项（含触发键）的右侧 1rpx 边框画出唯一一条分隔线（不出现双线/2px 粗线）。
+   left: 100% 精确接在触发键热区右缘（热区宽 = 可视面宽），故不设 margin-left，
+   触发键与首个候选之间也是 0 间隙；首项不补左边框（否则与触发键右框叠成双线）。
+   宽度 = 层数 × 80rpx；当前楼栋 2 层约占 88px，画布宽 375px 时余量充足，
    单行可容纳 ≤7 层；超过时按「先压缩可视面到 36px 热区下限」处理，仍不换行 */
 .floor-options {
   position: absolute;
   left: 100%;
   top: 0;
-  margin-left: 12rpx;
+  margin: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -95,13 +103,8 @@
   border-radius: 0;
 }
 
-/* 整组左端：补回左边框 + 左侧圆角 */
-.floor-options .floor-opt-first {
-  border-left: 1rpx solid rgba(148, 163, 184, 0.35);
-  border-radius: 10rpx 0 0 10rpx;
-}
-
-/* 整组右端：右侧圆角（右边框由 .zoom-face 的右框提供，保持单线） */
+/* 整条控件的右端：右侧圆角（右边框由 .zoom-face 的右框提供，保持单线）。
+   左端是贴在画布左边界（x=0）的触发键，按贴左规则保持直角 */
 .floor-options .floor-opt-last {
   border-radius: 0 10rpx 10rpx 0;
 }

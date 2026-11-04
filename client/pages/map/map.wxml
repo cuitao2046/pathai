@@ -15,38 +15,42 @@
        贴左边缘样式与采集页共用 styles/map-tools.wxss（.map-tools--left）：
        可视面贴画布左边界、右侧圆角左侧直角、热区不小于 36×36px；
        三枚按钮统一宽度 = 三者文案中最宽者（toolBtnWidth，页面按字体估算）；
-       展开的楼层候选为绝对定位浮层，不影响设置/全图的位置 -->
+       展开的楼层候选为绝对定位浮层，不影响设置/全图的位置。
+       点按层用 <view aria-role="button">（不用 <button>：其内置 184px 默认宽会撑出间隙），
+       展开后「触发键 + 候选」是一条零间隙、仅 1rpx 单线分隔的连续控件 -->
   <view class="map-tools map-tools--left top-left">
-    <button class="zoom-hit" bindtap="onGoSettings" aria-label="打开设置">
+    <view class="zoom-hit" aria-role="button" bindtap="onGoSettings" aria-label="打开设置">
       <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">设置</view>
-    </button>
+    </view>
 
-    <view class="floor-menu" aria-label="楼层选择">
-      <button
+    <view class="floor-menu {{floorMenuOpen ? 'floor-menu--open' : ''}}" aria-label="楼层选择">
+      <view
         class="zoom-hit"
+        aria-role="button"
         bindtap="onToggleFloorMenu"
         aria-label="楼层选择，当前{{currentFloorText}}"
         aria-expanded="{{floorMenuOpen}}"
-      ><view class="zoom-face floor-current" style="width:{{toolBtnWidth}}rpx">{{currentFloorText}}</view></button>
+      ><view class="zoom-face floor-current" style="width:{{toolBtnWidth}}rpx">{{currentFloorText}}</view></view>
       <view class="floor-options" wx:if="{{floorMenuOpen}}">
-        <button
+        <view
           wx:for="{{floors}}"
           wx:key="floorId"
           class="zoom-hit"
+          aria-role="button"
           data-floor="{{item.floorId}}"
           bindtap="onSwitchFloor"
           aria-label="切换到{{item.displayName}}"
           aria-pressed="{{item.floorId === currentFloor}}"
         ><view
-          class="zoom-face floor-pill {{index === 0 ? 'floor-opt-first' : ''}} {{index === floors.length - 1 ? 'floor-opt-last' : ''}} {{item.floorId === currentFloor ? 'active' : ''}}"
+          class="zoom-face floor-pill {{index === floors.length - 1 ? 'floor-opt-last' : ''}} {{item.floorId === currentFloor ? 'active' : ''}}"
           style="width:{{toolBtnWidth}}rpx"
-        >{{item.level}}F</view></button>
+        >{{item.level}}F</view></view>
       </view>
     </view>
 
-    <button class="zoom-hit" bindtap="onResetView" aria-label="回到全图">
+    <view class="zoom-hit" aria-role="button" bindtap="onResetView" aria-label="回到全图">
       <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">全图</view>
-    </button>
+    </view>
   </view>
 
   <!-- 现场采集工具（设置页开关控制；导航中隐藏）：
