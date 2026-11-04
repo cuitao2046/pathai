@@ -67,6 +67,7 @@
       <view class="card-row"><text class="label">格位</text><text>{{card.gridText}}</text></view>
       <view class="card-row"><text class="label">区域</text><text>{{card.regionText}}</text></view>
       <view class="card-row"><text class="label">采集口径</text><text>{{card.collectText}}</text></view>
+      <view class="card-row"><text class="label">参考口径</text><text>{{card.refText}}</text></view>
       <view class="card-row"><text class="label">路线</text><text>{{card.routeText}}</text></view>
       <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
       <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>

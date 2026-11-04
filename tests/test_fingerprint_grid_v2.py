@@ -25,6 +25,8 @@ from src.tools.generate_fingerprint_grid import (
     RISK_RADIUS_M,
     coverage_flags,
     collect_triggers,
+    order_route_points,
+    project_on_route,
 )
 
 GRID_PATH = PROJECT_ROOT / "result" / "fingerprint_grid.json"
@@ -145,6 +147,33 @@ class TestRiskNodeTypes(unittest.TestCase):
             for nid in high:
                 with self.subTest(floor=fl, node=nid):
                     self.assertEqual(by_id[nid]["radius"], RISK_RADIUS_M)
+
+
+class TestRouteOrdering(unittest.TestCase):
+    """F2 清单按路线投影累计里程排序（本层局部里程，从入口线段起点算起）。"""
+
+    SEGMENTS = [{
+        "from": "F2-A", "to": "F2-B", "a": (0.0, 0.0), "b": (10.0, 0.0),
+        "c0": 100.0, "lengthM": 10.0,
+    }]
+    GEOM = {"R2": {"label": "R2", "segments": {"2": SEGMENTS}}}
+
+    def test_projection_mileage_is_floor_local(self):
+        proj = project_on_route(3.0, 2.0, self.SEGMENTS)
+        self.assertAlmostEqual(proj["distanceM"], 2.0, places=6)
+        self.assertAlmostEqual(proj["mileageM"], 3.0, places=6)
+        self.assertEqual(proj["from"], "F2-A")
+
+    def test_route_points_first_and_sorted_by_mileage(self):
+        pts = [
+            {"fpId": "P3", "x": 8.0, "y": 0.0, "routeTags": ["R2"], "row": 8, "col": 8},
+            {"fpId": "P2", "x": 2.0, "y": 0.0, "routeTags": ["R2"], "row": 2, "col": 2},
+            {"fpId": "P1", "x": 0.0, "y": 0.0, "routeTags": ["R2"], "row": 0, "col": 0},
+            {"fpId": "NP", "x": 1.0, "y": 9.0, "routeTags": [], "row": 9, "col": 1},
+        ]
+        routed, plain = order_route_points(pts, 2, self.GEOM)
+        self.assertEqual([p["fpId"] for _, _, p in routed], ["P1", "P2", "P3"])
+        self.assertEqual([p["fpId"] for p in plain], ["NP"])
 
 
 class TestCoverageBoundary(unittest.TestCase):

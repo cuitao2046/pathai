@@ -4,7 +4,7 @@
   "venueName": "初中学部1#教学楼",
   "version": "10.0.0",
   "generator": "generate_fingerprint_grid.py",
-  "generatedAt": "2026-11-04T04:23:09.570996+00:00",
+  "generatedAt": "2026-11-04T05:02:12.125515+00:00",
   "mode": "full",
   "layers": {
     "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",

@@ -454,12 +454,19 @@ def _nn_stats(points):
 
 
 def collect_route_corridors(geo, routes):
+    """返回 (corridors, meta, route_geom)。
+
+    route_geom: {tag: {"label": str, "segments": {floor: [segment...]}}}，
+    线段按路径顺序累计里程（跨层转移不产生线段，里程在下一层续算）。
+    segment = {from, to, a, b, c0, lengthM}。
+    """
     if not routes:
-        return {}, []
+        return {}, [], {}
     graph = _load_route_graph(geo)
     walk_by_floor = {fk: build_walkable(fl) for fk, fl in (geo.get("floors") or {}).items()}
     corridors = {}
     meta = []
+    route_geom = {}
     for idx, rt in enumerate(routes, 1):
         start, end = rt["start"], rt["end"]
         mode = rt.get("mode", "normal")
@@ -470,6 +477,8 @@ def collect_route_corridors(geo, routes):
             continue
         path = res["path"]
         lines = {}
+        seg_by_floor: dict[str, list[dict]] = {}
+        cum = 0.0
         for a, b in zip(path, path[1:]):
             na, nb = graph.nodes.get(a), graph.nodes.get(b)
             if not na or not nb:
@@ -477,7 +486,12 @@ def collect_route_corridors(geo, routes):
             ca, cb = na.get("coords"), nb.get("coords")
             if not ca or not cb or na.get("floor") != nb.get("floor"):
                 continue
+            length = math.hypot(cb[0] - ca[0], cb[1] - ca[1])
+            seg_by_floor.setdefault(str(na["floor"]), []).append({
+                "from": a, "to": b, "a": ca, "b": cb, "c0": cum, "lengthM": length,
+            })
             lines.setdefault(str(na["floor"]), []).append(LineString([(ca[0], ca[1]), (cb[0], cb[1])]))
+            cum += length
         for fk, ls in lines.items():
             walk = walk_by_floor.get(fk)
             if walk is None:
@@ -485,6 +499,7 @@ def collect_route_corridors(geo, routes):
             poly = unary_union(ls).buffer(ROUTE_CORRIDOR_HALF_M).intersection(walk)
             if not poly.is_empty:
                 corridors.setdefault(fk, []).append((tag, poly))
+        route_geom[tag] = {"label": rt.get("label", f"{start} -> {end}"), "segments": seg_by_floor}
         meta.append({
             "tag": tag,
             "label": rt.get("label", f"{start} -> {end}"),
@@ -495,7 +510,7 @@ def collect_route_corridors(geo, routes):
             "usedElevator": res.get("used_elevator"),
             "usedStair": res.get("used_stair"),
         })
-    return corridors, meta
+    return corridors, meta, route_geom
 
 
 def _load_route_graph(geo):
@@ -523,57 +538,136 @@ def load_beacons(path=BEACON_PACKAGE):
     return out
 
 
-def write_f2_collectable(points, floor_no, out_dir):
+def project_on_route(x, y, segments):
+    """把点投影到本层路线折线，返回 {distanceM, mileageM, segIndex, from, to}。
+
+    mileageM 为本层局部累计里程（从该层路线首个线段起点算起）。
+    """
+    if not segments:
+        return None
+    base = segments[0]["c0"]
+    best = None
+    for idx, s in enumerate(segments):
+        ax, ay = s["a"]
+        bx, by = s["b"]
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 <= 1e-12 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
+        px, py = ax + t * dx, ay + t * dy
+        d = math.hypot(x - px, y - py)
+        mileage = s["c0"] - base + t * s["lengthM"]
+        if best is None or d < best["distanceM"]:
+            best = {"distanceM": d, "mileageM": mileage, "segIndex": idx,
+                    "from": s["from"], "to": s["to"], "segStartM": s["c0"] - base,
+                    "segEndM": s["c0"] - base + s["lengthM"]}
+    return best
+
+
+def order_route_points(rows, floor_no, route_geom):
+    """按路线行进顺序排序：路线点在前（按本层累计里程），非路线点在后（按坐标序）。"""
+    routed, plain = [], []
+    for p in rows:
+        best = None
+        for tag in p["routeTags"]:
+            geom = route_geom.get(tag)
+            if not geom:
+                continue
+            proj = project_on_route(p["x"], p["y"], geom["segments"].get(str(floor_no), []))
+            if proj is None:
+                continue
+            if best is None or proj["distanceM"] < best[0]["distanceM"]:
+                best = (proj, tag)
+        if best is None:
+            plain.append(p)
+        else:
+            routed.append((best[1], best[0], p))
+    routed.sort(key=lambda t: (t[0], t[1]["segIndex"], t[1]["mileageM"], t[2]["row"], t[2]["col"]))
+    plain.sort(key=lambda p: (p["row"], p["col"]))
+    return routed, plain
+
+
+def write_f2_collectable(points, floor_no, out_dir, route_geom=None):
+    route_geom = route_geom or {}
     rows = [p for p in points if p["floor"] == floor_no and (p["collectablePlan10m"] or p["collectableGeo15m"])]
-    rows.sort(key=lambda p: (p["row"], p["col"]))
+    routed, plain = order_route_points(rows, floor_no, route_geom)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / f"f{floor_no}_collectable_points.csv"
     md_path = out_dir / f"f{floor_no}_collectable_points.md"
 
-    headers = ["fpId", "短号", "楼层", "x", "y", "类型",
+    headers = ["序号", "fpId", "短号", "楼层", "x", "y", "类型",
                "可见信标数(10m)", "可见信标数(15m)", "最近信标距离m",
-               "预测最强RSSI", "口径", "路线标签"]
+               "预测最强RSSI", "口径", "路线标签", "累计里程(m)"]
+
+    def row_values(seq, p, mileage):
+        criteria = []
+        if p["collectablePlan10m"]:
+            criteria.append("10m/-85/≥3")
+        if p["collectableGeo15m"]:
+            criteria.append("15m/≥3")
+        return [
+            seq, p["fpId"], p["shortId"], p["floor"], p["x"], p["y"],
+            REGION_TEXT.get(p["regionType"], p["regionType"]),
+            p["visible10m"], p["visible15m"],
+            "" if p["nearestBeaconM"] is None else f"{p['nearestBeaconM']:.2f}",
+            "" if p["strongestRssi"] is None else f"{p['strongestRssi']:.1f}",
+            "; ".join(criteria), ";".join(p["routeTags"]),
+            "" if mileage is None else f"{mileage:.2f}",
+        ]
+
+    ordered = [(tag, proj, p) for tag, proj, p in routed] + [(None, None, p) for p in plain]
     with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(headers)
-        for p in rows:
-            criteria = []
-            if p["collectablePlan10m"]:
-                criteria.append("10m/-85/≥3")
-            if p["collectableGeo15m"]:
-                criteria.append("15m/≥3")
-            w.writerow([
-                p["fpId"], p["shortId"], p["floor"], p["x"], p["y"],
-                REGION_TEXT.get(p["regionType"], p["regionType"]),
-                p["visible10m"], p["visible15m"],
-                "" if p["nearestBeaconM"] is None else f"{p['nearestBeaconM']:.2f}",
-                "" if p["strongestRssi"] is None else f"{p['strongestRssi']:.1f}",
-                "; ".join(criteria), ";".join(p["routeTags"]),
-            ])
+        for seq, (tag, proj, p) in enumerate(ordered, 1):
+            w.writerow(row_values(seq, p, None if proj is None else proj["mileageM"]))
 
     lines = [
         f"# F{floor_no} 可采集点清单",
         "",
         f"> 设计层全量点中，满足 `10m/-85dBm/≥3` 或 `15m/≥3` 的点，共 {len(rows)} 个。",
         "> 口径列同时标出两个条件；`10m/-85/≥3` 为默认采集口径。",
-        "",
-        "| fpId | 短号 | 楼层 | x | y | 类型 | 可见(10m) | 可见(15m) | 最近信标m | 最强RSSI | 口径 | 路线 |",
-        "|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---|",
+        "> 路线点按投影到路线中心线的**本层累计里程**排序（从本层路线入口起算），非路线点列在最后。",
     ]
-    for p in rows:
-        criteria = []
-        if p["collectablePlan10m"]:
-            criteria.append("10m/-85/≥3")
-        if p["collectableGeo15m"]:
-            criteria.append("15m/≥3")
-        nearest = "" if p["nearestBeaconM"] is None else f"{p['nearestBeaconM']:.2f}"
-        strongest = "" if p["strongestRssi"] is None else f"{p['strongestRssi']:.1f}"
-        lines.append(
-            f"| {p['fpId']} | {p['shortId']} | {p['floor']} | {p['x']} | {p['y']} | "
-            f"{REGION_TEXT.get(p['regionType'], p['regionType'])} | {p['visible10m']} | {p['visible15m']} | "
-            f"{nearest} | {strongest} | {'; '.join(criteria)} | {';'.join(p['routeTags'])} |"
-        )
+
+    def md_row(seq, p, mileage):
+        v = row_values(seq, p, mileage)
+        seq, fp, short, fl, x, y, typ, v10, v15, near, rssi, crit, tags, mil = v
+        return (f"| {seq} | {fp} | {short} | {fl} | {x} | {y} | {typ} | {v10} | {v15} | "
+                f"{near} | {rssi} | {crit} | {tags} | {mil} |")
+
+    seq = 0
+    # 路线分段小标题（按折线段聚合）
+    groups: dict[tuple[str, int], list] = {}
+    for tag, proj, p in routed:
+        groups.setdefault((tag, proj["segIndex"]), []).append((proj, p))
+    for (tag, seg_index), items in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        first = items[0][0]
+        label = route_geom.get(tag, {}).get("label", tag)
+        lines += [
+            "",
+            f"### {tag} · {label} · 第{seg_index + 1}折线段 {first['from']} → {first['to']}"
+            f"（累计里程 {first['segStartM']:.1f}–{first['segEndM']:.1f}m）",
+            "",
+            "| 序号 | fpId | 短号 | 楼层 | x | y | 类型 | 可见(10m) | 可见(15m) | 最近信标m | 最强RSSI | 口径 | 路线 | 累计里程(m) |",
+            "|---:|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---|---:|",
+        ]
+        for proj, p in sorted(items, key=lambda t: (t[0]["mileageM"], t[1]["row"], t[1]["col"])):
+            seq += 1
+            lines.append(md_row(seq, p, proj["mileageM"]))
+
+    if plain:
+        lines += [
+            "",
+            "### 非路线可采集点（按坐标序）",
+            "",
+            "| 序号 | fpId | 短号 | 楼层 | x | y | 类型 | 可见(10m) | 可见(15m) | 最近信标m | 最强RSSI | 口径 | 路线 | 累计里程(m) |",
+            "|---:|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---|---:|",
+        ]
+        for p in plain:
+            seq += 1
+            lines.append(md_row(seq, p, None))
+
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return rows, csv_path, md_path
 
@@ -607,7 +701,7 @@ def main():
     origin = even_origin(geo)
     beacons = load_beacons(args.beacons)
     routes = json.load(open(args.routes, encoding="utf-8")).get("routes", []) if Path(args.routes).exists() else []
-    corridors, route_meta = collect_route_corridors(geo, routes)
+    corridors, route_meta, route_geom = collect_route_corridors(geo, routes)
 
     floors_out, summary = {}, {}
     total = {"total": 0, "base2m": 0, "split1m": 0, "collectablePlan10m": 0,
@@ -673,7 +767,7 @@ def main():
     }
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    f2_rows, csv_path, md_path = write_f2_collectable(all_points, 2, args.f2_out_dir)
+    f2_rows, csv_path, md_path = write_f2_collectable(all_points, 2, args.f2_out_dir, route_geom)
     print(f"\n设计层 {total['total']} 点 → {args.out}")
     print(f"可采集：10m/-85/≥3 = {total['collectablePlan10m']}；15m/≥3 = {total['collectableGeo15m']}")
     print(f"F2 可采集清单 {len(f2_rows)} 行 → {csv_path} / {md_path}")

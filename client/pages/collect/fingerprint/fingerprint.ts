@@ -40,8 +40,12 @@ const SNAPSHOT_COUNTDOWN_S = 3;
 /** 网格点命中半径（画布 CSS 像素）。 */
 const HIT_RADIUS_PX = 16;
 
-/** LOD 阈值：缩放 >= fitScale 的该倍数时才显示 1m 细分点。 */
-const LOD_1M_SCALE_FACTOR = 2.5;
+/**
+ * 1m 细分点的 LOD 判据：相邻 1m 点在屏幕上的间距 ≥ 该像素值时才绘制。
+ * 网格世界间距 1m，故等价于 vp.scale >= 8 px/m；按各层实际 fitScale 换算：
+ * F1（fitScale≈3.37）约 2.4×，F2（≈4.50）约 1.8×。真机可调成 10px。
+ */
+const LOD_1M_MIN_SPACING_PX = 8;
 
 const REGION_TEXT: Record<string, string> = {
   normal: '普通',
@@ -62,6 +66,7 @@ interface CardData {
   coordText: string;
   gridText: string;
   collectText: string;
+  refText: string;
   routeText: string;
   recordCount: number;
   distanceText: string;
@@ -286,7 +291,7 @@ Page({
     pts: FpGridPoint[],
     vp: NonNullable<CollectMapView['vp']>,
   ): FpGridPoint[] {
-    const show1m = vp.scale >= vp.fitScale * LOD_1M_SCALE_FACTOR;
+    const show1m = vp.scale >= LOD_1M_MIN_SPACING_PX;
     const onlyCollectable = this.data.onlyCollectable;
     return pts.filter(
       (p) => (show1m || p.isBase2m) && (!onlyCollectable || p.collectable),
@@ -324,6 +329,7 @@ Page({
         collectText: p.collectable
           ? `可采集（10m ≥3 且预测 ${p.strongestRssi ?? '—'}dBm）`
           : `当前不可采集（10m 可见 ${p.visible10m} 个）`,
+        refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
         routeText: p.routeTags.length > 0 ? p.routeTags.join(' / ') : '—',
         recordCount: this.recordCounts.get(p.fpId) ?? 0,
         distanceText,
