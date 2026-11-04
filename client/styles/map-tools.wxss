@@ -28,7 +28,15 @@
   align-items: flex-start;
 }
 
+/* 点按热区。**必须用 `<view aria-role="button">`，禁止用 `<button>`**：
+ * 小程序内置 button 样式自带默认宽度 184 CSS px（且作者样式 `width: auto` 压不住它），
+ * 会把 36~44px 的热区盒撑成 184px —— 可视面只贴在该盒一侧，于是同排相邻可视面之间
+ * 凭空出现一百多 px 的空白，热区也会大幅越界（楼层候选与触发键因此无法连成一条）。
+ * view 没有内置盒模型，`width: auto` 精确等于子级可视面宽度，横竖向都不额外膨胀。
+ * 热区高 72rpx（36 CSS px，上下留透明余量扩大点按面）；宽 = 可视面宽（图标键最小
+ * 72rpx，文字键随文字增长）→ 同一排相邻可视面才能严格零间隙贴合。 */
 .zoom-hit {
+  flex: 0 0 auto;
   width: auto;
   height: 72rpx;
   min-width: 72rpx;
@@ -42,10 +50,6 @@
   border: none;
   border-radius: 0;
   line-height: normal;
-}
-
-.zoom-hit::after {
-  border: none;
 }
 
 .zoom-face {
