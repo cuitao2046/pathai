@@ -1,3 +1,6 @@
+/* 悬浮控件通用样式（贴边、可视面/热区尺寸），与采集页共用同一份 */
+@import "../../styles/map-tools.wxss";
+
 .map-stage {
   position: relative;
   width: 100vw;
@@ -35,21 +38,16 @@
   height: 100%;
 }
 
-/* 左上角竖向工具条：设置 / 楼层选择 / 全图，悬浮于地图上。
+/* 左上角竖向工具条：设置 / 楼层选择 / 全图，贴画布左边缘悬浮于地图上
+   （贴边、可视面/热区、左侧直角右侧圆角见 styles/map-tools.wxss 的 .map-tools--left）。
    宽度由页面按「三者文案中最宽者」算出后内联下发（toolBtnWidth），三键等宽；
-   rpx 随屏宽等比缩放（750rpx = 屏宽），文字 nowrap 不截断 */
+   此处只保留纵向位置与层级：与旧版一致，位于画布之上、导航 HUD/居中卡片之下 */
 .top-left {
-  position: absolute;
-  z-index: 10;
   top: 24rpx;
-  left: 24rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12rpx;
+  z-index: 10;
 }
 
-/* 统一按钮尺寸（触发键、设置、全图、展开的楼层键全部一致；宽度见内联 style） */
+/* 右上角采集入口按钮（触发键与展开的采集入口选项；宽度由文案自适应） */
 .tool-btn {
   flex: 0 0 auto;
   height: 72rpx;
@@ -253,7 +251,7 @@
 .nav-hud {
   position: absolute;
   z-index: 30;
-  left: 128rpx; /* 让位左上角竖向工具条（24 左距 + 按钮宽 + 余量） */
+  left: 128rpx; /* 让位左上角竖向工具条（贴左 0 + 按钮宽 80rpx + 余量） */
   right: 24rpx;
   top: 24rpx;
   display: flex;

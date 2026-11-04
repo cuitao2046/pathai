@@ -12,44 +12,41 @@
   />
 
   <!-- 左上角竖向工具条：设置 / 楼层选择（点击横向展开可选楼层）/ 全图。
+       贴左边缘样式与采集页共用 styles/map-tools.wxss（.map-tools--left）：
+       可视面贴画布左边界、右侧圆角左侧直角、热区不小于 36×36px；
        三枚按钮统一宽度 = 三者文案中最宽者（toolBtnWidth，页面按字体估算）；
        展开的楼层候选为绝对定位浮层，不影响设置/全图的位置 -->
-  <view class="top-left">
-    <button
-      class="tool-btn"
-      style="width:{{toolBtnWidth}}rpx"
-      bindtap="onGoSettings"
-      aria-label="打开设置"
-    >设置</button>
+  <view class="map-tools map-tools--left top-left">
+    <button class="zoom-hit" bindtap="onGoSettings" aria-label="打开设置">
+      <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">设置</view>
+    </button>
 
     <view class="floor-menu" aria-label="楼层选择">
       <button
-        class="tool-btn floor-current"
-        style="width:{{toolBtnWidth}}rpx"
+        class="zoom-hit"
         bindtap="onToggleFloorMenu"
         aria-label="楼层选择，当前{{currentFloorText}}"
         aria-expanded="{{floorMenuOpen}}"
-      >{{currentFloorText}}</button>
+      ><view class="zoom-face floor-current" style="width:{{toolBtnWidth}}rpx">{{currentFloorText}}</view></button>
       <view class="floor-options" wx:if="{{floorMenuOpen}}">
         <button
           wx:for="{{floors}}"
           wx:key="floorId"
-          class="tool-btn floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
-          style="width:{{toolBtnWidth}}rpx"
+          class="zoom-hit"
           data-floor="{{item.floorId}}"
           bindtap="onSwitchFloor"
           aria-label="切换到{{item.displayName}}"
           aria-pressed="{{item.floorId === currentFloor}}"
-        >{{item.level}}F</button>
+        ><view
+          class="zoom-face floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+          style="width:{{toolBtnWidth}}rpx"
+        >{{item.level}}F</view></button>
       </view>
     </view>
 
-    <button
-      class="tool-btn"
-      style="width:{{toolBtnWidth}}rpx"
-      bindtap="onResetView"
-      aria-label="回到全图"
-    >全图</button>
+    <button class="zoom-hit" bindtap="onResetView" aria-label="回到全图">
+      <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">全图</view>
+    </button>
   </view>
 
   <!-- 现场采集工具（设置页开关控制；导航中隐藏）：
