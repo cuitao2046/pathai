@@ -153,6 +153,8 @@ Page({
     // 现场采集工具（设置页开关控制入口可见性，即时生效；导航中隐藏）
     collectEntry: false,
     collectMenuOpen: false,
+    /** 采集候选（静态标定 / 网格指纹，4 字文案）统一宽度（rpx），与 toolBtnWidth 同一套估算 */
+    collectOptWidth: toolBtnWidthRpx(['静态标定']),
     // 导航态（REQ-PAGE：导航融合进地图页，原独立导航页退役）
     navActive: false,
     state: 'idle' as NavState,

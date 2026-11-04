@@ -51,28 +51,36 @@
     <view class="zoom-hit" aria-role="button" bindtap="onResetView" aria-label="回到全图">
       <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">全图</view>
     </view>
-  </view>
 
-  <!-- 现场采集工具（设置页开关控制；导航中隐藏）：
-       右上角「采集」按键，点击横向弹出两个采集入口 -->
-  <view class="collect-area" wx:if="{{collectEntry && !navActive}}">
-    <button
-      class="tool-btn collect-btn"
-      bindtap="onToggleCollectMenu"
+    <!-- 第 4 颗：现场采集工具（设置页开关控制显隐，导航中隐藏）。
+         结构与交互同楼层菜单——触发键右侧横向展开两个连体候选；
+         隐藏时整颗移除，前三颗的间距与圆角不受影响 -->
+    <view
+      class="collect-menu {{collectMenuOpen ? 'collect-menu--open' : ''}}"
+      wx:if="{{collectEntry && !navActive}}"
       aria-label="现场采集工具"
-      aria-expanded="{{collectMenuOpen}}"
-    >采集</button>
-    <view class="collect-panel" wx:if="{{collectMenuOpen}}">
-      <button
-        class="tool-btn collect-option"
-        bindtap="onGoCollectStatic"
-        aria-label="打开静态标定采集"
-      >静态标定</button>
-      <button
-        class="tool-btn collect-option"
-        bindtap="onGoCollectFingerprint"
-        aria-label="打开网格指纹采集"
-      >网格指纹</button>
+    >
+      <view
+        class="zoom-hit"
+        aria-role="button"
+        bindtap="onToggleCollectMenu"
+        aria-label="现场采集工具"
+        aria-expanded="{{collectMenuOpen}}"
+      ><view class="zoom-face collect-current" style="width:{{toolBtnWidth}}rpx">采集</view></view>
+      <view class="collect-options" wx:if="{{collectMenuOpen}}">
+        <view
+          class="zoom-hit"
+          aria-role="button"
+          bindtap="onGoCollectStatic"
+          aria-label="打开静态标定采集"
+        ><view class="zoom-face collect-pill" style="width:{{collectOptWidth}}rpx">静态标定</view></view>
+        <view
+          class="zoom-hit"
+          aria-role="button"
+          bindtap="onGoCollectFingerprint"
+          aria-label="打开网格指纹采集"
+        ><view class="zoom-face collect-pill collect-opt-last" style="width:{{collectOptWidth}}rpx">网格指纹</view></view>
+      </view>
     </view>
   </view>
 
