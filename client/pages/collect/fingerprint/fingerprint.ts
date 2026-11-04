@@ -20,6 +20,7 @@ import {
 import { LocationPipeline } from '../../../core/position/location-pipeline';
 import { SequenceCounter } from '../../../core/position/sequence-counter';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
+import { pickPointOnScreen } from '../../../core/collection/hit-test';
 import { createTeeSource } from '../../../core/collection/collect-scan';
 import { buildFpRecord, type FpBeaconLookup, type FpSnapshotPoint } from '../../../core/collection/fp-snapshot';
 import { FpRecordsStore } from '../../../core/collection/points-store';
@@ -195,7 +196,7 @@ Page({
             currentFloor: this.mapView?.floorId ?? '1',
           });
         },
-        onTap: (world) => this.handleMapTap(world),
+        onTap: (_world, screen) => this.handleMapTap(screen),
         onLongPress: () => undefined, // 网格固定，不支持补标
         onFloorChanged: (floorId) => {
           const item = (this.data.floors.length > 0 ? this.data.floors : this.mapView?.floorList ?? [])
@@ -224,10 +225,28 @@ Page({
   },
 
   // ------------------------------------------------------------------
-  // 地图交互
+  // 手势转发 / 地图交互
   // ------------------------------------------------------------------
 
-  handleMapTap(world: { x: number; y: number }): void {
+  // touch 事件绑定在 canvas 自身（WXML），页面只做转发：
+  // 手势绑定在容器上会吞掉覆盖控件的 bindtap（已知坑）
+  onTouchStart(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchStart(e);
+  },
+
+  onTouchMove(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchMove(e);
+  },
+
+  onTouchEnd(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchEnd(e);
+  },
+
+  onTouchCancel(e: WechatMiniprogram.TouchEvent): void {
+    this.mapView?.onTouchCancel(e);
+  },
+
+  handleMapTap(screen: { x: number; y: number }): void {
     if (this.data.collecting || this.data.card !== null) {
       return;
     }
@@ -236,17 +255,16 @@ Page({
       return;
     }
     const pts = this.gridByFloor.get(vp.floorId) ?? [];
-    let best: FpGridPoint | null = null;
-    let bestDist = HIT_RADIUS_PX;
-    for (const p of pts) {
-      const screenDist = Math.hypot(p.x - world.x, p.y - world.y) * vp.scale;
-      if (screenDist <= bestDist) {
-        best = p;
-        bestDist = screenDist;
-      }
-    }
-    if (best !== null) {
-      this.openCard(best);
+    // 屏幕空间命中：网格点按当前视口投影后再比距离，缩放/平移后不偏移
+    const hit = pickPointOnScreen(
+      pts,
+      (p) => ({ x: p.x, y: p.y }),
+      vp,
+      screen,
+      HIT_RADIUS_PX,
+    );
+    if (hit !== null) {
+      this.openCard(hit.point);
     }
   },
 
@@ -417,6 +435,19 @@ Page({
   onSwitchFloor(e: WechatMiniprogram.TouchEvent): void {
     const floorId = String(e.currentTarget.dataset.floor ?? '');
     this.mapView?.setFloor(floorId);
+  },
+
+  /** 缩放控件：单指精细调整（双指缩放之外的补充） */
+  onZoomIn(): void {
+    this.mapView?.zoomIn();
+  },
+
+  onZoomOut(): void {
+    this.mapView?.zoomOut();
+  },
+
+  onResetView(): void {
+    this.mapView?.fit();
   },
 
   onExport(): void {

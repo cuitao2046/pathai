@@ -68,6 +68,9 @@ interface GestureState {
 const TAP_SLOP_PX = 10;
 const TAP_MAX_MS = 400;
 
+/** 可点按缩放控件的单步倍率（上下限由 FloorMapViewport 统一夹紧）。 */
+const ZOOM_STEP_FACTOR = 1.6;
+
 export class CollectMapView {
   private readonly canvasId: string;
   private readonly deps: CollectMapDeps;
@@ -180,6 +183,25 @@ export class CollectMapView {
 
   fit(): void {
     this.viewport?.fit();
+    this.requestDraw();
+  }
+
+  /** 单指点按放大：以画布中心为锚点；到达上限后 scale/offset 不变。 */
+  zoomIn(): void {
+    this.zoomBy(ZOOM_STEP_FACTOR);
+  }
+
+  /** 单指点按缩小：以画布中心为锚点；到达 fitScale 后 scale/offset 不变。 */
+  zoomOut(): void {
+    this.zoomBy(1 / ZOOM_STEP_FACTOR);
+  }
+
+  private zoomBy(factor: number): void {
+    const vp = this.viewport;
+    if (vp === null) {
+      return;
+    }
+    vp.zoomAt(this.size.w / 2, this.size.h / 2, factor);
     this.requestDraw();
   }
 
