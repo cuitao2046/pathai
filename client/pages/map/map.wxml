@@ -38,7 +38,7 @@
           aria-label="切换到{{item.displayName}}"
           aria-pressed="{{item.floorId === currentFloor}}"
         ><view
-          class="zoom-face floor-pill {{item.floorId === currentFloor ? 'active' : ''}}"
+          class="zoom-face floor-pill {{index === 0 ? 'floor-opt-first' : ''}} {{index === floors.length - 1 ? 'floor-opt-last' : ''}} {{item.floorId === currentFloor ? 'active' : ''}}"
           style="width:{{toolBtnWidth}}rpx"
         >{{item.level}}F</view></button>
       </view>
