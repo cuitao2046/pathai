@@ -18,16 +18,31 @@
     <text>网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
   </view>
 
-  <!-- 图例 + 可采集过滤（低缩放只显示 2m 底网点，放大后显示 1m 细分点） -->
+  <!-- 图例 + 三档筛选（路线点不受 LOD 限制，整楼视图也全部绘制） -->
   <view class="legend-bar">
-    <view class="legend-item"><view class="dot collectable"></view><text>可采集</text></view>
-    <view class="legend-item"><view class="dot blind"></view><text>当前不可采集</text></view>
-    <view class="legend-item"><view class="dot done"></view><text>已采集</text></view>
-    <button
-      class="pill filter {{onlyCollectable ? 'active' : ''}}"
-      bindtap="onToggleCollectable"
-      aria-label="切换只显示可采集点"
-    >{{onlyCollectable ? '仅可采集' : '全部点位'}}</button>
+    <view class="legend-items">
+      <view class="legend-item"><view class="dot route"></view><text>路线点（优先采集）</text></view>
+      <view class="legend-item"><view class="dot collectable"></view><text>可采集</text></view>
+      <view class="legend-item"><view class="dot blind"></view><text>当前不可采集</text></view>
+      <view class="legend-item"><view class="dot done"></view><text>已采集</text></view>
+    </view>
+    <view class="filter-group" aria-label="点位筛选">
+      <button
+        class="pill filter {{filterMode === 'all' ? 'active' : ''}}"
+        data-mode="all"
+        bindtap="onFilterMode"
+      >全部</button>
+      <button
+        class="pill filter {{filterMode === 'collectable' ? 'active' : ''}}"
+        data-mode="collectable"
+        bindtap="onFilterMode"
+      >仅可采集</button>
+      <button
+        class="pill filter {{filterMode === 'route' ? 'active' : ''}}"
+        data-mode="route"
+        bindtap="onFilterMode"
+      >仅路线点</button>
+    </view>
   </view>
 
   <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
@@ -68,7 +83,7 @@
       <view class="card-row"><text class="label">区域</text><text>{{card.regionText}}</text></view>
       <view class="card-row"><text class="label">采集口径</text><text>{{card.collectText}}</text></view>
       <view class="card-row"><text class="label">参考口径</text><text>{{card.refText}}</text></view>
-      <view class="card-row"><text class="label">路线</text><text>{{card.routeText}}</text></view>
+      <view class="card-row"><text class="label">路线（优先）</text><text>{{card.routeText}}</text></view>
       <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
       <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>
       <view class="card-row"><text class="label">已采次数</text><text>{{card.recordCount}}</text></view>

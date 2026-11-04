@@ -63,13 +63,20 @@
   right: 24rpx;
   z-index: 3;
   display: flex;
-  align-items: center;
-  gap: 18rpx;
+  flex-direction: column;
+  gap: 8rpx;
   font-size: 22rpx;
   color: #475569;
   background: rgba(255, 255, 255, 0.85);
   border-radius: 8rpx;
-  padding: 6rpx 14rpx;
+  padding: 8rpx 14rpx;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10rpx 18rpx;
 }
 
 .legend-item {
@@ -82,6 +89,11 @@
   width: 12rpx;
   height: 12rpx;
   border-radius: 3rpx;
+}
+
+.dot.route {
+  background: #f97316;
+  border: 2rpx solid #ffffff;
 }
 
 .dot.collectable {
@@ -97,17 +109,21 @@
   background: #16a34a;
 }
 
+.filter-group {
+  display: flex;
+  gap: 10rpx;
+}
+
 .pill.filter {
-  margin-left: auto;
-  height: 46rpx;
-  line-height: 42rpx;
+  height: 44rpx;
+  line-height: 40rpx;
   padding: 0 18rpx;
   font-size: 22rpx;
 }
 
 .mock-hint {
   position: absolute;
-  top: 190rpx;
+  top: 276rpx;
   left: 24rpx;
   z-index: 3;
   font-size: 22rpx;
@@ -127,7 +143,7 @@
 /* 缩放控件：竖向悬浮于画布右侧；显式 z-index 保证真机可点按 */
 .map-tools {
   position: absolute;
-  top: 200rpx;
+  top: 300rpx;
   right: 24rpx;
   z-index: 5;
   display: flex;
