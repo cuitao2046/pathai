@@ -9,36 +9,14 @@
   background: #eef3f8; /* 与 canvas 外部底色一致，避免首帧闪白 */
 }
 
-/* 右上角「采集」入口 + 横向弹出面板（静态标定 / 网格指纹） */
-.collect-area {
-  position: absolute;
-  z-index: 10;
-  top: 24rpx;
-  right: 24rpx;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12rpx;
-}
-
-.collect-panel {
-  display: flex;
-  flex-direction: row;
-  gap: 12rpx;
-}
-
-.collect-option {
-  box-shadow: 0 4rpx 16rpx rgba(15, 23, 42, 0.16);
-}
-
-
 .map-canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-/* 左上角竖向工具条：设置 / 楼层选择 / 全图，贴画布左边缘悬浮于地图上
+/* 左上角竖向工具条：设置 / 楼层选择 / 全图 / 采集（第 4 颗受设置页「现场采集工具」
+   开关控制，导航中隐藏），贴画布左边缘悬浮于地图上
    （贴边、可视面/热区、左侧直角右侧圆角见 styles/map-tools.wxss 的 .map-tools--left）。
    宽度由页面按「三者文案中最宽者」算出后内联下发（toolBtnWidth），三键等宽；
    此处只保留纵向位置与层级：与旧版一致，位于画布之上、导航 HUD/居中卡片之下 */
@@ -47,22 +25,41 @@
   z-index: 10;
 }
 
-/* 右上角采集入口按钮（触发键与展开的采集入口选项；宽度由文案自适应） */
-.tool-btn {
-  flex: 0 0 auto;
-  height: 72rpx;
+/* 采集菜单（工具条第 4 颗）：结构与交互同楼层菜单——触发键「采集」右侧横向展开
+   两个连体候选（静态标定 / 网格指纹）。整条 = 触发键 80rpx + 候选 132rpx × 2，
+   414px 屏约 190px，不溢出画布。显隐由设置页开关控制：关闭时整颗 `wx:if` 移除，
+   纵向间距（.map-tools 的 gap）与前三颗各自的右圆角都不依赖它，故不留空白、不改分隔线 */
+.collect-menu {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* 展开态：触发键不再是右端，右侧圆角交给最后一个候选 */
+.collect-menu--open .collect-current {
+  border-radius: 0;
+}
+
+/* 候选：与 .floor-options 同一套——横向单行、零间隙、仅 1rpx 单线、末项右圆角 */
+.collect-options {
+  position: absolute;
+  left: 100%;
+  top: 0;
   margin: 0;
-  padding: 0 14rpx;
-  box-sizing: border-box;
-  line-height: 68rpx; /* height - 上下 border */
-  font-size: 26rpx;
-  font-weight: 600;
-  text-align: center;
-  white-space: nowrap;
-  border-radius: 16rpx;
-  background: rgba(255, 255, 255, 0.92);
-  color: #1f2937;
-  border: 2rpx solid #d1d5db;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.collect-options .zoom-face {
+  border-radius: 0;
+}
+
+.collect-options .collect-opt-last {
+  border-radius: 0 10rpx 10rpx 0;
 }
 
 /* 楼层选择：触发键常显当前楼层（高亮）；候选楼层为绝对定位浮层，
@@ -109,7 +106,9 @@
   border-radius: 0 10rpx 10rpx 0;
 }
 
-.floor-current {
+/* 触发键高亮：楼层当前层 / 采集入口共用同一套蓝色可视面 */
+.floor-current,
+.collect-current {
   background: #2563eb;
   color: #ffffff;
   border-color: #2563eb;
