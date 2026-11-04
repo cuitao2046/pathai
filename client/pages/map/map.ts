@@ -39,6 +39,21 @@ import { LocationPipeline } from '../../core/position/location-pipeline';
 import { SequenceCounter } from '../../core/position/sequence-counter';
 import { buildRouteOverview } from '../../core/nav/route-overview';
 import { vibrateLong, vibrateShort } from '../../utils/haptic';
+import {
+  HoldToTalkGesture,
+  HOLD_TO_TALK_DEFAULTS,
+} from '../../core/a11y/hold-to-talk-gesture';
+import { isPointExcluded, toCanvasRect, type Rect } from '../../core/a11y/tap-exclusion';
+import {
+  HeadingSmoother,
+  arrowAngle,
+  deviationOfArrow,
+  deviationStep,
+  routeBearing,
+  shortestDelta,
+} from '../../core/a11y/nav-arrow-angle';
+import { HeadingSource, type HeadingApi, type HeadingMode } from '../../core/a11y/heading-source';
+import type { A11yMode } from '../../services/app-context';
 import type {
   IntentParseResponse,
   PlaceCandidate,
@@ -81,6 +96,23 @@ const TOOL_BTN_BORDER_RPX = 1;
 /** 估算余量：避免不同机型字体度量差异导致文字贴边/截断。 */
 const TOOL_BTN_SAFETY_RPX = 6;
 
+/** 方向箭头：偏离警示需持续该时长才亮红并播报（spec §5.6）。 */
+const ARROW_ALERT_HOLD_MS = 2000;
+/** 偏离播报节流（≥5 s）。 */
+const ARROW_SPEAK_THROTTLE_MS = 5000;
+/** 角度变化小于该值不重绘（spec §5.5）。 */
+const ARROW_REDRAW_DEG = 2;
+/** 两次重绘的最小间隔（约 20 fps）。 */
+const ARROW_REDRAW_MIN_MS = 50;
+const ALIGNED_TEXT = '方向已对准，请直行';
+const HEADING_UNAVAILABLE_TEXT = '当前设备无法提供方向，请改用语音指令导航';
+
+/**
+ * 采样排除区时使用的选择器（按钮热区）。`selectAll` 一次取一类，
+ * 避免复合选择器在部分基础库上解析不一致。
+ */
+const EXCLUSION_SELECTORS = ['.zoom-hit', '.ptt-zone', '.nav-hud', '.center-card'];
+
 /**
  * 工具条统一按钮宽度（rpx）：按「设置 / 全图 / 各楼层文案」中最宽者估算。
  * 全角（CJK）按 1em、半角按 0.6em 计，再叠加左右留白、边框与安全余量。
@@ -111,7 +143,7 @@ interface FloorItem {
 }
 
 interface GestureState {
-  mode: 'pan' | 'zoom' | null;
+  mode: 'pan' | 'zoom' | 'pending' | null;
   lastX: number;
   lastY: number;
   baseDist: number;
@@ -162,6 +194,21 @@ Page({
     instruction: '',
     destinationName: '',
     ended: false,
+    // 无障碍（specs/nav-accessibility-ux）：模式 + 大箭头
+    /** 无障碍模式：视障模式（默认）/ 普通模式；普通模式回归既有地图手势。 */
+    a11yMode: 'a11y' as A11yMode,
+    /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
+    fullScreenPtt: true,
+    /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
+    navArrow: true,
+    /** 箭头覆盖层是否显示。 */
+    arrowVisible: false,
+    /** 箭头旋转角（相对手机朝向；0=朝上=对准）。 */
+    arrowDeg: 0,
+    /** 偏离警示态（红 + 白描边）。 */
+    arrowAlert: false,
+    /** 箭头配色主题（跟随系统深浅色）。 */
+    arrowDark: false,
   },
 
   canvas: null as WechatMiniprogram.Canvas | null,
@@ -207,10 +254,32 @@ Page({
     lastMidX: 0,
     lastMidY: 0,
   } as GestureState,
+  /** 全屏按住说话手势状态机（仅视障模式使用；普通模式不走该机）。 */
+  holdGesture: new HoldToTalkGesture(HOLD_TO_TALK_DEFAULTS),
+  holdTimer: null as ReturnType<typeof setTimeout> | null,
+  holdEndTimer: null as ReturnType<typeof setTimeout> | null,
+  /** 排除矩形（canvas 坐标系；采样失败为空集合）。 */
+  tapExclusions: [] as Rect[],
+  /** 朝向传感器（仅导航态启动，结束/后台/卸载停止）。 */
+  headingSource: null as HeadingSource | null,
+  headingSmoother: new HeadingSmoother(),
+  headingDeg: null as number | null,
+  headingMode: 'compass' as HeadingMode,
+  /** wx 传感器监听只注册一次，回调转交给 HeadingSource 当前实例。 */
+  headingApi: null as HeadingApi | null,
+  compassHandler: null as ((res: { direction: number; accuracy?: number | string }) => void) | null,
+  motionHandler: null as ((res: { alpha: number }) => void) | null,
+  headingUnavailableAnnounced: false,
+  alignedAnnounced: false,
+  arrowLastDeg: 0,
+  arrowUpdatedAt: 0,
+  deviationSince: null as number | null,
+  deviationSpokenAt: 0,
 
   onLoad(): void {
     this.initSpeech();
     this.initPtt();
+    this.applyA11ySettings(); // 模式与全屏语音开关（设置页改动通过 onShow 回读）
     this.intents = new IntentService(appContext.http.client, appContext.map);
     this.locationQuery = new LocationQueryService({
       client: appContext.http.client,
@@ -225,12 +294,16 @@ Page({
 
   onHide(): void {
     this.ptt?.handleAppHide(); // 切后台：取消识别，不提交
+    this.clearHoldTimers();
+    this.holdGesture.reset();
+    this.stopHeading(); // 传感器不进后台（省电 + 避免系统限流）
     this.controller?.handleBackground(); // 导航中：停采集，恢复交给 onShow
   },
 
   onShow(): void {
-    // 从设置页返回后刷新采集入口可见性（开关即时生效）
+    // 从设置页返回后刷新采集入口可见性与无障碍模式（开关即时生效）
     this.setData({ collectEntry: appContext.getFieldCollectionToolSetting() });
+    this.applyA11ySettings();
     const controller = this.controller;
     if (controller !== null && controller.sessionId !== null && !this.sessionEnded) {
       void controller.handleForeground();
@@ -240,6 +313,8 @@ Page({
   onUnload(): void {
     this.mapUnsubscribe?.();
     this.mapUnsubscribe = null;
+    this.clearHoldTimers();
+    this.stopHeading();
     const controller = this.controller;
     if (controller !== null && !this.sessionEnded && controller.sessionId !== null) {
       controller.endSession('user_cancelled').catch(() => undefined);
@@ -328,6 +403,7 @@ Page({
       });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
+      this.refreshTapExclusions();
       // 启动集中申请权限：地图就绪后再弹，避免与加载叠加
       this.requestStartupPermissions();
     } catch (err) {
@@ -387,6 +463,7 @@ Page({
         this.ctx = node.getContext('2d');
         this.canvasReady = true;
         log.info('canvas 就绪', `${this.canvasSize.w}x${this.canvasSize.h}`, `dpr=${this.dpr}`);
+        this.refreshTapExclusions(); // 排除区依赖画布原点，画布就绪后再采样
         this.tryFirstDraw();
       });
   },
@@ -663,22 +740,37 @@ Page({
 
   onTouchStart(e: WechatMiniprogram.TouchEvent): void {
     const ts = e.touches;
-    if (ts.length === 1) {
-      const p = this.toCanvasPoint(ts[0]);
-      this.gesture = { mode: 'pan', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
-    } else if (ts.length >= 2) {
-      // 1→2 指切换：重置基线防止缩放跳变
-      const a = this.toCanvasPoint(ts[0]);
-      const b = this.toCanvasPoint(ts[1]);
-      this.gesture = {
-        mode: 'zoom',
-        lastX: 0,
-        lastY: 0,
-        baseDist: Math.hypot(a.x - b.x, a.y - b.y),
-        lastMidX: (a.x + b.x) / 2,
-        lastMidY: (a.y + b.y) / 2,
-      };
+    // 普通模式：回归既有地图手势（按下即可拖拽，无长按判定、无死区）
+    if (this.data.a11yMode !== 'a11y') {
+      this.startLegacyTouch(ts);
+      return;
     }
+    if (ts.length >= 2) {
+      this.clearHoldTimers();
+      this.holdGesture.reset();
+      this.startZoomGesture(ts);
+      return;
+    }
+    if (ts.length !== 1) {
+      return;
+    }
+    const p = this.toCanvasPoint(ts[0]);
+    const action = this.holdGesture.onStart({
+      x: p.x,
+      y: p.y,
+      pointCount: 1,
+      excluded: this.isTapExcluded(p.x, p.y),
+      now: Date.now(),
+    });
+    if (action === 'pending' && this.isFullScreenPttEnabled()) {
+      // 先挂起：500 ms 静止转语音，移动超过 10px 转拖拽
+      this.gesture = { mode: 'pending', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
+      this.scheduleHold();
+      return;
+    }
+    // 排除区 / 地图未就绪 / 开关关闭：保持原有「按下即拖拽」
+    this.holdGesture.reset();
+    this.gesture = { mode: 'pan', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
   },
 
   onTouchMove(e: WechatMiniprogram.TouchEvent): void {
@@ -688,31 +780,65 @@ Page({
     }
     const g = this.gesture;
     const ts = e.touches;
-    if (g.mode === 'pan' && ts.length === 1) {
+    if (this.data.a11yMode === 'a11y' && g.mode === 'pending') {
+      if (ts.length >= 2) {
+        // 1→2 指：缩放优先，取消语音候选
+        this.clearHoldTimers();
+        this.holdGesture.reset();
+        this.startZoomGesture(ts);
+      } else if (ts.length === 1) {
+        const p = this.toCanvasPoint(ts[0]);
+        const action = this.holdGesture.onMove(p.x, p.y, 1);
+        if (action !== 'pan-start') {
+          return; // 仍在死区内：不拖拽、不重绘
+        }
+        // 超出 10px 死区：从按下点开始拖拽，避免首帧跳变
+        this.clearHoldTimers();
+        const origin = this.holdGesture.origin;
+        g.mode = 'pan';
+        g.lastX = origin.x;
+        g.lastY = origin.y;
+      }
+    }
+    if (this.data.a11yMode === 'a11y' && this.holdGesture.currentPhase === 'voice') {
+      return; // 语音态内移动不取消（沿用按住说话容错）
+    }
+    const cur = this.gesture; // 1→2 指可能已重建 gesture 对象
+    if (cur.mode === 'pan' && ts.length === 1) {
       const p = this.toCanvasPoint(ts[0]);
-      vp.panBy(p.x - g.lastX, p.y - g.lastY);
-      g.lastX = p.x;
-      g.lastY = p.y;
+      vp.panBy(p.x - cur.lastX, p.y - cur.lastY);
+      cur.lastX = p.x;
+      cur.lastY = p.y;
       this.requestDraw();
-    } else if (g.mode === 'zoom' && ts.length >= 2) {
+    } else if (cur.mode === 'zoom' && ts.length >= 2) {
       const a = this.toCanvasPoint(ts[0]);
       const b = this.toCanvasPoint(ts[1]);
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       const midX = (a.x + b.x) / 2;
       const midY = (a.y + b.y) / 2;
-      if (g.baseDist > 0) {
-        vp.zoomAt(midX, midY, dist / g.baseDist);
+      if (cur.baseDist > 0) {
+        vp.zoomAt(midX, midY, dist / cur.baseDist);
       }
-      vp.panBy(midX - g.lastMidX, midY - g.lastMidY);
-      g.baseDist = dist;
-      g.lastMidX = midX;
-      g.lastMidY = midY;
+      vp.panBy(midX - cur.lastMidX, midY - cur.lastMidY);
+      cur.baseDist = dist;
+      cur.lastMidX = midX;
+      cur.lastMidY = midY;
       this.requestDraw();
     }
   },
 
   onTouchEnd(e: WechatMiniprogram.TouchEvent): void {
     const ts = e.touches;
+    if (this.data.a11yMode === 'a11y') {
+      const action = this.holdGesture.onEnd(ts.length);
+      if (action === 'voice-end') {
+        this.clearHoldTimers();
+        this.gesture.mode = null;
+        this.onPttEnd();
+        return;
+      }
+      this.clearHoldTimers();
+    }
     if (ts.length === 1) {
       // 双指抬一根 → 剩余单指继续平移
       const p = this.toCanvasPoint(ts[0]);
@@ -723,7 +849,325 @@ Page({
   },
 
   onTouchCancel(e: WechatMiniprogram.TouchEvent): void {
+    if (this.data.a11yMode === 'a11y') {
+      const action = this.holdGesture.onCancel();
+      this.clearHoldTimers();
+      this.gesture.mode = null;
+      if (action === 'voice-cancel') {
+        this.onPttCancel();
+      }
+      return;
+    }
     this.onTouchEnd(e);
+  },
+
+  /** 原有单指/双指手势基线（普通模式与视障模式的排除区分支共用）。 */
+  startLegacyTouch(ts: WechatMiniprogram.TouchEvent['touches']): void {
+    if (ts.length === 1) {
+      const p = this.toCanvasPoint(ts[0]);
+      this.gesture = { mode: 'pan', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
+    } else if (ts.length >= 2) {
+      this.startZoomGesture(ts);
+    }
+  },
+
+  startZoomGesture(ts: WechatMiniprogram.TouchEvent['touches']): void {
+    // 1→2 指切换：重置基线防止缩放跳变
+    const a = this.toCanvasPoint(ts[0]);
+    const b = this.toCanvasPoint(ts[1]);
+    this.gesture = {
+      mode: 'zoom',
+      lastX: 0,
+      lastY: 0,
+      baseDist: Math.hypot(a.x - b.x, a.y - b.y),
+      lastMidX: (a.x + b.x) / 2,
+      lastMidY: (a.y + b.y) / 2,
+    };
+  },
+
+  // ------------------------------------------------------------------
+  // 全屏按住说话（仅视障模式）
+  // ------------------------------------------------------------------
+
+  /** 生效条件：视障模式 + 全屏开关打开 + 地图已就绪。 */
+  isFullScreenPttEnabled(): boolean {
+    return (
+      this.data.a11yMode === 'a11y' &&
+      this.data.fullScreenPtt &&
+      !this.data.loading &&
+      this.data.loadError === '' &&
+      this.data.mapReady
+    );
+  },
+
+  isTapExcluded(x: number, y: number): boolean {
+    return isPointExcluded(x, y, this.tapExclusions);
+  },
+
+  /** 采样按钮热区作为排除区（canvas 坐标系，外扩 2px 在判定时生效）。 */
+  refreshTapExclusions(): void {
+    const query = this.createSelectorQuery();
+    const rects: Rect[] = [];
+    let pending = EXCLUSION_SELECTORS.length;
+    for (const selector of EXCLUSION_SELECTORS) {
+      query.selectAll(selector).boundingClientRect((res: unknown) => {
+        const list = res as Array<{ left: number; top: number; width: number; height: number }> | null;
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            rects.push(toCanvasRect(item, this.canvasRect));
+          }
+        }
+        pending -= 1;
+        if (pending === 0) {
+          this.tapExclusions = rects;
+        }
+      });
+    }
+    query.exec();
+    if (this.tapExclusions.length === 0) {
+      // 首次采样前为空集合：不排除任何区域（控件是 canvas 兄弟节点，不会误触语音）
+      log.info('排除区待采样');
+    }
+  },
+
+  /** 长按 500 ms 计时：到点转语音（进入语音态后改挂 15 s 上限计时）。 */
+  scheduleHold(): void {
+    this.clearHoldTimers();
+    this.holdTimer = setTimeout(() => {
+      this.holdTimer = null;
+      if (this.holdGesture.currentPhase !== 'pending' || !this.isFullScreenPttEnabled()) {
+        this.holdGesture.reset();
+        return;
+      }
+      if (this.holdGesture.onTick(Date.now()) === 'voice-start') {
+        this.gesture.mode = null; // 语音态不再拖拽
+        this.onPttStart();
+        this.scheduleHoldEnd();
+      }
+    }, HOLD_TO_TALK_DEFAULTS.holdMs);
+  },
+
+  /** 15 s 上限：到时自动结束并提交（防止误触后长时间占用麦克风）。 */
+  scheduleHoldEnd(): void {
+    this.clearHoldTimers();
+    this.holdEndTimer = setTimeout(() => {
+      this.holdEndTimer = null;
+      if (this.holdGesture.currentPhase !== 'voice') {
+        return;
+      }
+      if (this.holdGesture.onTick(Date.now()) === 'voice-timeout') {
+        this.gesture.mode = null;
+        this.onPttEnd();
+      }
+    }, HOLD_TO_TALK_DEFAULTS.maxHoldMs);
+  },
+
+  clearHoldTimers(): void {
+    if (this.holdTimer !== null) {
+      clearTimeout(this.holdTimer);
+      this.holdTimer = null;
+    }
+    if (this.holdEndTimer !== null) {
+      clearTimeout(this.holdEndTimer);
+      this.holdEndTimer = null;
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // 导航方向大箭头（仅视障模式；相对手机朝向）
+  // ------------------------------------------------------------------
+
+  /** 读取设置页的无障碍配置并即时生效（切换模式后正在进行的导航也会重绘）。 */
+  applyA11ySettings(): void {
+    const mode = appContext.getA11yMode();
+    const fullScreenPtt = appContext.getFullScreenPttSetting();
+    const navArrow = appContext.getNavArrowSetting();
+    let arrowDark = false;
+    try {
+      const info = wx.getSystemInfoSync() as { theme?: string };
+      arrowDark = info.theme === 'dark';
+    } catch {
+      arrowDark = false;
+    }
+    this.setData({ a11yMode: mode, fullScreenPtt, navArrow, arrowDark });
+    this.syncArrowLifecycle();
+  },
+
+  /** 箭头显示条件：视障模式 + 箭头开关 + 导航中且未结束。 */
+  isArrowEnabled(): boolean {
+    return this.data.a11yMode === 'a11y' && this.data.navArrow && this.data.navActive && !this.data.ended;
+  },
+
+  /** 按当前状态启动/停止传感器与箭头（模式切换、导航开始/结束、前后台共用）。 */
+  syncArrowLifecycle(): void {
+    if (!this.isArrowEnabled()) {
+      this.stopHeading();
+      this.deviationSince = null;
+      if (this.data.arrowVisible || this.data.arrowAlert) {
+        this.setData({ arrowVisible: false, arrowAlert: false });
+      }
+      return;
+    }
+    this.startHeading();
+    this.updateArrow();
+  },
+
+  startHeading(): void {
+    if (this.headingSource !== null) {
+      return;
+    }
+    if (typeof wx.startCompass !== 'function') {
+      this.onHeadingUnavailable();
+      return;
+    }
+    this.headingSource = new HeadingSource({
+      api: this.getHeadingApi(),
+      onHeading: (deg, mode) => {
+        this.headingMode = mode;
+        this.headingDeg = this.headingSmoother.update(deg, Date.now());
+        this.updateArrow();
+      },
+      onModeChange: (mode) => {
+        this.headingMode = mode;
+        if (mode === 'unavailable') {
+          this.onHeadingUnavailable();
+        }
+      },
+      onUnavailable: () => this.onHeadingUnavailable(),
+    });
+    this.headingSource.start();
+  },
+
+  stopHeading(): void {
+    this.headingSource?.stop();
+    this.headingSource = null;
+    this.headingDeg = null;
+    this.headingSmoother.reset();
+  },
+
+  /** 构建 wx → HeadingApi 适配层；监听只注册一次，回调委托给当前 handler。 */
+  getHeadingApi(): HeadingApi {
+    if (this.headingApi !== null) {
+      return this.headingApi;
+    }
+    let compassBound = false;
+    let motionBound = false;
+    const api: HeadingApi = {
+      startCompass: (opts) => wx.startCompass(opts),
+      stopCompass: () => wx.stopCompass(),
+      onCompassChange: (cb) => {
+        this.compassHandler = cb;
+        if (!compassBound) {
+          compassBound = true;
+          wx.onCompassChange((res) => {
+            this.compassHandler?.({ direction: res.direction, accuracy: res.accuracy });
+          });
+        }
+      },
+      startDeviceMotionListening: (opts) => wx.startDeviceMotionListening(opts),
+      stopDeviceMotionListening: () => wx.stopDeviceMotionListening(),
+      onDeviceMotionChange: (cb) => {
+        this.motionHandler = cb;
+        if (!motionBound) {
+          motionBound = true;
+          wx.onDeviceMotionChange((res) => {
+            this.motionHandler?.({ alpha: res.alpha });
+          });
+        }
+      },
+    };
+    this.headingApi = api;
+    return api;
+  },
+
+  /** 罗盘与运动传感器均不可用：隐藏箭头并语音降级（不显示错误方向）。 */
+  onHeadingUnavailable(): void {
+    if (this.headingUnavailableAnnounced) {
+      return;
+    }
+    this.headingUnavailableAnnounced = true;
+    log.warn('方向传感器不可用，隐藏导航箭头');
+    this.setData({ arrowVisible: false, arrowAlert: false });
+    this.speech?.enqueue(HEADING_UNAVAILABLE_TEXT, 'normal');
+  },
+
+  /** 同层路线顶点（floorId 为空的桥接点沿用前一点楼层，与绘制逻辑一致）。 */
+  routePointsOnFloor(floorId: string): Array<{ x: number; y: number }> {
+    const route = this.routeForDisplay;
+    if (route === null) {
+      return [];
+    }
+    const points: Array<{ x: number; y: number }> = [];
+    let cur: string | null = null;
+    for (const p of route.polyline) {
+      if (p.floorId !== null && p.floorId !== undefined) {
+        cur = p.floorId;
+      }
+      if ((cur ?? floorId) === floorId) {
+        points.push({ x: p.x, y: p.y });
+      }
+    }
+    return points;
+  },
+
+  /** 重算箭头角并更新偏离开警/播报（节流：<2° 不重绘、播报 ≥5 s）。 */
+  updateArrow(): void {
+    if (!this.isArrowEnabled()) {
+      return;
+    }
+    if (this.data.state === 'recovering') {
+      return; // 位置不可信：不推进箭头、不播报方向（REQ-NAV 安全策略）
+    }
+    const heading = this.headingDeg;
+    const pos = this.navPosition;
+    if (heading === null || pos === null) {
+      return;
+    }
+    const points = this.routePointsOnFloor(pos.floorId);
+    const bearing = routeBearing(points, pos);
+    if (bearing === null) {
+      return;
+    }
+    const now = Date.now();
+    const deg = arrowAngle(bearing, heading);
+    const deviation = deviationOfArrow(deg);
+
+    // 偏离警示：>30° 持续 ≥2 s 才亮红；回到 ≤30° 立即解除
+    if (deviation > 30) {
+      if (this.deviationSince === null) {
+        this.deviationSince = now;
+      }
+    } else {
+      this.deviationSince = null;
+    }
+    const alert = this.deviationSince !== null && now - this.deviationSince >= ARROW_ALERT_HOLD_MS;
+
+    // 对齐：每次导航会话只播一次「方向已对准」
+    if (deviation <= 15 && !this.alignedAnnounced) {
+      this.alignedAnnounced = true;
+      vibrateShort();
+      this.speech?.enqueue(ALIGNED_TEXT, 'normal');
+    }
+
+    // 播报：偏离持续、节流 ≥5 s，普通优先级（安全提示可打断）
+    if (alert && now - this.deviationSpokenAt >= ARROW_SPEAK_THROTTLE_MS) {
+      this.deviationSpokenAt = now;
+      const side = deg <= 180 ? '右' : '左';
+      this.speech?.enqueue(`方向偏离约 ${deviationStep(deviation)} 度，请向${side}转`, 'normal');
+    }
+
+    const alertChanged = alert !== this.data.arrowAlert;
+    const angleChanged =
+      !this.data.arrowVisible || Math.abs(shortestDelta(this.arrowLastDeg, deg)) >= ARROW_REDRAW_DEG;
+    if (!alertChanged && !angleChanged) {
+      return; // 变化 <2°：不重绘
+    }
+    if (!alertChanged && now - this.arrowUpdatedAt < ARROW_REDRAW_MIN_MS) {
+      return; // ≥20 fps 上限
+    }
+    this.arrowLastDeg = deg;
+    this.arrowUpdatedAt = now;
+    this.setData({ arrowDeg: Math.round(deg * 10) / 10, arrowAlert: alert, arrowVisible: true });
   },
 
   // ------------------------------------------------------------------
@@ -735,7 +1179,7 @@ Page({
     log.info('tap 切换楼层', floorId, `current=${this.data.currentFloor}`);
     // 选中即收起楼层菜单（含重复点击当前层的场景）
     if (this.data.floorMenuOpen) {
-      this.setData({ floorMenuOpen: false });
+      this.setData({ floorMenuOpen: false }, () => this.refreshTapExclusions());
     }
     const vp = this.viewport;
     if (floorId === '' || floorId === this.data.currentFloor || vp === null) {
@@ -758,7 +1202,7 @@ Page({
 
   /** 楼层选择按钮：横向展开/收起可选楼层。 */
   onToggleFloorMenu(): void {
-    this.setData({ floorMenuOpen: !this.data.floorMenuOpen });
+    this.setData({ floorMenuOpen: !this.data.floorMenuOpen }, () => this.refreshTapExclusions());
   },
 
   onResetView(): void {
@@ -783,7 +1227,7 @@ Page({
     if (!this.data.collectEntry) {
       return;
     }
-    this.setData({ collectMenuOpen: !this.data.collectMenuOpen });
+    this.setData({ collectMenuOpen: !this.data.collectMenuOpen }, () => this.refreshTapExclusions());
   },
 
   onGoCollectStatic(): void {
@@ -884,11 +1328,14 @@ Page({
   },
 
   applyIntent(result: IntentParseResponse): void {
-    this.setData({
-      reply: result.responseText,
-      candidates: result.needsClarification ? result.candidates : [],
-      destination: result.destination ?? null,
-    });
+    this.setData(
+      {
+        reply: result.responseText,
+        candidates: result.needsClarification ? result.candidates : [],
+        destination: result.destination ?? null,
+      },
+      () => this.refreshTapExclusions(), // 居中卡出现 → 整体作为排除区
+    );
     this.speech?.enqueue(result.responseText, 'normal');
     if (result.intent === 'query_location') {
       // responseText 是过渡话术（"请稍等，正在查询…"），随后补播真实位置
@@ -938,20 +1385,33 @@ Page({
     this.routeForDisplay = null;
     this.navPosition = null;
     this.lastTapAt = 0;
+    // 箭头会话状态复位（每次导航重新计一次「已对准」）
+    this.headingUnavailableAnnounced = false;
+    this.alignedAnnounced = false;
+    this.deviationSince = null;
+    this.deviationSpokenAt = 0;
+    this.arrowLastDeg = 0;
+    this.arrowUpdatedAt = 0;
+    this.headingDeg = null;
+    this.headingSmoother.reset();
     // 收起意图居中卡，切换到导航 HUD
-    this.setData({
-      navActive: true,
-      ended: false,
-      state: 'idle' as NavState,
-      stateText: NAV_TEXT.idle,
-      instruction: '正在确定您的位置…',
-      destinationName: destination.name,
-      destination: null,
-      candidates: [],
-      reply: '',
-      partial: '',
-      recognized: '',
-    });
+    this.setData(
+      {
+        navActive: true,
+        ended: false,
+        state: 'idle' as NavState,
+        stateText: NAV_TEXT.idle,
+        instruction: '正在确定您的位置…',
+        destinationName: destination.name,
+        destination: null,
+        candidates: [],
+        reply: '',
+        partial: '',
+        recognized: '',
+      },
+      () => this.refreshTapExclusions(),
+    );
+    this.syncArrowLifecycle(); // 视障模式：导航开始即启动朝向传感器
     this.enterNavZoom(); // 视野从全路线收窄到局部（REQ-NAV 展示层）
     void this.initNavigation();
   },
@@ -1036,6 +1496,10 @@ Page({
         this.setData({ state, stateText: NAV_TEXT[state] });
         if (state === 'recovering') {
           vibrateLong(); // 震动模式：脱离路线需要引起注意
+          // 位置不可信：箭头隐藏（不显示可能错误的方向）
+          this.setData({ arrowVisible: false, arrowAlert: false });
+        } else if (state === 'active') {
+          this.syncArrowLifecycle();
         }
       },
       onRoute: (route) => {
@@ -1067,6 +1531,7 @@ Page({
         }
         this.routeForDisplay = route;
         this.requestDraw(); // 导航视觉：重绘路线（REQ-NAV 展示层）
+        this.updateArrow(); // 路线就绪后按当前位置算箭头方向
       },
       onEnded: (info) => {
         this.sessionEnded = true;
@@ -1080,6 +1545,7 @@ Page({
         } else {
           this.setData({ ended: true }); // 到达/恢复失效：按钮切为「关闭」
         }
+        this.syncArrowLifecycle(); // 导航结束：停传感器并隐藏箭头
       },
     });
 
@@ -1115,6 +1581,7 @@ Page({
         y: position.y,
       };
       this.followPosition();
+      this.updateArrow(); // 可信位置更新 → 重算当前折线段方向
     }
     const controller = this.controller;
     if (controller === null || this.sessionEnded) {
@@ -1238,14 +1705,17 @@ Page({
 
   /** 收起意图/反馈居中卡：清空全部面板状态，避免关闭后残留遮挡地图（REQ-PAGE）。 */
   onDismissIntent(): void {
-    this.setData({
-      recognized: '',
-      partial: '',
-      reply: '',
-      fallbackText: '',
-      candidates: [],
-      destination: null,
-    });
+    this.setData(
+      {
+        recognized: '',
+        partial: '',
+        reply: '',
+        fallbackText: '',
+        candidates: [],
+        destination: null,
+      },
+      () => this.refreshTapExclusions(),
+    );
   },
 
   /** 导航结束后关闭 HUD，回到待命地图。 */
@@ -1268,6 +1738,7 @@ Page({
     // 关键：导航期间累积的 fallbackText/reply 若不清空，
     // navActive=false 后居中卡会因 fallbackText 非空重新弹出遮挡地图
     this.onDismissIntent();
+    this.syncArrowLifecycle(); // 关闭导航 HUD：停传感器并隐藏箭头
     this.requestDraw();
   },
 });

@@ -42,6 +42,12 @@ Page({
     calibrationExportPath: '',
     /** 现场采集工具开关（首页「采集」入口可见性，即时生效）。 */
     fieldCollectionSetting: false,
+    /** 无障碍模式：'a11y' 视障模式（默认）/ 'normal' 普通模式，即时生效。 */
+    a11yMode: 'a11y' as 'a11y' | 'normal',
+    /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
+    fullScreenPttSetting: true,
+    /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
+    navArrowSetting: true,
     busy: false,
   },
 
@@ -62,6 +68,9 @@ Page({
       calibrationCount: appContext.calibration.count,
       calibrationOperator: appContext.getCalibrationOperator(),
       fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
+      a11yMode: appContext.getA11yMode(),
+      fullScreenPttSetting: appContext.getFullScreenPttSetting(),
+      navArrowSetting: appContext.getNavArrowSetting(),
     });
     // 未完成下载的百分比只在这里展示（REQ-MAP），随下载进度实时刷新
     this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
@@ -96,6 +105,9 @@ Page({
       calibrationCount: appContext.calibration.count,
       calibrationOperator: appContext.getCalibrationOperator(),
       fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
+      a11yMode: appContext.getA11yMode(),
+      fullScreenPttSetting: appContext.getFullScreenPttSetting(),
+      navArrowSetting: appContext.getNavArrowSetting(),
     });
   },
 
@@ -195,6 +207,34 @@ Page({
     appContext.setFieldCollectionToolSetting(on);
     this.setData({ fieldCollectionSetting: on });
     wx.showToast({ title: on ? '已开启，返回首页可见' : '已关闭', icon: 'none', duration: 2000 });
+  },
+
+  /** 无障碍模式：视障模式（大箭头 + 全屏按住说话）/ 普通模式，即时生效。 */
+  onChangeA11yMode(event: WechatMiniprogram.SwitchChange) {
+    const mode = event.detail.value ? 'a11y' : 'normal';
+    appContext.setA11yMode(mode);
+    this.setData({ a11yMode: mode });
+    wx.showToast({
+      title: mode === 'a11y' ? '已切换视障模式' : '已切换普通模式',
+      icon: 'none',
+      duration: 2000,
+    });
+  },
+
+  /** 全屏按住说话开关（仅视障模式生效，即时生效）。 */
+  onChangeFullScreenPtt(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setFullScreenPttSetting(on);
+    this.setData({ fullScreenPttSetting: on });
+    wx.showToast({ title: on ? '已开启全屏按住说话' : '已关闭', icon: 'none', duration: 2000 });
+  },
+
+  /** 导航方向大箭头开关（仅视障模式生效，即时生效）。 */
+  onChangeNavArrow(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setNavArrowSetting(on);
+    this.setData({ navArrowSetting: on });
+    wx.showToast({ title: on ? '已开启方向箭头' : '已关闭', icon: 'none', duration: 2000 });
   },
 
   onCalibrationOperatorInput(event: WechatMiniprogram.Input) {
