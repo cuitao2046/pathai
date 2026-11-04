@@ -79,6 +79,37 @@
   height: 100%;
 }
 
+/* 缩放控件：竖向悬浮于画布右侧；显式 z-index 保证真机可点按 */
+.map-tools {
+  position: absolute;
+  top: 200rpx;
+  right: 24rpx;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.zoom-btn {
+  width: 88rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  line-height: 68rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2rpx solid #cbd5e1;
+  border-radius: 14rpx;
+  box-shadow: 0 4rpx 12rpx rgba(15, 23, 42, 0.14);
+}
+
+.zoom-reset {
+  font-size: 22rpx;
+}
+
 /* 快照倒计时面板 */
 .collect-panel {
   position: absolute;
