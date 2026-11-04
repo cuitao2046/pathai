@@ -1,8 +1,8 @@
 # Spec：现场采集工具集成到导航小程序（静态标定 + 网格指纹）
 
-> 版本 0.1.1（草案，待评审确认）
-> 日期：2026-11-03
-> 变更：0.1.1 补入采集页地图缩放/平移与选点命中随视口变换的要求（§3.7、§4.1、§7、D7）；仍为草案，未经评审。
+> 版本 0.2.0（草案，待评审确认）
+> 日期：2026-11-04
+> 变更：0.2.0 指纹网格改为**设计层 / 采集层两层模型**——设计层按全楼部署假设出规则网格，采集层按当前实际 61 枚信标（F2 9 枚）标可采集；重写格网/编号规则、可采集判定（`plan10m85` 默认 + `geo15m` 备用两个口径）、F2 处理与客户端 LOD/过滤（§4.1、§4.2、§4.3、§5、§7、D4、D8-D11）。0.1.1 补入采集页地图缩放/平移与选点命中随视口变换的要求（§3.7、§7、D7）。
 > 关联：`docs/28`（标定方案）、`docs/31`（动态标定执行手册）、`docs/24` §4/§6、独立工具 `positioning-calibrator/`、`fingerprint-collector/`
 
 ---
@@ -130,13 +130,55 @@
 
 ## 4. 网格指纹页面（`pages/collect/fingerprint`）
 
-### 4.1 点位数据（决策 D4）
+### 4.1 点位数据（决策 D4、D8-D11）
 
-- **内置全楼 1434 点网格**（`result/fingerprint_grid.json`，2 m 间距；F1 走廊面 710 + 加密 7 + F2 29 + 7 + …），由脚本生成 `client/data/fingerprint_grid.ts`（AUTO-GENERATED）。
-- 地图模式显示**全部 1434 点**（小圆点，按楼层切换；已采集点高亮绿 + 角标），**仅现场实际采集的点才写入记录**。
-- 点位支持按区域/名称过滤与「未采集」筛选，便于按分区推进。
-- 地图缩放/平移、可点按缩放控件与选点命中随视口变换的行为与 §3.7 **完全一致**
-  （命中半径 16 px；放大后 2 m 网格点更易精确选中）。
+采用**设计层 / 采集层两层模型**：
+
+| 层 | 含义 | 数据 |
+|---|---|---|
+| 设计层（design） | 假设**全楼部署**蓝牙信标时的完整采集网格，不做覆盖裁剪；用于部署规划与点位编号基准 | `result/fingerprint_grid.json` 全量点（F1 1499 / F2 789，合计 2288） |
+| 采集层（collection） | 在**当前实际部署**（地图包 `2026-11-03.1.json` 的 61 枚信标，F1 52 / F2 9）下逐点计算可见信标数与预测 RSSI，标记 `collectable` | 同一点集 + 覆盖字段 |
+
+**格网规则**（`src/tools/generate_fingerprint_grid.py`，决策 D8）：
+
+- **统一原点**：全场墙体包围盒左下角向下取偶米，`O = (-86, -92)`（墙体 bbox `[-84.091, -90.916, 17.795, 43.848]`）。所有点落在整数米，2 m 底网为偶-偶格位（`col/row` 均为偶数）。
+- **2 m 底网**：可通行区内按偶-偶格位布点（`source=base_2m`、`isBase2m=true`）。
+- **触发细分**：命中以下三类锚点半径的 2 m 格整格切 1 m（中心 + 四边中点，且新增点须在可通行区内）：
+  - 交叉路口：`topology.nodes` 中 `type=intersection` 且唯一邻居数 ≥3（半径 1 m）；
+  - 门口：`type=doorway` **全部**节点（含教室门）+ `accessibility.riskNodes` 中 `type=outward_door`（半径 1 m）；
+  - 高风险：`accessibility.riskNodes` 中 `stair_entrance / elevator_entrance`，以及 `room/facility` 的 `staircase/elevator`（半径 3 m）。
+  - `riskNodes` **按 type 分流**：`outward_door` 归门口类（1 m），`stair_entrance/elevator_entrance` 归高风险类（3 m），不再一律写成 `stair_entrance`。
+- **去重**：纯 1 m 格位键 `(floor, col, row)` 唯一，优先级 `intersection(1) > doorway(2) > high_risk(3) > normal(4)`；**取消 0.6 m 距离阈值**；同格多个触发来源合并进 `triggers`。
+- **不做贴墙避墙换点**（决策 D11）：贴墙点按原格位保留，`wallClearanceMoved=0`。
+- **3 m 大空间策略保持关闭**（决策 D10）：大空间仍按 2 m 底网，不放大到 3 m。
+
+**编号规则**（决策 D9）：
+
+- `fpId = FP-{floor}-C{col:03d}R{row:03d}[-J/-D/-S]`，后缀按最终格位类型：`-J` 交叉路口、`-D` 门口、`-S` 楼梯/电梯口、普通点无后缀。
+- 短号 `shortId = C{col:03d}R{row:03d}[-J/-D/-S]`（如 `C056R100`），供现场口述/纸面清单核对。
+- 编号**由坐标派生**，增删点不重排；可机器解析正则 `^FP-\d+-C\d{3}R\d{3}(-[JDS])?$`。
+- 设备上无旧采集记录，**不引入 `legacyFpId`/`gridKey` 等兼容字段**（决策 D9）。
+
+**可采集判定（采集层，两个口径都输出）**：
+
+| 口径 | 条件 | 用途 |
+|---|---|---|
+| `plan10m85`（**默认**） | 10 m 内可见信标 ≥3 且预测最强 RSSI ≥ -85 dBm（规划模型 `RSSI@1m=-50`、`n=3.5`） | 现场可采集判定、客户端默认标记 |
+| `geo15m`（备用） | 15 m 内可见信标 ≥3（几何代理，不校验 RSSI） | 部署规划参考，不单独作为可采集标准 |
+
+- 每个点输出 `collectable`（= `plan10m85`）、`collectablePlan10m`、`collectableGeo15m`、`visible10m/visible15m`、`nearestBeaconM`、`strongestRssi`、`criteria`。
+- 若当前部署即按测试线路铺设，点再打 `routeTags: ["R1"]`/`["R2"]`，便于现场按线路推进。
+- **F2 处理**：设计层仍按全楼假设出完整网格（不做覆盖裁剪）；采集层按当前 9 枚信标出可采集清单（`result/f2_collectable_points.csv/.md`），列含序号、fpId、短号、坐标、类型、两个口径可见数/最近距离/最强 RSSI、路线标签与**本层累计里程**；路线点投影到 R2 中心线按行进顺序排序，Markdown 按路线折线段加小标题，非路线点列在最后。
+
+**客户端展示**：
+
+- 地图模式显示设计层全量点（按楼层切换；已采集点高亮绿 + 角标），**仅现场实际采集的点才写入记录**。
+- **可采集/当前不可采集区分**：可采集点蓝色实心、当前不可采集灰色空心；提供图例与「仅可采集」开关过滤。
+- **LOD**：按屏幕像素间距判断——相邻 1 m 点在屏幕间距 ≥ `LOD_1M_MIN_SPACING_PX`（默认 8 CSS px，等价 `scale ≥ 8 px/m`）时才绘制 1 m 细分点，否则只画 2 m 底网点（`isBase2m`）；按各层实际 `fitScale` 换算约为 F1 2.4× / F2 1.8×。点选命中只针对当前实际绘制的点。
+- 确认卡展示 fpId、短号、行列号、区域类型、采集口径（可见信标数/预测 RSSI）、路线标签。
+- 地图缩放/平移、可点按缩放控件与选点命中随视口变换的行为与 §3.7 **完全一致**（命中半径 16 px）。
+
+**生成与派生数据**：`src/tools/generate_fingerprint_grid.py` 产出 `result/fingerprint_grid.json` 与 F2 清单；`src/tools/gen_client_collection_data.py` 再派生 `client/data/fingerprint_grid.ts`、`fingerprint-collector/data/fingerprint_grid.js`（AUTO-GENERATED，保留可采集字段）。
 
 ### 4.2 采集交互（与静态标定类似）
 
@@ -162,12 +204,12 @@
 
 ```json
 { "records": [
-  { "fpId": "F1-FP-0123", "floor": 1, "coordinates": [-30.0, 8.0],
+  { "fpId": "FP-1-C056R100-J", "floor": 1, "coordinates": [-30, 8],
     "captureIndex": 1, "collectedAt": "2026-11-05T09:20:00Z",
     "zoneId": null, "zoneName": null, "anchor": null, "relCoordinates": null,
-    "regionType": "corridor", "beaconCount": 9,
+    "regionType": "intersection", "beaconCount": 9,
     "beacons": [ { "uuid": "B940…", "major": 1, "minor": 7, "rssi": -63, "txPower": -59, "accuracy": 1.2 } ] },
-  { "fpId": "F1-FP-0123", "captureIndex": 2, "collectedAt": "2026-11-05T14:11:00Z", "…": "第二次（跨时段）" }
+  { "fpId": "FP-1-C056R100-J", "captureIndex": 2, "collectedAt": "2026-11-05T14:11:00Z", "…": "第二次（跨时段）" }
 ] }
 ```
 
@@ -187,7 +229,7 @@
 client/
 ├── data/
 │   ├── calibration_points.ts      # AUTO-GENERATED：20 标定点
-│   └── fingerprint_grid.ts        # AUTO-GENERATED：1434 网格点
+│   └── fingerprint_grid.ts        # AUTO-GENERATED：设计层全量网格 + 采集层标记
 ├── core/collection/
 │   ├── static-sampler.ts          # 静态标定采样（2s 窗口中位数聚合 → 逐信标统计 + 3D truthDistanceM）
 │   ├── fp-snapshot.ts             # 指纹快照（2s 窗口中位数 → 逐信标快照）
@@ -201,7 +243,7 @@ client/
 - **BLE 扫描**：复用 `core/ble/scan-window.ts`（生产同口径）；采集页进入时启动扫描、离开时停止，不与导航会话并发（页面互斥，导航中不显示采集入口）。
 - **地图画布**：复用 `pages/map` 的渲染模块（墙线/房间/楼层切换），点位与定位估计作为新图层叠加；不复制渲染代码，抽出可复用的图层接口。
 - **振动**：`wx.vibrateShort({ type: 'medium' })` 两次短振（定中确认）。
-- **数据生成脚本**：`src/tools/gen_client_collection_data.py`——从 `result/ble_deployment.json` + 标定点清单 + `result/fingerprint_grid.json` 生成两个 TS 数据文件（含信标 `installHeightM`）。
+- **数据生成脚本**：`src/tools/gen_client_collection_data.py`——从 `result/ble_deployment.json` + 标定点清单 + `result/fingerprint_grid.json` 生成客户端 TS 数据文件，并同步派生 `fingerprint-collector/data/fingerprint_grid.js`（full/route 两数据集，透传可采集字段）。
 
 ---
 
@@ -226,7 +268,11 @@ client/
   ③点选命中随视口变换（放大后同一世界偏移超出屏幕命中半径 → 不命中）；
   ④`scale` 到达上下限后继续缩放偏移量不变（不漂移）。
 - **兼容性验收**：导出文件喂给 `src/tools/fit_location_params.py` 与指纹入库脚本，能正确解析（金样比对：同一静态点位在两个工具里各采一次，导出结构 diff 仅允许新增可选字段）。
-- **真机手工验收**：入口门禁、弹出交互、振动反馈、倒计时暂停/恢复、导出分享、1434 点渲染性能（低配机帧率）；
+- **单元测试（网格生成器，pytest）**：格位整数性（2 m 偶-偶、1 m 至少一奇）、去重后最近邻 ≥1.0 m、
+  无 >2 m 空洞、编号解析与正则、`riskNodes` 类型分流（outward_door→门口 1 m / stair/elevator→高风险 3 m）、
+  可采集判定边界（10 m 边界、-85 dBm 边界、可见信标数 ≥3）。
+- **真机手工验收**：入口门禁、弹出交互、振动反馈、倒计时暂停/恢复、导出分享、设计层 2288 点渲染性能
+  （低缩放只画 2 m 底网、放大后再显示 1 m 点）；可采集/不可采集图例与过滤开关；
   采集页双指缩放/单指平移、± 与全图控件、放大后选点不偏移。
 
 ---
@@ -238,7 +284,11 @@ client/
 | D1 | 入口由设置页「现场采集工具」开关控制，默认关闭，即时生效 | 评审确认；避免暴露给视障终端用户 |
 | D2 | 静态标定预置 20 点 + 地图长按补标自定义点 | 评审确认；docs/28 §3.1 配额 |
 | D3 | 到达确认以**现场参考系人工判定**为准，App 不做位置门禁；采集时同步记录定位估计快照作现场定位数据 | 评审确认：BLE 估计在点位处不保证可信，不能作为到达依据 |
-| D4 | 指纹内置全楼 1434 点展示，仅记录现场实际采集的点；单点快照语义（3 s） | 评审确认 |
+| D4 | 指纹内置设计层全量网格（2288 点）展示，仅记录现场实际采集的点；单点快照语义（3 s） | 评审确认；v0.2.0 按两层模型更新点数 |
 | D5 | 不带 zones 分区（独立工具功能，导航版不引入） | 数据集按 routes 组织，简化集成 |
 | D6 | 导出 schema 与两个独立工具完全一致，PC 工具链零改动 | 「标定一套、线上另一套」禁令；复算可审计 |
 | D7 | 采集页复用 `FloorMapViewport` 的缩放/平移；提供 ± 与全图控件，不做双击缩放 | 避免另写变换导致选点偏移；单击已用于选点，双击会冲突；单指精细调整靠可点按控件 |
+| D8 | 设计层 = 全楼部署假设完整网格；2 m 偶-偶底网 + 路口/门口/高风险触发 1 m；统一原点 `O=(-86,-92)` | 规则网格便于现场定位；细分只发生在关键决策点，控制总点数 |
+| D9 | 编号 `FP-{f}-C{col:03d}R{row:03d}[-J/-D/-S]` + 短号；坐标派生、增删不重排；设备无旧记录，不做迁移/兼容字段 | 坐标可由现场地图读出，增删点不影响已发编号 |
+| D10 | 可采集默认口径 `10m / 预测≥-85dBm / ≥3 信标`；`15m / ≥3` 仅作备用，两个口径都输出 | 15 m 处规划模型 RSSI 已低于 -91 dBm，几何代理不宜作为采集标准 |
+| D11 | 3 m 大空间策略保持关闭；不做贴墙避墙换点（贴墙点保留原格位）；门口含全部教室门 | 用户拍板：保持格网简单可读，避免换点后编号与现场不一致 |

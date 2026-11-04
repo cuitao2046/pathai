@@ -1,55 +1,81 @@
 # -*- coding: utf-8 -*-
-"""指纹采集网格生成模块（对应地图构建指南 §八）
+"""指纹采集网格生成（v2：设计层 / 采集层两层模型）。
 
-目标：在已建好的室内地图上生成「指纹采集网格」，指导工程师去现场采集
-BLE 指纹库。算法严格按指南 §8.1 的规则：
+设计层（design）：
+  - 全场墙体包围盒左下角向下取偶米作为统一原点 O；
+  - 2m 底网：可通行区内偶-偶格位；
+  - 触发细分：交叉路口（唯一邻居 >=3）、门口（doorway + outward_door）、
+    高风险（楼梯/电梯入口）命中 2m 格后切 1m；
+  - 1m 格位键去重，优先级 路口 > 门口 > 高风险 > 普通，取消 0.6m 距离阈值；
+  - 编号 FP-{f}-C{col:03d}R{row:03d}[-J/-D/-S]，坐标派生、增删点不重排。
 
-  1. 普通区域：沿走廊中线（拓扑图的边）按 2 米间距均匀布点。
-  2. 安全节点区域：在楼梯口 / 电梯口 / 交叉口 / 门口周边 3 米范围内，
-     以 1 米间距加密（采集优先级更高）。
-  3. 大型公共空间（阶梯教室 / 大厅 / 活动区 / 会议室 / 中庭）内部，
-     按 3 米间距布点。
-  4. 教室内部不布点——视障用户导航目的地通常是门口而非教室内。
-     由于所有采集点都强制落在 walkable_regions（可通行多边形）内，
-     而教室是封闭房间、不在可通行区内，因此天然被排除。
+采集层（collection）：
+  - 读取地图包中实际部署信标，计算每个设计点的可见信标数/最近距离/预测 RSSI；
+  - 同时给出两个口径：
+      plan10m85: 10m 内 >=3 个信标且预测 RSSI >= -85dBm（规划模型 A=-50,n=3.5）
+      geo15m:   15m 内 >=3 个信标
+  - 按测试路线（result/beacon_routes.json）给点打 routeTags。
 
-输入：parse_cad_pdf.py 生成的 v9 GeoJSON
-      （需要 floors[fk].topology.{nodes,edges}、
-        floors[fk].walkable_regions.features、
-        floors[fk].semantic.rooms、floors[fk].geometry.rooms、
-        floors[fk].accessibility.riskNodes）
-输出：result/fingerprint_grid.json（采集点清单，供工程师 / 下游服务消费）
-
-依赖：shapely（与 parse_cad_pdf.py 同一 venv）
+输出：
+  - result/fingerprint_grid.json（设计层全量 + 采集层标记）
+  - result/f2_collectable_points.csv / .md（F2 可采集点清单）
 
 用法：
-    python generate_fingerprint_grid.py [geojson_path] [out_path]
+    python generate_fingerprint_grid.py [geojson] [out_json]
+    python generate_fingerprint_grid.py --mode route --routes result/beacon_routes.json
 """
+import argparse
+import csv
 import json
 import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shapely.geometry import Point, shape, LineString
+from shapely.geometry import LineString, Point, shape
 from shapely.ops import unary_union
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 OUT_DEFAULT = str(BASE_DIR / "result" / "fingerprint_grid.json")
+BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json")
+ROUTES_DEFAULT = str(BASE_DIR / "result" / "beacon_routes.json")
+GRID_VERSION = "10.0.0"
 
-# ----------------------------- 可调参数（指南 §8.1）-----------------------------
-NORMAL_SPACING_M = 2.0     # 普通区（走廊中线）间距
-SAFE_SPACING_M = 1.0       # 安全节点区间距
-SAFE_RADIUS_M = 3.0        # 安全节点加密半径
-LARGE_SPACING_M = 3.0      # 大型公共空间内部间距
-LARGE_AREA_MIN_M2 = 30.0   # 仅面积 >= 该值的公共空间才内填
-DEDUP_DIST_M = 0.6         # 去重最小间距（< 该距离的点只保留优先级更高者）
+# ----------------------------- 设计层参数 -----------------------------
+NORMAL_SPACING_M = 2.0
+SPLIT_SPACING_M = 1.0
+INTERSECTION_RADIUS_M = 1.0
+DOOR_RADIUS_M = 1.0
+RISK_RADIUS_M = 3.0
+WALL_CLEARANCE_M = 0.3  # 仅用于统计贴墙比例；按用户拍板不做换点
+LARGE_SPACING_M = 3.0
+LARGE_AREA_MIN_M2 = 30.0
 
-# 大型公共空间类型（内部按 3m 布点）
-LARGE_PUBLIC_TYPES = {"activity", "lobby", "reception", "meeting", "atrium"}
-# 安全节点：高优先级（楼梯 / 电梯 / 风险节点）
-HIGH_SAFE_NODE_KINDS = {"staircase", "elevator", "stair_entrance", "facility_stair", "facility_elevator"}
+# ----------------------------- 采集层参数 -----------------------------
+BEACON_RSSI_AT_1M_DBM = -50.0
+BEACON_PATH_LOSS_N = 3.5
+RSSI_THRESHOLD_DBM = -85.0
+COLLECT_MIN_BEACONS = 3
+PLAN_RADIUS_M = 10.0
+GEO_RADIUS_M = 15.0
+
+REGION_PRIORITY = {"intersection": 1, "doorway": 2, "high_risk": 3, "normal": 4}
+REGION_SUFFIX = {"intersection": "-J", "doorway": "-D", "high_risk": "-S", "normal": ""}
+REGION_TEXT = {
+    "normal": "普通",
+    "intersection": "交叉路口",
+    "doorway": "门口",
+    "high_risk": "楼梯/电梯口",
+}
+
+FP_ID_RE = r"^FP-\d+-C\d{3}R\d{3}(-[JDS])?$"
+
+# 路线模式参数（保留兼容；路线模式不是本轮设计层主路径）
+ROUTE_FP_SPACING_M = 1.0
+ROUTE_FP_SAFE_SPACING_M = 1.0
+ROUTE_FP_SAFE_RADIUS_M = 3.0
+ROUTE_CORRIDOR_HALF_M = 3.0
 
 
 def dist(a, b):
@@ -57,8 +83,6 @@ def dist(a, b):
 
 
 def build_walkable(geo_floor):
-    """把该层 walkable_regions.features 合并为一个 shapely 几何（含柱洞），
-    用于判定「点是否落在可通行区内」。"""
     feats = (geo_floor.get("walkable_regions") or {}).get("features", [])
     polys = []
     for f in feats:
@@ -74,12 +98,57 @@ def build_walkable(geo_floor):
     return unary_union(polys)
 
 
-def grid_points_in_polygon(poly, spacing, bounds=None):
-    """在多边形内按 spacing 生成规则网格点（含边界）。返回 [(x, y), ...]。"""
-    if bounds is None:
+def build_walls(geo_floor):
+    """墙体线串并集，用于 0.3m 贴墙替换。"""
+    walls = []
+    for f in (geo_floor.get("geometry") or {}).get("walls", []):
+        g = f.get("geometry") or {}
+        try:
+            geom = shape(g)
+        except Exception:
+            continue
+        if geom.is_empty:
+            continue
+        walls.append(geom)
+    if not walls:
+        return None
+    return unary_union(walls)
+
+
+def wall_bbox(geo):
+    xs, ys = [], []
+    for fl in (geo.get("floors") or {}).values():
+        for f in (fl.get("geometry") or {}).get("walls", []):
+            g = shape(f.get("geometry") or {})
+            if g.is_empty:
+                continue
+            minx, miny, maxx, maxy = g.bounds
+            xs.extend([minx, maxx])
+            ys.extend([miny, maxy])
+    if not xs:
+        for fl in (geo.get("floors") or {}).values():
+            w = build_walkable(fl)
+            if w is not None:
+                minx, miny, maxx, maxy = w.bounds
+                xs.extend([minx, maxx])
+                ys.extend([miny, maxy])
+    if not xs:
+        raise ValueError("地图包缺少墙体/可通行区，无法确定原点")
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def even_origin(geo):
+    minx, miny, _, _ = wall_bbox(geo)
+    return math.floor(minx / 2.0) * 2, math.floor(miny / 2.0) * 2
+
+
+def grid_points_in_polygon(poly, spacing, origin=None):
+    """按 spacing 生成规则网格点；origin 给定时从原点起算（整数米格位）。"""
+    if origin is None:
         minx, miny, maxx, maxy = poly.bounds
     else:
-        minx, miny, maxx, maxy = bounds
+        minx, miny = origin
+        _, _, maxx, maxy = poly.bounds
     pts = []
     x = minx
     while x <= maxx + 1e-9:
@@ -93,167 +162,361 @@ def grid_points_in_polygon(poly, spacing, bounds=None):
     return pts
 
 
-def collect_safe_anchors(geo_floor):
-    """收集安全节点锚点：返回 [(x, y, priority, kind, nodeId), ...]。
-
-    指南 §8.1 把「楼梯口、电梯口、交叉口、门口」都列为安全节点，但本建筑
-    拓扑极密（单层 146 交叉口 + 129 门口），若对每个节点都做 3m·1m 加密，
-    磁盘会覆盖整条走廊，使整层退化为 1m 网格、点数膨胀约 40×，远超指南
-    §8.2 估算的 40~60/30~50。
-
-    因此按指南 §6.3「风险节点」的语义收紧：仅把**高风险过渡点**——楼梯口 /
-    电梯口 / 风险节点——作为加密锚点（priority 1）。普通交叉口与门口本就由
-    2m 走廊中线均匀覆盖，不再单独加密，避免重复与膨胀。
-
-    如需严格按 §8.1 字面（含交叉口/门口）加密，把下方两行注释恢复即可。
-    """
-    anchors = []
-    nodes = geo_floor.get("topology", {}).get("nodes", [])
-    for n in nodes:
-        t = n.get("type")
-        rt = n.get("roomType") or n.get("facilityType") or ""
-        coords = n.get("coordinates")
-        if not coords or len(coords) < 2:
-            continue
-        x, y = coords[0], coords[1]
-        # 仅楼梯 / 电梯（含设施与房间两类节点）作为高优先级加密锚点
-        if t == "facility" and rt in ("staircase", "elevator"):
-            anchors.append((x, y, 1, "facility_" + rt, n.get("id")))
-        elif t == "room" and rt in ("staircase", "elevator"):
-            anchors.append((x, y, 1, rt, n.get("id")))
-        # 普通交叉口 / 门口不单独加密（已由 2m 中线覆盖）：
-        # elif t in ("intersection", "doorway"):
-        #     anchors.append((x, y, 2, t, n.get("id")))
-    # 风险节点（来自 accessibility.riskNodes，多为楼梯口）
-    for rn in geo_floor.get("accessibility", {}).get("riskNodes", []):
-        c = rn.get("coordinates")
-        if not c or len(c) < 2:
-            continue
-        anchors.append((c[0], c[1], 1, "stair_entrance", rn.get("id")))
-    return anchors
+def _inside(poly, x, y):
+    p = Point(x, y)
+    return poly.contains(p) or poly.distance(p) < 1e-6
 
 
-def collect_large_rooms(geo_floor):
-    """收集需要内部布点的大型公共空间：返回 [(polygon, roomType, label), ...]。"""
-    geom_rooms = {r.get("id"): r for r in geo_floor.get("geometry", {}).get("rooms", [])}
-    out = []
-    for r in geo_floor.get("semantic", {}).get("rooms", []):
-        if r.get("type") not in LARGE_PUBLIC_TYPES:
-            continue
-        gid = r.get("geometryId") or r.get("id")
-        gr = geom_rooms.get(gid)
-        if not gr:
-            continue
-        g = gr.get("geometry")
-        if not g:
-            continue
-        try:
-            poly = shape(g)
-        except Exception:
-            continue
-        # 面积用 shapely（米制，已含 SCALE 换算后的真实坐标）
-        if getattr(poly, "area", 0) < LARGE_AREA_MIN_M2:
-            continue
-        out.append((poly, r.get("type"), r.get("label", "")))
+def _cell_poly(origin, i, j):
+    ox, oy = origin
+    return shape({
+        "type": "Polygon",
+        "coordinates": [[
+            (ox + 2 * i, oy + 2 * j),
+            (ox + 2 * i + 2, oy + 2 * j),
+            (ox + 2 * i + 2, oy + 2 * j + 2),
+            (ox + 2 * i, oy + 2 * j + 2),
+            (ox + 2 * i, oy + 2 * j),
+        ]],
+    })
+
+
+def _cells_near(anchor, radius, walk, origin):
+    ox, oy = origin
+    minx, miny, maxx, maxy = walk.bounds
+    i0 = math.floor((minx - ox) / 2) - 2
+    i1 = math.ceil((maxx - ox) / 2) + 2
+    j0 = math.floor((miny - oy) / 2) - 2
+    j1 = math.ceil((maxy - oy) / 2) + 2
+    out = set()
+    p = Point(anchor[0], anchor[1])
+    for i in range(i0, i1 + 1):
+        for j in range(j0, j1 + 1):
+            cell = _cell_poly(origin, i, j)
+            if cell.distance(p) > radius + 1e-9:
+                continue
+            if cell.intersection(walk).is_empty:
+                continue
+            out.add((i, j))
     return out
 
 
-def generate_floor(geo_floor, floor_no):
+def _split_points(origin, i, j, walk):
+    """一个 2m 格切 1m 后的新增点（中心 + 四边中点；四角已是 2m 底网点）。"""
+    ox, oy = origin
+    cands = [
+        (ox + 2 * i + 1, oy + 2 * j + 1),
+        (ox + 2 * i + 1, oy + 2 * j),
+        (ox + 2 * i + 1, oy + 2 * j + 2),
+        (ox + 2 * i, oy + 2 * j + 1),
+        (ox + 2 * i + 2, oy + 2 * j + 1),
+    ]
+    return [(x, y) for (x, y) in cands if _inside(walk, x, y)]
+
+
+def _walk_degree(geo_floor):
+    deg = {}
+    for e in (geo_floor.get("topology") or {}).get("edges", []):
+        if not (e.get("walkable") and e.get("blindAccessible", True)):
+            continue
+        a, b = e.get("from"), e.get("to")
+        if a is None or b is None or a == b:
+            continue
+        deg.setdefault(a, set()).add(b)
+        deg.setdefault(b, set()).add(a)
+    return {k: len(v) for k, v in deg.items()}
+
+
+def collect_triggers(geo_floor):
+    """返回三类触发点；riskNodes 按 type 分流，不再一律 stair_entrance。"""
+    out = []  # dict(kind, priority, x, y, node_id, node_type, radius)
+    nodes = (geo_floor.get("topology") or {}).get("nodes", [])
+    degree = _walk_degree(geo_floor)
+    for n in nodes:
+        t = n.get("type")
+        c = n.get("coordinates")
+        if not c or len(c) < 2:
+            continue
+        x, y = float(c[0]), float(c[1])
+        if t == "intersection" and degree.get(n.get("id"), 0) >= 3:
+            out.append({"kind": "intersection", "priority": 1, "x": x, "y": y,
+                        "node_id": n.get("id"), "node_type": "intersection",
+                        "radius": INTERSECTION_RADIUS_M})
+        elif t == "doorway":
+            out.append({"kind": "doorway", "priority": 2, "x": x, "y": y,
+                        "node_id": n.get("id"), "node_type": "doorway",
+                        "radius": DOOR_RADIUS_M})
+        elif t in ("facility", "room"):
+            rt = n.get("roomType") or n.get("facilityType") or ""
+            if rt in ("staircase", "elevator"):
+                out.append({"kind": "high_risk", "priority": 3, "x": x, "y": y,
+                            "node_id": n.get("id"), "node_type": rt,
+                            "radius": RISK_RADIUS_M})
+    for rn in (geo_floor.get("accessibility") or {}).get("riskNodes", []):
+        c = rn.get("coordinates")
+        if not c or len(c) < 2:
+            continue
+        x, y = float(c[0]), float(c[1])
+        rt = str(rn.get("type") or "")
+        if rt == "outward_door":
+            # 外门是门口类，1m 半径；绝不能当楼梯口用 3m
+            out.append({"kind": "doorway", "priority": 2, "x": x, "y": y,
+                        "node_id": rn.get("id"), "node_type": "outward_door",
+                        "radius": DOOR_RADIUS_M})
+        elif rt in ("stair_entrance", "elevator_entrance"):
+            out.append({"kind": "high_risk", "priority": 3, "x": x, "y": y,
+                        "node_id": rn.get("id"), "node_type": rt,
+                        "radius": RISK_RADIUS_M})
+    return out
+
+
+def _snap(origin, x, y):
+    return int(round(x - origin[0])), int(round(y - origin[1]))
+
+
+def _coord(origin, u, v):
+    return origin[0] + u, origin[1] + v
+
+
+def _wall_distance(walls, x, y):
+    if walls is None:
+        return math.inf
+    return walls.distance(Point(x, y))
+
+
+def coverage_flags(x, y, floor_beacons):
+    """采集层覆盖判定：同时计算 plan10m85（默认）与 geo15m（备用）两个口径。"""
+    d = [dist((x, y), (b["x"], b["y"])) for b in floor_beacons]
+    vis10 = sum(1 for v in d if v <= PLAN_RADIUS_M)
+    vis15 = sum(1 for v in d if v <= GEO_RADIUS_M)
+    nearest = min(d) if d else None
+    strongest = (max(BEACON_RSSI_AT_1M_DBM - 10 * BEACON_PATH_LOSS_N * math.log10(max(v, 0.1))
+                     for v in d) if d else None)
+    plan_ok = vis10 >= COLLECT_MIN_BEACONS and strongest is not None and strongest >= RSSI_THRESHOLD_DBM
+    geo_ok = vis15 >= COLLECT_MIN_BEACONS
+    return {
+        "visible10m": vis10,
+        "visible15m": vis15,
+        "nearestBeaconM": round(nearest, 3) if nearest is not None else None,
+        "strongestRssi": round(strongest, 1) if strongest is not None else None,
+        "collectablePlan10m": bool(plan_ok),
+        "collectableGeo15m": bool(geo_ok),
+    }
+
+
+def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
     walk = build_walkable(geo_floor)
     if walk is None:
-        return [], {"error": "no walkable regions"}
+        return [], {"error": "no walkable regions"}, None
+    walls = build_walls(geo_floor)
+    cands = []
 
-    nodes_by_id = {n["id"]: n for n in geo_floor.get("topology", {}).get("nodes", [])}
-    edges = geo_floor.get("topology", {}).get("edges", [])
-
-    candidates = []  # (x, y, regionType, priority, source, nearId, nearKind)
-
-    # ---- A. 普通采集点：可通行区 2m 规则网格填充 ----
-    # 指南 §8.1 字面为「沿走廊中线插值」，但纯中线在宽走廊/大厅会留下 5~7m
-    # 死区（实测最远间距 5.45m），不利离线指纹定位。改为对整个可通行区做
-    # 2m 面积填充：既保留 2m 间距、又保证全区域 ≤2m 覆盖（中线点天然包含）。
-    normal_fill = grid_points_in_polygon(walk, NORMAL_SPACING_M)
-    for (x, y) in normal_fill:
-        candidates.append((x, y, "normal", 3, "area_fill", "", ""))
-    edge_count = len(normal_fill)  # 仅作统计用名
-
-    # ---- B. 安全节点加密（楼梯/电梯/风险节点周边 3m 内的可通行区，1m 网格）----
-    # 锚点（楼梯/电梯质心）通常在房间内、不在可通行区，直接以锚点为中心做
-    # 3m 圆盘再与 walkable 求交，只保留「走廊侧」那段，才是对定位最关键、
-    # 且真正可站立采集的楼梯/电梯入口区域。
-    anchor_count = 0
-    for (ax, ay, prio, kind, nid) in collect_safe_anchors(geo_floor):
-        disk = Point(ax, ay).buffer(SAFE_RADIUS_M)
-        sub = disk.intersection(walk)
-        if sub.is_empty:
-            continue
-        for (x, y) in grid_points_in_polygon(sub, SAFE_SPACING_M):
-            candidates.append((x, y, "safe", prio, "safe_density", nid or "", kind))
-        anchor_count += 1
-
-    # ---- C. 大型公共空间 ----
-    # 已由 A 的 2m 面积填充完整覆盖（间距更密于指南的 3m），无需单独处理。
-    # 保留函数 collect_large_rooms 供需要「仅大空间 3m 稀疏布点」的场景调用。
-    large_count = 0
-
-    # ---- D. 去重（保留高优先级 / 避免重叠）----
-    # 按优先级升序（safe=1/2 先于 normal=3），重叠时高优先级胜出
-    candidates.sort(key=lambda c: c[3])
-    kept = []
-    for c in candidates:
-        x, y = c[0], c[1]
-        dup = False
-        for k in kept:
-            if math.hypot(x - k[0], y - k[1]) < DEDUP_DIST_M:
-                dup = True
-                break
-        if not dup:
-            kept.append(c)
-
-    # 排序输出：按楼层 y 降序、x 升序，便于阅读
-    kept.sort(key=lambda c: (-c[1], c[0]))
-    points = []
-    for i, c in enumerate(kept, 1):
-        x, y, region_type, priority, source, near_id, near_kind = c
-        points.append({
-            "id": f"FP-{floor_no}-{i:03d}",
-            "floor": floor_no,
-            "coordinates": [round(x, 3), round(y, 3)],
-            "regionType": region_type,
-            "priority": priority,
-            "source": source,
-            "nearNodeId": near_id or None,
-            "nearNodeType": near_kind or None,
+    # ---- A. 2m 底网（偶-偶）----
+    base_pts = grid_points_in_polygon(walk, NORMAL_SPACING_M, origin)
+    for (x, y) in base_pts:
+        u, v = _snap(origin, x, y)
+        cands.append({
+            "x": x, "y": y, "u": u, "v": v,
+            "region": "normal", "priority": 4, "source": "base_2m", "tier": 2,
+            "triggers": [],
         })
 
-    stats = {
-        "normal_points": edge_count,
-        "safe_anchors": anchor_count,
-        "large_rooms": large_count,
-        "total": len(points),
-        "safe": sum(1 for p in points if p["regionType"] == "safe"),
-        "normal": sum(1 for p in points if p["regionType"] == "normal"),
-        "by_source": {
-            "area_fill": sum(1 for p in points if p["source"] == "area_fill"),
-            "safe_density": sum(1 for p in points if p["source"] == "safe_density"),
-        },
+    # ---- B. 触发细分 ----
+    triggers = collect_triggers(geo_floor)
+    trigger_stats = {
+        k: {"anchors": 0, "cells": set(), "keys": set()}
+        for k in ("intersection", "doorway", "high_risk")
     }
-    return points, stats
+    for t in triggers:
+        st = trigger_stats[t["kind"]]
+        st["anchors"] += 1
+        cells = _cells_near((t["x"], t["y"]), t["radius"], walk, origin)
+        st["cells"] |= cells
+        for (i, j) in cells:
+            for (x, y) in _split_points(origin, i, j, walk):
+                u, v = _snap(origin, x, y)
+                st["keys"].add((u, v))
+                cands.append({
+                    "x": x, "y": y, "u": u, "v": v,
+                    "region": t["kind"], "priority": t["priority"],
+                    "source": "split_1m", "tier": 1,
+                    "triggers": [{"id": t["node_id"], "type": t["node_type"],
+                                  "kind": t["kind"]}],
+                })
+
+    # ---- C. 格位键去重（不做贴墙换点，按用户拍板保留原格位）----
+    kept = {}
+    for c in sorted(cands, key=lambda z: (z["priority"], z["tier"], z["u"], z["v"])):
+        key = (c["u"], c["v"])
+        prev = kept.get(key)
+        if prev is None:
+            kept[key] = c
+            continue
+        # 合并触发来源；保留更高优先级（排序保证 prev 已不低于当前，仅补元数据）
+        seen = {(x.get("id"), x.get("kind")) for x in prev["triggers"]}
+        for tr in c["triggers"]:
+            if (tr.get("id"), tr.get("kind")) not in seen:
+                prev["triggers"].append(tr)
+        if c["priority"] < prev["priority"]:
+            prev["region"] = c["region"]
+            prev["priority"] = c["priority"]
+
+    # ---- D. 采集层标记 + 路线标签 ----
+    points = []
+    floor_beacons = [b for b in beacons if str(b.get("floorId")) == str(floor_no)]
+    for (u, v), c in kept.items():
+        x, y = _coord(origin, u, v)
+        cov = coverage_flags(x, y, floor_beacons)
+        tags = []
+        for tag, poly in route_corridors.get(str(floor_no), []):
+            if poly.contains(Point(x, y)) or poly.distance(Point(x, y)) < 1e-6:
+                tags.append(tag)
+        suffix = REGION_SUFFIX[c["region"]]
+        fp_id = f"FP-{floor_no}-C{u:03d}R{v:03d}{suffix}"
+        points.append({
+            "fpId": fp_id,
+            "id": fp_id,
+            "shortId": f"C{u:03d}R{v:03d}{suffix}",
+            "floor": floor_no,
+            "coordinates": [x, y],
+            "x": x,
+            "y": y,
+            "col": u,
+            "row": v,
+            "regionType": c["region"],
+            "priority": c["priority"],
+            "source": c["source"],
+            "tier": c["tier"],
+            "isBase2m": c["tier"] == 2,
+            "nearNodeId": (c["triggers"][0]["id"] if c["triggers"] else None),
+            "nearNodeType": (c["triggers"][0]["type"] if c["triggers"] else None),
+            "triggers": c["triggers"],
+            # 采集层
+            "collectable": cov["collectablePlan10m"],
+            "collectablePlan10m": cov["collectablePlan10m"],
+            "collectableGeo15m": cov["collectableGeo15m"],
+            "criteria": (["plan10m85"] if cov["collectablePlan10m"] else [])
+                        + (["geo15m"] if cov["collectableGeo15m"] else []),
+            "visible10m": cov["visible10m"],
+            "visible15m": cov["visible15m"],
+            "nearestBeaconM": cov["nearestBeaconM"],
+            "strongestRssi": cov["strongestRssi"],
+            "routeTags": tags,
+        })
+    points.sort(key=lambda p: (p["row"], p["col"]))
+
+    # ---- E. 统计 ----
+    nn = _nn_stats(points)
+    by_region = {}
+    for p in points:
+        by_region[p["regionType"]] = by_region.get(p["regionType"], 0) + 1
+    stats = {
+        "total": len(points),
+        "base2m": sum(1 for p in points if p["isBase2m"]),
+        "split1m": sum(1 for p in points if not p["isBase2m"]),
+        "byRegion": by_region,
+        "byTier": {"2m": sum(1 for p in points if p["tier"] == 2), "1m": sum(1 for p in points if p["tier"] == 1)},
+        "triggers": {
+            k: {"anchors": v["anchors"], "cells": len(v["cells"]), "keys": len(v["keys"])}
+            for k, v in trigger_stats.items()
+        },
+        "wallClearanceMoved": 0,
+        "wallClearanceEnabled": False,
+        "wallUnder03m": sum(1 for p in points if _wall_distance(walls, p["x"], p["y"]) < WALL_CLEARANCE_M),
+        "collectable": sum(1 for p in points if p["collectable"]),
+        "collectablePlan10m": sum(1 for p in points if p["collectablePlan10m"]),
+        "collectableGeo15m": sum(1 for p in points if p["collectableGeo15m"]),
+        "routeTagged": sum(1 for p in points if p["routeTags"]),
+        "routeCollectablePlan10m": sum(1 for p in points if p["routeTags"] and p["collectablePlan10m"]),
+        "nearestNeighbor": nn,
+    }
+    return points, stats, walls
 
 
-# --------------------------- 路线模式（按测试导航路径布点）---------------------------
-# 与 gen_beacon_plan.py --mode route 对称：仅在两条测试导航路径上布指纹采集点，
-# 与「只沿路线部署信标」的稀疏方案自洽——全楼 2m 网格里大量点远离任何信标、
-# 收不到信号，属无效采集；路线模式把采集范围收敛到路线走廊+楼梯/电梯口。
-ROUTE_FP_SPACING_M = 1.0        # 路线走廊指纹间距（视障导航：1-2步内感知偏离并纠正）
-ROUTE_FP_SAFE_SPACING_M = 1.0   # 路线楼梯/电梯口加密间距
-ROUTE_FP_SAFE_RADIUS_M = 3.0    # 路线楼梯/电梯口加密半径
-ROUTE_CORRIDOR_HALF_M = 3.0     # 路线走廊半宽：从中心线向两侧各扩 3m 覆盖走廊全截面
+def _nn_stats(points):
+    if len(points) < 2:
+        return {"min": None, "median": None, "max": None, "gt2m": 0}
+    ds = []
+    for i, p in enumerate(points):
+        best = math.inf
+        for j, q in enumerate(points):
+            if i == j:
+                continue
+            best = min(best, dist((p["x"], p["y"]), (q["x"], q["y"])))
+        ds.append(best)
+    ds.sort()
+    return {
+        "min": round(ds[0], 3),
+        "median": round(ds[len(ds) // 2], 3),
+        "max": round(ds[-1], 3),
+        "gt2m": sum(1 for d in ds if d > 2.0 + 1e-6),
+    }
+
+
+def collect_route_corridors(geo, routes):
+    """返回 (corridors, meta, route_geom)。
+
+    route_geom: {tag: {"label": str, "segments": {floor: [segment...]}}}，
+    线段按路径顺序累计里程（跨层转移不产生线段，里程在下一层续算）。
+    segment = {from, to, a, b, c0, lengthM}。
+    """
+    if not routes:
+        return {}, [], {}
+    graph = _load_route_graph(geo)
+    walk_by_floor = {fk: build_walkable(fl) for fk, fl in (geo.get("floors") or {}).items()}
+    corridors = {}
+    meta = []
+    route_geom = {}
+    for idx, rt in enumerate(routes, 1):
+        start, end = rt["start"], rt["end"]
+        mode = rt.get("mode", "normal")
+        res = graph.generate_route(start, end, mode)
+        tag = f"R{idx}"
+        if not res.get("reachable"):
+            print(f"  [warn] 路线不可达：{start} -> {end}", file=sys.stderr)
+            continue
+        path = res["path"]
+        lines = {}
+        seg_by_floor: dict[str, list[dict]] = {}
+        cum = 0.0
+        for a, b in zip(path, path[1:]):
+            na, nb = graph.nodes.get(a), graph.nodes.get(b)
+            if not na or not nb:
+                continue
+            ca, cb = na.get("coords"), nb.get("coords")
+            if not ca or not cb or na.get("floor") != nb.get("floor"):
+                continue
+            length = math.hypot(cb[0] - ca[0], cb[1] - ca[1])
+            seg_by_floor.setdefault(str(na["floor"]), []).append({
+                "from": a, "to": b, "a": ca, "b": cb, "c0": cum, "lengthM": length,
+            })
+            lines.setdefault(str(na["floor"]), []).append(LineString([(ca[0], ca[1]), (cb[0], cb[1])]))
+            cum += length
+        for fk, ls in lines.items():
+            walk = walk_by_floor.get(fk)
+            if walk is None:
+                continue
+            poly = unary_union(ls).buffer(ROUTE_CORRIDOR_HALF_M).intersection(walk)
+            if not poly.is_empty:
+                corridors.setdefault(fk, []).append((tag, poly))
+        route_geom[tag] = {"label": rt.get("label", f"{start} -> {end}"), "segments": seg_by_floor}
+        meta.append({
+            "tag": tag,
+            "label": rt.get("label", f"{start} -> {end}"),
+            "start": start, "end": end, "mode": mode,
+            "distance_m": res.get("distance"),
+            "nodes": len(path),
+            "crossFloor": res.get("cross_floor"),
+            "usedElevator": res.get("used_elevator"),
+            "usedStair": res.get("used_stair"),
+        })
+    return corridors, meta, route_geom
 
 
 def _load_route_graph(geo):
-    """按需加载导航路由模块（src/topology/route_rules.py），复用其受限 Dijkstra 还原路径。"""
     import importlib.util
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
     topo_py = Path(__file__).resolve().parents[1] / "topology" / "route_rules.py"
     spec = importlib.util.spec_from_file_location("route_rules_fp", str(topo_py))
     mod = importlib.util.module_from_spec(spec)
@@ -261,235 +524,327 @@ def _load_route_graph(geo):
     return mod.RouteGraph(geo)
 
 
-def generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M,
-                        safe_spacing=ROUTE_FP_SAFE_SPACING_M, safe_radius=ROUTE_FP_SAFE_RADIUS_M):
-    """按指定导航路线生成指纹采集点（路线模式）。
-
-    routes: list of {start, end, mode?, label?}，复用 RouteGraph.generate_route 还原路径。
-    对每条路线：同层相邻节点段按 spacing 重采样（仅保留可通行区内点，房间内部段自然排除）；
-    路线上的楼梯/电梯节点周边 safe_radius 内、与可通行区相交部分按 safe_spacing 加密。
-    区别于全楼模式：仅沿路线线段向两侧缓冲 corridor_half 宽度、与可通行区求交后做面积网格填充，
-    而非只沿中心线 1D 采样——保证覆盖整个走廊截面，视障用户偏离中线时仍能正确定位。
-    """
-    graph = _load_route_graph(geo)
-    walk_by_floor = {int(fk): build_walkable(fl) for fk, fl in (geo.get("floors") or {}).items()}
-
-    # 收集路线几何线段（按楼层）与楼梯/电梯节点
-    route_lines = {}     # floor -> list of LineString
-    stair_elev_nodes = []  # (x, y, floor)
-    route_meta = []
-    for rt in routes:
-        start, end = rt["start"], rt["end"]
-        mode = rt.get("mode", "normal")
-        res = graph.generate_route(start, end, mode)
-        if not res.get("reachable"):
-            print(f"  [warn] 路线不可达，跳过：{start} -> {end} (mode={mode})")
-            continue
-        path = res["path"]
-        route_meta.append({
-            "label": rt.get("label", f"{start} -> {end}"),
-            "start": start, "end": end, "mode": mode,
-            "distance_m": res["distance"], "nodes": len(path),
-            "crossFloor": res["cross_floor"], "usedElevator": res["used_elevator"],
-            "usedStair": res["used_stair"],
+def load_beacons(path=BEACON_PACKAGE):
+    with open(path, encoding="utf-8") as f:
+        pkg = json.load(f)
+    out = []
+    for b in pkg.get("beacons", []):
+        out.append({
+            "beaconId": b.get("beaconId"),
+            "floorId": str(b.get("floorId")),
+            "x": float(b["x"]),
+            "y": float(b["y"]),
         })
-        # 有序节点序列（坐标 / 节点类型 / 房间或设施子类型 / 楼层）
-        seq = []
-        for nid in path:
-            n = graph.nodes.get(nid)
-            if not n:
+    return out
+
+
+def project_on_route(x, y, segments):
+    """把点投影到本层路线折线，返回 {distanceM, mileageM, segIndex, from, to}。
+
+    mileageM 为本层局部累计里程（从该层路线首个线段起点算起）。
+    """
+    if not segments:
+        return None
+    base = segments[0]["c0"]
+    best = None
+    for idx, s in enumerate(segments):
+        ax, ay = s["a"]
+        bx, by = s["b"]
+        dx, dy = bx - ax, by - ay
+        l2 = dx * dx + dy * dy
+        t = 0.0 if l2 <= 1e-12 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / l2))
+        px, py = ax + t * dx, ay + t * dy
+        d = math.hypot(x - px, y - py)
+        mileage = s["c0"] - base + t * s["lengthM"]
+        if best is None or d < best["distanceM"]:
+            best = {"distanceM": d, "mileageM": mileage, "segIndex": idx,
+                    "from": s["from"], "to": s["to"], "segStartM": s["c0"] - base,
+                    "segEndM": s["c0"] - base + s["lengthM"]}
+    return best
+
+
+def order_route_points(rows, floor_no, route_geom):
+    """按路线行进顺序排序：路线点在前（按本层累计里程），非路线点在后（按坐标序）。"""
+    routed, plain = [], []
+    for p in rows:
+        best = None
+        for tag in p["routeTags"]:
+            geom = route_geom.get(tag)
+            if not geom:
                 continue
-            c = n.get("coords")
-            if not c or len(c) < 2:
+            proj = project_on_route(p["x"], p["y"], geom["segments"].get(str(floor_no), []))
+            if proj is None:
                 continue
-            sub = (n.get("roomType") or n.get("facilityType") or "")
-            seq.append((c[0], c[1], n.get("type"), sub, n.get("floor")))
-        # 收集同层线段（用于走廊缓冲面填充）
-        for (x0, y0, t0, s0, f0), (x1, y1, t1, s1, f1) in zip(seq, seq[1:]):
-            if f0 != f1:
-                continue
-            route_lines.setdefault(f0, []).append(LineString([(x0, y0), (x1, y1)]))
-        # 收集楼梯 / 电梯节点
-        for (x, y, nt, sub, f) in seq:
-            if nt in ("facility", "room") and sub in ("staircase", "elevator"):
-                stair_elev_nodes.append((x, y, int(f)))
+            if best is None or proj["distanceM"] < best[0]["distanceM"]:
+                best = (proj, tag)
+        if best is None:
+            plain.append(p)
+        else:
+            routed.append((best[1], best[0], p))
+    routed.sort(key=lambda t: (t[0], t[1]["segIndex"], t[1]["mileageM"], t[2]["row"], t[2]["col"]))
+    plain.sort(key=lambda p: (p["row"], p["col"]))
+    return routed, plain
 
-    # ---- 走廊：以路线线段为中心向两侧缓冲，与可通行区求交后做面积填充 ----
-    # 视障用户实际走路会偏离中心线，若只沿中线采集 1D 指纹，
-    # 偏到墙边时 RSSI 指纹匹配不上，定位精度差。缓冲填满走廊全截面
-    # 才能正确区分走廊左侧/中间/右侧。
-    corridor_half = ROUTE_CORRIDOR_HALF_M
-    candidates = []  # (x, y, floor, regionType, priority)
-    for fk, lines in route_lines.items():
-        walk = walk_by_floor.get(int(fk))
-        if walk is None:
-            continue
-        merged = unary_union(lines)
-        buffered = merged.buffer(corridor_half)
-        route_walkable = buffered.intersection(walk)
-        if route_walkable.is_empty:
-            continue
-        for (gx, gy) in grid_points_in_polygon(route_walkable, spacing):
-            candidates.append((gx, gy, int(fk), "normal", 3))
 
-    # ---- 楼梯 / 电梯口加密（取走廊侧可站立部分） ----
-    for (x, y, f) in stair_elev_nodes:
-        walk = walk_by_floor.get(int(f))
-        if walk is None:
-            continue
-        disk = Point(x, y).buffer(safe_radius)
-        sub_poly = disk.intersection(walk)
-        if sub_poly.is_empty:
-            continue
-        for (gx, gy) in grid_points_in_polygon(sub_poly, safe_spacing):
-            candidates.append((gx, gy, int(f), "safe", 1))
+def write_f2_collectable(points, floor_no, out_dir, route_geom=None):
+    route_geom = route_geom or {}
+    rows = [p for p in points if p["floor"] == floor_no and (p["collectablePlan10m"] or p["collectableGeo15m"])]
+    routed, plain = order_route_points(rows, floor_no, route_geom)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"f{floor_no}_collectable_points.csv"
+    md_path = out_dir / f"f{floor_no}_collectable_points.md"
 
-    # 去重（按楼层，保留高优先级；同优先级近邻只留其一）
-    candidates.sort(key=lambda c: c[4])
-    kept = []
-    for c in candidates:
-        x, y, fl, rg, prio = c
-        dup = False
-        for k in kept:
-            if k[2] == fl and math.hypot(x - k[0], y - k[1]) < DEDUP_DIST_M:
-                dup = True
-                break
-        if not dup:
-            kept.append(c)
+    headers = ["序号", "fpId", "短号", "楼层", "x", "y", "类型",
+               "可见信标数(10m)", "可见信标数(15m)", "最近信标距离m",
+               "预测最强RSSI", "口径", "路线标签", "累计里程(m)"]
 
-    # 按楼层分组、排序输出
-    floors_out = {}
-    summary = {}
-    for fk in sorted({c[2] for c in kept}):
-        fpts = [c for c in kept if c[2] == fk]
-        fpts.sort(key=lambda c: (-c[1], c[0]))
-        points = []
-        for i, c in enumerate(fpts, 1):
-            x, y, fl, rg, prio = c
-            points.append({
-                "id": f"FP-{fl}-R{i:03d}",
-                "floor": fl,
-                "coordinates": [round(x, 3), round(y, 3)],
-                "regionType": rg,
-                "priority": prio,
-                "source": "route",
-                "nearNodeId": None,
-                "nearNodeType": None,
-            })
-        floors_out[str(fk)] = {
-            "floor": fk,
-            "parameters": {
-                "normalSpacingM": spacing,
-                "safeSpacingM": safe_spacing,
-                "safeRadiusM": safe_radius,
-                "mode": "route",
-            },
-            "points": points,
-        }
-        summary[str(fk)] = {
-            "total": len(points),
-            "safe": sum(1 for p in points if p["regionType"] == "safe"),
-            "normal": sum(1 for p in points if p["regionType"] == "normal"),
-        }
-    total_all = sum(s["total"] for s in summary.values())
-    return floors_out, summary, route_meta, total_all
+    def row_values(seq, p, mileage):
+        criteria = []
+        if p["collectablePlan10m"]:
+            criteria.append("10m/-85/≥3")
+        if p["collectableGeo15m"]:
+            criteria.append("15m/≥3")
+        return [
+            seq, p["fpId"], p["shortId"], p["floor"], p["x"], p["y"],
+            REGION_TEXT.get(p["regionType"], p["regionType"]),
+            p["visible10m"], p["visible15m"],
+            "" if p["nearestBeaconM"] is None else f"{p['nearestBeaconM']:.2f}",
+            "" if p["strongestRssi"] is None else f"{p['strongestRssi']:.1f}",
+            "; ".join(criteria), ";".join(p["routeTags"]),
+            "" if mileage is None else f"{mileage:.2f}",
+        ]
+
+    ordered = [(tag, proj, p) for tag, proj, p in routed] + [(None, None, p) for p in plain]
+    with csv_path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(headers)
+        for seq, (tag, proj, p) in enumerate(ordered, 1):
+            w.writerow(row_values(seq, p, None if proj is None else proj["mileageM"]))
+
+    lines = [
+        f"# F{floor_no} 可采集点清单",
+        "",
+        f"> 设计层全量点中，满足 `10m/-85dBm/≥3` 或 `15m/≥3` 的点，共 {len(rows)} 个。",
+        "> 口径列同时标出两个条件；`10m/-85/≥3` 为默认采集口径。",
+        "> 路线点按投影到路线中心线的**本层累计里程**排序（从本层路线入口起算），非路线点列在最后。",
+    ]
+
+    def md_row(seq, p, mileage):
+        v = row_values(seq, p, mileage)
+        seq, fp, short, fl, x, y, typ, v10, v15, near, rssi, crit, tags, mil = v
+        return (f"| {seq} | {fp} | {short} | {fl} | {x} | {y} | {typ} | {v10} | {v15} | "
+                f"{near} | {rssi} | {crit} | {tags} | {mil} |")
+
+    seq = 0
+    # 路线分段小标题（按折线段聚合）
+    groups: dict[tuple[str, int], list] = {}
+    for tag, proj, p in routed:
+        groups.setdefault((tag, proj["segIndex"]), []).append((proj, p))
+    for (tag, seg_index), items in sorted(groups.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        first = items[0][0]
+        label = route_geom.get(tag, {}).get("label", tag)
+        lines += [
+            "",
+            f"### {tag} · {label} · 第{seg_index + 1}折线段 {first['from']} → {first['to']}"
+            f"（累计里程 {first['segStartM']:.1f}–{first['segEndM']:.1f}m）",
+            "",
+            "| 序号 | fpId | 短号 | 楼层 | x | y | 类型 | 可见(10m) | 可见(15m) | 最近信标m | 最强RSSI | 口径 | 路线 | 累计里程(m) |",
+            "|---:|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---|---:|",
+        ]
+        for proj, p in sorted(items, key=lambda t: (t[0]["mileageM"], t[1]["row"], t[1]["col"])):
+            seq += 1
+            lines.append(md_row(seq, p, proj["mileageM"]))
+
+    if plain:
+        lines += [
+            "",
+            "### 非路线可采集点（按坐标序）",
+            "",
+            "| 序号 | fpId | 短号 | 楼层 | x | y | 类型 | 可见(10m) | 可见(15m) | 最近信标m | 最强RSSI | 口径 | 路线 | 累计里程(m) |",
+            "|---:|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|---|---:|",
+        ]
+        for p in plain:
+            seq += 1
+            lines.append(md_row(seq, p, None))
+
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return rows, csv_path, md_path
 
 
 def main():
-    import argparse
-    ap = argparse.ArgumentParser(description="指纹采集网格生成（全楼 / 路线模式）")
+    ap = argparse.ArgumentParser(description="指纹采集网格生成（设计层/采集层）")
     ap.add_argument("geo", nargs="?", default=GEO_IN, help="输入 GeoJSON 路径")
-    ap.add_argument("--out", default=OUT_DEFAULT, help="输出 JSON 路径")
-    ap.add_argument("--mode", default="full", choices=("full", "route"),
-                    help="full=全楼均匀网格(默认)；route=仅沿测试导航路线布点")
-    ap.add_argument("--routes", default=None,
-                    help="route 模式：路线定义 JSON（同 gen_beacon_plan.py 的 beacon_routes.json）")
-    ap.add_argument("--spacing", type=float, default=ROUTE_FP_SPACING_M,
-                    help="route 模式：路线走廊指纹间距(米)，默认 2")
+    ap.add_argument("out", nargs="?", default=OUT_DEFAULT, help="输出 JSON 路径")
+    ap.add_argument("--mode", default="full", choices=("full", "route"))
+    ap.add_argument("--routes", default=ROUTES_DEFAULT, help="路线定义 JSON")
+    ap.add_argument("--beacons", default=BEACON_PACKAGE, help="实际部署信标地图包")
+    ap.add_argument("--f2-out-dir", default=str(BASE_DIR / "result"))
     args = ap.parse_args()
 
-    geo_path = args.geo
-    out_path = args.out
-
-    geo = json.load(open(geo_path, encoding="utf-8"))
-
+    geo = json.load(open(args.geo, encoding="utf-8"))
     if args.mode == "route":
-        if not args.routes:
-            ap.error("--mode route 必须提供 --routes 路线定义 JSON")
         routes = json.load(open(args.routes, encoding="utf-8")).get("routes", [])
-        floors_out, summary, route_meta, total_all = generate_route_mode(
-            geo, routes, spacing=args.spacing)
-        print(f"  [route] 路线数={len(route_meta)} 间距={args.spacing}m → 采集点 {total_all}")
-        for rm in route_meta:
-            print(f"    · {rm['label']}: {rm['distance_m']:.1f}m / {rm['nodes']}节点 "
-                  f"(跨层={rm['crossFloor']} 电梯={rm['usedElevator']} 楼梯={rm['usedStair']})")
+        floors_out, summary, route_meta, total_all = generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M)
         out = {
-            "venueId": geo.get("venueId"),
-            "venueName": geo.get("venueName"),
-            "version": geo.get("version"),
-            "generator": "generate_fingerprint_grid.py",
-            "generatedAt": datetime.now(timezone.utc).isoformat(),
-            "mode": "route",
-            "parameters": {
-                "normalSpacingM": args.spacing,
-                "safeSpacingM": ROUTE_FP_SAFE_SPACING_M,
-                "safeRadiusM": ROUTE_FP_SAFE_RADIUS_M,
-                "dedupDistM": DEDUP_DIST_M,
-            },
-            "routes": route_meta,
-            "summary": summary,
-            "floors": floors_out,
+            "venueId": geo.get("venueId"), "venueName": geo.get("venueName"),
+            "version": GRID_VERSION, "generator": "generate_fingerprint_grid.py",
+            "generatedAt": datetime.now(timezone.utc).isoformat(), "mode": "route",
+            "parameters": {"normalSpacingM": ROUTE_FP_SPACING_M, "safeSpacingM": ROUTE_FP_SAFE_SPACING_M,
+                           "safeRadiusM": ROUTE_FP_SAFE_RADIUS_M},
+            "routes": route_meta, "summary": summary, "floors": floors_out,
         }
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(out, f, ensure_ascii=False, indent=2)
-        print(f"\n总计 {total_all} 个路线采集点 → {out_path}")
+        Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"总计 {total_all} 个路线采集点 → {args.out}")
         return
 
-    floors_out = {}
-    summary = {}
-    total_all = 0
+    origin = even_origin(geo)
+    beacons = load_beacons(args.beacons)
+    routes = json.load(open(args.routes, encoding="utf-8")).get("routes", []) if Path(args.routes).exists() else []
+    corridors, route_meta, route_geom = collect_route_corridors(geo, routes)
+
+    floors_out, summary = {}, {}
+    total = {"total": 0, "base2m": 0, "split1m": 0, "collectablePlan10m": 0,
+             "collectableGeo15m": 0, "routeTagged": 0, "routeCollectablePlan10m": 0}
+    all_points = []
     for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
-        fd = geo["floors"][fk]
-        floor_no = int(fk)
-        pts, stats = generate_floor(fd, floor_no)
+        pts, stats, _walls = build_floor_grid(geo["floors"][fk], int(fk), origin, beacons, corridors)
         floors_out[fk] = {
-            "floor": floor_no,
+            "floor": int(fk),
             "parameters": {
-                "normalSpacingM": NORMAL_SPACING_M,
-                "safeSpacingM": SAFE_SPACING_M,
-                "safeRadiusM": SAFE_RADIUS_M,
-                "largeSpacingM": LARGE_SPACING_M,
+                "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
+                "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
+                "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
             },
             "points": pts,
         }
         summary[fk] = stats
-        total_all += len(pts)
-        print(f"  [F{fk}] 普通点={stats['normal_points']} 安全锚点={stats['safe_anchors']} "
-              f"大型空间={stats['large_rooms']} → 采集点 {stats['total']} "
-              f"(安全={stats['safe']} 普通={stats['normal']}; "
-              f"来源 area_fill={stats['by_source']['area_fill']} safe={stats['by_source']['safe_density']})")
+        all_points.extend(pts)
+        for k in total:
+            total[k] += stats.get(k, 0)
+        print(f"  [F{fk}] 总={stats['total']} 2m={stats['base2m']} 1m={stats['split1m']} "
+              f"可采10m={stats['collectablePlan10m']} 可采15m={stats['collectableGeo15m']} "
+              f"路线点={stats['routeTagged']}")
 
+    summary["total"] = total
+    bx0, by0, bx1, by1 = wall_bbox(geo)
     out = {
+        "schemaVersion": "fingerprint_grid_v2",
         "venueId": geo.get("venueId"),
         "venueName": geo.get("venueName"),
-        "version": geo.get("version"),
+        "version": GRID_VERSION,
         "generator": "generate_fingerprint_grid.py",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "parameters": {
-            "normalSpacingM": NORMAL_SPACING_M,
-            "safeSpacingM": SAFE_SPACING_M,
-            "safeRadiusM": SAFE_RADIUS_M,
-            "largeSpacingM": LARGE_SPACING_M,
-            "largeAreaMinM2": LARGE_AREA_MIN_M2,
-            "dedupDistM": DEDUP_DIST_M,
-            "largePublicTypes": sorted(LARGE_PUBLIC_TYPES),
+        "mode": "full",
+        "layers": {
+            "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",
+            "collection": "当前实际部署 61 枚信标（F1 52 / F2 9），按 plan10m85 与 geo15m 两个口径标记 collectable",
         },
+        "origin": {
+            "x": origin[0], "y": origin[1],
+            "rule": "venue_wall_bbox_lower_left_floor_even",
+            "wallBbox": [round(bx0, 3), round(by0, 3), round(bx1, 3), round(by1, 3)],
+        },
+        "parameters": {
+            "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
+            "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
+            "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
+            "dedup": "lattice_key_1m",
+            "fpIdPattern": FP_ID_RE,
+            "priority": ["intersection", "doorway", "high_risk", "normal"],
+            "largeSpacingM": LARGE_SPACING_M, "largeAreaMinM2": LARGE_AREA_MIN_M2,
+        },
+        "coverage": {
+            "plan10m85": {"radiusM": PLAN_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
+                          "rssiThresholdDbm": RSSI_THRESHOLD_DBM,
+                          "rssiAt1mDbm": BEACON_RSSI_AT_1M_DBM, "pathLossN": BEACON_PATH_LOSS_N},
+            "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS},
+        },
+        "beacons": beacons,
+        "routes": route_meta,
         "summary": summary,
         "floors": floors_out,
     }
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
-    print(f"\n总计 {total_all} 个采集点 → {out_path}")
+    Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    f2_rows, csv_path, md_path = write_f2_collectable(all_points, 2, args.f2_out_dir, route_geom)
+    print(f"\n设计层 {total['total']} 点 → {args.out}")
+    print(f"可采集：10m/-85/≥3 = {total['collectablePlan10m']}；15m/≥3 = {total['collectableGeo15m']}")
+    print(f"F2 可采集清单 {len(f2_rows)} 行 → {csv_path} / {md_path}")
+
+
+# --------------------------- 路线模式（兼容保留） ---------------------------
+def generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M,
+                        safe_spacing=ROUTE_FP_SAFE_SPACING_M, safe_radius=ROUTE_FP_SAFE_RADIUS_M):
+    graph = _load_route_graph(geo)
+    walk_by_floor = {int(fk): build_walkable(fl) for fk, fl in (geo.get("floors") or {}).items()}
+    route_lines, stair_elev_nodes, route_meta = {}, [], []
+    for rt in routes:
+        start, end, mode = rt["start"], rt["end"], rt.get("mode", "normal")
+        res = graph.generate_route(start, end, mode)
+        if not res.get("reachable"):
+            print(f"  [warn] 路线不可达，跳过：{start} -> {end}")
+            continue
+        path = res["path"]
+        route_meta.append({"label": rt.get("label", f"{start} -> {end}"), "start": start, "end": end,
+                           "mode": mode, "distance_m": res["distance"], "nodes": len(path),
+                           "crossFloor": res["cross_floor"], "usedElevator": res["used_elevator"],
+                           "usedStair": res["used_stair"]})
+        seq = []
+        for nid in path:
+            n = graph.nodes.get(nid)
+            if not n or not n.get("coords") or len(n.get("coords")) < 2:
+                continue
+            seq.append((n["coords"][0], n["coords"][1], n.get("type"),
+                        n.get("roomType") or n.get("facilityType") or "", n.get("floor")))
+        for (x0, y0, _, _, f0), (x1, y1, _, _, f1) in zip(seq, seq[1:]):
+            if f0 == f1:
+                route_lines.setdefault(int(f0), []).append(LineString([(x0, y0), (x1, y1)]))
+        for (x, y, nt, sub, f) in seq:
+            if nt in ("facility", "room") and sub in ("staircase", "elevator"):
+                stair_elev_nodes.append((x, y, int(f)))
+    candidates = []
+    for fk, lines in route_lines.items():
+        walk = walk_by_floor.get(int(fk))
+        if walk is None:
+            continue
+        route_walkable = unary_union(lines).buffer(ROUTE_CORRIDOR_HALF_M).intersection(walk)
+        if route_walkable.is_empty:
+            continue
+        for (gx, gy) in grid_points_in_polygon(route_walkable, spacing):
+            candidates.append((gx, gy, int(fk), "normal", 3))
+    for (x, y, f) in stair_elev_nodes:
+        walk = walk_by_floor.get(int(f))
+        if walk is None:
+            continue
+        sub_poly = Point(x, y).buffer(safe_radius).intersection(walk)
+        if sub_poly.is_empty:
+            continue
+        for (gx, gy) in grid_points_in_polygon(sub_poly, safe_spacing):
+            candidates.append((gx, gy, int(f), "high_risk", 1))
+    kept = {}
+    for c in sorted(candidates, key=lambda z: (z[4], z[2], z[0], z[1])):
+        key = (c[2], round(c[0]), round(c[1]))
+        if key not in kept:
+            kept[key] = c
+    floors_out, summary = {}, {}
+    for fk in sorted({c[2] for c in kept.values()}):
+        fpts = [c for c in kept.values() if c[2] == fk]
+        fpts.sort(key=lambda c: (-c[1], c[0]))
+        points = []
+        for i, c in enumerate(fpts, 1):
+            points.append({"id": f"FP-{fk}-R{i:03d}", "fpId": f"FP-{fk}-R{i:03d}",
+                           "shortId": f"R{i:03d}", "floor": fk,
+                           "coordinates": [round(c[0], 3), round(c[1], 3)],
+                           "x": round(c[0], 3), "y": round(c[1], 3),
+                           "regionType": c[3], "priority": c[4], "source": "route",
+                           "isBase2m": False, "collectable": False,
+                           "collectablePlan10m": False, "collectableGeo15m": False,
+                           "routeTags": [], "nearNodeId": None, "nearNodeType": None})
+        floors_out[str(fk)] = {"floor": fk, "parameters": {"mode": "route", "spacingM": spacing},
+                               "points": points}
+        summary[str(fk)] = {"total": len(points)}
+    return floors_out, summary, route_meta, sum(s["total"] for s in summary.values())
 
 
 if __name__ == "__main__":

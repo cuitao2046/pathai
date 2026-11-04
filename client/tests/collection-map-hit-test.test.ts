@@ -109,10 +109,18 @@ describe('pickPointOnScreen（真实标定点）', () => {
 describe('pickPointOnScreen（真实指纹网格 2 m 间距）', () => {
   test('放大后相邻 2 m 网格点可分别精确选中', () => {
     const vp = makeViewport();
-    const a = GRID_F1.find((p) => p.fpId === 'FP-1-001')!;
-    const b = GRID_F1.find((p) => p.fpId === 'FP-1-002')!;
-    expect(a).toBeDefined();
-    expect(b).toBeDefined();
+    // v2 编号由坐标派生，不再有固定序号；动态找一对同排相距 2m 的 2m 底网点
+    let pair: [typeof GRID_F1[number], typeof GRID_F1[number]] | null = null;
+    for (const p of GRID_F1) {
+      if (!p.isBase2m) continue;
+      const q = GRID_F1.find((r) => r.isBase2m && r.row === p.row && r.col === p.col + 2);
+      if (q !== undefined) {
+        pair = [p, q];
+        break;
+      }
+    }
+    expect(pair).not.toBeNull();
+    const [a, b] = pair!;
 
     vp.zoomAt(VIEW_W / 2, VIEW_H / 2, 4);
     const hitA = pickPointOnScreen(
@@ -129,8 +137,8 @@ describe('pickPointOnScreen（真实指纹网格 2 m 间距）', () => {
       tapAt(vp.toScreen(b.x, b.y)),
       FP_HIT_RADIUS_PX,
     );
-    expect(hitA?.point.fpId).toBe('FP-1-001');
-    expect(hitB?.point.fpId).toBe('FP-1-002');
+    expect(hitA?.point.fpId).toBe(a.fpId);
+    expect(hitB?.point.fpId).toBe(b.fpId);
     // fit 视图下相邻 2 m 点间距（约 7 px）小于命中半径 → 邻点也在命中圈内；
     // 放大 4× 后间距（约 28 px）大于命中半径 → 点 A 的命中圈不再包含 B，选点更精确
     expect(2 * vp.fitScale).toBeLessThan(FP_HIT_RADIUS_PX);
