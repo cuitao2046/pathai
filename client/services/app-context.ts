@@ -45,6 +45,17 @@ export const FIELD_COLLECTION_TOOL_KEY = 'cfg:fieldCollectionTool';
 /** 标定操作人（写入 static/dynamic 导出的 operator 字段）。 */
 export const CALIBRATION_OPERATOR_KEY = 'cfg:calibrationOperator';
 
+/** 无障碍模式：'a11y' 视障模式（默认，大箭头 + 全屏按住说话）/ 'normal' 普通模式。 */
+export const A11Y_MODE_KEY = 'cfg:a11yMode';
+
+/** 全屏按住说话开关（仅视障模式生效，默认开）。 */
+export const FULL_SCREEN_PTT_KEY = 'cfg:fullScreenPtt';
+
+/** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
+export const NAV_ARROW_KEY = 'cfg:navArrow';
+
+export type A11yMode = 'a11y' | 'normal';
+
 /** 标定模式轨迹缓冲 key。 */
 export const CALIBRATION_RECORDS_KEY = 'cal:trajectory:v1';
 
@@ -177,6 +188,36 @@ class AppContext {
   /** 首页/设置页回显：现场采集工具开关（默认关闭）。 */
   getFieldCollectionToolSetting(): boolean {
     return getJson<boolean>(FIELD_COLLECTION_TOOL_KEY) === true;
+  }
+
+  /** 设置页：写入无障碍模式（即时生效；默认「视障模式」）。 */
+  setA11yMode(mode: A11yMode): void {
+    setJson(A11Y_MODE_KEY, mode);
+  }
+
+  /** 首页/设置页回显：无障碍模式（未设置过返回默认 'a11y'）。 */
+  getA11yMode(): A11yMode {
+    return getJson<A11yMode>(A11Y_MODE_KEY) === 'normal' ? 'normal' : 'a11y';
+  }
+
+  /** 设置页：写入全屏按住说话开关（仅视障模式生效，即时生效）。 */
+  setFullScreenPttSetting(on: boolean): void {
+    setJson(FULL_SCREEN_PTT_KEY, on);
+  }
+
+  /** 首页/设置页回显：全屏按住说话开关（默认开）。 */
+  getFullScreenPttSetting(): boolean {
+    return getJson<boolean>(FULL_SCREEN_PTT_KEY) !== false;
+  }
+
+  /** 设置页：写入导航方向箭头开关（仅视障模式生效，即时生效）。 */
+  setNavArrowSetting(on: boolean): void {
+    setJson(NAV_ARROW_KEY, on);
+  }
+
+  /** 首页/设置页回显：导航方向箭头开关（默认开）。 */
+  getNavArrowSetting(): boolean {
+    return getJson<boolean>(NAV_ARROW_KEY) !== false;
   }
 }
 

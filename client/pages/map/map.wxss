@@ -15,6 +15,113 @@
   height: 100%;
 }
 
+/* ------------------------------------------------------------------
+ * 导航方向大箭头（仅视障模式，specs/nav-accessibility-ux §5）
+ * - 尺寸 520rpx（375px 屏约 260px ≈ 70vw），中心在屏高 55%；
+ * - 浅色主题：#0B3D91 / 白衬底（≈10.1:1）；深色主题：#FFD400 / 黑衬底（≈15:1）；
+ * - 偏离警示：红色 #D50000 + 白色描边；
+ * - pointer-events:none：不拦截 canvas 全屏手势与按钮点按。
+ * ------------------------------------------------------------------ */
+
+.nav-arrow {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  top: 55%;
+  width: 520rpx;
+  height: 520rpx;
+  border-radius: 50%;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.nav-arrow--light {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8rpx 40rpx rgba(31, 41, 55, 0.22);
+}
+
+.nav-arrow--dark {
+  background: rgba(0, 0, 0, 0.92);
+  box-shadow: 0 8rpx 40rpx rgba(0, 0, 0, 0.45);
+}
+
+/* 对齐参考环：箭头朝上时与环顶刻度对齐 */
+.nav-arrow-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 400rpx;
+  height: 400rpx;
+  margin: -200rpx 0 0 -200rpx;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.nav-arrow--light .nav-arrow-ring {
+  border: 8rpx solid rgba(11, 61, 145, 0.35);
+}
+
+.nav-arrow--dark .nav-arrow-ring {
+  border: 8rpx solid rgba(255, 212, 0, 0.5);
+}
+
+/* 箭头 = 外层描边三角 + 内层实心三角（CSS 边框三角，朝上） */
+.nav-arrow-outline,
+.nav-arrow-fill {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -50%);
+  border-left-style: solid;
+  border-right-style: solid;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-bottom-style: solid;
+}
+
+.nav-arrow-outline {
+  border-left-width: 132rpx;
+  border-right-width: 132rpx;
+  border-bottom-width: 216rpx;
+}
+
+.nav-arrow-fill {
+  border-left-width: 114rpx;
+  border-right-width: 114rpx;
+  border-bottom-width: 186rpx;
+}
+
+.nav-arrow--light .nav-arrow-outline {
+  border-bottom-color: #ffffff;
+}
+
+.nav-arrow--light .nav-arrow-fill {
+  border-bottom-color: #0b3d91;
+}
+
+.nav-arrow--dark .nav-arrow-outline {
+  border-bottom-color: #000000;
+}
+
+.nav-arrow--dark .nav-arrow-fill {
+  border-bottom-color: #ffd400;
+}
+
+/* 偏离警示态：红色 + 白色描边（所有主题一致） */
+.nav-arrow--alert .nav-arrow-fill {
+  border-bottom-color: #d50000;
+}
+
+.nav-arrow--alert .nav-arrow-outline {
+  border-bottom-color: #ffffff;
+}
+
+.nav-arrow--alert .nav-arrow-ring {
+  border-color: rgba(213, 0, 0, 0.6);
+}
+
 /* 左上角竖向工具条：设置 / 楼层选择 / 全图 / 采集（第 4 颗受设置页「现场采集工具」
    开关控制，导航中隐藏），贴画布左边缘悬浮于地图上
    （贴边、可视面/热区、左侧直角右侧圆角见 styles/map-tools.wxss 的 .map-tools--left）。

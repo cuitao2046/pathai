@@ -42,6 +42,25 @@
   </view>
 
   <view class="section">
+    <view class="section-title">无障碍模式</view>
+    <view class="row">
+      <text class="label">视障模式（默认）</text>
+      <switch checked="{{a11yMode === 'a11y'}}" bindchange="onChangeA11yMode" aria-label="切换普通模式或视障模式" />
+    </view>
+    <view class="hint">开启=视障模式：导航时全屏高对比度大方向箭头 + 全屏单指按住说话；关闭=普通模式：沿用现有导航动态展示与底部「按住说话」按钮，地图手势保持原有行为。<text style="color:#1f2937">切换即时生效（含进行中的导航）</text>。</view>
+    <view class="row">
+      <text class="label">全屏按住说话</text>
+      <switch checked="{{fullScreenPttSetting}}" bindchange="onChangeFullScreenPtt" aria-label="切换全屏按住说话手势" />
+    </view>
+    <view class="hint">仅视障模式生效。开启后屏幕上任意非按钮区域单指按住 0.5 秒即可开始语音；关闭后仍可用底部语音键。</view>
+    <view class="row">
+      <text class="label">导航方向大箭头</text>
+      <switch checked="{{navArrowSetting}}" bindchange="onChangeNavArrow" aria-label="切换导航方向大箭头" />
+    </view>
+    <view class="hint">仅视障模式生效。开启后导航中显示相对手机朝向的大箭头，并在方向偏离时播报提示。</view>
+  </view>
+
+  <view class="section">
     <view class="section-title">现场采集工具</view>
     <view class="row">
       <text class="label">首页「采集」入口</text>
