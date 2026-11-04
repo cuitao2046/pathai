@@ -1,7 +1,8 @@
 /**
- * 网格指纹采集页（spec：field-collection-integration §4）：
- * - 地图模式展示全楼 1434 点网格（按层过滤），已采点绿 + 次数角标，
- *   仅现场实际采集的点写入记录（D4）；
+ * 网格指纹采集页（spec：field-collection-integration §4，v0.2.0 两层模型）：
+ * - 设计层全量网格（按层过滤），按当前实际信标部署区分“可采集/当前不可采集”，
+ *   已采点绿 + 次数角标，仅现场实际采集的点写入记录（D4）；
+ * - LOD：低缩放只画 2m 底网点，放大后再显示 1m 细分点，避免整楼视图误点；
  * - 到点（现场参照物人工判定）→ 点地图网格点 → 确认卡 → 两短振
  *   → 3s 快照倒计时 → 2s 窗口逐信标中位数 → 自动落盘（记录追加制，
  *   captureIndex = 该点记录数 + 1）；
@@ -39,9 +40,14 @@ const SNAPSHOT_COUNTDOWN_S = 3;
 /** 网格点命中半径（画布 CSS 像素）。 */
 const HIT_RADIUS_PX = 16;
 
+/** LOD 阈值：缩放 >= fitScale 的该倍数时才显示 1m 细分点。 */
+const LOD_1M_SCALE_FACTOR = 2.5;
+
 const REGION_TEXT: Record<string, string> = {
-  normal: '走廊面',
-  safe: '楼梯电梯口加密',
+  normal: '普通',
+  intersection: '交叉路口',
+  doorway: '门口',
+  high_risk: '楼梯/电梯口',
 };
 
 function qualityUsable(q: string): boolean {
@@ -50,9 +56,13 @@ function qualityUsable(q: string): boolean {
 
 interface CardData {
   fpId: string;
+  shortId: string;
   regionText: string;
   floorText: string;
   coordText: string;
+  gridText: string;
+  collectText: string;
+  routeText: string;
   recordCount: number;
   distanceText: string;
 }
@@ -67,6 +77,8 @@ Page({
     currentFloor: '1',
     currentFloorText: '1F',
     stats: { recordCount: 0, fpCount: 0 },
+    /** 只显示当前部署下可采集的点（默认关，便于对照设计层全量）。 */
+    onlyCollectable: false,
     // 快照进行中
     collecting: false,
     countdownText: '',
@@ -254,7 +266,8 @@ Page({
     if (this.mapView === null || vp === null || vp === undefined) {
       return;
     }
-    const pts = this.gridByFloor.get(vp.floorId) ?? [];
+    // 只对当前实际绘制出来的点做命中，避免低缩放下误点未显示的 1m 点
+    const pts = this.visiblePoints(this.gridByFloor.get(vp.floorId) ?? [], vp);
     // 屏幕空间命中：网格点按当前视口投影后再比距离，缩放/平移后不偏移
     const hit = pickPointOnScreen(
       pts,
@@ -266,6 +279,25 @@ Page({
     if (hit !== null) {
       this.openCard(hit.point);
     }
+  },
+
+  /** 当前视口下实际绘制的点：LOD（低缩放只留 2m 底网）+ 可采集过滤。 */
+  visiblePoints(
+    pts: FpGridPoint[],
+    vp: NonNullable<CollectMapView['vp']>,
+  ): FpGridPoint[] {
+    const show1m = vp.scale >= vp.fitScale * LOD_1M_SCALE_FACTOR;
+    const onlyCollectable = this.data.onlyCollectable;
+    return pts.filter(
+      (p) => (show1m || p.isBase2m) && (!onlyCollectable || p.collectable),
+    );
+  },
+
+  /** 过滤开关：只显示当前部署下可采集的点。 */
+  onToggleCollectable(): void {
+    const next = !this.data.onlyCollectable;
+    this.setData({ onlyCollectable: next });
+    this.mapView?.requestDraw();
   },
 
   openCard(p: FpGridPoint): void {
@@ -284,9 +316,15 @@ Page({
     this.setData({
       card: {
         fpId: p.fpId,
+        shortId: p.shortId,
         regionText: REGION_TEXT[p.regionType] ?? p.regionType,
         floorText: floorItem !== undefined ? `${floorItem.level}F` : p.floorId,
         coordText: `${p.x.toFixed(1)}, ${p.y.toFixed(1)}`,
+        gridText: `列 ${p.col} / 行 ${p.row}`,
+        collectText: p.collectable
+          ? `可采集（10m ≥3 且预测 ${p.strongestRssi ?? '—'}dBm）`
+          : `当前不可采集（10m 可见 ${p.visible10m} 个）`,
+        routeText: p.routeTags.length > 0 ? p.routeTags.join(' / ') : '—',
         recordCount: this.recordCounts.get(p.fpId) ?? 0,
         distanceText,
       },
@@ -531,8 +569,9 @@ Page({
     ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
-    const pts = this.gridByFloor.get(vp.floorId) ?? [];
-    // 网格点：小方块（1434 点逐帧 arc 开销大，fillRect 快一个量级）
+    // LOD + 可采集过滤：低缩放只画 2m 底网点，放大后才显示 1m 细分点
+    const pts = this.visiblePoints(this.gridByFloor.get(vp.floorId) ?? [], vp);
+    // 网格点：小方块（逐帧 arc 开销大，fillRect 快一个量级）
     for (const p of pts) {
       const { sx, sy } = vp.toScreen(p.x, p.y);
       const n = this.recordCounts.get(p.fpId) ?? 0;
@@ -547,9 +586,14 @@ Page({
         ctx.strokeText(String(n), sx, sy - 10);
         ctx.fillStyle = '#15803d';
         ctx.fillText(String(n), sx, sy - 10);
-      } else {
-        ctx.fillStyle = 'rgba(37, 99, 235, 0.55)';
+      } else if (p.collectable) {
+        ctx.fillStyle = 'rgba(37, 99, 235, 0.7)';
         ctx.fillRect(sx - 2, sy - 2, 4, 4);
+      } else {
+        // 当前实际部署下不可采集：灰色空心，便于与可采集点区分
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx - 2, sy - 2, 4, 4);
       }
     }
 

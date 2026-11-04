@@ -56,13 +56,58 @@
   padding: 6rpx 14rpx;
 }
 
-.legend {
-  color: #94a3b8;
+.legend-bar {
+  position: absolute;
+  top: 138rpx;
+  left: 24rpx;
+  right: 24rpx;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  font-size: 22rpx;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 8rpx;
+  padding: 6rpx 14rpx;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 3rpx;
+}
+
+.dot.collectable {
+  background: #2563eb;
+}
+
+.dot.blind {
+  border: 1rpx solid #94a3b8;
+  background: transparent;
+}
+
+.dot.done {
+  background: #16a34a;
+}
+
+.pill.filter {
+  margin-left: auto;
+  height: 46rpx;
+  line-height: 42rpx;
+  padding: 0 18rpx;
+  font-size: 22rpx;
 }
 
 .mock-hint {
   position: absolute;
-  top: 140rpx;
+  top: 190rpx;
   left: 24rpx;
   z-index: 3;
   font-size: 22rpx;

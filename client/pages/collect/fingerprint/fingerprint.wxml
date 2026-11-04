@@ -16,7 +16,18 @@
 
   <view class="stats-bar" aria-live="polite">
     <text>网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
-    <text class="legend">蓝点=待采 绿=已采</text>
+  </view>
+
+  <!-- 图例 + 可采集过滤（低缩放只显示 2m 底网点，放大后显示 1m 细分点） -->
+  <view class="legend-bar">
+    <view class="legend-item"><view class="dot collectable"></view><text>可采集</text></view>
+    <view class="legend-item"><view class="dot blind"></view><text>当前不可采集</text></view>
+    <view class="legend-item"><view class="dot done"></view><text>已采集</text></view>
+    <button
+      class="pill filter {{onlyCollectable ? 'active' : ''}}"
+      bindtap="onToggleCollectable"
+      aria-label="切换只显示可采集点"
+    >{{onlyCollectable ? '仅可采集' : '全部点位'}}</button>
   </view>
 
   <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
@@ -52,7 +63,11 @@
   <view class="card-mask" wx:if="{{card !== null}}" bindtap="onCardCancel">
     <view class="card" catchtap="noop" aria-label="网格点确认">
       <view class="card-title">{{card.fpId}}</view>
+      <view class="card-row"><text class="label">短号</text><text>{{card.shortId}}</text></view>
+      <view class="card-row"><text class="label">格位</text><text>{{card.gridText}}</text></view>
       <view class="card-row"><text class="label">区域</text><text>{{card.regionText}}</text></view>
+      <view class="card-row"><text class="label">采集口径</text><text>{{card.collectText}}</text></view>
+      <view class="card-row"><text class="label">路线</text><text>{{card.routeText}}</text></view>
       <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
       <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>
       <view class="card-row"><text class="label">已采次数</text><text>{{card.recordCount}}</text></view>
