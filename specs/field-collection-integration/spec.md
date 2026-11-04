@@ -173,9 +173,10 @@
 **客户端展示**：
 
 - 地图模式显示设计层全量点（按楼层切换；已采集点高亮绿 + 角标），**仅现场实际采集的点才写入记录**。
-- **可采集/当前不可采集区分**：可采集点蓝色实心、当前不可采集灰色空心；提供图例与「仅可采集」开关过滤。
-- **LOD**：按屏幕像素间距判断——相邻 1 m 点在屏幕间距 ≥ `LOD_1M_MIN_SPACING_PX`（默认 8 CSS px，等价 `scale ≥ 8 px/m`）时才绘制 1 m 细分点，否则只画 2 m 底网点（`isBase2m`）；按各层实际 `fitScale` 换算约为 F1 2.4× / F2 1.8×。点选命中只针对当前实际绘制的点。
-- 确认卡展示 fpId、短号、行列号、区域类型、采集口径（可见信标数/预测 RSSI）、路线标签。
+- **点位配色**（集中在 `fingerprint-visibility.ts` / 页面顶部常量）：可采集蓝实心、当前不可采集灰空心、已采集绿实心、**路线点橙实心**（`#F97316` + 白色描边），路线点最后绘制以保证在最上层。已采集的路线点仍以绿色为准，但保留橙色描边标记"这是路线点"。
+- **筛选**：三档 `all`（默认）/ `collectable`（仅可采集）/ `route`（仅路线点）；图例含"路线点（优先采集）"。
+- **LOD**：按屏幕像素间距判断——相邻 1 m 点在屏幕间距 ≥ `LOD_1M_MIN_SPACING_PX`（默认 8 CSS px，等价 `scale ≥ 8 px/m`）时才绘制 1 m 细分点，否则只画 2 m 底网点（`isBase2m`）；按各层实际 `fitScale` 换算约为 F1 2.4× / F2 1.8×。**路线点不受 LOD 限制**（含 1 m 路线点），整楼视图也全部绘制；点选命中只针对当前实际绘制的点（因此包含被强制绘制的路线点）。
+- 确认卡展示 fpId、短号、行列号、区域类型、采集口径（可见信标数/预测 RSSI）、路线标签；路线点标注"优先采集"。
 - 地图缩放/平移、可点按缩放控件与选点命中随视口变换的行为与 §3.7 **完全一致**（命中半径 16 px）。
 
 **生成与派生数据**：`src/tools/generate_fingerprint_grid.py` 产出 `result/fingerprint_grid.json` 与 F2 清单；`src/tools/gen_client_collection_data.py` 再派生 `client/data/fingerprint_grid.ts`、`fingerprint-collector/data/fingerprint_grid.js`（AUTO-GENERATED，保留可采集字段）。

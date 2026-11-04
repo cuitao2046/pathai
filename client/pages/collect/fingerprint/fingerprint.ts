@@ -22,6 +22,14 @@ import { LocationPipeline } from '../../../core/position/location-pipeline';
 import { SequenceCounter } from '../../../core/position/sequence-counter';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
 import { pickPointOnScreen } from '../../../core/collection/hit-test';
+import {
+  FP_POINT_COLORS,
+  filterVisiblePoints,
+  isRoutePoint,
+  pointStyle,
+  routeText,
+  type FilterMode,
+} from '../../../core/collection/fingerprint-visibility';
 import { createTeeSource } from '../../../core/collection/collect-scan';
 import { buildFpRecord, type FpBeaconLookup, type FpSnapshotPoint } from '../../../core/collection/fp-snapshot';
 import { FpRecordsStore } from '../../../core/collection/points-store';
@@ -40,12 +48,13 @@ const SNAPSHOT_COUNTDOWN_S = 3;
 /** 网格点命中半径（画布 CSS 像素）。 */
 const HIT_RADIUS_PX = 16;
 
+/** 网格点配色（集中定义；路线点橙、可采集蓝、不可采集灰、已采集绿）。 */
+const COLORS = FP_POINT_COLORS;
+
 /**
- * 1m 细分点的 LOD 判据：相邻 1m 点在屏幕上的间距 ≥ 该像素值时才绘制。
- * 网格世界间距 1m，故等价于 vp.scale >= 8 px/m；按各层实际 fitScale 换算：
- * F1（fitScale≈3.37）约 2.4×，F2（≈4.50）约 1.8×。真机可调成 10px。
+ * 1m 细分点的 LOD 判据见 fingerprint-visibility（8 CSS px，等价 scale≥8px/m；
+ * 按各层 fitScale 换算：F1 约 2.4×、F2 约 1.8×）。路线点不受该限制。
  */
-const LOD_1M_MIN_SPACING_PX = 8;
 
 const REGION_TEXT: Record<string, string> = {
   normal: '普通',
@@ -82,8 +91,8 @@ Page({
     currentFloor: '1',
     currentFloorText: '1F',
     stats: { recordCount: 0, fpCount: 0 },
-    /** 只显示当前部署下可采集的点（默认关，便于对照设计层全量）。 */
-    onlyCollectable: false,
+    /** 筛选档位：all（默认）/ collectable（仅可采集）/ route（仅路线点）。 */
+    filterMode: 'all' as FilterMode,
     // 快照进行中
     collecting: false,
     countdownText: '',
@@ -286,22 +295,21 @@ Page({
     }
   },
 
-  /** 当前视口下实际绘制的点：LOD（低缩放只留 2m 底网）+ 可采集过滤。 */
+  /** 当前视口下实际绘制的点：LOD（路线点豁免）+ 筛选档位。 */
   visiblePoints(
     pts: FpGridPoint[],
     vp: NonNullable<CollectMapView['vp']>,
   ): FpGridPoint[] {
-    const show1m = vp.scale >= LOD_1M_MIN_SPACING_PX;
-    const onlyCollectable = this.data.onlyCollectable;
-    return pts.filter(
-      (p) => (show1m || p.isBase2m) && (!onlyCollectable || p.collectable),
-    );
+    return filterVisiblePoints(pts, vp.scale, this.data.filterMode);
   },
 
-  /** 过滤开关：只显示当前部署下可采集的点。 */
-  onToggleCollectable(): void {
-    const next = !this.data.onlyCollectable;
-    this.setData({ onlyCollectable: next });
+  /** 筛选档位切换：全部 / 仅可采集 / 仅路线点。 */
+  onFilterMode(e: WechatMiniprogram.TouchEvent): void {
+    const mode = String(e.currentTarget.dataset.mode ?? 'all') as FilterMode;
+    if (mode !== 'all' && mode !== 'collectable' && mode !== 'route') {
+      return;
+    }
+    this.setData({ filterMode: mode });
     this.mapView?.requestDraw();
   },
 
@@ -330,7 +338,7 @@ Page({
           ? `可采集（10m ≥3 且预测 ${p.strongestRssi ?? '—'}dBm）`
           : `当前不可采集（10m 可见 ${p.visible10m} 个）`,
         refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
-        routeText: p.routeTags.length > 0 ? p.routeTags.join(' / ') : '—',
+        routeText: routeText(p.routeTags),
         recordCount: this.recordCounts.get(p.fpId) ?? 0,
         distanceText,
       },
@@ -575,31 +583,34 @@ Page({
     ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
-    // LOD + 可采集过滤：低缩放只画 2m 底网点，放大后才显示 1m 细分点
+    // LOD（路线点豁免）+ 筛选档位；路线点最后绘制，保证在最上层
     const pts = this.visiblePoints(this.gridByFloor.get(vp.floorId) ?? [], vp);
-    // 网格点：小方块（逐帧 arc 开销大，fillRect 快一个量级）
-    for (const p of pts) {
+    const normalPts = pts.filter((p) => !isRoutePoint(p));
+    const routePts = pts.filter((p) => isRoutePoint(p));
+    for (const p of [...normalPts, ...routePts]) {
       const { sx, sy } = vp.toScreen(p.x, p.y);
       const n = this.recordCounts.get(p.fpId) ?? 0;
+      const style = pointStyle(n > 0, isRoutePoint(p), p.collectable);
+      const half = style.sizePx / 2;
+      if (style.fill !== null) {
+        ctx.fillStyle = style.fill;
+        ctx.fillRect(sx - half, sy - half, style.sizePx, style.sizePx);
+      }
+      if (style.stroke !== null) {
+        // 路线点（含已采集）保留橙色/白色描边，避免丢失路线标记
+        ctx.strokeStyle = style.stroke;
+        ctx.lineWidth = style.strokeWidth;
+        ctx.strokeRect(sx - half, sy - half, style.sizePx, style.sizePx);
+      }
       if (n > 0) {
-        ctx.fillStyle = '#16a34a';
-        ctx.fillRect(sx - 4, sy - 4, 8, 8);
         ctx.font = 'bold 10px -apple-system, "PingFang SC", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.strokeStyle = COLORS.labelStroke;
         ctx.strokeText(String(n), sx, sy - 10);
-        ctx.fillStyle = '#15803d';
+        ctx.fillStyle = COLORS.collectedText;
         ctx.fillText(String(n), sx, sy - 10);
-      } else if (p.collectable) {
-        ctx.fillStyle = 'rgba(37, 99, 235, 0.7)';
-        ctx.fillRect(sx - 2, sy - 2, 4, 4);
-      } else {
-        // 当前实际部署下不可采集：灰色空心，便于与可采集点区分
-        ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx - 2, sy - 2, 4, 4);
       }
     }
 
