@@ -8,21 +8,57 @@ $taskName = 'PathAI-Backend'
 $pidFile = Join-Path $here 'run\backend.pid.json'
 
 function Get-TcpOwner([int]$port) {
-    # 兼容 State 字段为空的环境：先 Listen 过滤，再退化为按端口号匹配。
-    $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $c) {
-        $c = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
-    }
-    if ($null -eq $c) { return $null }
-    return [int]$c.OwningProcess
+    # 会话 0 下 State 可能为空；忽略 OwningProcess=0 的“幻影行”。
+    try {
+        foreach ($r in @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)) {
+            $owner = [int]$r.OwningProcess
+            if ($owner -ne 0) { return $owner }
+        }
+    } catch { }
+    return $null
 }
 function Get-UdpOwner([int]$port) {
     $c = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -eq $c) { return $null }
-    return [int]$c.OwningProcess
+    $owner = [int]$c.OwningProcess
+    if ($owner -eq 0) { return $null }
+    return $owner
 }
 function Get-ProcInfo([int]$procId) {
     return Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
+}
+function Test-PortListening([int]$port) {
+    # 先做回环 TCP 连接探测：能连上才是真的在监听。
+    # 本机会话 0 下 Get-NetTCPConnection 会出现 State 为空、OwningProcess=0 的“幻影行”
+    # （netstat 无 LISTENING），若直接按行数判断会误报端口被占。
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(400)) { $client.Close(); return $false }
+        $client.EndConnect($iar)
+        $client.Close()
+        return $true
+    } catch { }
+    # 兜底：仅把 State=Listen 或 OwningProcess 非 0 的行当作监听（忽略 owner=0 的幻影行）。
+    try {
+        foreach ($r in @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)) {
+            if ($r.State -eq 'Listen') { return $true }
+            if ([int]$r.OwningProcess -ne 0) { return $true }
+        }
+    } catch { }
+    return $false
+}
+function Get-BackendPid {
+    # PID 兜底顺序：TCP owner（非 0）→ UDP 39001 owner（非 0）→ 进程命令行（uvicorn + pathai_backend）
+    $tcp = Get-TcpOwner 8000
+    if ($null -ne $tcp -and $tcp -ne 0) { return [int]$tcp }
+    $udp = Get-UdpOwner 39001
+    if ($null -ne $udp -and $udp -ne 0) { return [int]$udp }
+    $p = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*uvicorn*' -and $_.CommandLine -like '*pathai_backend*' } |
+        Select-Object -First 1
+    if ($null -ne $p) { return [int]$p.ProcessId }
+    return $null
 }
 function Format-Proc([int]$procId) {
     $p = Get-ProcInfo $procId
@@ -58,20 +94,26 @@ if ($null -ne $pidJson) {
 }
 
 $tcpOwner = Get-TcpOwner 8000
-if ($null -eq $tcpOwner) {
+$udpOwner = Get-UdpOwner 39001
+$listening8000 = Test-PortListening 8000
+$backendPid = Get-BackendPid
+if (-not $listening8000) {
     Write-Host '8000 无监听进程。' -ForegroundColor Yellow
-} else {
-    Write-Host ('8000 监听：' + (Format-Proc $tcpOwner))
-    # 向上追溯 4 层，说明挂在哪（预期：python <- powershell(daemon-runner) <- svchost(Task Scheduler)）
-    $cur = $tcpOwner
+} elseif ($null -ne $backendPid) {
+    $sessionId = try { (Get-Process -Id $backendPid -ErrorAction Stop).SessionId } catch { -1 }
+    $pidSource = if ($null -ne $tcpOwner -and $tcpOwner -ne 0) { 'TCP owner' } else { 'UDP/进程命令行兜底' }
+    Write-Host ('8000 监听：' + (Format-Proc $backendPid) + "  SessionId=$sessionId  PID来源=$pidSource")
+    # 向上追溯 4 层，说明挂在哪（预期：python <- powershell(start-local) <- powershell(runner) <- svchost(Task Scheduler)）
+    $cur = $backendPid
     for ($i = 0; $i -lt 4; $i++) {
         $p = Get-ProcInfo $cur
         if ($null -eq $p -or $p.ParentProcessId -eq 0) { break }
         $cur = [int]$p.ParentProcessId
         Write-Host ('  ↑ ' + (Format-Proc $cur)) -ForegroundColor DarkGray
     }
+} else {
+    Write-Host '8000 有监听，但无法解析 PID（会话 0 或权限受限），可能被非本项目进程占用。' -ForegroundColor Red
 }
-$udpOwner = Get-UdpOwner 39001
 if ($null -eq $udpOwner) {
     Write-Host '39001（UDP 发现）：无监听。' -ForegroundColor Yellow
 } else {
@@ -129,9 +171,9 @@ try {
 
 Write-Host ''
 Write-Host '=== 4. 结论 ===' -ForegroundColor Cyan
-if ($null -ne $tcpOwner -and $null -ne $udpOwner) {
+if ($listening8000 -and $null -ne $udpOwner) {
     Write-Host '后端运行中（8000 + 39001 均在监听）。' -ForegroundColor Green
-} elseif ($null -ne $tcpOwner) {
+} elseif ($listening8000) {
     Write-Host '后端部分运行（8000 监听，39001 未监听——UDP 发现不可用）。' -ForegroundColor Yellow
 } elseif ($null -ne $udpOwner) {
     Write-Host '后端部分运行（39001 监听，8000 未监听——HTTP 接口不可用）。' -ForegroundColor Yellow

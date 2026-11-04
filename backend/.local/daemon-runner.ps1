@@ -23,17 +23,31 @@ function Write-RunnerLog([string]$message) {
     ('[{0}] [runner] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $message) |
         Out-File -FilePath $logFile -Encoding utf8 -Append
 }
+function Test-PortListening([int]$port) {
+    # 先做回环 TCP 连接探测：能连上才是真的在监听。
+    # 本机会话 0 下 Get-NetTCPConnection 会出现 State 为空、OwningProcess=0 的“幻影行”
+    # （netstat 无 LISTENING），若直接按行数判断会误报端口被占。
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(400)) { $client.Close(); return $false }
+        $client.EndConnect($iar)
+        $client.Close()
+        return $true
+    } catch { }
+    # 兜底：仅把 State=Listen 或 OwningProcess 非 0 的行当作监听（忽略 owner=0 的幻影行）。
+    try {
+        foreach ($r in @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)) {
+            if ($r.State -eq 'Listen') { return $true }
+            if ([int]$r.OwningProcess -ne 0) { return $true }
+        }
+    } catch { }
+    return $false
+}
 
 # 单实例保护：8000 已有监听则让位（不覆盖、不重启、不静默失败）
-$owner = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
-    Select-Object -First 1).OwningProcess
-if ($null -eq $owner) {
-    # 兼容 State 字段为空的环境
-    $owner = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue |
-        Select-Object -First 1).OwningProcess
-}
-if ($null -ne $owner) {
-    Write-RunnerLog "端口 8000 已被 PID $owner 占用，runner 放弃启动（退出码 3）"
+if (Test-PortListening 8000) {
+    Write-RunnerLog '端口 8000 已有监听，runner 放弃启动（退出码 3；看门狗 1 分钟后重试）'
     exit 3
 }
 
@@ -65,14 +79,8 @@ try {
     while ($true) {
         $attempt++
         # 若端口已被其他实例占用，先等待而不是反复拉起注定失败的 uvicorn
-        $busy = (Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
-            Select-Object -First 1).OwningProcess
-        if ($null -eq $busy) {
-            $busy = (Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue |
-                Select-Object -First 1).OwningProcess
-        }
-        if ($null -ne $busy) {
-            Write-RunnerLog "端口 8000 被 PID $busy 占用，$retrySec 秒后重试（不重复拉起）"
+        if (Test-PortListening 8000) {
+            Write-RunnerLog "端口 8000 已有监听，$retrySec 秒后重试（不重复拉起）"
             Start-Sleep -Seconds $retrySec
             continue
         }

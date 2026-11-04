@@ -1,6 +1,9 @@
-﻿# 守护化启动（幂等）：已运行则提示并退出；否则注册/校验计划任务 PathAI-Backend 并立即启动，
+﻿# 守护化启动（幂等）：已运行则提示并退出；否则注册/校正计划任务 PathAI-Backend 并立即启动，
 # 等待 /healthz 通过后输出状态。计划任务的动作始终是 daemon-runner.ps1 → start-local.ps1。
+# 任务以 S4U（会话 0）运行，彻底脱离交互终端/控制台；动作注入真实 Python 目录（会话 0 下
+# WindowsApps 别名无法启动）。看门狗触发器每分钟重复，runner 死掉后会被重新拉起。
 # 用法：powershell -ExecutionPolicy Bypass -File backend\.local\daemon-start.ps1 [-TimeoutSec 45]
+# 编码：必须保存为 UTF-8 with BOM。
 
 param([int]$TimeoutSec = 45)
 
@@ -11,19 +14,23 @@ $runner = Join-Path $here 'daemon-runner.ps1'
 $startScript = Join-Path $here 'start-local.ps1'
 
 function Get-TcpOwner([int]$port) {
-    # 兼容部分环境（含沙箱/代理）里 Get-NetTCPConnection 的 State 字段为空的情况：
-    # 先按 Listen 过滤，查不到再退化为按端口号匹配（服务端连接同样归属该 PID）。
-    $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $c) {
-        $c = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
-    }
-    if ($null -eq $c) { return $null }
-    return [int]$c.OwningProcess
+    # 会话 0 下 State 可能为空；忽略 OwningProcess=0 的“幻影行”，返回第一个有真实 owner 的 PID。
+    try {
+        foreach ($r in @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)) {
+            $owner = [int]$r.OwningProcess
+            if ($owner -ne 0) { return $owner }
+        }
+    } catch { }
+    return $null
 }
 function Get-UdpOwner([int]$port) {
-    $c = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $c) { return $null }
-    return [int]$c.OwningProcess
+    try {
+        $c = Get-NetUDPEndpoint -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $c) { return $null }
+        $owner = [int]$c.OwningProcess
+        if ($owner -eq 0) { return $null }
+        return $owner
+    } catch { return $null }
 }
 function Get-ProcInfo([int]$procId) {
     return Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
@@ -32,6 +39,45 @@ function Test-OurBackend([int]$procId) {
     $p = Get-ProcInfo $procId
     if ($null -eq $p) { return $false }
     return ($p.CommandLine -like '*pathai_backend*')
+}
+function Test-PortListening([int]$port) {
+    # 先做回环 TCP 连接探测：能连上才是真的在监听。
+    # 本机会话 0 下 Get-NetTCPConnection 会出现 State 为空、OwningProcess=0 的“幻影行”
+    # （netstat 无 LISTENING），若直接按行数判断会误报端口被占。
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $iar = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(400)) { $client.Close(); return $false }
+        $client.EndConnect($iar)
+        $client.Close()
+        return $true
+    } catch { }
+    # 兜底：仅把 State=Listen 或 OwningProcess 非 0 的行当作监听（忽略 owner=0 的幻影行）。
+    try {
+        foreach ($r in @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)) {
+            if ($r.State -eq 'Listen') { return $true }
+            if ([int]$r.OwningProcess -ne 0) { return $true }
+        }
+    } catch { }
+    return $false
+}
+function Test-Healthz {
+    try {
+        $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/healthz' -UseBasicParsing -TimeoutSec 3
+        return ($r.StatusCode -eq 200)
+    } catch { return $false }
+}
+function Get-BackendPid {
+    # PID 兜底顺序：TCP owner（非 0）→ UDP 39001 owner（非 0）→ 进程命令行（uvicorn + pathai_backend）
+    $tcp = Get-TcpOwner 8000
+    if ($null -ne $tcp -and $tcp -ne 0) { return [int]$tcp }
+    $udp = Get-UdpOwner 39001
+    if ($null -ne $udp -and $udp -ne 0) { return [int]$udp }
+    $p = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like '*uvicorn*' -and $_.CommandLine -like '*pathai_backend*' } |
+        Select-Object -First 1
+    if ($null -ne $p) { return [int]$p.ProcessId }
+    return $null
 }
 
 function Show-Occupant([int]$procId, [string]$label) {
@@ -53,34 +99,63 @@ if (-not (Test-Path $runner)) {
     exit 4
 }
 
-# ---------- 1. 幂等：已在运行则只提示 ----------
+# ---------- 1. 幂等与端口预检 ----------
+$listening = Test-PortListening 8000
+$udpOwner = Get-UdpOwner 39001
 $tcpOwner = Get-TcpOwner 8000
-if ($null -ne $tcpOwner) {
-    if (Test-OurBackend $tcpOwner) {
-        Write-Host "[提示] 后端已在运行（PID $tcpOwner，8000 已监听），无需重复启动。" -ForegroundColor Yellow
+$backendPid = Get-BackendPid
+$ourBackend = ($null -ne $backendPid -and (Test-OurBackend $backendPid))
+
+if ($listening -or $null -ne $udpOwner -or $ourBackend) {
+    if ($ourBackend) {
+        Write-Host "[提示] 后端已在运行（PID $backendPid），无需重复启动。" -ForegroundColor Yellow
         & (Join-Path $here 'daemon-status.ps1')
         exit 0
     }
-    Show-Occupant $tcpOwner 'TCP 8000'
-    exit 1
-}
-$udpOwner = Get-UdpOwner 39001
-if ($null -ne $udpOwner) {
-    if (Test-OurBackend $udpOwner) {
-        Write-Host "[提示] 发现本项目残留实例（UDP 39001，PID $udpOwner），请先执行 daemon-stop.ps1。" -ForegroundColor Yellow
-        exit 1
+    if (Test-Healthz) {
+        Write-Host '[提示] 后端已在运行（/healthz 200；会话 0 下 PID 可能不可见），无需重复启动。' -ForegroundColor Yellow
+        & (Join-Path $here 'daemon-status.ps1')
+        exit 0
     }
-    Show-Occupant $udpOwner 'UDP 39001'
+    # 端口确实被占且不是本项目：明确报错（优先展示能解析到的 PID/命令行）
+    $shown = 0
+    if ($null -ne $backendPid) { $shown = $backendPid }
+    elseif ($null -ne $udpOwner -and $udpOwner -ne 0) { $shown = [int]$udpOwner }
+    elseif ($null -ne $tcpOwner -and $tcpOwner -ne 0) { $shown = [int]$tcpOwner }
+    if ($shown -gt 0) {
+        Show-Occupant $shown 'TCP 8000 / UDP 39001'
+    } else {
+        Write-Host '[错误] 端口 8000/39001 被占用，但无法解析 PID，且 /healthz 不通（非本项目进程）。' -ForegroundColor Red
+        Write-Host '       定位：netstat -ano | findstr :8000 ；tasklist /FI "PID eq <pid>"' -ForegroundColor DarkGray
+    }
     exit 1
 }
 
-# ---------- 2. 注册/校正计划任务（动作：daemon-runner.ps1 → start-local.ps1） ----------
-# 始终 Register -Force：让动作/触发器/重启策略与脚本保持一致（本分支只在后端未运行时才会走到这里）。
-$expectedArgs = ('-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $here 'daemon-runner.ps1'))
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $expectedArgs
-# 触发器：登录自启。崩溃自恢复由 daemon-runner.ps1 自身的重试循环负责
-# （实测 Task Scheduler 的 RestartOnFailure 在进程被外部杀死时不触发，结果码 -1）。
+# ---------- 2. 解析真实 Python（会话 0 下 WindowsApps 别名不可用） ----------
+$pyExe = $null
+try {
+    $pyExe = (& python -c "import sys; print(sys.executable)" 2>$null) | Select-Object -First 1
+} catch { }
+if ($null -ne $pyExe) { $pyExe = $pyExe.ToString().Trim() }
+if ($null -eq $pyExe -or -not (Test-Path $pyExe)) {
+    $cmd = (Get-Command python -ErrorAction SilentlyContinue).Source
+    if ($null -ne $cmd) { $pyExe = $cmd }
+}
+if ($null -eq $pyExe -or -not (Test-Path $pyExe)) {
+    Write-Host '[错误] 找不到 python 可执行文件（PATH 中没有 python）。' -ForegroundColor Red
+    exit 2
+}
+$pyDir = Split-Path $pyExe -Parent
+
+# ---------- 3. 注册/校正计划任务（S4U；动作：daemon-runner.ps1 → start-local.ps1） ----------
+# 始终 Register -Force：让动作/主体/触发器/重启策略与脚本保持一致（本流程只在后端未运行时才会走到这里）。
+$arg = ('/c set "PATH={0};%PATH%" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "{1}"' -f $pyDir, $runner)
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument $arg
+$principal = New-ScheduledTaskPrincipal -UserId ("{0}\{1}" -f $env:USERDOMAIN, $env:USERNAME) -LogonType S4U -RunLevel Limited
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn
+# 看门狗：每分钟重复；任务在跑时由 IgnoreNew 忽略，runner 死掉后 1 分钟内被重新拉起
+# （RestartOnFailure 对“外部强杀”实测不触发，仅作兜底）。
+$watchdogTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $settings = New-ScheduledTaskSettingsSet `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit ([TimeSpan]::Zero) `
@@ -90,22 +165,21 @@ $settings = New-ScheduledTaskSettingsSet `
     -RestartCount 999 `
     -RestartInterval (New-TimeSpan -Minutes 1)
 Register-ScheduledTask -TaskName $taskName `
-    -Action $action -Trigger $logonTrigger -Settings $settings `
-    -Description 'PathAI 本地后端守护进程（调用 backend/.local/start-local.ps1）' `
+    -Action $action -Principal $principal -Trigger @($logonTrigger, $watchdogTrigger) -Settings $settings `
+    -Description 'PathAI 本地后端守护进程（S4U 会话 0；调用 daemon-runner.ps1 → start-local.ps1）' `
     -Force | Out-Null
-Write-Host "[信息] 已注册计划任务 $taskName（登录自启；runner 内建 15 秒崩溃重启）。" -ForegroundColor Green
+Enable-ScheduledTask -TaskName $taskName | Out-Null
+Write-Host "[信息] 已注册计划任务 $taskName（S4U 会话 0；登录自启 + 每分钟看门狗；runner 内建 15 秒崩溃重启）。" -ForegroundColor Green
+Write-Host ("       Python：{0}" -f $pyExe) -ForegroundColor DarkGray
 
 Start-ScheduledTask -TaskName $taskName
 
-# ---------- 3. 等待健康检查通过 ----------
+# ---------- 4. 等待健康检查通过 ----------
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $ok = $false
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 1
-    try {
-        $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:8000/healthz' -UseBasicParsing -TimeoutSec 3
-        if ($resp.StatusCode -eq 200) { $ok = $true; break }
-    } catch { }
+    if (Test-Healthz) { $ok = $true; break }
 }
 
 if (-not $ok) {
@@ -116,6 +190,6 @@ if (-not $ok) {
     exit 1
 }
 
-Write-Host "[完成] 后端已由计划任务托管并健康。" -ForegroundColor Green
+Write-Host '[完成] 后端已由计划任务托管（S4U 会话 0）并健康。' -ForegroundColor Green
 & (Join-Path $here 'daemon-status.ps1')
 exit 0
