@@ -74,16 +74,16 @@ const DOUBLE_TAP_WINDOW_MS = 500;
  */
 const NAV_VIEW_FACTOR = 2.5;
 
-/** 工具条按钮排版参数（与 map.wxss 的 .tool-btn 保持一致）。 */
+/** 工具条按钮排版参数（与 styles/map-tools.wxss 的 .zoom-face 保持一致：字号 26rpx、边框 1rpx）。 */
 const TOOL_BTN_FONT_RPX = 26;
-const TOOL_BTN_PAD_X_RPX = 14;
-const TOOL_BTN_BORDER_RPX = 2;
+const TOOL_BTN_PAD_X_RPX = 10;
+const TOOL_BTN_BORDER_RPX = 1;
 /** 估算余量：避免不同机型字体度量差异导致文字贴边/截断。 */
 const TOOL_BTN_SAFETY_RPX = 6;
 
 /**
  * 工具条统一按钮宽度（rpx）：按「设置 / 全图 / 各楼层文案」中最宽者估算。
- * 全角（CJK）按 1em、半角按 0.6em 计，再叠加左右内边距、边框与安全余量。
+ * 全角（CJK）按 1em、半角按 0.6em 计，再叠加左右留白、边框与安全余量。
  * 三枚按钮共用同一宽度 → 点击展开楼层候选时其他按钮位置不变。
  */
 function toolBtnWidthRpx(labels: string[]): number {

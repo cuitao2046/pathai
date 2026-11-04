@@ -1,12 +1,15 @@
-/* 采集页地图缩放控件（静态标定页 / 指纹采集页共用，避免两处样式不一致）
+/* 地图悬浮控件通用样式（采集页缩放键 / 首页左上角工具条共用，避免多套重复样式）
  *
  * 尺寸策略：
- * - 可视面 .zoom-face 56rpx（28 CSS px）见方，仅贴合文字；
- * - 点按热区 .zoom-hit 72rpx（36 CSS px）见方，透明、不吞事件；
- * - 「全图」按文字自适应宽度，热区最小 72rpx（36 CSS px），横向随文字增长。
- * 位置：贴画布右边缘（right: 0），可视面右侧不留边距；热区向左展开、不溢出画布。
- * 圆角：仅左侧圆角（右侧直角），避免贴边后出现悬空的白色圆角块。
- * 纵向位置由各页面覆盖 .map-tools 的 top（避开顶栏/图例/筛选条）。
+ * - 可视面 .zoom-face 高 56rpx（28 CSS px），宽度贴合文字（图标按钮 56rpx 见方）；
+ * - 点按热区 .zoom-hit 高 72rpx（36 CSS px）、最小宽 72rpx（36 CSS px），透明、不吞事件；
+ * - 文字按钮宽度随文字增长，热区随之变宽（仍不小于 36×36 CSS px）。
+ * 方向变体：
+ * - 默认贴右（.map-tools）：采集页静态标定 / 指纹采集，贴画布右边缘；
+ * - .map-tools--left：首页导航地图，贴画布左边缘（左右镜像）。
+ * 两者都保证可视面与画布边缘齐平、圆角只朝内（贴边一侧为直角、无边框线），
+ * 避免出现悬空的白色圆角块。纵向位置由各页面覆盖 .map-tools 的 top
+ * （避开顶栏/图例/筛选条/顶部胶囊区）。
  */
 .map-tools {
   position: absolute;
@@ -18,8 +21,15 @@
   gap: 2rpx;
 }
 
+/* 贴左变体：整组贴画布左边缘，按钮内左对齐、热区向右展开（首页导航地图用） */
+.map-tools--left {
+  left: 0;
+  right: auto;
+  align-items: flex-start;
+}
+
 .zoom-hit {
-  width: 72rpx;
+  width: auto;
   height: 72rpx;
   min-width: 72rpx;
   margin: 0;
@@ -46,6 +56,7 @@
   justify-content: center;
   font-size: 26rpx;
   font-weight: 600;
+  white-space: nowrap;
   color: #1f2937;
   background: rgba(255, 255, 255, 0.72);
   border: 1rpx solid rgba(148, 163, 184, 0.35);
@@ -55,7 +66,6 @@
 }
 
 .zoom-reset {
-  width: auto;
   min-width: 72rpx;
   padding: 0;
 }
@@ -67,4 +77,19 @@
   padding: 0 10rpx 0 14rpx;
   font-size: 22rpx;
   border-radius: 12rpx 0 0 12rpx;
+}
+
+/* 贴左镜像：按钮内左对齐、热区向右展开；可视面左侧直角且无左边框、右侧圆角 */
+.map-tools--left .zoom-hit {
+  justify-content: flex-start;
+}
+
+.map-tools--left .zoom-face {
+  border-right: 1rpx solid rgba(148, 163, 184, 0.35);
+  border-left: none;
+  border-radius: 0 10rpx 10rpx 0;
+}
+
+.map-tools--left .zoom-reset .zoom-face {
+  border-radius: 0 12rpx 12rpx 0;
 }
