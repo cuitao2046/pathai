@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Request
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth
@@ -171,7 +172,21 @@ def create_session(
             response_json=response.model_dump_json(),
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发同 Idempotency-Key：两请求都读到「无记录」，先提交者成功，后者触发
+        # (subject_id, idempotency_key) 唯一约束。回滚后按幂等语义返回先提交者的响应，
+        # 而不是把 500 抛给客户端（重复建会话同时也会被回滚，不留孤儿数据）。
+        db.rollback()
+        existing = db.get(
+            NavIdempotency, {"subject_id": user.subject_id, "idempotency_key": idem_key}
+        )
+        if existing is None:
+            raise
+        if existing.request_hash != request_hash:
+            raise ApiError(409, "IDEMPOTENCY_CONFLICT", "幂等键已用于不同请求")
+        return CreateSessionResponse.model_validate_json(existing.response_json)
     return response
 
 
