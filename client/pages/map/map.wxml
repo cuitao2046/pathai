@@ -13,16 +13,27 @@
 
   <!-- 导航方向大箭头（仅视障模式）：箭头角 = 路线方位 − 手机朝向，
        箭头朝上 ⇔ 手机正对路线；偏离 >30° 持续 2s 转红 + 白描边。
+       外框（衬底 / 参考环 / 环顶刻度）固定不转，只有内部转子 rotate：
+       刻度始终代表「手机正前方」，用户可比较箭头与刻度判断是否对准。
        覆盖层 pointer-events:none，不拦截地图手势；z-index 20（HUD 30 之下） -->
   <view
     wx:if="{{arrowVisible}}"
     class="nav-arrow {{arrowDark ? 'nav-arrow--dark' : 'nav-arrow--light'}} {{arrowAlert ? 'nav-arrow--alert' : ''}}"
-    style="transform: translate(-50%, -50%) rotate({{arrowDeg}}deg)"
+    style="transform: translate(-50%, -50%)"
     aria-hidden="true"
   >
     <view class="nav-arrow-ring"></view>
-    <view class="nav-arrow-outline"></view>
-    <view class="nav-arrow-fill"></view>
+    <view class="nav-arrow-tick"></view>
+    <view class="nav-arrow-rotor" style="transform: rotate({{arrowDeg}}deg)">
+      <view
+        class="nav-arrow-outline"
+        style="clip-path:{{arrowClipPath}};-webkit-clip-path:{{arrowClipPath}}"
+      ></view>
+      <view
+        class="nav-arrow-glyph"
+        style="clip-path:{{arrowClipPath}};-webkit-clip-path:{{arrowClipPath}}"
+      ></view>
+    </view>
   </view>
 
   <!-- 左上角竖向工具条：设置 / 楼层选择（点击横向展开可选楼层）/ 全图。

@@ -53,6 +53,7 @@ import {
   shortestDelta,
 } from '../../core/a11y/nav-arrow-angle';
 import { HeadingSource, type HeadingApi, type HeadingMode } from '../../core/a11y/heading-source';
+import { arrowClipPath } from '../../core/a11y/nav-arrow-shape';
 import type { A11yMode } from '../../services/app-context';
 import type {
   IntentParseResponse,
@@ -209,6 +210,8 @@ Page({
     arrowAlert: false,
     /** 箭头配色主题（跟随系统深浅色）。 */
     arrowDark: false,
+    /** 箭头楔形轮廓（clip-path 单一真源，见 core/a11y/nav-arrow-shape.ts）。 */
+    arrowClipPath: arrowClipPath(),
   },
 
   canvas: null as WechatMiniprogram.Canvas | null,
