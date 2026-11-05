@@ -169,6 +169,35 @@ class TestCreateSession:
         assert second.status_code == 201
         assert second.json()["sessionId"] == first.json()["sessionId"]
 
+    def test_concurrent_same_key_returns_existing_not_500(
+        self, client, auth_headers, monkeypatch
+    ):
+        """并发重复创建：唯一约束冲突按幂等语义返回既有会话，不得 500。
+
+        首个请求正常落库后，把第二次请求的首次幂等查询强制返回 None，
+        复现「两请求都读到无记录 → 后提交者撞唯一约束」的竞态窗口。
+        """
+        from sqlalchemy.orm import Session as OrmSession
+
+        from pathai_backend.models import NavIdempotency
+
+        first = _create(client, auth_headers, idem="race", origin=_FROZEN_ORIGIN)
+        assert first.status_code == 201, first.text
+
+        original_get = OrmSession.get
+        skipped = {"done": False}
+
+        def racing_get(db, entity, ident, *args, **kwargs):
+            if entity is NavIdempotency and not skipped["done"]:
+                skipped["done"] = True
+                return None
+            return original_get(db, entity, ident, *args, **kwargs)
+
+        monkeypatch.setattr(OrmSession, "get", racing_get)
+        second = _create(client, auth_headers, idem="race", origin=_FROZEN_ORIGIN)
+        assert second.status_code == 201, second.text
+        assert second.json()["sessionId"] == first.json()["sessionId"]
+
     def test_idempotency_conflict_same_key_different_body(self, client, auth_headers):
         _create(client, auth_headers, idem="dup", origin=_FROZEN_ORIGIN)
         resp = _create(client, auth_headers, destination="F1-RM-0008", idem="dup",

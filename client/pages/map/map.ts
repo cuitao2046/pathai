@@ -246,23 +246,20 @@ Page({
   dpr: 1,
   dirty: false,
   rafPending: false,
-  gesture: {
-    mode: null,
-    lastX: 0,
-    lastY: 0,
-    baseDist: 0,
-    lastMidX: 0,
-    lastMidY: 0,
-  } as GestureState,
+  /**
+   * 复杂对象一律在 onLoad 中创建：Page 定义期的自定义属性会被开发者工具深拷贝，
+   * 既打印 `Free data with key ... seems not a simple value` 告警，也会丢掉类原型方法。
+   */
+  gesture: null as GestureState | null,
   /** 全屏按住说话手势状态机（仅视障模式使用；普通模式不走该机）。 */
-  holdGesture: new HoldToTalkGesture(HOLD_TO_TALK_DEFAULTS),
+  holdGesture: null as HoldToTalkGesture | null,
   holdTimer: null as ReturnType<typeof setTimeout> | null,
   holdEndTimer: null as ReturnType<typeof setTimeout> | null,
   /** 排除矩形（canvas 坐标系；采样失败为空集合）。 */
   tapExclusions: [] as Rect[],
   /** 朝向传感器（仅导航态启动，结束/后台/卸载停止）。 */
   headingSource: null as HeadingSource | null,
-  headingSmoother: new HeadingSmoother(),
+  headingSmoother: null as HeadingSmoother | null,
   headingDeg: null as number | null,
   headingMode: 'compass' as HeadingMode,
   /** wx 传感器监听只注册一次，回调转交给 HeadingSource 当前实例。 */
@@ -277,6 +274,9 @@ Page({
   deviationSpokenAt: 0,
 
   onLoad(): void {
+    this.gesture = { mode: null, lastX: 0, lastY: 0, baseDist: 0, lastMidX: 0, lastMidY: 0 };
+    this.holdGesture = new HoldToTalkGesture(HOLD_TO_TALK_DEFAULTS);
+    this.headingSmoother = new HeadingSmoother();
     this.initSpeech();
     this.initPtt();
     this.applyA11ySettings(); // 模式与全屏语音开关（设置页改动通过 onShow 回读）
@@ -295,7 +295,7 @@ Page({
   onHide(): void {
     this.ptt?.handleAppHide(); // 切后台：取消识别，不提交
     this.clearHoldTimers();
-    this.holdGesture.reset();
+    this.holdGesture!.reset();
     this.stopHeading(); // 传感器不进后台（省电 + 避免系统限流）
     this.controller?.handleBackground(); // 导航中：停采集，恢复交给 onShow
   },
@@ -747,7 +747,7 @@ Page({
     }
     if (ts.length >= 2) {
       this.clearHoldTimers();
-      this.holdGesture.reset();
+      this.holdGesture!.reset();
       this.startZoomGesture(ts);
       return;
     }
@@ -755,7 +755,7 @@ Page({
       return;
     }
     const p = this.toCanvasPoint(ts[0]);
-    const action = this.holdGesture.onStart({
+    const action = this.holdGesture!.onStart({
       x: p.x,
       y: p.y,
       pointCount: 1,
@@ -769,7 +769,7 @@ Page({
       return;
     }
     // 排除区 / 地图未就绪 / 开关关闭：保持原有「按下即拖拽」
-    this.holdGesture.reset();
+    this.holdGesture!.reset();
     this.gesture = { mode: 'pan', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
   },
 
@@ -778,32 +778,32 @@ Page({
     if (vp === null) {
       return;
     }
-    const g = this.gesture;
+    const g = this.gesture!;
     const ts = e.touches;
     if (this.data.a11yMode === 'a11y' && g.mode === 'pending') {
       if (ts.length >= 2) {
         // 1→2 指：缩放优先，取消语音候选
         this.clearHoldTimers();
-        this.holdGesture.reset();
+        this.holdGesture!.reset();
         this.startZoomGesture(ts);
       } else if (ts.length === 1) {
         const p = this.toCanvasPoint(ts[0]);
-        const action = this.holdGesture.onMove(p.x, p.y, 1);
+        const action = this.holdGesture!.onMove(p.x, p.y, 1);
         if (action !== 'pan-start') {
           return; // 仍在死区内：不拖拽、不重绘
         }
         // 超出 10px 死区：从按下点开始拖拽，避免首帧跳变
         this.clearHoldTimers();
-        const origin = this.holdGesture.origin;
+        const origin = this.holdGesture!.origin;
         g.mode = 'pan';
         g.lastX = origin.x;
         g.lastY = origin.y;
       }
     }
-    if (this.data.a11yMode === 'a11y' && this.holdGesture.currentPhase === 'voice') {
+    if (this.data.a11yMode === 'a11y' && this.holdGesture!.currentPhase === 'voice') {
       return; // 语音态内移动不取消（沿用按住说话容错）
     }
-    const cur = this.gesture; // 1→2 指可能已重建 gesture 对象
+    const cur = this.gesture!; // 1→2 指可能已重建 gesture 对象
     if (cur.mode === 'pan' && ts.length === 1) {
       const p = this.toCanvasPoint(ts[0]);
       vp.panBy(p.x - cur.lastX, p.y - cur.lastY);
@@ -830,10 +830,10 @@ Page({
   onTouchEnd(e: WechatMiniprogram.TouchEvent): void {
     const ts = e.touches;
     if (this.data.a11yMode === 'a11y') {
-      const action = this.holdGesture.onEnd(ts.length);
+      const action = this.holdGesture!.onEnd(ts.length);
       if (action === 'voice-end') {
         this.clearHoldTimers();
-        this.gesture.mode = null;
+        this.gesture!.mode = null;
         this.onPttEnd();
         return;
       }
@@ -844,15 +844,15 @@ Page({
       const p = this.toCanvasPoint(ts[0]);
       this.gesture = { mode: 'pan', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
     } else if (ts.length === 0) {
-      this.gesture.mode = null;
+      this.gesture!.mode = null;
     }
   },
 
   onTouchCancel(e: WechatMiniprogram.TouchEvent): void {
     if (this.data.a11yMode === 'a11y') {
-      const action = this.holdGesture.onCancel();
+      const action = this.holdGesture!.onCancel();
       this.clearHoldTimers();
-      this.gesture.mode = null;
+      this.gesture!.mode = null;
       if (action === 'voice-cancel') {
         this.onPttCancel();
       }
@@ -935,12 +935,12 @@ Page({
     this.clearHoldTimers();
     this.holdTimer = setTimeout(() => {
       this.holdTimer = null;
-      if (this.holdGesture.currentPhase !== 'pending' || !this.isFullScreenPttEnabled()) {
-        this.holdGesture.reset();
+      if (this.holdGesture!.currentPhase !== 'pending' || !this.isFullScreenPttEnabled()) {
+        this.holdGesture!.reset();
         return;
       }
-      if (this.holdGesture.onTick(Date.now()) === 'voice-start') {
-        this.gesture.mode = null; // 语音态不再拖拽
+      if (this.holdGesture!.onTick(Date.now()) === 'voice-start') {
+        this.gesture!.mode = null; // 语音态不再拖拽
         this.onPttStart();
         this.scheduleHoldEnd();
       }
@@ -952,11 +952,11 @@ Page({
     this.clearHoldTimers();
     this.holdEndTimer = setTimeout(() => {
       this.holdEndTimer = null;
-      if (this.holdGesture.currentPhase !== 'voice') {
+      if (this.holdGesture!.currentPhase !== 'voice') {
         return;
       }
-      if (this.holdGesture.onTick(Date.now()) === 'voice-timeout') {
-        this.gesture.mode = null;
+      if (this.holdGesture!.onTick(Date.now()) === 'voice-timeout') {
+        this.gesture!.mode = null;
         this.onPttEnd();
       }
     }, HOLD_TO_TALK_DEFAULTS.maxHoldMs);
@@ -1024,7 +1024,7 @@ Page({
       api: this.getHeadingApi(),
       onHeading: (deg, mode) => {
         this.headingMode = mode;
-        this.headingDeg = this.headingSmoother.update(deg, Date.now());
+        this.headingDeg = this.headingSmoother!.update(deg, Date.now());
         this.updateArrow();
       },
       onModeChange: (mode) => {
@@ -1042,7 +1042,7 @@ Page({
     this.headingSource?.stop();
     this.headingSource = null;
     this.headingDeg = null;
-    this.headingSmoother.reset();
+    this.headingSmoother!.reset();
   },
 
   /** 构建 wx → HeadingApi 适配层；监听只注册一次，回调委托给当前 handler。 */
@@ -1393,7 +1393,7 @@ Page({
     this.arrowLastDeg = 0;
     this.arrowUpdatedAt = 0;
     this.headingDeg = null;
-    this.headingSmoother.reset();
+    this.headingSmoother!.reset();
     // 收起意图居中卡，切换到导航 HUD
     this.setData(
       {
