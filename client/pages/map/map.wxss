@@ -233,9 +233,10 @@
   border-radius: 0 10rpx 10rpx 0;
 }
 
-/* 触发键高亮：楼层当前层 / 采集入口共用同一套蓝色可视面 */
-.floor-current,
-.collect-current {
+/* 触发键高亮：仅楼层当前层（蓝底表示当前楼层）。
+   采集入口是普通操作入口，无常驻选中态，沿用 .zoom-face 的白底样式
+   （与「设置」完全一致；展开后只改圆角与接缝，不改配色） */
+.floor-current {
   background: #2563eb;
   color: #ffffff;
   border-color: #2563eb;
