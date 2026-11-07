@@ -25,10 +25,12 @@ import { pickPointOnScreen } from '../../../core/collection/hit-test';
 import {
   FP_POINT_COLORS,
   filterVisiblePoints,
+  floorCounts,
   isRoutePoint,
   pointStyle,
   routeText,
   type FilterMode,
+  type FloorCounts,
 } from '../../../core/collection/fingerprint-visibility';
 import { createTeeSource } from '../../../core/collection/collect-scan';
 import { buildFpRecord, type FpBeaconLookup, type FpSnapshotPoint } from '../../../core/collection/fp-snapshot';
@@ -91,8 +93,13 @@ Page({
     currentFloor: '1',
     currentFloorText: '1F',
     stats: { recordCount: 0, fpCount: 0 },
-    /** 筛选档位：all（默认）/ collectable（仅可采集）/ route（仅路线点）。 */
-    filterMode: 'all' as FilterMode,
+    /**
+     * 筛选档位：collectable（默认，仅可采集）/ all / route（仅路线点）。
+     * 现场口径是「只采高亮点」，默认就该只显示这些点，避免在几百个灰点里找目标。
+     */
+    filterMode: 'collectable' as FilterMode,
+    /** 本层点数统计（总 / 可采集 / 已采），随换层与采集刷新。 */
+    floorStats: { total: 0, collectable: 0, collected: 0 } as FloorCounts,
     // 快照进行中
     collecting: false,
     countdownText: '',
@@ -217,10 +224,12 @@ Page({
       },
       callbacks: {
         onReady: () => {
+          const floorId = this.mapView?.floorId ?? '1';
           this.setData({
             floors: this.mapView?.floorList ?? [],
-            currentFloor: this.mapView?.floorId ?? '1',
+            currentFloor: floorId,
           });
+          this.refreshFloorStats(floorId);
         },
         onTap: (_world, screen) => this.handleMapTap(screen),
         onLongPress: () => undefined, // 网格固定，不支持补标
@@ -231,6 +240,7 @@ Page({
             currentFloor: floorId,
             currentFloorText: item !== undefined ? `${item.level}F` : floorId,
           });
+          this.refreshFloorStats(floorId);
         },
         drawOverlay: (ctx, vp) => this.drawOverlay(ctx, vp),
       },
@@ -247,7 +257,14 @@ Page({
       this.recordCounts.set(r.fpId, (this.recordCounts.get(r.fpId) ?? 0) + 1);
     }
     this.setData({ stats: this.store.stats() });
+    this.refreshFloorStats(this.data.currentFloor);
     this.mapView?.requestDraw();
+  },
+
+  /** 本层「可采集 N / 总 M / 已采 K」计数（顶栏展示）。 */
+  refreshFloorStats(floorId: string): void {
+    const pts = this.gridByFloor.get(floorId) ?? [];
+    this.setData({ floorStats: floorCounts(pts, this.recordCounts) });
   },
 
   // ------------------------------------------------------------------
