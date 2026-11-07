@@ -80,14 +80,15 @@ class TestFilterDeploymentBeacons(unittest.TestCase):
         beacons = load_json(BEACON_JSON)["beacons"]
         geo = load_json(MAP_JSON)
         filtered, excluded = filter_deployment_beacons(beacons, geo)
-        # 488d9f6 已把这 4 枚的 sourceNodeId 改指向 3m 内的门节点，拓扑重建后
+        # 488d9f6 已把这些信标的 sourceNodeId 改指向 3m 内的门节点，拓扑重建后
         # （fix_beacon_coords.py 重归属）仍全部在阈值内。现行台账不应排除任何
-        # 信标；这 4 枚若再次被排除即代表台账与地图拓扑脱节，须重新审计台账，
+        # 信标；若再次被排除即代表台账与地图拓扑脱节，须重新审计台账，
         # 不得靠放宽阈值掩盖。
         self.assertEqual(excluded, [])
         kept_ids = {beacon["beaconId"] for beacon in filtered}
+        # BK-02-002 已于 2026-11-07 按现场确认删除（台账 61→56），不再出现在 kept 集合中。
         self.assertTrue(
-            {"BK-01-012", "BK-01-021", "BK-01-034", "BK-02-002"} <= kept_ids)
+            {"BK-01-012", "BK-01-021", "BK-01-034"} <= kept_ids)
         self.assertTrue({"BK-01-011", "BK-02-003"} <= kept_ids)
         self.assertTrue({"BK-M-1-004", "BK-M-1-001", "BK-M-2-001"} <= kept_ids)
         contexts = {str(floor): build_ctx(geo, floor) for floor in geo["floors"]}

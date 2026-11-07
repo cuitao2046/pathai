@@ -30,7 +30,7 @@ from src.tools.generate_fingerprint_grid import (
 )
 
 GRID_PATH = PROJECT_ROOT / "result" / "fingerprint_grid.json"
-MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json"
+MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json"
 
 SUFFIX_BY_REGION = {"intersection": "-J", "doorway": "-D", "high_risk": "-S", "normal": ""}
 
