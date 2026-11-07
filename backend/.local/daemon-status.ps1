@@ -154,8 +154,8 @@ if ($null -ne $token) {
         $map = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/v1/sites/school-building-01/map?version=latest' `
             -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 10
         Write-Host ("地图：mapVersion={0} dataSha256={1}" -f $map.mapVersion, $map.dataSha256) -ForegroundColor Green
-        if ($map.mapVersion -ne '2026-11-03.1') {
-            Write-Host '[警告] mapVersion 与预期 2026-11-03.1 不一致。' -ForegroundColor Yellow
+        if ($map.mapVersion -ne '2026-11-07.1') {
+            Write-Host '[警告] mapVersion 与预期 2026-11-07.1 不一致。' -ForegroundColor Yellow
         }
     } catch {
         Write-Host ("地图接口失败：{0}" -f $_.Exception.Message) -ForegroundColor Red

@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLANNED = REPO_ROOT / "result" / "ble_deployment.json"
-MAP = REPO_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-10-30.1.json"
+MAP = REPO_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json"
 
 
 def _validator():
@@ -111,10 +111,12 @@ def _rules(report):
 
 
 def test_green_report_has_no_errors(tmp_path: Path):
+    # 期望值随真实台账走（2026-11-07 起 56 枚），不写死数量。
+    expected = len(json.loads(PLANNED.read_text(encoding="utf-8"))["beacons"])
     report = _validate(tmp_path)
-    assert report["summary"]["planned"] == 61
-    assert report["summary"]["recorded"] == 61
-    assert report["summary"]["verified"] == 61
+    assert report["summary"]["planned"] == expected
+    assert report["summary"]["recorded"] == expected
+    assert report["summary"]["verified"] == expected
     assert report["summary"]["errors"] == 0
 
 

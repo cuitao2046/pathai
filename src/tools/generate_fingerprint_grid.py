@@ -38,7 +38,7 @@ from shapely.ops import unary_union
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 OUT_DEFAULT = str(BASE_DIR / "result" / "fingerprint_grid.json")
-BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json")
+BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json")
 ROUTES_DEFAULT = str(BASE_DIR / "result" / "beacon_routes.json")
 GRID_VERSION = "10.0.0"
 
@@ -524,6 +524,10 @@ def _load_route_graph(geo):
     return mod.RouteGraph(geo)
 
 
+def _floor_beacon_count(beacons, floor_no):
+    return sum(1 for b in beacons if str(b.get("floorId")) == str(floor_no))
+
+
 def load_beacons(path=BEACON_PACKAGE):
     with open(path, encoding="utf-8") as f:
         pkg = json.load(f)
@@ -738,7 +742,10 @@ def main():
         "mode": "full",
         "layers": {
             "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",
-            "collection": "当前实际部署 61 枚信标（F1 52 / F2 9），按 plan10m85 与 geo15m 两个口径标记 collectable",
+            "collection": f"当前实际部署 {len(beacons)} 枚信标"
+                          f"（F1 {_floor_beacon_count(beacons, 1)} / F2 {_floor_beacon_count(beacons, 2)}）"
+                          f"，地图包 {Path(args.beacons).stem}，"
+                          "按 plan10m85 与 geo15m 两个口径标记 collectable",
         },
         "origin": {
             "x": origin[0], "y": origin[1],

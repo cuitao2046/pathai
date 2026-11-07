@@ -27,7 +27,7 @@ from src.tools.fit_location_params import (
 
 LEDGER_PATH = RESULT_DIR / "ble_deployment.json"
 MAP_PATH = (
-    PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json"
+    PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json"
 )
 LEDGER = load_json(LEDGER_PATH)
 MAP = load_json(MAP_PATH)
@@ -53,7 +53,10 @@ def _pick_points(floor_id: str, count: int) -> list[tuple[str, list[float]]]:
 
 
 def build_samples(points_per_floor: dict[str, int] | None = None) -> dict:
-    points_per_floor = points_per_floor or {"1": 8, "2": 6}
+    # 每层取点数的下限由「观测对 >100」的拟合前提反推：台账 61→56 后每点平均
+    # 可见信标减少（F2 仅剩 5 枚），故把 F1/F2 各加 2 点维持样本量，
+    # 而非放宽断言阈值。
+    points_per_floor = points_per_floor or {"1": 10, "2": 8}
     out_points = []
     for floor_id, count in points_per_floor.items():
         floor = int(floor_id)
@@ -110,7 +113,7 @@ def build_samples(points_per_floor: dict[str, int] | None = None) -> dict:
         "device": {"model": "test"},
         "appVersion": "1.0.0",
         "beaconLedgerSha256": "0" * 64,
-        "mapVersion": "2026-11-03.1",
+        "mapVersion": "2026-11-07.1",
         "windowMs": 2000,
         "points": out_points,
     }
