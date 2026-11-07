@@ -15,14 +15,15 @@
   </view>
 
   <view class="stats-bar" aria-live="polite">
-    <text>网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
+    <text>本层可采集 {{floorStats.collectable}} / {{floorStats.total}} · 已采 {{floorStats.collected}}</text>
+    <text class="stats-sub">网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
   </view>
 
-  <!-- 图例 + 三档筛选（路线点不受 LOD 限制，整楼视图也全部绘制） -->
+  <!-- 图例 + 三档筛选（默认「仅可采集」：填充色只表达可采集，橙描边表达路线优先） -->
   <view class="legend-bar">
     <view class="legend-items">
-      <view class="legend-item"><view class="dot route"></view><text>路线点（优先采集）</text></view>
-      <view class="legend-item"><view class="dot collectable"></view><text>可采集</text></view>
+      <view class="legend-item"><view class="dot collectable"></view><text>可采集（只采这些）</text></view>
+      <view class="legend-item"><view class="dot route"></view><text>路线点（优先）</text></view>
       <view class="legend-item"><view class="dot blind"></view><text>当前不可采集</text></view>
       <view class="legend-item"><view class="dot done"></view><text>已采集</text></view>
     </view>

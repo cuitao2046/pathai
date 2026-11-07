@@ -50,7 +50,8 @@
   left: 24rpx;
   z-index: 3;
   display: flex;
-  gap: 16rpx;
+  flex-direction: column;
+  gap: 2rpx;
   font-size: 22rpx;
   color: #475569;
   background: rgba(255, 255, 255, 0.85);
@@ -58,9 +59,15 @@
   padding: 6rpx 14rpx;
 }
 
+.stats-sub {
+  font-size: 18rpx;
+  color: #64748b;
+}
+
 .legend-bar {
   position: absolute;
-  top: 138rpx;
+  /* 统计栏改成两行（本层计数 + 版本/记录）后下移，避免重叠 */
+  top: 178rpx;
   left: 24rpx;
   right: 24rpx;
   z-index: 3;
@@ -93,9 +100,10 @@
   border-radius: 3rpx;
 }
 
+/* 路线点：蓝色实心 + 橙色描边（橙色只表示“优先”，不再占用填充色） */
 .dot.route {
-  background: #f97316;
-  border: 2rpx solid #ffffff;
+  background: #2563eb;
+  border: 2rpx solid #f97316;
 }
 
 .dot.collectable {
