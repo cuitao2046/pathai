@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "generatedBy": "pathai-manual-deploy",
-  "generatedAt": "2026-10-27T13:23:24.426Z",
+  "generatedAt": "2026-11-07T01:33:28.000Z",
   "beacons": [
     {
       "beaconId": "BK-01-001",
@@ -1698,33 +1698,6 @@
       ]
     },
     {
-      "beaconId": "BK-M-1-006",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10006,
-      "coordinates": [
-        -27.71,
-        -73.424043
-      ],
-      "floor": 1,
-      "locationDesc": "人工部署 1F（-27.710, -73.424）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "manual_deploy",
-      "sourceNodeId": "",
-      "sourceNodeType": "",
-      "riskLevel": 1,
-      "subType": "manual_deploy",
-      "adjacentRooms": [
-        "F1-CR-0053",
-        "F1-CR-0056"
-      ]
-    },
-    {
       "beaconId": "BK-02-001",
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 2,
@@ -1757,36 +1730,6 @@
         "F2-STL-06",
         "F2-RM-0052"
       ]
-    },
-    {
-      "beaconId": "BK-02-002",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10146,
-      "coordinates": [
-        -32.379,
-        -82.318
-      ],
-      "floor": 2,
-      "locationDesc": "2F 门口（普通门）",
-      "mountType": "door_frame",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_base",
-      "installDate": "2026-08-14",
-      "sourceNodeId": "F2-TD-0030",
-      "sourceNodeType": "doorway",
-      "riskLevel": 2,
-      "adjacentRooms": [
-        "F2-CR-0047",
-        "F2-RM-0018",
-        "F2-RM-0020",
-        "F2-STL-06"
-      ],
-      "subType": "base"
     },
     {
       "beaconId": "BK-02-003",
@@ -1825,69 +1768,6 @@
       "originalSourceNodeId": "F2-TI-0084",
       "originalSourceNodeType": "intersection",
       "originalLocationDesc": "2F 交叉口（交叉口12）"
-    },
-    {
-      "beaconId": "BK-02-004",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10148,
-      "coordinates": [
-        -30.108,
-        -78.169
-      ],
-      "floor": 2,
-      "locationDesc": "2F 交叉口（F2-TI-0051）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_base",
-      "installDate": "2026-08-14",
-      "sourceNodeId": "F2-TI-0051",
-      "sourceNodeType": "intersection",
-      "riskLevel": 0.5,
-      "subType": "dir",
-      "direction": "东",
-      "originalPlannedCoordinates": [
-        -29.591,
-        -79.271
-      ],
-      "adjacentRooms": [
-        "F2-CR-0047",
-        "F2-STL-06",
-        "F2-CR-0046"
-      ],
-      "originalSourceNodeId": "F2-TI-0084",
-      "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "2F 交叉口（交叉口12 · 东向）"
-    },
-    {
-      "beaconId": "BK-TR-F2-001",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10158,
-      "coordinates": [
-        -29.998,
-        -73.52254323242188
-      ],
-      "floor": 2,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_fill",
-      "sourceNodeId": null,
-      "sourceNodeType": "route_fill",
-      "riskLevel": "low",
-      "subType": "fill",
-      "adjacentRooms": [
-        "F2-CR-0046"
-      ]
     },
     {
       "beaconId": "BK-TR-F2-002",
@@ -1977,48 +1857,22 @@
         "F2-RM-0020",
         "F2-STL-06"
       ]
-    },
-    {
-      "beaconId": "BK-M-2-002",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 20002,
-      "coordinates": [
-        -33.205399,
-        -70.57
-      ],
-      "floor": 2,
-      "locationDesc": "人工部署 2F（-33.205, -70.570）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "manual_deploy",
-      "sourceNodeId": "",
-      "sourceNodeType": "",
-      "riskLevel": 1,
-      "subType": "manual_deploy",
-      "adjacentRooms": [
-        "F2-CR-0046"
-      ]
     }
   ],
   "summary": {
-    "total": 61,
+    "total": 56,
     "byFloor": {
-      "1": 52,
-      "2": 9
+      "1": 51,
+      "2": 5
     },
     "bySemantic": {
-      "trilateration_route_base": 43,
-      "trilateration_route_fill": 10,
-      "manual_deploy": 8
+      "manual_deploy": 6,
+      "trilateration_route_base": 41,
+      "trilateration_route_fill": 9
     },
     "byMount": {
-      "door_frame": 7,
-      "wall": 54
+      "door_frame": 6,
+      "wall": 50
     }
   }
 }

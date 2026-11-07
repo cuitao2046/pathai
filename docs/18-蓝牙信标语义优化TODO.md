@@ -6,7 +6,8 @@
 >
 > **关联文档**：`docs/07-信标部署方案`、`docs/13-信标部署质量分析`、`docs/16-纯三点定位亚米级误差优化方案`、`docs/17-信标部署语义审计报告`。
 >
-> **当前信标基线**：61 枚（F1 52 + F2 9，含 8 枚 BK-M-* 手动），已落地单坐标 schema（coordinates 真值 + originalPlannedCoordinates 历史追溯），吸附阈值 3m 类型加权。
+> **当前信标基线**：56 枚（F1 51 + F2 5，含 6 枚 BK-M-* 手动），已落地单坐标 schema（coordinates 真值 + originalPlannedCoordinates 历史追溯），吸附阈值 3m 类型加权。
+> **2026-11-07 台账清理**：经现场确认，`BK-02-002`、`BK-02-004`、`BK-TR-F2-001`、`BK-M-2-002`、`BK-M-1-006` 共 5 枚实际未安装，已从台账物理删除（不留 removed 记录）；现行地图包 `2026-11-07.1`。
 > **现行校验状态**（2026-09-21 实测 `src/tools/validate_beacon_deployment.py`）：**ERROR=0 / WARN=13**，13 条 WARN 全部为 R4「楼梯口语义缺失」，与 `docs/17` §8 复跑结论一致。
 
 ---
@@ -18,10 +19,10 @@
 | 层 | 名称 | 内容 | 项目对应 |
 |---|---|---|---|
 | L5 | 应用/语音层 | TTS 播报、动作模板、偏差纠正 | 导航引擎（待补 voicePrompt） |
-| **L4** | **语义层** ⭐ | 身份/动作/风险（sourceNodeType/subType/riskLevel/adjacentRooms/locationDesc） | 61 枚信标 schema |
+| **L4** | **语义层** ⭐ | 身份/动作/风险（sourceNodeType/subType/riskLevel/adjacentRooms/locationDesc） | 56 枚信标 schema |
 | L3 | 拓扑层 | 路网节点与边（TR→TD→TI） | topology.nodes/edges |
-| **L2** | **定位层** 🔻 | 三点定位坐标 + 指纹网格（真值底座） | 61 信标 + 647 指纹点 |
-| L1 | 物理层 | 硬件/功率/挂装（RSSI 距离模型前提） | wall 54 + door_frame 7，均 2.5m；TxPower -10dBm |
+| **L2** | **定位层** 🔻 | 三点定位坐标 + 指纹网格（真值底座） | 56 信标 + 647 指纹点 |
+| L1 | 物理层 | 硬件/功率/挂装（RSSI 距离模型前提） | wall 50 + door_frame 6，均 2.5m；TxPower -12dBm |
 
 ---
 
@@ -29,16 +30,16 @@
 
 | 字段 | 配置原则 | 盲人导航用途 | 反例（毁体验） | 当前状态 |
 |---|---|---|---|---|
-| `sourceNodeType` | 收敛到 `doorway`/`intersection`/`facility` | 决定路径可计算性与转弯点判定 | 全标 `base`/`route_fill` → 语音无差别 | ✅ 已收敛（3m 吸附强制）。实测分布：`intersection` 24 / `route_fill` 10 / `route_corridor` 7 / `doorway` 6 / `manual_adjusted` 4 / `facility` 2 / 空串 8 |
-| `subType` | 动作语义 `elevator_door`/`stairs_door`/`dir`/`base` | 「乘电梯」「下楼梯」「沿走廊直行」 | 电梯口标普通门口 → 撞门才发现 | ⚠️ 部分缺失（`route_fill` 10 枚无动作语义）。实测分布：`base` 21 / `fill` 17 / `dir` 13 / `manual_deploy` 8 / `elevator_door` 2 |
+| `sourceNodeType` | 收敛到 `doorway`/`intersection`/`facility` | 决定路径可计算性与转弯点判定 | 全标 `base`/`route_fill` → 语音无差别 | ✅ 已收敛（3m 吸附强制）。实测分布：`intersection` 18 / `route_fill` 9 / `route_corridor` 7 / `doorway` 8 / `manual_adjusted` 6 / `facility` 2 / 空串 6 |
+| `subType` | 动作语义 `elevator_door`/`stairs_door`/`dir`/`base` | 「乘电梯」「下楼梯」「沿走廊直行」 | 电梯口标普通门口 → 撞门才发现 | ⚠️ 部分缺失（`route_fill` 9 枚无动作语义）。实测分布：`base` 20 / `fill` 16 / `dir` 12 / `manual_deploy` 6 / `elevator_door` 2 |
 | `locationDesc` | **必须可语音化** + 程序可逆解析 | 直接进 TTS | 工程编号「II-01#EL」→ 用户无法对位 | ⚠️ 约 10 枚 route_fill 描述偏工程化 |
-| `riskLevel` | 交叉口 0.5（减速）、电梯/楼梯 1（停顿确认） | 控制提示优先级与告警强度 | 全设 0 → 高危点无预警 | ⚠️ 已配但分级未复核。实测分布：`0.5` 32 / `1` 11 / `low` 10 / `0.3` 7 / `2` 1 |
+| `riskLevel` | 交叉口 0.5（减速）、电梯/楼梯 1（停顿确认） | 控制提示优先级与告警强度 | 全设 0 → 高危点无预警 | ⚠️ 已配但分级未复核。实测分布：`0.5` 31 / `1` 9 / `low` 9 / `0.3` 7 / 空 2 |
 | `adjacentRooms` | 相邻房间 ID | 「正经过音乐教室门口」的经过提示 | 缺失 → 走到门口无感知 | ✅ 已注入（src/tools/inject_adjacent_rooms.py，半径 3m）；校验器已加 R6（ERROR=0） |
-| `sourceNodeId` | 与 `coordinates` 距离 ≤3m（R1 硬约束） | 保证"语音说交叉口55，人确在交叉口55" | BK-01-008 旧态：语义交叉口55、实际 5m 外 | ✅ R1 校验器 3m 硬约束；⚠️ 但 61 枚中 **29 枚为空串**（人工部署 `BK-M-*` 8 枚、测试路线补点等），无法参与 R1 |
+| `sourceNodeId` | 与 `coordinates` 距离 ≤3m（R1 硬约束） | 保证"语音说交叉口55，人确在交叉口55" | BK-01-008 旧态：语义交叉口55、实际 5m 外 | ✅ R1 校验器 3m 硬约束；⚠️ 但 56 枚中 **28 枚为空串**（人工部署 `BK-M-*` 6 枚、测试路线补点等），无法参与 R1 |
 | `coordinates` | 唯一真值（单坐标 schema） | 定位锚点 | planned/coords 混用 → "哪份算数"歧义 | ✅ 已单坐标化（2bdef53） |
-| `mountType`/`installHeight` | 全站统一高度 2.5m | 稳定 RSSI 距离模型 | 混装 1.2/2.5/天花板 → 同 RSSI 不同距离 | ✅ 高度全 2.5m；挂装 `wall` 54 / `door_frame` 7 |
-| `txPower` | 全站一致 | RSSI→距离模型假设同功率 | 混型号必炸 | ✅ 61 枚全 -10dBm |
-| `uuid`/`major`/`minor` | 同 uuid；major/minor 分段 | 扫描阶段按 major+minor 索引 | 蓝牙扫描阶段复杂匹配 | ✅ `major == floor` 61/61（2026-10-27 修正 2 枚，见 **TODO-9**）；⚠️ `minor` 万位**不承诺**等于 `major`（7 枚 F2 主信标不符，属合规） |
+| `mountType`/`installHeight` | 全站统一高度 2.5m | 稳定 RSSI 距离模型 | 混装 1.2/2.5/天花板 → 同 RSSI 不同距离 | ✅ 高度全 2.5m；挂装 `wall` 50 / `door_frame` 6 |
+| `txPower` | 全站一致 | RSSI→距离模型假设同功率 | 混型号必炸 | ✅ 56 枚全 -12dBm |
+| `uuid`/`major`/`minor` | 同 uuid；major/minor 分段 | 扫描阶段按 major+minor 索引 | 蓝牙扫描阶段复杂匹配 | ✅ `major == floor` 56/56（2026-10-27 修正 2 枚，见 **TODO-9**）；⚠️ `minor` 万位**不承诺**等于 `major`（4 枚 F2 主信标不符，属合规） |
 
 ---
 
@@ -46,11 +47,11 @@
 
 | 要求 | 说明 | 项目达标 |
 |---|---|---|
-| ① 决策点 ≥3 信标可见包围 | 每个转弯/门口至少 3 个信标同时扫到，几何张开度好（GDOP 小） | ✅ docs/13 量化：GDOP 最小高/底 0.20（保守 0.25）、<0.05 禁用、>3 退化；现行 61 枚在路线网格 ≥3 可见覆盖 97.7% |
+| ① 决策点 ≥3 信标可见包围 | 每个转弯/门口至少 3 个信标同时扫到，几何张开度好（GDOP 小） | ✅ docs/13 量化：GDOP 最小高/底 0.20（保守 0.25）、<0.05 禁用、>3 退化；现行 56 枚在路线网格 ≥3 可见覆盖待按 2026-11-07.1 包复算（旧 61 枚口径为 97.7%） |
 | ② TxPower 全站一致 | RSSI→距离模型假设同功率 | ✅ 全 -10dBm |
-| ③ 同 uuid、major/minor 分段 | 按 major+minor 索引语义，避免扫描阶段复杂匹配 | ✅ `major == floor` 61/61；⚠️ minor 万位与 major 非一一对应（7 枚 F2 主信标，合规，见 **TODO-9**） |
+| ③ 同 uuid、major/minor 分段 | 按 major+minor 索引语义，避免扫描阶段复杂匹配 | ✅ `major == floor` 56/56；⚠️ minor 万位与 major 非一一对应（4 枚 F2 主信标，合规，见 **TODO-9**） |
 | ④ 长直走廊加方向信标 | 一维走廊沿走向误差大，`subType=dir` 给"走向"锚点 | ⚠️ 13 枚 `dir` 现有，但 `route_corridor` 段语义未配 |
-| ⑤ 指纹网格 + 实时信标双轨 | 指纹兜底离线覆盖，信标保实时锚定；语义只在信标层配 | ✅ 647 指纹点（路线网格）+ 61 信标 |
+| ⑤ 指纹网格 + 实时信标双轨 | 指纹兜底离线覆盖，信标保实时锚定；语义只在信标层配 | ✅ 647 指纹点（路线网格）+ 56 信标 |
 
 ---
 
@@ -85,7 +86,7 @@
 
 - [x] **TODO-1 · 补 `adjacentRooms` 字段 + 经过提示事件**（2026-08-21 完成数据 + R6；语音事件待导航引擎）
   - 动作：`src/tools/inject_adjacent_rooms.py` 为每信标计算相邻房间（半径 3m 几何命中，含标签）；`validate_beacon_deployment.py` 加 R6（几何相邻房间须全录入，ERROR 级）；`render_interactive.py` 信标详情面板新增「相邻房间」行（显示 房间名(roomId)）；重渲染 HTML 已含。
-  - 现状校验：R6 **ERROR=0**（61/61 枚已注入）。
+  - 现状校验：R6 **ERROR=0**（56/56 枚已注入）。
   - 语音事件：导航引擎尚未入仓，「进入缓冲带→播报经过房间」由其落地时消费 `adjacentRooms` 实现。
 
 - [ ] **TODO-2 · 现场复核 4 枚人工调整信标**
@@ -100,11 +101,11 @@
   - 产出：信标语义修正 + 盲区补点决策记录。
 
 - [x] **TODO-9 · `major` / `minor` 与 `floor` 的口径不一致（配置正确性阻断项，2026-10-27 发现并修复）**
-  - **结论（2026-10-27 用户确认：**全部 61 枚信标均未上墙**，台账是交互渲染图生成的部署点位建议）**：`BK-M-2-001/002` 的 `major` 由 1 改为 **2**，
-    台账 61/61 现满足 `major == floor`；配套产出 **地图包 `2026-10-27.2`**（只改这 2 枚 major + 版本号/时间，
+  - **结论（2026-10-27 用户确认：**全部信标均未上墙**，台账是交互渲染图生成的部署点位建议）**：`BK-M-2-001/002` 的 `major` 由 1 改为 **2**，
+    台账 61/61（当时口径）满足 `major == floor`；配套产出 **地图包 `2026-10-27.2`**（只改这 2 枚 major + 版本号/时间，
     其余内容与 `2026-10-27.1` 逐字一致）、校验器新规则 **R7**（ERROR）、后端回归测试 2 条。
   - **口径确立**：`floor` = 楼层**唯一权威**字段；`major` = 部署编号空间（现已与 floor 一致，但判楼层仍只信 `floor`）；
-    `minor` 万位**不承诺**等于 `major`（7 枚 F2 主信标 `minor=10145~10160` 而 `major=2`，属合规现状，**勿设校验规则**）。
+    `minor` 万位**不承诺**等于 `major`（2026-11-07 清理后余 4 枚 F2 主信标 `minor=10145~10160` 而 `major=2`，属合规现状，**勿设校验规则**）。
   - **原始现象（留档）**：`major ≠ floor` 2 枚（`BK-M-2-001/002`：floor=2、major=1）；
     `minor 万位 ≠ major` 9 枚（上述 2 枚 ＋ F2 主信标 7 枚）。
   - **根因**：`BK-M-*` 由 `render_interactive.py` 部署模式手工录入导出（`generatedBy=pathai-manual-deploy`，2026-08-20），
@@ -159,3 +160,4 @@
 *文档生成：2026-08-20，基于 `docs/17` 语义审计与 `2bdef53` 单坐标 schema 落地后的架构状态。*
 *2026-09-21 校订：按现行数据实测更新字段分布（`sourceNodeType`/`subType`/`mountType`/`major`/`riskLevel`/`sourceNodeId` 空值口径）、补 R4 现状与 TODO-2b、更新 TODO-7 测试状态。*
 *2026-10-27 校订：实测 `major`/`minor` 与 `floor` 的一致性（`major ≠ floor` 2 枚、`minor` 万位 ≠ `major` 9 枚），新增 **TODO-9** 并在 §2 末行、§3 ③ 加交叉引用。*
+*2026-11-07 校订：现场确认 5 枚未安装（`BK-02-002`/`BK-02-004`/`BK-TR-F2-001`/`BK-M-2-002`/`BK-M-1-006`）并从台账删除，现行 56 枚（F1 51 / F2 5）；按实测刷新 §1–§3 的枚数与字段分布，`minor` 万位 ≠ `major` 降为 4 枚；覆盖率按约定另行复算。*

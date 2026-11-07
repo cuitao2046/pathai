@@ -2,8 +2,8 @@
 // 数据来源：result/ble_deployment.json（坐标唯一来源）
 module.exports = {
   "VENUE_ID": "school-building-01",
-  "MAP_VERSION": "2026-11-03.1",
-  "LEDGER_SHA256": "bdc79dfa59dd3abb470a668ef378bef94674a26c51660e9c52a2ae64fbeb978b",
+  "MAP_VERSION": "2026-11-07.1",
+  "LEDGER_SHA256": "1331b7cd82c5d06829744a15128877f926a82fdc402dc9414661e49bc7295bbd",
   "WINDOW_MS": 2000,
   "UUIDS": [
     "B9407F30-F5F8-466E-AFF9-25556B57FE6D"
@@ -571,17 +571,6 @@ module.exports = {
       "locationDesc": "人工部署 1F（-29.140, -83.848）"
     },
     {
-      "beaconId": "BK-M-1-006",
-      "floor": 1,
-      "x": -27.71,
-      "y": -73.424043,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10006,
-      "locationDesc": "人工部署 1F（-27.710, -73.424）"
-    },
-    {
       "beaconId": "BK-02-001",
       "floor": 2,
       "x": -30.209008,
@@ -593,17 +582,6 @@ module.exports = {
       "locationDesc": "2F 电梯口（II-01#EL）· 门套或呼梯板旁"
     },
     {
-      "beaconId": "BK-02-002",
-      "floor": 2,
-      "x": -32.379,
-      "y": -82.318,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10146,
-      "locationDesc": "2F 门口（普通门）"
-    },
-    {
       "beaconId": "BK-02-003",
       "floor": 2,
       "x": -32.907,
@@ -613,28 +591,6 @@ module.exports = {
       "major": 2,
       "minor": 10147,
       "locationDesc": "2F 交叉口（F2-TI-0050）"
-    },
-    {
-      "beaconId": "BK-02-004",
-      "floor": 2,
-      "x": -30.108,
-      "y": -78.169,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10148,
-      "locationDesc": "2F 交叉口（F2-TI-0051）"
-    },
-    {
-      "beaconId": "BK-TR-F2-001",
-      "floor": 2,
-      "x": -29.998,
-      "y": -73.52254323242188,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10158,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
     },
     {
       "beaconId": "BK-TR-F2-002",
@@ -668,17 +624,6 @@ module.exports = {
       "major": 2,
       "minor": 20001,
       "locationDesc": "人工部署 2F（-28.860, -80.467）"
-    },
-    {
-      "beaconId": "BK-M-2-002",
-      "floor": 2,
-      "x": -33.205399,
-      "y": -70.57,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 20002,
-      "locationDesc": "人工部署 2F（-33.205, -70.570）"
     }
   ]
 }
