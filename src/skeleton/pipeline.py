@@ -843,6 +843,68 @@ def build_skeleton_topology(
             n_adj += 1
         # 推进编号，避免后续 add_edge 与手动边 ID 冲突
         edge_seq[0] = max(edge_seq[0], max_manual_seq)
+
+        # 3.5) 长边中途切分（手动骨架）：SVG 骨架线常以 T 形搭接收尾——
+        # 短线端点落在长线中间但不严格相交，建边时无交点可分，长 TI-TI 边
+        # 会从另一 TI 上碾过（垂距≈0）而不与其建边，导致该 TI 度数退化
+        # （如 F1-TI-0111 只连 17m 长边，距 TI-0019 仅 5.3m 却不直连）。
+        # 检查每条 TI-TI 边：若某 TI 到边线垂距 < 0.5m 且投影在段内
+        # （距两端 > 1.0m），把边在该 TI 处拆成两段（按实长计距，属性沿用）。
+        # 自动骨架不需要：TI=key 节点，图边两端相邻 key 节点间不可能再含 key 节点。
+        _SPLIT_PERP_M = 0.5    # 垂距容差：视为「压线」
+        _SPLIT_ENDPAD_M = 1.0  # 投影距两端小于此值视为端点搭接，交由邻近合并处理
+        _changed = True
+        while _changed:
+            _changed = False
+            ti_pos = {n["id"]: tuple(map(float, n["coordinates"]))
+                      for n in nodes if n.get("type") == "intersection"}
+            new_edges = []
+            for e in edges:
+                a, b = e["from"], e["to"]
+                if a not in ti_pos or b not in ti_pos or a == b:
+                    new_edges.append(e)
+                    continue
+                ax, ay = ti_pos[a]
+                bx, by = ti_pos[b]
+                dx, dy = bx - ax, by - ay
+                seg2 = dx * dx + dy * dy
+                if seg2 == 0:
+                    new_edges.append(e)
+                    continue
+                seg_len = math.sqrt(seg2)
+                best = None  # (nid, perp)
+                for nid, (px, py) in ti_pos.items():
+                    if nid in (a, b):
+                        continue
+                    t = ((px - ax) * dx + (py - ay) * dy) / seg2
+                    if t <= 0.0 or t >= 1.0:
+                        continue
+                    if min(t, 1.0 - t) * seg_len < _SPLIT_ENDPAD_M:
+                        continue
+                    perp = math.hypot(px - ax - t * dx, py - ay - t * dy)
+                    if perp < _SPLIT_PERP_M and (best is None or perp < best[1]):
+                        best = (nid, perp)
+                if best is None:
+                    new_edges.append(e)
+                    continue
+                mid = best[0]
+                mx, my = ti_pos[mid]
+                for frm, to, d in ((a, mid, math.hypot(mx - ax, my - ay)),
+                                   (mid, b, math.hypot(bx - mx, by - my))):
+                    edge_seq[0] += 1
+                    new_edges.append({
+                        "id": _obj_id(floor_no, obj_type["topo_edge"], edge_seq[0]),
+                        "from": frm, "to": to,
+                        "distance": round(float(d), 2),
+                        "estimatedTime": round(float(d) / BLIND_WALK_SPEED, 1),
+                        "accessibilityLevel": e.get("accessibilityLevel", 0),
+                        "riskLevel": e.get("riskLevel", 0.5),
+                        "walkable": True,
+                        "wheelchairAccessible": e.get("wheelchairAccessible", True),
+                        "blindAccessible": e.get("blindAccessible", True),
+                    })
+                _changed = True
+            edges = new_edges
     elif G.number_of_edges() and ti_of_gn:
         for ua, ub, edata in G.edges(data=True):
             ta = ti_of_gn.get(ua)

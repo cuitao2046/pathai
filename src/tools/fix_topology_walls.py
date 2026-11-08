@@ -401,8 +401,11 @@ class FloorRepair:
                 cand_nodes = [self.nodes[nid] for nid in comp
                               if self.nodes.get(nid, {}).get("type") in
                               ("doorway", "facility", "intersection")]
-                cand_nodes.sort(key=lambda n: 0 if n["type"] == "doorway" else
-                                1 if n["type"] == "intersection" else 2)
+                # id 决胜：comp 是 set，同类型候选的迭代序跨进程随机
+                # （PYTHONHASHSEED），必须用 id 收尾保证整链可复现（golden 对拍）。
+                cand_nodes.sort(key=lambda n: (0 if n["type"] == "doorway" else
+                                               1 if n["type"] == "intersection" else 2,
+                                               n["id"]))
                 attached = False
                 for cn in cand_nodes:
                     radius = {"doorway": self.opts.door_radius,

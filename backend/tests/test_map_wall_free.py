@@ -43,12 +43,18 @@ def test_latest_published_map_has_no_public_wall_crossing():
 
 
 def test_specific_former_violations_are_gone():
-    """曾经的穿墙边不再作为公共空间边存在：跨墙 TI-TI（F1-TE-0036）与 40m 室外入口边。"""
+    """曾经的穿墙边（按端点对）不再存在：跨墙 TI-TI（旧 F1-TE-0036）与 40m 室外入口边（旧 F1-TE-0412）。
+
+    拓扑重建后边 id 序列会复用（新 F1-TE-0036 是 1.14m 合法边），
+    因此按历史违例的端点对断言，不按裸 id。
+    """
     _, package = _latest_package()
-    edges = {
-        edge["id"]: edge
+    pairs = {
+        (edge["from"], edge["to"])
         for floor in package["floors"].values()
         for edge in (floor.get("topology") or {}).get("edges") or []
     }
-    assert "F1-TE-0036" not in edges
-    assert "F1-TE-0412" not in edges
+    assert ("F1-TI-0023", "F1-TI-0084") not in pairs
+    assert ("F1-TI-0084", "F1-TI-0023") not in pairs
+    assert ("F1-TEN-0008", "F1-TD-0022") not in pairs
+    assert ("F1-TD-0022", "F1-TEN-0008") not in pairs
