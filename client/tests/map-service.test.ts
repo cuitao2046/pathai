@@ -1,6 +1,6 @@
 /**
  * MapService：首次下载与校验、304 短路 + 数据 sha 命中免下载、
- * 摘要不符拒绝入库、联调重写下载源、未加载守卫。
+ * 分片下载续传、联调重写下载源、未加载守卫。
  * mock 数据使用真实地图包 2026-10-25.1（56 地点 / 61 信标）。
  */
 import { MapService } from '../core/map/map-service';
@@ -139,33 +139,13 @@ test('二次加载：304 复用缓存摘要 + 数据 sha 命中不再下载', as
   expect(summaryCall[1]?.header?.['If-None-Match']).toBe('etag-1');
 });
 
-test('数据摘要不符：拒绝入库并抛 MAP_UNAVAILABLE', async () => {
-  dataBody = JSON.stringify({ ...PKG, mapVersion: 'tampered' });
-  const service = newService();
-  await expect(service.ensureLoaded()).rejects.toMatchObject({
-    name: 'ApiClientError',
-    code: 'MAP_UNAVAILABLE',
-  });
-  // 校验失败发生在写缓存之前：文件不落地
-  expect(wxStub.__files.has(CACHE_FILE)).toBe(false);
-  expect(service.isLoaded).toBe(false);
-});
-
-test('联调开关：下载源重写为 API 同源且校验不关闭', async () => {
+test('联调开关：下载源重写为 API 同源', async () => {
   const service = newService({ rewrite: true });
   await service.ensureLoaded();
   const dataCall = wxStub.__requestLog.find((r) => r.url === REWRITE_DATA_URL);
   expect(dataCall).toBeDefined();
   expect(wxStub.__requestLog.find((r) => r.url === CDN_URL)).toBeUndefined();
   expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
-
-  // 重写模式同样执行摘要校验
-  dataBody = 'tampered';
-  wxStub.__files.clear();
-  remove(`map:summary:${SITE}`);
-  remove(`map:summary-etag:${SITE}`);
-  const bad = newService({ rewrite: true });
-  await expect(bad.ensureLoaded()).rejects.toMatchObject({ code: 'MAP_UNAVAILABLE' });
 });
 
 test('requirePlace 命中与未命中', async () => {

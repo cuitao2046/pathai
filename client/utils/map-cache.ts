@@ -8,14 +8,10 @@
  * 断点续传（REQ-MAP）：
  * - 下载中的字节写入半成品 `map-partial-<site>-<version>.json`（二进制追加），
  *   半成品按站点 + 目标版本隔离，目标版本变化即丢弃，不跨版本续传；
- * - 只有完整字节通过 SHA-256 校验后才转正为 `map-cache-<site>.json`：
+ * - 分片完整落盘后直接转正为 `map-cache-<site>.json`（不做本地摘要计算）：
  *   先写 staging 文件、删除旧缓存在前、rename 在后，尽量避免半截文件顶替正式缓存；
  * - 读取方以 JSON.parse 失败兜底（写入中断的半截文件视为无缓存，触发重新下载）。
  */
-
-import { createLogger } from './logger';
-
-const log = createLogger('map-cache');
 
 /** 正式缓存文件路径（用户数据根目录，按站点隔离）。 */
 function cachePath(siteId: string): string {
@@ -115,44 +111,7 @@ export function appendMapPartial(
   });
 }
 
-/**
- * 读取半成品指定区间（二进制），用于按片增量哈希已落盘字节。
- * 不整包读回 6MB：真机 readFile 的大文本解码 + 重编码本身就是秒级开销。
- * 读取失败返回 null（调用方按「半成品不可用」处理）。
- */
-export function readMapPartialSlice(
-  siteId: string,
-  mapVersion: string,
-  position: number,
-  length: number,
-): Promise<Uint8Array | null> {
-  return new Promise((resolve) => {
-    try {
-      wx.getFileSystemManager().readFile({
-        filePath: partialPath(siteId, mapVersion),
-        position,
-        length,
-        success: (res) => {
-          if (res.data instanceof ArrayBuffer) {
-            resolve(new Uint8Array(res.data));
-            return;
-          }
-          log.warn('半成品分片读取返回非二进制数据');
-          resolve(null);
-        },
-        fail: (err) => {
-          log.warn('半成品分片读取失败', err.errMsg);
-          resolve(null);
-        },
-      });
-    } catch (err) {
-      log.warn('半成品分片读取异常', err instanceof Error ? err.message : String(err));
-      resolve(null);
-    }
-  });
-}
-
-/** 删除半成品（版本变化、校验失败、转正完成后清理）；失败静默。 */
+/** 删除半成品（版本变化、下载重试、转正完成后清理）；失败静默。 */
 export function removeMapPartial(siteId: string, mapVersion: string): Promise<void> {
   return new Promise((resolve) => {
     try {

@@ -8,8 +8,8 @@
  *   304 或 sha 一致 → 不重新拉取；sha 不同 → 后台静默下载覆盖本地缓存，
  *   本会话继续用已就绪版本（避免导航会话中途热换地图），下次启动生效；
  * - 首启（无可用缓存）→ 前台下载；下载按 1MiB 分片（HTTP Range）进行，
- *   已下载字节持久化，中断后下次启动从偏移续传，拼接完整并通过
- *   sha256Async 校验后才转正为正式缓存；
+ *   已下载字节持久化，中断后下次启动从偏移续传；分片完整落盘后直接转正
+ *   为正式缓存（不做本地摘要计算），转正失败沿用持久化状态与重试策略；
  * - 新旧版本日期差超过 MAP_STALE_DAYS 时标记 stale（语音播「地图过旧」，
  *   旧版仍可用）；
  * - 未加载时 require* 一律抛 MAP_UNAVAILABLE（禁止开始导航 FE-01）。
@@ -21,7 +21,6 @@ import {
   MAP_STALE_DAYS,
 } from '../../config/env';
 import { nowMs } from '../../utils/clock';
-import { createSha256Stream, type Sha256Stream } from '../../utils/sha256';
 import { createLogger } from '../../utils/logger';
 import { startPerfTrace } from '../../utils/perf-trace';
 import { getJson, getString, remove, setJson, setString } from '../../utils/kv';
@@ -30,7 +29,6 @@ import {
   commitMapPartial,
   readMapCache,
   readMapPartialSize,
-  readMapPartialSlice,
   removeMapPartial,
 } from '../../utils/map-cache';
 import type {
@@ -51,12 +49,6 @@ const log = createLogger('map');
 const SUMMARY_KEY = (siteId: string) => `map:summary:${siteId}`;
 const SUMMARY_ETAG_KEY = (siteId: string) => `map:summary-etag:${siteId}`;
 const DOWNLOAD_KEY = (siteId: string) => `map:download:${siteId}`;
-
-/**
- * 已落盘半成品的分片哈希读块（1MiB）：按片读 + 立即喂哈希，避免整包 6MB 文本读回。
- * 与下载分片同为 1MiB，单片同步哈希量有界。
- */
-const PARTIAL_HASH_READ_BYTES = 1024 * 1024;
 
 export interface MapServiceOptions {
   client: ApiClient;
@@ -445,36 +437,21 @@ export class MapService {
     this.emit({ type: 'download-start', mapVersion: version, foreground });
 
     const trace = startPerfTrace('map', 'map-download', { startedAtMs });
-    let hasher = createSha256Stream();
     let resetTried = false;
     try {
-      // 半成品已完整（上次在「校验/转正」阶段中断）：直接校验现有文件并转正。
-      // 旧实现此时会 resetPartial 后整包重下 6MB —— 这是「每次启动重复下载」的直接原因。
+      // 半成品已完整（上次下载完成后、转正前中断）：直接转正，不整包重下。
+      // 旧实现此时会 resetPartial 后重下 6MB —— 「每次启动重复下载」的直接原因。
       if (total !== null && fileSize >= total) {
-        // 用实际文件大小参与哈希：文件被多写/截断时摘要必然不符，走丢弃重下
-        await this.feedPartialToHasher(hasher, siteId, version, fileSize);
-        trace.mark('reuse-digest', 3000);
-        if ((await hasher.digestHex()) === summary.dataSha256) {
-          await commitMapPartial(siteId, version);
-          this.logDigestStats(hasher, trace.traceId);
-          this.clearDownloadState();
-          this.persistMeta(summary, etag);
-          const cached = await readMapCache(siteId);
-          if (cached === null) {
-            throw mapUnavailable('地图缓存读取失败');
-          }
-          trace.mark('reuse-ready', 1000);
-          log.info('完整半成品校验通过并转正', version);
-          return cached;
+        await commitMapPartial(siteId, version);
+        this.clearDownloadState();
+        this.persistMeta(summary, etag);
+        const cached = await readMapCache(siteId);
+        if (cached === null) {
+          throw mapUnavailable('地图缓存读取失败');
         }
-        log.warn('完整半成品摘要不符，丢弃后整包重下', version);
-        await this.resetPartial(version);
-        offset = 0;
-        total = null;
-        hasher = createSha256Stream();
-      } else if (offset > 0) {
-        // 续传：先把已落盘字节按片补算进哈希，再继续下载剩余分片
-        await this.feedPartialToHasher(hasher, siteId, version, offset);
+        trace.mark('reuse-ready', 1000);
+        log.info('完整半成品直接转正', version);
+        return cached;
       }
 
       for (;;) {
@@ -503,7 +480,6 @@ export class MapService {
             await this.resetPartial(version);
             offset = 0;
             total = null;
-            hasher = createSha256Stream(); // 半成品已清空：哈希状态同步归零
             continue;
           }
           throw err;
@@ -526,7 +502,6 @@ export class MapService {
             resetTried = true;
             await this.resetPartial(version);
             offset = 0;
-            hasher = createSha256Stream();
             continue;
           }
           if (range.total !== null) {
@@ -539,7 +514,6 @@ export class MapService {
           if (offset > 0) {
             await removeMapPartial(siteId, version);
             offset = 0;
-            hasher = createSha256Stream();
           }
           await appendMapPartial(siteId, version, body, offset);
           offset = body.byteLength;
@@ -547,11 +521,6 @@ export class MapService {
         } else {
           throw mapUnavailable(`地图数据响应状态异常：${resp.statusCode}`);
         }
-
-        // 边下边算：写入成功后立即把本片字节喂给流式哈希，不再在下载结束后读回全文重算。
-        // 走异步 update：webcrypto 模式仅 memcpy；纯 JS 回退模式内部按 256KB 切片让出，
-        // 避免个别无 WebCrypto 且解释执行的环境长时间霸占主线程。
-        await hasher.update(new Uint8Array(body));
 
         this.patchProgress(offset, total);
         if (total !== null && offset >= total) {
@@ -562,28 +531,14 @@ export class MapService {
         }
       }
 
-      // 下载过程中已按片喂入流式哈希，这里只做收尾比对；校验对象是服务端原始字节，
-      // 仍与后端 dataSha256 全量比对（不走 size/ETag 弱校验）。
+      // 分片全部落盘：不做本地摘要计算，直接转正（转正失败保持持久化状态，
+      // 下次启动按「完整半成品直接转正」复用，或走现有 416/偏移重试策略）。
       trace.mark('chunks-done', 3000);
-      const digest = await hasher.digestHex();
-      const stats = hasher.stats();
-      this.logDigestStats(hasher, trace.traceId);
-      log.info(
-        '地图分片下载完成',
-        version,
-        `下载=${nowMs() - startedAtMs}ms`,
-        `哈希CPU=${stats.syncMs}ms`,
-        `字节=${stats.bytes}`,
-      );
-      if (digest !== summary.dataSha256) {
-        await removeMapPartial(siteId, version);
-        throw mapUnavailable('地图数据摘要校验失败');
-      }
+      log.info('地图分片下载完成', version, `下载=${nowMs() - startedAtMs}ms`, `字节=${offset}`);
       const commitStartAtMs = nowMs();
-      // 校验通过后直接把半成品 rename 为正式缓存，不再另写 4.6MB staging 文件
       await commitMapPartial(siteId, version);
       trace.mark('commit-done', 1000);
-      log.info('地图校验与转正耗时', `转正=${nowMs() - commitStartAtMs}ms`);
+      log.info('地图转正耗时', `转正=${nowMs() - commitStartAtMs}ms`);
       this.clearDownloadState();
       this.persistMeta(summary, etag);
       const raw = await readMapCache(siteId);
@@ -596,33 +551,6 @@ export class MapService {
       this.downloading = false;
       this.downloadState = null; // 中断/失败时回落到持久化状态供设置页展示
     }
-  }
-
-  /** 把半成品 [0,length) 字节按片读入流式哈希（单片 1MiB，同步量有界）。 */
-  private async feedPartialToHasher(
-    hasher: Sha256Stream,
-    siteId: string,
-    version: string,
-    length: number,
-  ): Promise<void> {
-    let pos = 0;
-    while (pos < length) {
-      const want = Math.min(PARTIAL_HASH_READ_BYTES, length - pos);
-      const piece = await readMapPartialSlice(siteId, version, pos, want);
-      if (piece === null || piece.length === 0) {
-        throw mapUnavailable('地图半成品分片读取失败');
-      }
-      await hasher.update(piece);
-      pos += piece.length;
-    }
-  }
-
-  /** 摘要耗时拆分：同步压缩 CPU 与 macrotask 让出等待分别记录，便于复查回归。 */
-  private logDigestStats(hasher: Sha256Stream, traceId: string): void {
-    const stats = hasher.stats();
-    log.info(
-      `[perf] page=map action=map-digest engine=${stats.engine} bytes=${stats.bytes} cpuMs=${stats.syncMs} yieldWaitMs=${stats.yieldWaitMs} yields=${stats.yields} traceId=${traceId}`,
-    );
   }
 
   private dataUrlFor(summary: MapVersionResponse): string {

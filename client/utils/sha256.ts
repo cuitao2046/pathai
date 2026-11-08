@@ -1,14 +1,10 @@
 /**
  * SHA-256（FIPS 180-4）零依赖实现。
  *
- * 用途：地图包摘要校验（dataSha256）、API-06 幂等键请求体指纹。
- * 小程序基础库无同步 WebCrypto，故自行实现；正确性由 NIST 已知向量测试保证
- * （tests/sha256.test.ts）。
- *
- * 性能约定：真实地图包为 4.6MB 量级，**必须走 sha256Async**（UTF-8 编码与
- * 分块压缩均按片让出主线程）。真机上同步计算 4.6MB 会阻塞逻辑层几十秒，
- * 表现为「正在加载地图」期间所有点击无响应。同步 sha256 仅用于小文本
- * （测试向量、小字符串指纹）。
+ * 用途：小文本/小字节串摘要（同步入口 sha256 / sha256Hex）。
+ * 历史上曾用于地图包 dataSha256 本地校验，已在 2026-11-08 移除：
+ * 纯 JS 对 6MB 级输入压缩在开发者工具逻辑层慢至分钟级（详见 docs/问题与踩坑日志.md），
+ * 地图下载改为分片落盘后直接转正，不做本地摘要计算。
  */
 
 /** 轮常量 K（FIPS 180-4 §4.2.3：前 64 个素数立方根小数部分前 32 位）。 */
@@ -25,10 +21,6 @@ const K = new Uint32Array([
 
 function rotr(x: number, n: number): number {
   return ((x >>> n) | (x << (32 - n))) >>> 0;
-}
-
-function isLowSurrogate(code: number): boolean {
-  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +93,7 @@ export function utf8Bytes(text: string): Uint8Array {
 // 压缩核心
 // ---------------------------------------------------------------------------
 
-/** 单块压缩：64 字压缩轮 + 64 轮主循环，原地更新 h。同步/异步共用。 */
+/** 单块压缩：64 字压缩轮 + 64 轮主循环，原地更新 h。 */
 function compressBlock(h: Uint32Array, view: DataView, offset: number, w: Uint32Array): void {
   for (let i = 0; i < 16; i++) {
     w[i] = view.getUint32(offset + i * 4);
@@ -189,271 +181,6 @@ export function sha256Bytes(input: Uint8Array): Uint8Array {
     compressBlock(h, view, offset, w);
   }
   return digestToBytes(h);
-}
-
-// ---------------------------------------------------------------------------
-// 异步分片版（大文本；每片让出主线程，保持 UI 可交互）
-// ---------------------------------------------------------------------------
-
-/** 让出主线程一个宏任务：macrotask 间隙可处理渲染层 tap 等原生事件。 */
-function yieldToUi(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
-}
-
-/** 异步 update 每片同步压缩的字节上限（256KB）：片间让出主线程。
- *  真机上 macrotask 让出本身有固定开销，切片不能太小；同时单片同步字节有上限，
- *  避免「为了少让出而整块同步压完」把 UI 堵死。 */
-export const SHA256_SYNC_SLICE_BYTES = 256 * 1024;
-/** 每片 UTF-8 编码字符数（1M UTF-16 码元 ≈ 1~3MB 字节），配合压缩切片减少让出次数。 */
-const UTF8_CHARS_PER_SLICE = 1048576;
-
-/**
- * 异步 UTF-8 编码：预分配后按片写入，片间让出主线程。
- * 切片右边界归一避免把增补平面代理对切开（切成两半会被分别错编为 3 字节）：
- * end 落在低位代理上时右移一位，保证代理对完整归入当前片。
- */
-export async function utf8BytesAsync(text: string): Promise<Uint8Array> {
-  const out = new Uint8Array(utf8ByteLength(text));
-  let pos = 0;
-  let start = 0;
-  while (start < text.length) {
-    let end = Math.min(start + UTF8_CHARS_PER_SLICE, text.length);
-    if (end < text.length && isLowSurrogate(text.charCodeAt(end))) {
-      end += 1;
-    }
-    pos = writeUtf8(text.slice(start, end), out, pos);
-    start = end;
-    if (start < text.length) {
-      await yieldToUi();
-    }
-  }
-  return out;
-}
-
-/** 流式哈希统计：同步压缩 CPU 与让出等待分开累计（真机定位「278s 是 CPU 还是等待」）。 */
-export interface Sha256StreamStats {
-  bytes: number;
-  /** updateSync 累计同步耗时（webcrypto 模式下为分片拷贝与收尾耗时）。 */
-  syncMs: number;
-  /** update 中等待 macrotask 让出的累计耗时。 */
-  yieldWaitMs: number;
-  yields: number;
-  /** 摘要引擎：webcrypto=宿主原生实现，js=本文件纯 JS 回退。 */
-  engine: 'webcrypto' | 'js';
-}
-
-/** 宿主 WebCrypto 中本实现用到的最小子集。 */
-export interface SubtleSha256 {
-  digest(algorithm: 'SHA-256', data: ArrayBuffer): Promise<ArrayBuffer>;
-}
-
-type SubtleDigest = SubtleSha256;
-
-/**
- * 宿主是否有原生 SHA-256（开发者工具的逻辑层带 WebCrypto；部分真机基础库没有）。
- * 实测开发者工具里纯 JS 压缩 6MB 需要 ~260s（调试器插桩/无 JIT），原生为毫秒级，
- * 因此凡有 WebCrypto 必须优先走原生；纯 JS 只作不可用时的回退。
- */
-export function detectSubtleSha256(): SubtleSha256 | null {
-  const subtle = (globalThis as { crypto?: { subtle?: SubtleSha256 } }).crypto?.subtle;
-  return typeof subtle?.digest === 'function' ? subtle : null;
-}
-
-export interface Sha256StreamOptions {
-  /** 注入原生 digest 实现（测试用）；缺省自动探测，显式传 null 强制纯 JS 路径。 */
-  subtle?: SubtleDigest | null;
-}
-
-/**
- * 流式 SHA-256：边下载边喂字节，完整包不再「读回全文 + UTF-8 重编码 + 重算」。
- *
- * 两种引擎：
- * - webcrypto（默认可用时）：update 只缓存分片（拷贝为 memcpy，毫秒级），digest 一次
- *   交给宿主原生实现 —— 开发者工具从 260s 降到毫秒级；
- * - js（回退）：分片增量压缩，片间可让出，真机 JIT 下 6MB 约几百毫秒。
- *
- * 两种引擎输出与 sha256Hex 完全一致（NIST 向量 + 交叉对拍保证）。
- */
-export interface Sha256Stream {
-  /** 追加一段字节；纯 JS 模式按 SHA256_SYNC_SLICE_BYTES 切片并让出主线程。 */
-  update(bytes: Uint8Array): Promise<void>;
-  /** 追加一段字节（同步）；调用方保证单次传入量有界（如一个下载分片）。 */
-  updateSync(bytes: Uint8Array): void;
-  /** 结束并返回 32 字节摘要；之后不可再追加。 */
-  digestBytes(): Promise<Uint8Array>;
-  /** 结束并返回 64 位小写 hex 摘要。 */
-  digestHex(): Promise<string>;
-  stats(): Readonly<Sha256StreamStats>;
-}
-
-export function createSha256Stream(options: Sha256StreamOptions = {}): Sha256Stream {
-  const subtle = options.subtle !== undefined ? options.subtle : detectSubtleSha256();
-  if (subtle !== null) {
-    return createWebCryptoStream(subtle);
-  }
-  return createJsStream();
-}
-
-/** 原生模式：缓存分片（拷贝），digest 一次性交给宿主 WebCrypto。 */
-function createWebCryptoStream(subtle: SubtleDigest): Sha256Stream {
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let finalized = false;
-  let digestPromise: Promise<Uint8Array> | null = null;
-  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0, engine: 'webcrypto' };
-
-  const updateSync = (bytes: Uint8Array): void => {
-    if (finalized) {
-      throw new Error('SHA-256 流已结束，不能再追加');
-    }
-    if (bytes.length === 0) {
-      return;
-    }
-    const startedAtMs = Date.now();
-    chunks.push(bytes.slice()); // 拷贝，防调用方复用底层缓冲
-    totalBytes += bytes.length;
-    stats.bytes = totalBytes;
-    stats.syncMs += Date.now() - startedAtMs;
-  };
-
-  const update = async (bytes: Uint8Array): Promise<void> => {
-    updateSync(bytes); // 仅 memcpy，无需让出
-  };
-
-  const digestBytes = (): Promise<Uint8Array> => {
-    let promise = digestPromise;
-    if (promise === null) {
-      finalized = true;
-      const merged = new Uint8Array(totalBytes);
-      let pos = 0;
-      for (const piece of chunks) {
-        merged.set(piece, pos);
-        pos += piece.length;
-      }
-      chunks.length = 0;
-      const startedAtMs = Date.now();
-      promise = subtle
-        .digest('SHA-256', merged.buffer)
-        .then((buf) => {
-          stats.syncMs += Date.now() - startedAtMs;
-          return new Uint8Array(buf);
-        });
-      digestPromise = promise;
-    }
-    return promise;
-  };
-
-  return {
-    update,
-    updateSync,
-    digestBytes,
-    digestHex: async () => toHex(await digestBytes()),
-    stats: () => stats,
-  };
-}
-
-/** 纯 JS 回退：分片增量压缩，片间让出主线程。 */
-function createJsStream(): Sha256Stream {
-  const h = initHash();
-  const w = new Uint32Array(64);
-  /** 不足 64 字节的残留（跨 update 边界）。 */
-  const tail = new Uint8Array(64);
-  const tailView = new DataView(tail.buffer);
-  let tailLen = 0;
-  let totalBytes = 0;
-  let finalized = false;
-  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0, engine: 'js' };
-
-  const updateSync = (bytes: Uint8Array): void => {
-    if (finalized) {
-      throw new Error('SHA-256 流已结束，不能再追加');
-    }
-    if (bytes.length === 0) {
-      return;
-    }
-    const startedAtMs = Date.now();
-    totalBytes += bytes.length;
-    let pos = 0;
-    // 先补满上次残留
-    if (tailLen > 0) {
-      const take = Math.min(64 - tailLen, bytes.length);
-      tail.set(bytes.subarray(0, take), tailLen);
-      tailLen += take;
-      pos = take;
-      if (tailLen === 64) {
-        compressBlock(h, tailView, 0, w);
-        tailLen = 0;
-      }
-    }
-    if (pos < bytes.length) {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      let offset = pos;
-      for (; offset + 64 <= bytes.length; offset += 64) {
-        compressBlock(h, view, offset, w);
-      }
-      const remain = bytes.length - offset;
-      if (remain > 0) {
-        tail.set(bytes.subarray(offset), 0);
-        tailLen = remain;
-      }
-    }
-    stats.bytes = totalBytes;
-    stats.syncMs += Date.now() - startedAtMs;
-  };
-
-  const update = async (bytes: Uint8Array): Promise<void> => {
-    const step = SHA256_SYNC_SLICE_BYTES;
-    for (let pos = 0; pos < bytes.length; pos += step) {
-      updateSync(bytes.subarray(pos, Math.min(pos + step, bytes.length)));
-      if (pos + step < bytes.length) {
-        const waitStart = Date.now();
-        await yieldToUi();
-        stats.yieldWaitMs += Date.now() - waitStart;
-        stats.yields += 1;
-      }
-    }
-  };
-
-  const digestBytes = (): Uint8Array => {
-    if (!finalized) {
-      finalized = true;
-      const bitLength = totalBytes * 8;
-      const padLen = tailLen < 56 ? 64 : 128;
-      const buf = new Uint8Array(padLen);
-      buf.set(tail.subarray(0, tailLen));
-      buf[tailLen] = 0x80;
-      const view = new DataView(buf.buffer);
-      view.setUint32(padLen - 8, Math.floor(bitLength / 0x100000000));
-      view.setUint32(padLen - 4, bitLength >>> 0);
-      for (let offset = 0; offset < padLen; offset += 64) {
-        compressBlock(h, view, offset, w);
-      }
-    }
-    return digestToBytes(h);
-  };
-
-  return {
-    update,
-    updateSync,
-    digestBytes: async () => digestBytes(),
-    digestHex: async () => toHex(digestBytes()),
-    stats: () => stats,
-  };
-}
-
-/** 异步分块压缩：按片让出主线程；实现复用流式哈希（分片状态跨 update 保留）。 */
-export async function sha256BytesAsync(input: Uint8Array): Promise<Uint8Array> {
-  const stream = createSha256Stream();
-  await stream.update(input);
-  return stream.digestBytes();
-}
-
-/** 大文本 → 64 位小写 hex 摘要（分片让出主线程，供地图包等 4.6MB 级输入）。 */
-export async function sha256Async(text: string): Promise<string> {
-  const bytes = await utf8BytesAsync(text);
-  return toHex(await sha256BytesAsync(bytes)); // toHex：摘要→hex，勿用 sha256Hex（会二次哈希）
 }
 
 // ---------------------------------------------------------------------------
