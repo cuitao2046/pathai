@@ -96,6 +96,8 @@ export class MapService {
   private pkg: MapPackageRoot | null = null;
   private registry: BeaconRegistry | null = null;
   private inflight: Promise<void> | null = null;
+  /** 后台静默下载任务（手动重载前必须先等它结束，避免并发写同一半成品）。 */
+  private backgroundTask: Promise<void> | null = null;
   private listeners = new Set<(event: MapServiceEvent) => void>();
   private downloadState: MapDownloadState | null = null;
   private downloading = false;
@@ -266,18 +268,105 @@ export class MapService {
     }
 
     // 服务端有新版本：后台静默下载（含续传半成品）；本会话不热替换已就绪地图
-    void this.backgroundRefresh(fresh, resp.etag);
+    this.backgroundRefresh(fresh, resp.etag);
   }
 
   /** 后台更新：下载新版本 → 转正文件缓存 → 刷新摘要/ETag（下次启动配对生效）。 */
-  private async backgroundRefresh(fresh: MapVersionResponse, etag: string | null): Promise<void> {
-    try {
-      await this.download(fresh, etag, false);
-      log.info('地图新版本已缓存，下次启动生效', fresh.mapVersion);
-    } catch (err) {
-      // 不影响本会话（仍用已就绪版本）；保留半成品，下次启动自动续传
-      log.warn('地图后台更新失败，下次启动重试', err instanceof Error ? err.message : String(err));
+  private backgroundRefresh(fresh: MapVersionResponse, etag: string | null): void {
+    const task = this.download(fresh, etag, false)
+      .then(() => {
+        log.info('地图新版本已缓存，下次启动生效', fresh.mapVersion);
+      })
+      .catch((err) => {
+        // 不影响本会话（仍用已就绪版本）；保留半成品，下次启动自动续传
+        log.warn('地图后台更新失败，下次启动重试', err instanceof Error ? err.message : String(err));
+      });
+    this.backgroundTask = task;
+    void task.finally(() => {
+      if (this.backgroundTask === task) {
+        this.backgroundTask = null;
+      }
+    });
+  }
+
+  /**
+   * 手动重新加载地图（设置页「重新加载地图」）。
+   * 与 load() 的差别：不带 If-None-Match（强制拿最新摘要）、不做后台静默更新，
+   * 数据有变化时前台下载并在本次会话立即生效；失败原样抛给调用方展示原因。
+   */
+  async reload(): Promise<void> {
+    if (this.inflight !== null) {
+      try {
+        await this.inflight;
+      } catch {
+        // 上次自动加载失败不影响这次手动重载
+      }
     }
+    if (this.backgroundTask !== null) {
+      await this.backgroundTask; // 已在此内部吞掉失败
+    }
+    const run = this.reloadInternal().finally(() => {
+      if (this.inflight === run) {
+        this.inflight = null;
+      }
+    });
+    this.inflight = run;
+    return run;
+  }
+
+  private async reloadInternal(): Promise<void> {
+    const siteId = this.opts.siteId;
+    const trace = startPerfTrace('map', 'map-reload');
+    const resp = await this.opts.client.request<MapVersionResponse>({
+      method: 'GET',
+      path: `/api/v1/sites/${siteId}/map`,
+    });
+
+    if (resp.statusCode === 304) {
+      // 未带 If-None-Match 仍返回 304（代理/缓存层）：沿用当前已就绪版本
+      trace.mark('summary-304', 1000);
+      if (this.summary === null) {
+        throw mapUnavailable('摘要命中 304 但本地无可用地图');
+      }
+      this.emitReady('cache', false);
+      return;
+    }
+
+    const fresh = resp.data;
+    if (fresh === null || typeof fresh.mapVersion !== 'string') {
+      throw mapUnavailable('摘要响应格式异常');
+    }
+    trace.mark('summary', 1000);
+
+    // 服务端数据未变：复用本地缓存重新配对，不重复下载 6MB
+    const cachedSummary = getJson<MapVersionResponse>(SUMMARY_KEY(siteId));
+    const cachedRaw = await readMapCache(siteId);
+    if (
+      cachedSummary !== null &&
+      cachedRaw !== null &&
+      cachedSummary.dataSha256 === fresh.dataSha256
+    ) {
+      try {
+        this.adopt(cachedRaw, fresh);
+        this.persistMeta(fresh, resp.etag);
+        trace.mark('cache-reused', 1000);
+        this.emitReady('cache', false);
+        log.info('手动重载：服务端数据未变，已复用本地缓存', fresh.mapVersion);
+        return;
+      } catch (err) {
+        log.warn(
+          '手动重载：本地缓存不可用，改为重新下载',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+
+    trace.mark('need-download', 1000);
+    const raw = await this.download(fresh, resp.etag, true);
+    this.adopt(raw, fresh);
+    trace.mark('applied', 3000);
+    this.emitReady('download', false);
+    log.info('手动重载：已下载并立即生效', fresh.mapVersion);
   }
 
   /**

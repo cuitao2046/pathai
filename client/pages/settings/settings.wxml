@@ -96,7 +96,13 @@
     <view class="hint">仅用于 P0 无凭据网络探测，不会切换后端地址或建立业务连接；需在电脑启动独立探测服务。</view>
     <view class="result" aria-live="polite" wx:if="{{selfTestResult !== ''}}">{{selfTestResult}}</view>
     <button class="action" bindtap="onSelfTestTts" disabled="{{busy}}" aria-label="语音自检">语音自检</button>
-    <button class="action secondary" bindtap="onReloadMap" disabled="{{busy}}" aria-label="重新加载地图">重新加载地图</button>
+    <button
+      class="action secondary"
+      bindtap="onReloadMap"
+      disabled="{{reloading}}"
+      aria-label="重新加载地图"
+    >{{reloading ? '重新加载中…' : '重新加载地图'}}</button>
+    <view class="result" aria-live="polite" wx:if="{{reloadResult !== ''}}">{{reloadResult}}</view>
     <button class="action danger" bindtap="onClearCache" aria-label="清除本地缓存">清除本地缓存</button>
   </view>
 </view>

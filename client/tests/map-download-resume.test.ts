@@ -346,3 +346,54 @@ test('Content-Range 解析', () => {
   expect(parseContentRange(null)).toBeNull();
   expect(parseContentRange('items 0-1/2')).toBeNull();
 });
+
+describe('设置页「重新加载地图」', () => {
+  test('服务端数据未变：重新拉摘要后复用缓存，不重复下载 6MB', async () => {
+    installServer();
+    const service = newService();
+    await service.ensureLoaded();
+    const summaryRequestsBefore = wxStub.__requestLog.filter((r) => r.url === SUMMARY_URL).length;
+
+    const server = installServer();
+    await service.reload();
+
+    // 重载必须真的绕过 304 重新拉摘要（旧实现只清 ETag 且被内存缓存命中，等于没执行）
+    const summaryRequestsAfter = wxStub.__requestLog.filter((r) => r.url === SUMMARY_URL).length;
+    expect(summaryRequestsAfter).toBe(summaryRequestsBefore + 1);
+    expect(server.ranges).toEqual([]);
+    expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+    expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
+  }, 30000);
+
+  test('服务端有新版本：前台下载并立即生效（不等下次启动）', async () => {
+    installServer();
+    const service = newService();
+    await service.ensureLoaded();
+
+    const nextVersion = '2026-11-20.1';
+    const nextRaw = JSON.stringify({ ...REAL_MAP, mapVersion: nextVersion });
+    const nextSha = sha256(nextRaw);
+    const server = installServer({ version: nextVersion, raw: nextRaw });
+
+    await service.reload();
+
+    expect(server.ranges.length).toBeGreaterThan(0);
+    expect(service.requireVersion()).toBe(nextVersion);
+    expect(wxStub.__fileText(CACHE_FILE)).toBe(nextRaw);
+    expect(getJson(`map:summary:${SITE}`)).toMatchObject({
+      mapVersion: nextVersion,
+      dataSha256: nextSha,
+    });
+  }, 30000);
+
+  test('重载失败：抛错给页面提示原因，且不清空当前可用地图', async () => {
+    installServer();
+    const service = newService();
+    await service.ensureLoaded();
+
+    wxStub.__requestResponder = (o) => o.fail({ errMsg: 'request:fail offline' });
+    await expect(service.reload()).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+    expect(service.isLoaded).toBe(true);
+    expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+  }, 30000);
+});

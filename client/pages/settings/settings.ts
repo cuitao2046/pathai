@@ -35,6 +35,10 @@ Page({
     ttsEngine: '',
     asrEngine: '',
     selfTestResult: '',
+    /** 地图重载进行中（按钮禁用 + 文案反馈）。 */
+    reloading: false,
+    /** 地图重载结果（成功/失败原因，页面内可见）。 */
+    reloadResult: '',
     localProbeResult: '',
     /** 标定模式：本次启动实际是否记录（重启生效）。 */
     calibrationMode: false,
@@ -348,14 +352,32 @@ Page({
       .finally(() => this.setData({ busy: false }));
   },
 
-  onReloadMap() {
-    if (this.data.busy) {
+  /**
+   * 重新加载地图：强制拉最新摘要（不带 If-None-Match），数据有变化则前台下载并立即生效。
+   * 全程有可见反馈：按钮进入加载中 → 下载进度（refreshDownload 订阅）→ 成功/失败提示。
+   */
+  async onReloadMap() {
+    if (this.data.reloading) {
       return;
     }
-    this.setData({ busy: true, mapVersion: '加载中…' });
-    // 清 ETag 触发完整刷新（摘要/数据校验仍走 sha256）
-    wx.removeStorageSync(`pathai:map:summary-etag:${DEFAULT_SITE_ID}`);
-    void this.refreshMapVersion().finally(() => this.setData({ busy: false }));
+    const trace = startPerfTrace('settings', 'tap-reload-map');
+    this.setData({ reloading: true, mapVersion: '加载中…', reloadResult: '正在重新加载地图…' });
+    try {
+      await appContext.map.reload();
+      trace.mark('reload-done', 1000);
+      const version = appContext.map.requireVersion();
+      this.setData({ mapVersion: version, reloadResult: `地图已重新加载：${version}` });
+      wx.showToast({ title: '地图已重新加载', icon: 'success' });
+    } catch (err) {
+      trace.mark('reload-fail', 0);
+      const message = err instanceof ApiClientError ? describeError(err.code) : '加载失败，请检查网络';
+      log.warn('设置页重新加载地图失败', err);
+      this.setData({ reloadResult: `重新加载失败：${message}` });
+      wx.showToast({ title: '地图加载失败', icon: 'none' });
+    } finally {
+      this.setData({ reloading: false });
+      this.refreshDownload();
+    }
   },
 
   onClearCache() {
