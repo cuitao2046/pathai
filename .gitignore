@@ -78,3 +78,8 @@ debug/heban/
 debug/decomp/
 debug/walkable/
 debug/_heban_mask_crop.png
+# debug/ 一次性诊断产物（包快照/地图备份/临时提交信息/输出日志），仓库内已有历史版本可查
+debug/commit_msg.txt
+debug/pkg_*.json
+debug/*.pre-skel-*.geojson
+debug/_*_out.txt
