@@ -81,10 +81,15 @@ Page({
   pipeline: null as LocationPipeline | null,
   sequence: null as SequenceCounter | null,
   lastEstimate: null as PositionEstimateResponse | null,
-  /** floorId → 该层点位列表（refreshPoints 时重建）。 */
-  pointsByFloor: new Map<string, CalibrationPointRec[]>(),
+  /**
+   * floorId → 该层点位列表（refreshPoints 时重建）。
+   * Page 定义期只允许简单值，Map 会被框架深拷贝并丢失方法（console 告警
+   * `Free data with key ... seems not a simple value`），故定义期 null 占位，
+   * onLoad 实例化，使用点 `!` 断言（均发生在 onLoad 之后）。
+   */
+  pointsByFloor: null as Map<string, CalibrationPointRec[]> | null,
   /** pointId → 已采会话数。 */
-  sessionCounts: new Map<string, number>(),
+  sessionCounts: null as Map<string, number> | null,
   // 采集进行中状态（不进 data，避免高频 setData 冲突）
   sampler: null as StaticSampler | null,
   collectPoint: null as CalibrationPointRec | null,
@@ -94,6 +99,8 @@ Page({
   pausedRemainingS: 0,
 
   onLoad(): void {
+    this.pointsByFloor = new Map();
+    this.sessionCounts = new Map();
     this.store = new StaticPointsStore(
       PRESET_CALIBRATION_POINTS,
       () => getJson(STORE_KEY),
@@ -214,16 +221,16 @@ Page({
     }
     this.pointsByFloor = new Map();
     for (const p of this.store.listPoints()) {
-      const list = this.pointsByFloor.get(p.floorId);
+      const list = this.pointsByFloor!.get(p.floorId);
       if (list) {
         list.push(p);
       } else {
-        this.pointsByFloor.set(p.floorId, [p]);
+        this.pointsByFloor!.set(p.floorId, [p]);
       }
     }
     this.sessionCounts = new Map();
     for (const s of this.store.allSessions()) {
-      this.sessionCounts.set(s.pointId, (this.sessionCounts.get(s.pointId) ?? 0) + 1);
+      this.sessionCounts!.set(s.pointId, (this.sessionCounts!.get(s.pointId) ?? 0) + 1);
     }
   },
 
@@ -270,7 +277,7 @@ Page({
     if (vp === null || vp === undefined) {
       return;
     }
-    const pts = this.pointsByFloor.get(vp.floorId) ?? [];
+    const pts = this.pointsByFloor!.get(vp.floorId) ?? [];
     // 屏幕空间命中：点位按当前视口投影后再比距离，缩放/平移后不偏移
     const hit = pickPointOnScreen(
       pts,
@@ -332,7 +339,7 @@ Page({
         sceneText: p.label !== p.scene ? `${p.scene} · ${p.label}` : p.scene,
         floorText: floorItem !== undefined ? `${floorItem.level}F` : p.floorId,
         truthText: `${p.truth[0].toFixed(1)}, ${p.truth[1].toFixed(1)}`,
-        sessionCount: this.sessionCounts.get(p.pointId) ?? 0,
+        sessionCount: this.sessionCounts!.get(p.pointId) ?? 0,
         distanceText,
         custom: p.custom,
       },
@@ -466,7 +473,7 @@ Page({
     if (p === null || this.store === null) {
       return;
     }
-    const n = this.sessionCounts.get(p.pointId) ?? 0;
+    const n = this.sessionCounts!.get(p.pointId) ?? 0;
     const items: string[] = [];
     const actions: Array<() => void> = [];
     if (n > 0) {
@@ -611,12 +618,12 @@ Page({
     ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
-    const pts = this.pointsByFloor.get(vp.floorId) ?? [];
+    const pts = this.pointsByFloor!.get(vp.floorId) ?? [];
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const p of pts) {
       const { sx, sy } = vp.toScreen(p.truth[0], p.truth[1]);
-      const n = this.sessionCounts.get(p.pointId) ?? 0;
+      const n = this.sessionCounts!.get(p.pointId) ?? 0;
       const collectingHere = this.data.collecting && this.collectPoint?.pointId === p.pointId;
       if (collectingHere) {
         ctx.beginPath();
