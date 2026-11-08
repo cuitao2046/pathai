@@ -3,7 +3,15 @@
  * 参考摘要由 CPython hashlib 生成（2026-10）。同步与异步分片版共用压缩核心，
  * 异步版另覆盖分片切片（含代理对跨界）边界。
  */
-import { sha256, sha256Async, sha256Hex, utf8Bytes, utf8BytesAsync } from '../utils/sha256';
+import {
+  SHA256_SYNC_SLICE_BYTES,
+  createSha256Stream,
+  sha256,
+  sha256Async,
+  sha256Hex,
+  utf8Bytes,
+  utf8BytesAsync,
+} from '../utils/sha256';
 
 describe('sha256 已知向量', () => {
   test('空字符串', () => {
@@ -96,4 +104,44 @@ describe('异步分片版（sha256Async / utf8BytesAsync）', () => {
     const text = unit.repeat(120000); // 约 72 万码元，跨多片
     expect(await sha256Async(text)).toBe(sha256(text));
   }, 30000); // 同上
+});
+
+describe('流式哈希（增量 update，边下载边算）', () => {
+  test('任意非 64 字节对齐切片与一次性同步版一致', async () => {
+    const text = 'abc中文\u{1D54A}'.repeat(2000);
+    const bytes = utf8Bytes(text);
+    const stream = createSha256Stream();
+    for (let pos = 0; pos < bytes.length; pos += 37) {
+      await stream.update(bytes.subarray(pos, Math.min(pos + 37, bytes.length)));
+    }
+    expect(stream.digestHex()).toBe(sha256Hex(bytes));
+  }, 30000);
+
+  test('跨 update 的残留块也要正确拼接', () => {
+    const bytes = new Uint8Array(1000).map((_, i) => i % 251);
+    const stream = createSha256Stream();
+    stream.updateSync(bytes.subarray(0, 63));
+    stream.updateSync(bytes.subarray(63, 64));
+    stream.updateSync(bytes.subarray(64));
+    expect(stream.digestHex()).toBe(sha256Hex(bytes));
+  });
+
+  test('防回归：大输入按片让出，单片同步字节有上限', async () => {
+    // 上限本身就是契约：不允许为了少让出而整块同步压缩
+    expect(SHA256_SYNC_SLICE_BYTES).toBeLessThanOrEqual(256 * 1024);
+    const bytes = new Uint8Array(SHA256_SYNC_SLICE_BYTES * 4 + 123);
+    const setTimeoutSpy = jest.spyOn(globalThis, 'setTimeout');
+    try {
+      const stream = createSha256Stream();
+      await stream.update(bytes);
+      const yields = setTimeoutSpy.mock.calls.length;
+      // 5 片（4 整 + 1 尾）之间让出 4 次
+      expect(yields).toBeGreaterThanOrEqual(4);
+      expect(yields).toBeLessThanOrEqual(5);
+      expect(stream.stats().yields).toBe(yields);
+      expect(stream.stats().bytes).toBe(bytes.length);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  }, 30000);
 });

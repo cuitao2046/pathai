@@ -115,24 +115,38 @@ export function appendMapPartial(
   });
 }
 
-/** 读取半成品为 UTF-8 文本（完整后转正缓存与摘要校验用）；不存在/读取失败返回 null。 */
-export function readMapPartialText(
+/**
+ * 读取半成品指定区间（二进制），用于按片增量哈希已落盘字节。
+ * 不整包读回 6MB：真机 readFile 的大文本解码 + 重编码本身就是秒级开销。
+ * 读取失败返回 null（调用方按「半成品不可用」处理）。
+ */
+export function readMapPartialSlice(
   siteId: string,
   mapVersion: string,
-): Promise<string | null> {
+  position: number,
+  length: number,
+): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
     try {
       wx.getFileSystemManager().readFile({
         filePath: partialPath(siteId, mapVersion),
-        encoding: 'utf8',
-        success: (res) => resolve(typeof res.data === 'string' ? res.data : null),
+        position,
+        length,
+        success: (res) => {
+          if (res.data instanceof ArrayBuffer) {
+            resolve(new Uint8Array(res.data));
+            return;
+          }
+          log.warn('半成品分片读取返回非二进制数据');
+          resolve(null);
+        },
         fail: (err) => {
-          log.warn('半成品读取失败', err.errMsg);
+          log.warn('半成品分片读取失败', err.errMsg);
           resolve(null);
         },
       });
     } catch (err) {
-      log.warn('半成品读取异常', err instanceof Error ? err.message : String(err));
+      log.warn('半成品分片读取异常', err instanceof Error ? err.message : String(err));
       resolve(null);
     }
   });

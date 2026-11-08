@@ -202,9 +202,10 @@ function yieldToUi(): Promise<void> {
   });
 }
 
-/** 每片压缩块数（4096 块 = 256KB）。真机调试模式下每次 macrotask 让出都有固定开销，
- *  4.6MB 按 64KB 切片要让出 70 多次，累计可达数十秒；256KB 约 18 次，仍能保持 UI 可交互。 */
-const BLOCKS_PER_SLICE = 4096;
+/** 异步 update 每片同步压缩的字节上限（256KB）：片间让出主线程。
+ *  真机上 macrotask 让出本身有固定开销，切片不能太小；同时单片同步字节有上限，
+ *  避免「为了少让出而整块同步压完」把 UI 堵死。 */
+export const SHA256_SYNC_SLICE_BYTES = 256 * 1024;
 /** 每片 UTF-8 编码字符数（1M UTF-16 码元 ≈ 1~3MB 字节），配合压缩切片减少让出次数。 */
 const UTF8_CHARS_PER_SLICE = 1048576;
 
@@ -231,21 +232,126 @@ export async function utf8BytesAsync(text: string): Promise<Uint8Array> {
   return out;
 }
 
-/** 异步分块压缩：状态跨片保留，按片让出主线程。 */
-export async function sha256BytesAsync(input: Uint8Array): Promise<Uint8Array> {
+/** 流式哈希统计：同步压缩 CPU 与让出等待分开累计（真机定位「278s 是 CPU 还是等待」）。 */
+export interface Sha256StreamStats {
+  bytes: number;
+  /** updateSync 累计同步压缩耗时。 */
+  syncMs: number;
+  /** update 中等待 macrotask 让出的累计耗时。 */
+  yieldWaitMs: number;
+  yields: number;
+}
+
+/**
+ * 流式 SHA-256：边下载边喂字节，完整包不再「读回全文 + UTF-8 重编码 + 重算」。
+ * 分片下载每片调用 updateSync（字节已在内存），已落盘半成品按片读出后同样喂入；
+ * 只有最终 digest 才做填充收尾。
+ */
+export interface Sha256Stream {
+  /** 追加一段字节；按 SHA256_SYNC_SLICE_BYTES 切片，片间让出主线程。 */
+  update(bytes: Uint8Array): Promise<void>;
+  /** 追加一段字节（同步）；调用方保证单次传入量有界（如一个下载分片）。 */
+  updateSync(bytes: Uint8Array): void;
+  /** 结束并返回 32 字节摘要；之后不可再追加。 */
+  digestBytes(): Uint8Array;
+  /** 结束并返回 64 位小写 hex 摘要。 */
+  digestHex(): string;
+  stats(): Readonly<Sha256StreamStats>;
+}
+
+export function createSha256Stream(): Sha256Stream {
   const h = initHash();
-  const { buf, view } = padInput(input);
   const w = new Uint32Array(64);
-  let sinceYield = 0;
-  for (let offset = 0; offset < buf.length; offset += 64) {
-    compressBlock(h, view, offset, w);
-    sinceYield += 1;
-    if (sinceYield >= BLOCKS_PER_SLICE) {
-      sinceYield = 0;
-      await yieldToUi();
+  /** 不足 64 字节的残留（跨 update 边界）。 */
+  const tail = new Uint8Array(64);
+  const tailView = new DataView(tail.buffer);
+  let tailLen = 0;
+  let totalBytes = 0;
+  let finalized = false;
+  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0 };
+
+  const updateSync = (bytes: Uint8Array): void => {
+    if (finalized) {
+      throw new Error('SHA-256 流已结束，不能再追加');
     }
-  }
-  return digestToBytes(h);
+    if (bytes.length === 0) {
+      return;
+    }
+    const startedAtMs = Date.now();
+    totalBytes += bytes.length;
+    let pos = 0;
+    // 先补满上次残留
+    if (tailLen > 0) {
+      const take = Math.min(64 - tailLen, bytes.length);
+      tail.set(bytes.subarray(0, take), tailLen);
+      tailLen += take;
+      pos = take;
+      if (tailLen === 64) {
+        compressBlock(h, tailView, 0, w);
+        tailLen = 0;
+      }
+    }
+    if (pos < bytes.length) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let offset = pos;
+      for (; offset + 64 <= bytes.length; offset += 64) {
+        compressBlock(h, view, offset, w);
+      }
+      const remain = bytes.length - offset;
+      if (remain > 0) {
+        tail.set(bytes.subarray(offset), 0);
+        tailLen = remain;
+      }
+    }
+    stats.bytes = totalBytes;
+    stats.syncMs += Date.now() - startedAtMs;
+  };
+
+  const update = async (bytes: Uint8Array): Promise<void> => {
+    const step = SHA256_SYNC_SLICE_BYTES;
+    for (let pos = 0; pos < bytes.length; pos += step) {
+      updateSync(bytes.subarray(pos, Math.min(pos + step, bytes.length)));
+      if (pos + step < bytes.length) {
+        const waitStart = Date.now();
+        await yieldToUi();
+        stats.yieldWaitMs += Date.now() - waitStart;
+        stats.yields += 1;
+      }
+    }
+  };
+
+  const digestBytes = (): Uint8Array => {
+    if (!finalized) {
+      finalized = true;
+      const bitLength = totalBytes * 8;
+      const padLen = tailLen < 56 ? 64 : 128;
+      const buf = new Uint8Array(padLen);
+      buf.set(tail.subarray(0, tailLen));
+      buf[tailLen] = 0x80;
+      const view = new DataView(buf.buffer);
+      view.setUint32(padLen - 8, Math.floor(bitLength / 0x100000000));
+      view.setUint32(padLen - 4, bitLength >>> 0);
+      for (let offset = 0; offset < padLen; offset += 64) {
+        compressBlock(h, view, offset, w);
+      }
+    }
+    return digestToBytes(h);
+  };
+
+  return {
+    update,
+    updateSync,
+    digestBytes,
+    digestHex: () => toHex(digestBytes()),
+    stats: () => stats,
+  };
+}
+
+/** 异步分块压缩：按片让出主线程；实现复用流式哈希（分片状态跨 update 保留）。 */
+export async function sha256BytesAsync(input: Uint8Array): Promise<Uint8Array> {
+  const stream = createSha256Stream();
+  await stream.update(input);
+  return stream.digestBytes();
 }
 
 /** 大文本 → 64 位小写 hex 摘要（分片让出主线程，供地图包等 4.6MB 级输入）。 */

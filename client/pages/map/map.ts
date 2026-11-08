@@ -39,6 +39,7 @@ import { LocationPipeline } from '../../core/position/location-pipeline';
 import { SequenceCounter } from '../../core/position/sequence-counter';
 import { buildRouteOverview } from '../../core/nav/route-overview';
 import { vibrateLong, vibrateShort } from '../../utils/haptic';
+import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import {
   HoldToTalkGesture,
   HOLD_TO_TALK_DEFAULTS,
@@ -231,6 +232,10 @@ Page({
   navPosition: null as { floorId: string; x: number; y: number } | null,
   overviewAnnounced: false,
   lastTapAt: 0,
+  /** 工具条按钮按下时间：bindtouchstart 先于 bindtap，测「手指按下→界面响应」的真实间隔。 */
+  toolTouchAt: 0,
+  /** 全屏按住说话的交互追踪（touchstart 起点，录音态渲染回调收尾）。 */
+  pttTrace: null as PerfTrace | null,
   sessionEnded: false,
   parseInFlight: false,
   locationInFlight: false,
@@ -767,6 +772,7 @@ Page({
     });
     if (action === 'pending' && this.isFullScreenPttEnabled()) {
       // 先挂起：500 ms 静止转语音，移动超过 10px 转拖拽
+      this.pttTrace = startPerfTrace('map', 'hold-to-talk');
       this.gesture = { mode: 'pending', lastX: p.x, lastY: p.y, baseDist: 0, lastMidX: 0, lastMidY: 0 };
       this.scheduleHold();
       return;
@@ -797,6 +803,7 @@ Page({
         }
         // 超出 10px 死区：从按下点开始拖拽，避免首帧跳变
         this.clearHoldTimers();
+        this.pttTrace = null; // 转为拖拽，不再等待录音态
         const origin = this.holdGesture!.origin;
         g.mode = 'pan';
         g.lastX = origin.x;
@@ -841,6 +848,7 @@ Page({
         return;
       }
       this.clearHoldTimers();
+      this.pttTrace = null; // 未进入录音态就抬手/取消：结束本次追踪
     }
     if (ts.length === 1) {
       // 双指抬一根 → 剩余单指继续平移
@@ -1178,6 +1186,7 @@ Page({
   // ------------------------------------------------------------------
 
   onSwitchFloor(e: WechatMiniprogram.TouchEvent): void {
+    const trace = this.startToolTrace('tap-floor-switch');
     const floorId = String(e.currentTarget.dataset.floor ?? '');
     log.info('tap 切换楼层', floorId, `current=${this.data.currentFloor}`);
     // 选中即收起楼层菜单（含重复点击当前层的场景）
@@ -1196,16 +1205,36 @@ Page({
     vp.setFloor(floorId, flatBounds(segs));
     vp.fit();
     const item = this.floorList.find((f) => f.floorId === floorId);
-    this.setData({
-      currentFloor: floorId,
-      currentFloorText: item !== undefined ? `${item.level}F` : floorId,
-    });
+    this.setData(
+      {
+        currentFloor: floorId,
+        currentFloorText: item !== undefined ? `${item.level}F` : floorId,
+      },
+      () => trace.mark('floor-setData'),
+    );
     this.requestDraw();
+    trace.mark('draw-requested');
   },
 
   /** 楼层选择按钮：横向展开/收起可选楼层。 */
   onToggleFloorMenu(): void {
-    this.setData({ floorMenuOpen: !this.data.floorMenuOpen }, () => this.refreshTapExclusions());
+    const trace = this.startToolTrace('tap-floor-trigger');
+    this.setData({ floorMenuOpen: !this.data.floorMenuOpen }, () => {
+      this.refreshTapExclusions();
+      trace.mark('menu-rendered');
+    });
+  },
+
+  /** 工具条按钮按下（bindtouchstart）：记录真实手指起点，供 bindtap 计算总延迟。 */
+  onToolTouchStart(): void {
+    this.toolTouchAt = Date.now();
+  },
+
+  /** 取用按下时间并开启一次交互追踪；没有 touchstart（如读屏触发）时退回当前时间。 */
+  startToolTrace(action: string): PerfTrace {
+    const startedAtMs = this.toolTouchAt > 0 ? this.toolTouchAt : undefined;
+    this.toolTouchAt = 0;
+    return startPerfTrace('map', action, { startedAtMs });
   },
 
   onResetView(): void {
@@ -1215,10 +1244,15 @@ Page({
   },
 
   onGoSettings(): void {
+    const trace = this.startToolTrace('tap-settings');
     log.info('onGoSettings tap');
     wx.navigateTo({
-      url: '/pages/settings/settings',
-      fail: (err) => log.warn('navigateTo settings 失败', JSON.stringify(err)),
+      url: `/pages/settings/settings?perfAt=${trace.startedAtMs}&perfId=${trace.traceId}`,
+      success: () => trace.mark('navigateTo', 1000),
+      fail: (err) => {
+        trace.mark('navigateTo-fail', 0);
+        log.warn('navigateTo settings 失败', JSON.stringify(err));
+      },
     });
   },
 
@@ -1230,7 +1264,11 @@ Page({
     if (!this.data.collectEntry) {
       return;
     }
-    this.setData({ collectMenuOpen: !this.data.collectMenuOpen }, () => this.refreshTapExclusions());
+    const trace = this.startToolTrace('tap-collect-trigger');
+    this.setData({ collectMenuOpen: !this.data.collectMenuOpen }, () => {
+      this.refreshTapExclusions();
+      trace.mark('menu-rendered');
+    });
   },
 
   onGoCollectStatic(): void {
@@ -1281,7 +1319,14 @@ Page({
         if (state === 'recording') {
           vibrateShort();
         }
-        this.setData({ pttState: state, pttStateText: PTT_TEXT[state] });
+        this.setData({ pttState: state, pttStateText: PTT_TEXT[state] }, () => {
+          if (state === 'recording') {
+            this.pttTrace?.mark('recording-ui', 600);
+            this.pttTrace = null;
+          } else if (state === 'idle' || state === 'error') {
+            this.pttTrace = null;
+          }
+        });
       },
       onPartial: (text) => this.setData({ partial: text }),
       onFinal: (text) => void this.handleFinal(text),
@@ -1294,6 +1339,10 @@ Page({
   },
 
   onPttStart(): void {
+    // 底部「按住说话」按钮直接 touchstart：无全屏手势起点时在此补一条追踪
+    if (this.pttTrace === null) {
+      this.pttTrace = startPerfTrace('map', 'hold-to-talk');
+    }
     // 按住说话优先：立即打断启动/提示音，避免与录音抢麦
     appContext.voicePrompts.stop();
     if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {

@@ -259,7 +259,7 @@ test('半成品写入契约：offset=0 需建档（真机 appendFile 不自动�
   expect(wxStub.__files.get(path)?.length).toBe(32);
 });
 
-test('续传状态已满：不发越界 Range，清空后整包重下（真机 416 坑）', async () => {
+test('续传状态已满：直接校验现有半成品并转正，不重下、不发越界 Range', async () => {
   setJson(DOWNLOAD_KEY, {
     mapVersion: REAL_MAP.mapVersion,
     dataSha256: SHA,
@@ -273,11 +273,50 @@ test('续传状态已满：不发越界 Range，清空后整包重下（真机 4
   const service = newService();
   await service.ensureLoaded();
 
-  expect(server.ranges[0]).toBe(`bytes=0-${MAP_DOWNLOAD_CHUNK_BYTES - 1}`);
-  expect(server.ranges.some((r) => r.startsWith(`bytes=${TOTAL}-`))).toBe(false);
+  // 半成品完整且摘要一致：只请求摘要，不再请求任何地图数据（防回归：6MB 重复下载）
+  expect(server.ranges).toEqual([]);
   expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
   expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
+  expect(wxStub.__files.has(partialPath(SITE, REAL_MAP.mapVersion))).toBe(false);
   expect(getJson(DOWNLOAD_KEY)).toBeNull();
+}, 30000);
+
+test('续传状态已满但内容被篡改：摘要不符则丢弃重下，不转正脏数据', async () => {
+  setJson(DOWNLOAD_KEY, {
+    mapVersion: REAL_MAP.mapVersion,
+    dataSha256: SHA,
+    downloadedBytes: TOTAL,
+    totalBytes: TOTAL,
+    updatedAtMs: 1,
+  });
+  const tampered = BYTES.slice();
+  tampered[tampered.length - 1] ^= 0xff; // 长度不变，内容变化
+  wxStub.__files.set(partialPath(SITE, REAL_MAP.mapVersion), tampered);
+
+  const server = installServer();
+  const service = newService();
+  await service.ensureLoaded();
+
+  expect(server.ranges[0]).toBe(`bytes=0-${MAP_DOWNLOAD_CHUNK_BYTES - 1}`);
+  expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+  expect(wxStub.__fileText(CACHE_FILE)).toBe(RAW);
+}, 30000);
+
+test('storage 写入失败不静默：地图仍可用，但记录并在设置页暴露告警', async () => {
+  installServer();
+  const originalSetStorageSync = wxStub.setStorageSync;
+  wxStub.setStorageSync = () => {
+    throw new Error('setStorageSync:fail overflow');
+  };
+  try {
+    const service = newService();
+    await service.ensureLoaded();
+    expect(service.requireVersion()).toBe(REAL_MAP.mapVersion);
+    expect(service.storageWarning).toContain('storage');
+    expect(service.storageWarning).toContain('摘要');
+  } finally {
+    wxStub.setStorageSync = originalSetStorageSync;
+  }
 }, 30000);
 
 test('首片即 416：清空半成品并重试一次，不把 416 抛给用户', async () => {

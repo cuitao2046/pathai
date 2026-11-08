@@ -20,6 +20,8 @@ export interface WxFsStub {
   readFile(options: {
     filePath: string;
     encoding?: string;
+    position?: number;
+    length?: number;
     success(res: { data: string | ArrayBuffer }): void;
     fail(err: { errMsg: string }): void;
   }): void;
@@ -139,9 +141,17 @@ export const wxStub: WxStub = {
           options.fail({ errMsg: 'readFile:fail no such file' });
           return;
         }
-        options.success({
-          data: options.encoding ? decode(bytes) : toArrayBuffer(bytes),
-        });
+        if (options.encoding) {
+          options.success({ data: decode(bytes) });
+          return;
+        }
+        // 二进制分片读取（position/length）与真机语义一致：越界返回空段
+        const start = Math.min(options.position ?? 0, bytes.length);
+        const end =
+          options.length === undefined
+            ? bytes.length
+            : Math.min(start + options.length, bytes.length);
+        options.success({ data: toArrayBuffer(bytes.subarray(start, end)) });
       },
       writeFile(options) {
         files.set(options.filePath, toBytes(options.data));

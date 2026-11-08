@@ -21,15 +21,16 @@ import {
   MAP_STALE_DAYS,
 } from '../../config/env';
 import { nowMs } from '../../utils/clock';
-import { sha256Async } from '../../utils/sha256';
+import { createSha256Stream, type Sha256Stream } from '../../utils/sha256';
 import { createLogger } from '../../utils/logger';
+import { logPerfPhase, startPerfTrace } from '../../utils/perf-trace';
 import { getJson, getString, remove, setJson, setString } from '../../utils/kv';
 import {
   appendMapPartial,
   commitMapPartial,
   readMapCache,
   readMapPartialSize,
-  readMapPartialText,
+  readMapPartialSlice,
   removeMapPartial,
 } from '../../utils/map-cache';
 import type {
@@ -50,6 +51,12 @@ const log = createLogger('map');
 const SUMMARY_KEY = (siteId: string) => `map:summary:${siteId}`;
 const SUMMARY_ETAG_KEY = (siteId: string) => `map:summary-etag:${siteId}`;
 const DOWNLOAD_KEY = (siteId: string) => `map:download:${siteId}`;
+
+/**
+ * 已落盘半成品的分片哈希读块（1MiB）：按片读 + 立即喂哈希，避免整包 6MB 文本读回。
+ * 与下载分片同为 1MiB，单片同步哈希量有界。
+ */
+const PARTIAL_HASH_READ_BYTES = 1024 * 1024;
 
 export interface MapServiceOptions {
   client: ApiClient;
@@ -92,8 +99,15 @@ export class MapService {
   private listeners = new Set<(event: MapServiceEvent) => void>();
   private downloadState: MapDownloadState | null = null;
   private downloading = false;
+  /** storage 写入失败告警（设置页展示；null=正常）。 */
+  private storageWarningValue: string | null = null;
 
   constructor(private readonly opts: MapServiceOptions) {}
+
+  /** 最近一次本地持久化失败说明；正常情况下为 null。 */
+  get storageWarning(): string | null {
+    return this.storageWarningValue;
+  }
 
   get isLoaded(): boolean {
     return this.summary !== null && this.pkg !== null;
@@ -266,10 +280,34 @@ export class MapService {
     }
   }
 
+  /**
+   * 持久化摘要/ETag。写入失败必须可见：摘要丢失会让下次启动退化为整包下载，
+   * 这正是「每次启动重复下载」的成因之一，不能静默降级。
+   */
   private persistMeta(summary: MapVersionResponse, etag: string | null): void {
-    setJson(SUMMARY_KEY(this.opts.siteId), summary);
-    if (etag !== null) {
-      setString(SUMMARY_ETAG_KEY(this.opts.siteId), etag);
+    const okSummary = setJson(SUMMARY_KEY(this.opts.siteId), summary);
+    const okEtag = etag === null ? true : setString(SUMMARY_ETAG_KEY(this.opts.siteId), etag);
+    if (!okSummary || !okEtag) {
+      this.warnStorage('地图摘要写入 storage 失败（本次会话可用，重启后可能重复下载）');
+    }
+  }
+
+  /** 记录并按需升级 storage 失败告警（同一原因只打一次 error，避免刷屏）。 */
+  private warnStorage(message: string): void {
+    if (this.storageWarningValue === message) {
+      return;
+    }
+    this.storageWarningValue = message;
+    log.error(`${message}（storage=${storageUsageText()}）`);
+  }
+
+  /** 下载进度状态落盘；失败按同一套告警暴露。 */
+  private persistDownloadState(): void {
+    if (this.downloadState === null) {
+      return;
+    }
+    if (!setJson(DOWNLOAD_KEY(this.opts.siteId), this.downloadState)) {
+      this.warnStorage('地图下载进度写入 storage 失败（中断后续传起点可能丢失）');
     }
   }
 
@@ -289,17 +327,15 @@ export class MapService {
 
     let offset = 0;
     let total: number | null = null;
+    /** 半成品实际落盘大小（存在且与目标版本匹配时）。 */
+    let fileSize = 0;
     const saved = getJson<MapDownloadState>(DOWNLOAD_KEY(siteId));
     if (saved !== null && saved.mapVersion === version && saved.dataSha256 === summary.dataSha256) {
-      offset = Math.min(saved.downloadedBytes, await readMapPartialSize(siteId, version));
+      fileSize = await readMapPartialSize(siteId, version);
+      // appendFile 总是追加到文件末尾，实际文件大小才是真实续传偏移；
+      // 状态记录可能落后于文件（写完分片、未落状态即被回收）。
+      offset = fileSize;
       total = saved.totalBytes;
-      // 已下载到（或超过）总长度但尚未转正（上次校验/转正中断）：再发 Range 必然 416，
-      // 直接清空重下，避免把服务端合法的 416 暴露给用户（真机实测坑）。
-      if (total !== null && offset >= total) {
-        await this.resetPartial(version);
-        offset = 0;
-        total = null;
-      }
     } else {
       if (saved !== null) {
         await removeMapPartial(siteId, saved.mapVersion); // 目标版本变了：丢弃旧半成品
@@ -316,11 +352,42 @@ export class MapService {
       updatedAtMs: nowMs(),
     };
     // 先落一次状态：首片未完成即中断时，设置页也能展示「未完成」与续传起点
-    setJson(DOWNLOAD_KEY(siteId), this.downloadState);
+    this.persistDownloadState();
     this.emit({ type: 'download-start', mapVersion: version, foreground });
 
+    const trace = startPerfTrace('map', 'map-download', { startedAtMs });
+    let hasher = createSha256Stream();
     let resetTried = false;
     try {
+      // 半成品已完整（上次在「校验/转正」阶段中断）：直接校验现有文件并转正。
+      // 旧实现此时会 resetPartial 后整包重下 6MB —— 这是「每次启动重复下载」的直接原因。
+      if (total !== null && fileSize >= total) {
+        // 用实际文件大小参与哈希：文件被多写/截断时摘要必然不符，走丢弃重下
+        await this.feedPartialToHasher(hasher, siteId, version, fileSize);
+        trace.mark('reuse-digest', 3000);
+        if (hasher.digestHex() === summary.dataSha256) {
+          await commitMapPartial(siteId, version);
+          this.logDigestStats(hasher, trace.traceId);
+          this.clearDownloadState();
+          this.persistMeta(summary, etag);
+          const cached = await readMapCache(siteId);
+          if (cached === null) {
+            throw mapUnavailable('地图缓存读取失败');
+          }
+          trace.mark('reuse-ready', 1000);
+          log.info('完整半成品校验通过并转正', version);
+          return cached;
+        }
+        log.warn('完整半成品摘要不符，丢弃后整包重下', version);
+        await this.resetPartial(version);
+        offset = 0;
+        total = null;
+        hasher = createSha256Stream();
+      } else if (offset > 0) {
+        // 续传：先把已落盘字节按片补算进哈希，再继续下载剩余分片
+        await this.feedPartialToHasher(hasher, siteId, version, offset);
+      }
+
       for (;;) {
         // 始终用 Range 请求（含首片）：服务端按片返回 206，客户端才能记录进度与续传；
         // 若服务端不支持 Range（返回 200 整包），下方按整包兜底。
@@ -347,6 +414,7 @@ export class MapService {
             await this.resetPartial(version);
             offset = 0;
             total = null;
+            hasher = createSha256Stream(); // 半成品已清空：哈希状态同步归零
             continue;
           }
           throw err;
@@ -369,6 +437,7 @@ export class MapService {
             resetTried = true;
             await this.resetPartial(version);
             offset = 0;
+            hasher = createSha256Stream();
             continue;
           }
           if (range.total !== null) {
@@ -381,6 +450,7 @@ export class MapService {
           if (offset > 0) {
             await removeMapPartial(siteId, version);
             offset = 0;
+            hasher = createSha256Stream();
           }
           await appendMapPartial(siteId, version, body, offset);
           offset = body.byteLength;
@@ -388,6 +458,9 @@ export class MapService {
         } else {
           throw mapUnavailable(`地图数据响应状态异常：${resp.statusCode}`);
         }
+
+        // 边下边算：写入成功后立即把本片字节喂给流式哈希，不再在下载结束后读回全文重算
+        hasher.updateSync(new Uint8Array(body));
 
         this.patchProgress(offset, total);
         if (total !== null && offset >= total) {
@@ -398,38 +471,73 @@ export class MapService {
         }
       }
 
-      // 完整性校验对象是完整文件（分片拼接后的文本），与服务端 dataSha256 必须一致。
-      // 用文本读取而非二进制 ArrayBuffer：真机/工具 readFile 不带 encoding 时的返回值
-      // 未必能被宿主环境的 instanceof ArrayBuffer 命中，文本读取是已验证可靠的路径；
-      // sha256Async 内部按 UTF-8 编码后分片哈希，JSON 文本往返编码字节一致。
-      const chunksDoneAtMs = nowMs();
-      log.info('地图分片下载完成', version, `${chunksDoneAtMs - startedAtMs}ms`, `${offset} 字节`);
-      const raw = await readMapPartialText(siteId, version);
-      if (raw === null || raw.length === 0) {
-        throw mapUnavailable('地图半成品读取失败');
-      }
-      const readAtMs = nowMs();
-      const digest = await sha256Async(raw);
-      const hashAtMs = nowMs();
+      // 下载过程中已按片完成全量哈希，这里只做收尾比对；校验对象是服务端原始字节，
+      // 仍与后端 dataSha256 全量比对（不走 size/ETag 弱校验）。
+      trace.mark('chunks-done', 3000);
+      const digest = hasher.digestHex();
+      const stats = hasher.stats();
+      this.logDigestStats(hasher, trace.traceId);
+      log.info(
+        '地图分片下载完成',
+        version,
+        `下载=${nowMs() - startedAtMs}ms`,
+        `哈希CPU=${stats.syncMs}ms`,
+        `字节=${stats.bytes}`,
+      );
       if (digest !== summary.dataSha256) {
         await removeMapPartial(siteId, version);
         throw mapUnavailable('地图数据摘要校验失败');
       }
+      const commitStartAtMs = nowMs();
       // 校验通过后直接把半成品 rename 为正式缓存，不再另写 4.6MB staging 文件
       await commitMapPartial(siteId, version);
-      log.info(
-        '地图校验与转正耗时',
-        `读取=${readAtMs - chunksDoneAtMs}ms`,
-        `摘要=${hashAtMs - readAtMs}ms`,
-        `转正=${nowMs() - hashAtMs}ms`,
-      );
+      trace.mark('commit-done', 1000);
+      log.info('地图校验与转正耗时', `转正=${nowMs() - commitStartAtMs}ms`);
       this.clearDownloadState();
       this.persistMeta(summary, etag);
+      const raw = await readMapCache(siteId);
+      if (raw === null) {
+        throw mapUnavailable('地图缓存读取失败');
+      }
+      trace.mark('ready', 3000);
       return raw;
     } finally {
       this.downloading = false;
       this.downloadState = null; // 中断/失败时回落到持久化状态供设置页展示
     }
+  }
+
+  /** 把半成品 [0,length) 字节按片读入流式哈希（单片 1MiB，同步量有界）。 */
+  private async feedPartialToHasher(
+    hasher: Sha256Stream,
+    siteId: string,
+    version: string,
+    length: number,
+  ): Promise<void> {
+    let pos = 0;
+    while (pos < length) {
+      const want = Math.min(PARTIAL_HASH_READ_BYTES, length - pos);
+      const piece = await readMapPartialSlice(siteId, version, pos, want);
+      if (piece === null || piece.length === 0) {
+        throw mapUnavailable('地图半成品分片读取失败');
+      }
+      hasher.updateSync(piece);
+      pos += piece.length;
+    }
+  }
+
+  /** 摘要耗时拆分：同步压缩 CPU 与 macrotask 让出等待分别记录，便于复查回归。 */
+  private logDigestStats(hasher: Sha256Stream, traceId: string): void {
+    const stats = hasher.stats();
+    logPerfPhase('map', 'map-digest', 'hash-cpu', stats.syncMs, { thresholdMs: 1000, traceId });
+    logPerfPhase('map', 'map-digest', 'hash-yield-wait', stats.yieldWaitMs, {
+      thresholdMs: 1000,
+      traceId,
+    });
+    logPerfPhase('map', 'map-digest', 'hash-bytes', stats.bytes, {
+      thresholdMs: Number.MAX_SAFE_INTEGER,
+      traceId,
+    });
   }
 
   private dataUrlFor(summary: MapVersionResponse): string {
@@ -450,7 +558,7 @@ export class MapService {
       return;
     }
     this.downloadState = { ...this.downloadState, downloadedBytes, totalBytes, updatedAtMs: nowMs() };
-    setJson(DOWNLOAD_KEY(this.opts.siteId), this.downloadState);
+    this.persistDownloadState();
     this.emit({ type: 'download-progress', state: this.downloadState });
   }
 
@@ -534,4 +642,17 @@ export function isVersionStale(
 
 function mapUnavailable(message: string): ApiClientError {
   return new ApiClientError({ code: 'MAP_UNAVAILABLE', message, retryable: true });
+}
+
+/** storage 用量（写失败时辅助判断是否写满）；取不到返回「未知」。 */
+function storageUsageText(): string {
+  try {
+    if (typeof wx.getStorageInfoSync !== 'function') {
+      return '未知';
+    }
+    const info = wx.getStorageInfoSync();
+    return `${info.currentSize}KB/${info.limitSize}KB`;
+  } catch {
+    return '未知';
+  }
 }

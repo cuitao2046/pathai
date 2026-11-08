@@ -13,6 +13,7 @@ import { currentServiceBaseUrl } from '../../services/service-endpoint';
 import { runP0LocalProbe } from '../../services/p0-local-probe';
 import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
+import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import { remove } from '../../utils/kv';
 import type { DataSource } from '../../config/env';
 
@@ -28,6 +29,8 @@ Page({
     mapVersion: '未加载',
     /** 未完成地图下载的进度文案（完成或从未下载时为空，不展示）。 */
     downloadText: '',
+    /** 地图摘要/进度写 storage 失败的告警（空=正常；不静默）。 */
+    storageWarning: '',
     tokenStatus: '检查中…',
     ttsEngine: '',
     asrEngine: '',
@@ -53,25 +56,37 @@ Page({
 
   /** 地图下载进度订阅（仅本页存活期间）。 */
   mapUnsubscribe: null as (() => void) | null,
+  /** 从地图页跳转带来的交互追踪（手指按下 → 本页 onReady）。 */
+  perf: null as PerfTrace | null,
 
-  onLoad() {
+  onLoad(options: Record<string, string | undefined>) {
+    const traceAt = Number(options.perfAt);
+    if (Number.isFinite(traceAt) && traceAt > 0) {
+      this.perf = startPerfTrace('settings', 'open', {
+        startedAtMs: traceAt,
+        traceId: options.perfId,
+      });
+    }
     const dataSource = appContext.dataSource;
     const ttsEngine = appContext.voiceMock ? 'MockTtsEngine（本地）' : '讯飞超拟人合成（在线）';
     const asrEngine = appContext.voiceMock ? 'MockAsrEngine（本地）' : '讯飞听写大模型（在线）';
-    this.setData({
-      dataSource,
-      voiceMock: appContext.getVoiceMockSetting(),
-      ttsEngine,
-      asrEngine,
-      calibrationMode: appContext.calibrationMode,
-      calibrationSetting: appContext.getCalibrationModeSetting(),
-      calibrationCount: appContext.calibration.count,
-      calibrationOperator: appContext.getCalibrationOperator(),
-      fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
-      a11yMode: appContext.getA11yMode(),
-      fullScreenPttSetting: appContext.getFullScreenPttSetting(),
-      navArrowSetting: appContext.getNavArrowSetting(),
-    });
+    this.setData(
+      {
+        dataSource,
+        voiceMock: appContext.getVoiceMockSetting(),
+        ttsEngine,
+        asrEngine,
+        calibrationMode: appContext.calibrationMode,
+        calibrationSetting: appContext.getCalibrationModeSetting(),
+        calibrationCount: appContext.calibration.count,
+        calibrationOperator: appContext.getCalibrationOperator(),
+        fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
+        a11yMode: appContext.getA11yMode(),
+        fullScreenPttSetting: appContext.getFullScreenPttSetting(),
+        navArrowSetting: appContext.getNavArrowSetting(),
+      },
+      () => this.perf?.mark('onLoad-rendered', 1000),
+    );
     // 未完成下载的百分比只在这里展示（REQ-MAP），随下载进度实时刷新
     this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
     this.refreshDownload();
@@ -111,8 +126,18 @@ Page({
     });
   },
 
+  /** 首个可视帧完成（跳转链路的最后一段：onReady）。 */
+  onReady() {
+    this.perf?.mark('onReady', 1000);
+    this.perf = null;
+  },
+
   /** 未完成下载百分比（REQ-MAP：只在本页展示；完成/无任务时隐藏）。 */
   refreshDownload() {
+    const storageWarning = appContext.map.storageWarning ?? '';
+    if (this.data.storageWarning !== storageWarning) {
+      this.setData({ storageWarning });
+    }
     const pending = appContext.map.pendingDownload;
     if (pending === null) {
       if (this.data.downloadText !== '') {

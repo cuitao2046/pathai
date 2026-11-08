@@ -22,12 +22,18 @@ export function getString(key: string): string | null {
   return stored ?? memoryFallback.get(key) ?? null;
 }
 
-export function setString(key: string, value: string): void {
+/**
+ * 写入字符串；返回是否真正落到持久层（false = 仅写进本次会话内存）。
+ * 调用方必须处理 false（如地图摘要写失败会导致下次启动重复下载），不得静默。
+ */
+export function setString(key: string, value: string): boolean {
   memoryFallback.set(key, value);
   try {
     wx.setStorageSync(withPrefix(key), value);
+    return true;
   } catch {
     // storage 不可用（磁盘满/权限异常）：内存兜底已写入，下次启动重建
+    return false;
   }
 }
 
@@ -43,8 +49,9 @@ export function getJson<T>(key: string): T | null {
   }
 }
 
-export function setJson(key: string, value: unknown): void {
-  setString(key, JSON.stringify(value));
+/** 写入 JSON；返回值同 setString（false = 仅内存可用）。 */
+export function setJson(key: string, value: unknown): boolean {
+  return setString(key, JSON.stringify(value));
 }
 
 export function remove(key: string): void {

@@ -44,7 +44,13 @@
        点按层用 <view aria-role="button">（不用 <button>：其内置 184px 默认宽会撑出间隙），
        展开后「触发键 + 候选」是一条零间隙、仅 1rpx 单线分隔的连续控件 -->
   <view class="map-tools map-tools--left top-left">
-    <view class="zoom-hit" aria-role="button" bindtap="onGoSettings" aria-label="打开设置">
+    <view
+      class="zoom-hit"
+      aria-role="button"
+      bindtouchstart="onToolTouchStart"
+      bindtap="onGoSettings"
+      aria-label="打开设置"
+    >
       <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">设置</view>
     </view>
 
@@ -52,6 +58,7 @@
       <view
         class="zoom-hit"
         aria-role="button"
+        bindtouchstart="onToolTouchStart"
         bindtap="onToggleFloorMenu"
         aria-label="楼层选择，当前{{currentFloorText}}"
         aria-expanded="{{floorMenuOpen}}"
@@ -63,6 +70,7 @@
           class="zoom-hit"
           aria-role="button"
           data-floor="{{item.floorId}}"
+          bindtouchstart="onToolTouchStart"
           bindtap="onSwitchFloor"
           aria-label="切换到{{item.displayName}}"
           aria-pressed="{{item.floorId === currentFloor}}"
@@ -88,6 +96,7 @@
       <view
         class="zoom-hit"
         aria-role="button"
+        bindtouchstart="onToolTouchStart"
         bindtap="onToggleCollectMenu"
         aria-label="现场采集工具"
         aria-expanded="{{collectMenuOpen}}"
