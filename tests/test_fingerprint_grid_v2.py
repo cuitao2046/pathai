@@ -6,7 +6,7 @@
 2. 格位键唯一、最近邻 >= 1.0m、无 > 2m 空洞；
 3. 编号 FP-{f}-C{col}{row}[-JDS] 可解析、与坐标/类型自洽；
 4. riskNodes 类型分流：outward_door→门口（1m），stair/elevator→高风险（3m）；
-5. 可采集判定边界（10m / 15m / >=3 信标 / -85dBm）。
+5. 可采集判定边界（3D 斜距 RSSI>=-85dBm / 3D 15m / >=3 信标 / 墙与门衰减）。
 """
 import json
 import math
@@ -24,13 +24,14 @@ from src.tools.generate_fingerprint_grid import (
     DOOR_RADIUS_M,
     RISK_RADIUS_M,
     coverage_flags,
+    build_wall_model,
     collect_triggers,
     order_route_points,
     project_on_route,
 )
 
 GRID_PATH = PROJECT_ROOT / "result" / "fingerprint_grid.json"
-MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json"
+MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-08.2.json"
 
 SUFFIX_BY_REGION = {"intersection": "-J", "doorway": "-D", "high_risk": "-S", "normal": ""}
 
@@ -177,22 +178,55 @@ class TestRouteOrdering(unittest.TestCase):
 
 
 class TestCoverageBoundary(unittest.TestCase):
+    """v11 口径：RSSI = -52 - 35·log10(d3) - 墙衰减；d3=sqrt(dxy²+1.3²)。
+
+    参考值：dxy=8.6 → d3≈8.698 → RSSI≈-84.9（通过）；dxy=8.8 → RSSI≈-85.2（不通过）。
+    """
+
     @staticmethod
-    def _flags(dists):
-        beacons = [
-            {"beaconId": f"BK-{i}", "floorId": "1", "x": d, "y": 0.0}
+    def _beacons(dists):
+        return [
+            {"beaconId": f"BK-{i}", "floorId": "1", "x": d, "y": 0.0, "installHeightM": 2.5}
             for i, d in enumerate(dists)
         ]
-        return coverage_flags(0.0, 0.0, beacons)
 
-    def test_plan_ok_at_radius_boundary(self):
-        f = self._flags([10.0, 10.0, 10.0])
+    @classmethod
+    def _flags(cls, dists, wall_model=None):
+        return coverage_flags(0.0, 0.0, cls._beacons(dists), wall_model)
+
+    @staticmethod
+    def _flags_against(px, py, beacon_xy, wall_model=None):
+        beacons = [
+            {"beaconId": f"BK-{i}", "floorId": "1", "x": bx, "y": by, "installHeightM": 2.5}
+            for i, (bx, by) in enumerate(beacon_xy)
+        ]
+        return coverage_flags(px, py, beacons, wall_model)
+
+    @staticmethod
+    def _wall_model(walls, doors=()):
+        geo_floor = {
+            "topology": {"nodes": [], "edges": []},
+            "geometry": {
+                "walls": [
+                    {"geometry": {"type": "LineString", "coordinates": c},
+                     "properties": {"material": m}}
+                    for c, m in walls
+                ],
+                "doors": [
+                    {"geometry": {"type": "Point", "coordinates": list(dp)}} for dp in doors
+                ],
+            },
+        }
+        return build_wall_model(geo_floor)
+
+    def test_plan_ok_at_rssi_boundary(self):
+        f = self._flags([8.6, 8.6, 8.6])
         self.assertEqual(f["visible10m"], 3)
-        self.assertAlmostEqual(f["strongestRssi"], -85.0, places=1)
-        self.assertTrue(f["collectablePlan10m"], "10.0m 边界应计入且 RSSI=-85 通过")
+        self.assertGreaterEqual(f["strongestRssi"], -85.0)
+        self.assertTrue(f["collectablePlan10m"], "3D 斜距下 RSSI≈-84.9 应通过")
 
-    def test_plan_fails_beyond_radius(self):
-        f = self._flags([10.001, 10.001, 10.001])
+    def test_plan_fails_beyond_rssi_reach(self):
+        f = self._flags([8.8, 8.8, 8.8])
         self.assertEqual(f["visible10m"], 0)
         self.assertFalse(f["collectablePlan10m"])
 
@@ -201,18 +235,45 @@ class TestCoverageBoundary(unittest.TestCase):
         self.assertEqual(f["visible10m"], 2)
         self.assertFalse(f["collectablePlan10m"])
 
-    def test_plan_fails_weak_rssi(self):
-        # 3 个信标都在 10m 内但最近为 9.9m：RSSI≈-84.8（仍通过）；构造 10.0001 则越界。
-        # 直接校验阈值上界：RSSI@10m=-85 恰好通过，超出 10m 则不可见。
-        f = self._flags([10.0, 10.0, 9.999])
-        self.assertTrue(f["collectablePlan10m"])
-        self.assertGreaterEqual(f["strongestRssi"], -85.0)
+    def test_rssi_uses_3d_slant_not_horizontal(self):
+        # 水平 9.0m 的 2D 口径 RSSI≈-84.2 会通过；3D 斜距 d3≈9.093 → RSSI≈-85.6 不通过
+        f = self._flags([9.0, 9.0, 9.0])
+        self.assertFalse(f["collectablePlan10m"])
 
-    def test_geo15_counts_to_15m(self):
-        f = self._flags([14.9, 14.9, 14.9])
+    def test_geo15_uses_3d_slant(self):
+        f = self._flags([14.9, 14.9, 14.9])  # d3≈14.956 <= 15
         self.assertEqual(f["visible15m"], 3)
         self.assertFalse(f["collectablePlan10m"])
         self.assertTrue(f["collectableGeo15m"])
+
+    def test_geo15_boundary_excludes_15m_horizontal(self):
+        f = self._flags([15.0, 15.0, 15.0])  # d3≈15.056 > 15
+        self.assertEqual(f["visible15m"], 0)
+        self.assertFalse(f["collectableGeo15m"])
+
+    def test_wall_attenuation_blocks_plan(self):
+        # 信标在 (0,-6)，brick 墙横穿 y=-3：无墙 RSSI≈-79.6，加 12dB → ≈-91.6 不通过
+        model = self._wall_model([([[-10.0, -3.0], [10.0, -3.0]], "brick")])
+        f = self._flags_against(0.0, 0.0, [(0.0, -6.0)] * 3, model)
+        self.assertFalse(f["collectablePlan10m"])
+        self.assertEqual(f["visible10m"], 0)
+
+    def test_door_proximity_counts_as_2db(self):
+        # 同一堵墙但交点 1.2m 内有门：仅 -2dB → RSSI≈-81.6 仍通过
+        model = self._wall_model([([[-10.0, -3.0], [10.0, -3.0]], "brick")], doors=[(0.5, -3.0)])
+        f = self._flags_against(0.0, 0.0, [(0.0, -6.0)] * 3, model)
+        self.assertTrue(f["collectablePlan10m"])
+        self.assertGreaterEqual(f["strongestRssi"], -85.0)
+
+    def test_wall_cluster_takes_max_material(self):
+        # 两堵墙在交点 0.45m 内重叠（partition+concrete）：按 concrete 15dB 计一次
+        model = self._wall_model([
+            ([[-10.0, -3.0], [10.0, -3.0]], "partition"),
+            ([[-10.0, -3.25], [10.0, -3.25]], "concrete"),
+        ])
+        # 3 信标同位同衰减：RSSI≈-52-27.6-15≈-94.6，不通过
+        f = self._flags_against(0.0, 0.0, [(0.0, -6.0)] * 3, model)
+        self.assertFalse(f["collectablePlan10m"])
 
     def test_criteria_flags_consistent_in_output(self):
         grid = load_json(GRID_PATH)

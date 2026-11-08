@@ -9,11 +9,15 @@
   - 1m 格位键去重，优先级 路口 > 门口 > 高风险 > 普通，取消 0.6m 距离阈值；
   - 编号 FP-{f}-C{col:03d}R{row:03d}[-J/-D/-S]，坐标派生、增删点不重排。
 
-采集层（collection）：
-  - 读取地图包中实际部署信标，计算每个设计点的可见信标数/最近距离/预测 RSSI；
-  - 同时给出两个口径：
-      plan10m85: 10m 内 >=3 个信标且预测 RSSI >= -85dBm（规划模型 A=-50,n=3.5）
-      geo15m:   15m 内 >=3 个信标
+采集层（collection，v11 覆盖口径）：
+  - 读取地图包中实际部署信标（含 installHeightM），按 3D 斜距估算预测 RSSI；
+  - RSSI = A - 10n·log10(d3) - Σ穿墙衰减 - 门数×2dB，
+      A=-52dBm（E5 最低档 -12dBm @1m 推导），n=3.5，
+      墙按材质分档 partition=8 / brick=12 / concrete=15 dB（未知按 partition），
+      同一簇（0.45m 内多次求交）取最高档一次计费，交点 1.2m 内有门按门 2dB；
+  - 两个口径：
+      plan10m85: 预测 RSSI >= -85dBm 的信标 >=3（字段名保留兼容，10m 不再是硬门槛）
+      geo15m:   3D 斜距 <=15m 的信标 >=3
   - 按测试路线（result/beacon_routes.json）给点打 routeTags。
 
 输出：
@@ -34,13 +38,14 @@ from pathlib import Path
 
 from shapely.geometry import LineString, Point, shape
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 OUT_DEFAULT = str(BASE_DIR / "result" / "fingerprint_grid.json")
-BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json")
+BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-08.2.json")
 ROUTES_DEFAULT = str(BASE_DIR / "result" / "beacon_routes.json")
-GRID_VERSION = "10.0.0"
+GRID_VERSION = "11.0.0"
 
 # ----------------------------- 设计层参数 -----------------------------
 NORMAL_SPACING_M = 2.0
@@ -52,13 +57,20 @@ WALL_CLEARANCE_M = 0.3  # 仅用于统计贴墙比例；按用户拍板不做换
 LARGE_SPACING_M = 3.0
 LARGE_AREA_MIN_M2 = 30.0
 
-# ----------------------------- 采集层参数 -----------------------------
-BEACON_RSSI_AT_1M_DBM = -50.0
+# ----------------------------- 采集层参数（v11：3D 斜距 + 材质墙衰减） -----------------------------
+BEACON_RSSI_AT_1M_DBM = -52.0    # E5 最低档 -12dBm @1m（厂商标称 -52，docs/07 §2.3）
 BEACON_PATH_LOSS_N = 3.5
 RSSI_THRESHOLD_DBM = -85.0
 COLLECT_MIN_BEACONS = 3
-PLAN_RADIUS_M = 10.0
+PLAN_RADIUS_M = 10.0             # 仅作展示统计（visible10m），不再是硬门槛
 GEO_RADIUS_M = 15.0
+PHONE_HEIGHT_M = 1.2             # 手机持高（fit_location_params.PHONE_HEIGHT_M）
+DEFAULT_INSTALL_HEIGHT_M = 2.5   # 台账缺省安装高（信标 installHeightM 全量=2.5）
+WALL_ATTENUATION_DB = {"partition": 8.0, "brick": 12.0, "concrete": 15.0}
+UNKNOWN_MATERIAL_DB = 8.0        # 材质缺失按最轻隔断档（保守偏乐观，现场标定校正）
+DOOR_ATTENUATION_DB = 2.0
+DOOR_PROXIMITY_M = 1.2           # 交点距门 <=1.2m 视为走门
+CROSSING_CLUSTER_TOL_M = 0.45    # 同一墙体多次求交的聚类容差
 
 REGION_PRIORITY = {"intersection": 1, "doorway": 2, "high_risk": 3, "normal": 4}
 REGION_SUFFIX = {"intersection": "-J", "doorway": "-D", "high_risk": "-S", "normal": ""}
@@ -284,15 +296,117 @@ def _wall_distance(walls, x, y):
     return walls.distance(Point(x, y))
 
 
-def coverage_flags(x, y, floor_beacons):
-    """采集层覆盖判定：同时计算 plan10m85（默认）与 geo15m（备用）两个口径。"""
-    d = [dist((x, y), (b["x"], b["y"])) for b in floor_beacons]
-    vis10 = sum(1 for v in d if v <= PLAN_RADIUS_M)
-    vis15 = sum(1 for v in d if v <= GEO_RADIUS_M)
-    nearest = min(d) if d else None
-    strongest = (max(BEACON_RSSI_AT_1M_DBM - 10 * BEACON_PATH_LOSS_N * math.log10(max(v, 0.1))
-                     for v in d) if d else None)
-    plan_ok = vis10 >= COLLECT_MIN_BEACONS and strongest is not None and strongest >= RSSI_THRESHOLD_DBM
+def build_wall_model(geo_floor):
+    """构建墙体/门求交模型，供覆盖判定计算穿墙衰减。
+
+    - 墙体取地图包 geometry.walls（LineString + properties.material）；
+    - 门取 geometry.doors（Point），交点 DOOR_PROXIMITY_M 内有门按门衰减计。
+    返回 None 表示该层无墙体，穿墙衰减按 0 处理。
+    """
+    walls, lines = [], []
+    for f in (geo_floor.get("geometry") or {}).get("walls", []):
+        g = f.get("geometry") or {}
+        if g.get("type") != "LineString":
+            continue
+        try:
+            geom = shape(g)
+        except Exception:
+            continue
+        if geom.is_empty or geom.length < 1e-9:
+            continue
+        walls.append(f)
+        lines.append(geom)
+    if not walls:
+        return None
+    doors = []
+    for d in (geo_floor.get("geometry") or {}).get("doors", []):
+        g = d.get("geometry") or {}
+        try:
+            geom = shape(g)
+        except Exception:
+            continue
+        if geom.is_empty or geom.geom_type != "Point":
+            continue
+        doors.append(geom)
+    return {
+        "walls": walls,
+        "lines": lines,
+        "tree": STRtree(lines),
+        "doors": doors,
+        "door_tree": STRtree(doors) if doors else None,
+    }
+
+
+def _wall_att_db(wall_feature):
+    mat = ((wall_feature.get("properties") or {}).get("material"))
+    return WALL_ATTENUATION_DB.get(mat, UNKNOWN_MATERIAL_DB)
+
+
+def wall_attenuation_db(a, b, model):
+    """a→b 线段的穿墙衰减（dB）：0.45m 簇内取最高材质档，门邻近按 2dB。"""
+    if model is None:
+        return 0.0
+    seg = LineString([a, b])
+    hits = []
+    for h in model["tree"].query(seg):
+        i = int(h)
+        inter = seg.intersection(model["lines"][i])
+        if inter.is_empty:
+            continue
+        pts = [inter] if inter.geom_type == "Point" else (
+            list(inter.geoms) if inter.geom_type == "MultiPoint" else [])
+        for ip in pts:
+            hits.append((seg.project(ip), i))
+    if not hits:
+        return 0.0
+    hits.sort()
+    clusters = []
+    for t, i in hits:
+        if clusters and t - clusters[-1][0] <= CROSSING_CLUSTER_TOL_M:
+            clusters[-1][1].append(i)
+        else:
+            clusters.append([t, [i]])
+    att = 0.0
+    for t, idxs in clusters:
+        if (model["door_tree"] is not None
+                and len(model["door_tree"].query(seg.interpolate(t),
+                                                 predicate="dwithin",
+                                                 distance=DOOR_PROXIMITY_M)) > 0):
+            att += DOOR_ATTENUATION_DB
+        else:
+            att += max(_wall_att_db(model["walls"][i]) for i in idxs)
+    return att
+
+
+def coverage_flags(x, y, floor_beacons, wall_model=None):
+    """采集层覆盖判定（v11 口径：3D 斜距 + 材质墙衰减 + 门 2dB）。
+
+    - plan10m85：预测 RSSI>=-85dBm 的信标 >=3（字段名保留兼容；10m 半径不再是硬门槛，
+      -85dBm 在 A=-52/n=3.5 下自由空间最远约 15.9m，半径约束已隐含）；
+    - geo15m：3D 斜距 <=15m 的信标 >=3（备用几何口径）；
+    - visible10m 展示口径 = 3D 斜距 <=10m 且 RSSI 达标。
+    """
+    vis10 = vis15 = rssi_ok = 0
+    nearest = None
+    strongest = None
+    for b in floor_beacons:
+        dxy = dist((x, y), (b["x"], b["y"]))
+        dz = float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M) - PHONE_HEIGHT_M
+        d3 = math.hypot(dxy, dz)
+        rssi = (BEACON_RSSI_AT_1M_DBM
+                - 10 * BEACON_PATH_LOSS_N * math.log10(max(d3, 0.3))
+                - wall_attenuation_db((x, y), (b["x"], b["y"]), wall_model))
+        if nearest is None or dxy < nearest:
+            nearest = dxy
+        if strongest is None or rssi > strongest:
+            strongest = rssi
+        if rssi >= RSSI_THRESHOLD_DBM:
+            rssi_ok += 1
+            if d3 <= PLAN_RADIUS_M:
+                vis10 += 1
+        if d3 <= GEO_RADIUS_M:
+            vis15 += 1
+    plan_ok = rssi_ok >= COLLECT_MIN_BEACONS
     geo_ok = vis15 >= COLLECT_MIN_BEACONS
     return {
         "visible10m": vis10,
@@ -309,6 +423,7 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
     if walk is None:
         return [], {"error": "no walkable regions"}, None
     walls = build_walls(geo_floor)
+    wall_model = build_wall_model(geo_floor)
     cands = []
 
     # ---- A. 2m 底网（偶-偶）----
@@ -366,7 +481,7 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
     floor_beacons = [b for b in beacons if str(b.get("floorId")) == str(floor_no)]
     for (u, v), c in kept.items():
         x, y = _coord(origin, u, v)
-        cov = coverage_flags(x, y, floor_beacons)
+        cov = coverage_flags(x, y, floor_beacons, wall_model)
         tags = []
         for tag, poly in route_corridors.get(str(floor_no), []):
             if poly.contains(Point(x, y)) or poly.distance(Point(x, y)) < 1e-6:
@@ -538,6 +653,7 @@ def load_beacons(path=BEACON_PACKAGE):
             "floorId": str(b.get("floorId")),
             "x": float(b["x"]),
             "y": float(b["y"]),
+            "installHeightM": float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M),
         })
     return out
 
@@ -606,9 +722,9 @@ def write_f2_collectable(points, floor_no, out_dir, route_geom=None):
     def row_values(seq, p, mileage):
         criteria = []
         if p["collectablePlan10m"]:
-            criteria.append("10m/-85/≥3")
+            criteria.append("RSSI≥-85/≥3(3D含墙)")
         if p["collectableGeo15m"]:
-            criteria.append("15m/≥3")
+            criteria.append("15m/≥3(3D)")
         return [
             seq, p["fpId"], p["shortId"], p["floor"], p["x"], p["y"],
             REGION_TEXT.get(p["regionType"], p["regionType"]),
@@ -629,8 +745,8 @@ def write_f2_collectable(points, floor_no, out_dir, route_geom=None):
     lines = [
         f"# F{floor_no} 可采集点清单",
         "",
-        f"> 设计层全量点中，满足 `10m/-85dBm/≥3` 或 `15m/≥3` 的点，共 {len(rows)} 个。",
-        "> 口径列同时标出两个条件；`10m/-85/≥3` 为默认采集口径。",
+        f"> 设计层全量点中，满足 `RSSI≥-85dBm/≥3信标`（3D 斜距+材质墙衰减）或 `15m/≥3`（3D 斜距）的点，共 {len(rows)} 个。",
+        "> 口径列同时标出两个条件；`RSSI≥-85/≥3(3D含墙)` 为默认采集口径（v11：A=-52dBm，墙 partition/brick/concrete=8/12/15dB，门 2dB）。",
         "> 路线点按投影到路线中心线的**本层累计里程**排序（从本层路线入口起算），非路线点列在最后。",
     ]
 
@@ -745,7 +861,7 @@ def main():
             "collection": f"当前实际部署 {len(beacons)} 枚信标"
                           f"（F1 {_floor_beacon_count(beacons, 1)} / F2 {_floor_beacon_count(beacons, 2)}）"
                           f"，地图包 {Path(args.beacons).stem}，"
-                          "按 plan10m85 与 geo15m 两个口径标记 collectable",
+                          "按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable",
         },
         "origin": {
             "x": origin[0], "y": origin[1],
@@ -762,10 +878,25 @@ def main():
             "largeSpacingM": LARGE_SPACING_M, "largeAreaMinM2": LARGE_AREA_MIN_M2,
         },
         "coverage": {
-            "plan10m85": {"radiusM": PLAN_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
-                          "rssiThresholdDbm": RSSI_THRESHOLD_DBM,
-                          "rssiAt1mDbm": BEACON_RSSI_AT_1M_DBM, "pathLossN": BEACON_PATH_LOSS_N},
-            "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS},
+            "plan10m85": {
+                "minBeacons": COLLECT_MIN_BEACONS,
+                "rssiThresholdDbm": RSSI_THRESHOLD_DBM,
+                "rssiAt1mDbm": BEACON_RSSI_AT_1M_DBM,
+                "pathLossN": BEACON_PATH_LOSS_N,
+                "distanceModel": "3d_slant",
+                "phoneHeightM": PHONE_HEIGHT_M,
+                "installHeightMDefault": DEFAULT_INSTALL_HEIGHT_M,
+                "wallAttenuationDb": WALL_ATTENUATION_DB,
+                "unknownWallMaterialDb": UNKNOWN_MATERIAL_DB,
+                "doorAttenuationDb": DOOR_ATTENUATION_DB,
+                "doorProximityM": DOOR_PROXIMITY_M,
+                "crossingClusterTolM": CROSSING_CLUSTER_TOL_M,
+                "radiusMLegacy": PLAN_RADIUS_M,
+                "note": "v11 起由『10m 几何半径 + 无墙 RSSI(A=-50)』升级为『3D 斜距 + 材质墙衰减 + 门 2dB 的 RSSI>=-85 信标数>=3』；"
+                        "字段名 plan10m85/collectablePlan10m 保留以兼容客户端，10m 半径不再是硬门槛",
+            },
+            "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
+                       "distanceModel": "3d_slant"},
         },
         "beacons": beacons,
         "routes": route_meta,
