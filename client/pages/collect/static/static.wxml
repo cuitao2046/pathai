@@ -28,6 +28,11 @@
     <text class="legend">蓝=待采 绿=已采</text>
   </view>
 
+  <!-- 补装仿真预览：仅设置开关打开时出现（紫色虚线菱形＝5 枚未安装虚拟信标） -->
+  <view class="sim-banner" wx:if="{{simPreview}}">
+    含虚拟信标预览：地图上紫色虚线菱形为 5 枚补装信标（未安装·仅仿真，不参与标定记录）
+  </view>
+
   <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
 
   <!-- 地图画布（手势与长按补标） -->

@@ -103,8 +103,12 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 .layer_beacon:hover circle { stroke: #FFC107; stroke-width: 1.4; }
 .layer_beacon.beacon-hit circle { stroke: #FFC107; stroke-width: 3; }
 .layer_beacon.beacon-hit text { fill: #E65100 !important; }
-/* 隐藏冗余信标（清理调研候选）：仅影响显示，不改 data-info / 坐标 / 导出数据 */
-body.hide-redundant .layer_beacon.beacon-redundant { display: none !important; }
+/* 补装信标（未安装·仅仿真）：默认隐藏，勾选「补装5枚信标」后叠加显示；
+   仅影响显示，不改 data-info / 坐标 / 导出数据 */
+.layer_sim_beacon { display: none; }
+body.show-sim-beacons .layer_sim_beacon { display: block; }
+.sim-beacon, .sim-added-point { cursor: pointer; }
+.sim-beacon:hover circle { stroke: #4A148C; stroke-width: 1.6; }
 .zoom-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
 .zoom-btn { width: 34px; height: 34px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 17px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 #mode-switch { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.95); border: 1px solid #d0d0d0; border-radius: 6px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); z-index: 25; }
@@ -283,7 +287,7 @@ body.hide-redundant .layer_beacon.beacon-redundant { display: none !important; }
   <button type="button" id="btn-deploy-toggle" onclick="deployToggleMode()">进入部署模式</button>
   <button type="button" id="btn-deploy-delete" onclick="deployDeleteSelected()" title="删除当前选中的测试路线信标（也可按 Delete 键）" disabled>删除选中信标</button>
   <button type="button" onclick="deployExport()" title="导出当前测试路线信标状态（含新增/删除/移动后坐标）为 ble_deployment.json">导出部署方案(JSON)</button>
-  <label title="仅隐藏显示：清理调研判定可删的 13 枚冗余信标，数据与导出不受影响"><input type="checkbox" id="chk-hide-redundant" onchange="toggleRedundantBeacons(this.checked)"> 隐藏13枚冗余信标</label>
+  <label title="模拟叠加 5 枚未安装补装信标（F1 2 枚 / F2 3 枚）后的覆盖效果：紫色菱形=虚拟信标，紫色虚环=因补装才可采的网格点；不写入部署方案与导出数据"><input type="checkbox" id="chk-sim-beacons" onchange="toggleSimBeacons(this.checked)"> 补装5枚信标（未安装·仅仿真）</label>
   <span class="hint" id="deploy-hint">进入部署模式后自动切到「测试路线」方案，点击地图空白处新增测试路线信标；点击信标选中（橙色高亮），再点「删除选中信标」或按 Delete 键删除；任意模式下可直接拖拽信标移动位置；导出后请保存到 result/ 目录。</span>
   <span class="result" id="deploy-list"></span>
 </div>

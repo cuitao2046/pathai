@@ -45,7 +45,8 @@ GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 OUT_DEFAULT = str(BASE_DIR / "result" / "fingerprint_grid.json")
 BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-08.2.json")
 ROUTES_DEFAULT = str(BASE_DIR / "result" / "beacon_routes.json")
-GRID_VERSION = "11.0.0"
+SIM_BEACONS = str(BASE_DIR / "result" / "simulated_beacons.json")
+GRID_VERSION = "11.1.0"
 
 # ----------------------------- 设计层参数 -----------------------------
 NORMAL_SPACING_M = 2.0
@@ -378,6 +379,16 @@ def wall_attenuation_db(a, b, model):
     return att
 
 
+def _rssi_at(x, y, b, wall_model):
+    """单枚信标在 (x,y) 处的 3D 含墙预测 RSSI。"""
+    dxy = dist((x, y), (b["x"], b["y"]))
+    dz = float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M) - PHONE_HEIGHT_M
+    d3 = math.hypot(dxy, dz)
+    return (BEACON_RSSI_AT_1M_DBM
+            - 10 * BEACON_PATH_LOSS_N * math.log10(max(d3, 0.3))
+            - wall_attenuation_db((x, y), (b["x"], b["y"]), wall_model))
+
+
 def coverage_flags(x, y, floor_beacons, wall_model=None):
     """采集层覆盖判定（v11 口径：3D 斜距 + 材质墙衰减 + 门 2dB）。
 
@@ -393,9 +404,7 @@ def coverage_flags(x, y, floor_beacons, wall_model=None):
         dxy = dist((x, y), (b["x"], b["y"]))
         dz = float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M) - PHONE_HEIGHT_M
         d3 = math.hypot(dxy, dz)
-        rssi = (BEACON_RSSI_AT_1M_DBM
-                - 10 * BEACON_PATH_LOSS_N * math.log10(max(d3, 0.3))
-                - wall_attenuation_db((x, y), (b["x"], b["y"]), wall_model))
+        rssi = _rssi_at(x, y, b, wall_model)
         if nearest is None or dxy < nearest:
             nearest = dxy
         if strongest is None or rssi > strongest:
@@ -413,12 +422,36 @@ def coverage_flags(x, y, floor_beacons, wall_model=None):
         "visible15m": vis15,
         "nearestBeaconM": round(nearest, 3) if nearest is not None else None,
         "strongestRssi": round(strongest, 1) if strongest is not None else None,
+        "okBeacons": rssi_ok,
         "collectablePlan10m": bool(plan_ok),
         "collectableGeo15m": bool(geo_ok),
     }
 
 
-def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
+def coverage_with_sim(base_ok, x, y, floor_sim, wall_model):
+    """补装仿真口径：在真实部署基线之上叠加虚拟信标（不改 collectable 语义）。
+
+    返回 collectableWithSim 与 simAddedBy（使该点达标的虚拟信标，按 RSSI 从强到弱，
+    只列出真正补齐所缺信标数的最小集合）。
+    """
+    if base_ok >= COLLECT_MIN_BEACONS or not floor_sim:
+        return {"collectableWithSim": base_ok >= COLLECT_MIN_BEACONS, "simAddedBy": [], "okWithSim": base_ok}
+    hits = []
+    for b in floor_sim:
+        r = _rssi_at(x, y, b, wall_model)
+        if r >= RSSI_THRESHOLD_DBM:
+            hits.append((r, b["beaconId"]))
+    hits.sort(key=lambda z: -z[0])
+    need = COLLECT_MIN_BEACONS - base_ok
+    ok = len(hits) >= need
+    return {
+        "collectableWithSim": bool(ok),
+        "simAddedBy": [bid for _, bid in hits[:need]] if ok else [],
+        "okWithSim": base_ok + len(hits),
+    }
+
+
+def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors, sim_beacons=None):
     walk = build_walkable(geo_floor)
     if walk is None:
         return [], {"error": "no walkable regions"}, None
@@ -479,9 +512,11 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
     # ---- D. 采集层标记 + 路线标签 ----
     points = []
     floor_beacons = [b for b in beacons if str(b.get("floorId")) == str(floor_no)]
+    floor_sim = [b for b in (sim_beacons or []) if str(b.get("floorId")) == str(floor_no)]
     for (u, v), c in kept.items():
         x, y = _coord(origin, u, v)
         cov = coverage_flags(x, y, floor_beacons, wall_model)
+        sim_cov = coverage_with_sim(cov["okBeacons"], x, y, floor_sim, wall_model)
         tags = []
         for tag, poly in route_corridors.get(str(floor_no), []):
             if poly.contains(Point(x, y)) or poly.distance(Point(x, y)) < 1e-6:
@@ -516,6 +551,10 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
             "visible15m": cov["visible15m"],
             "nearestBeaconM": cov["nearestBeaconM"],
             "strongestRssi": cov["strongestRssi"],
+            # 补装仿真口径（不改 collectable 语义；虚拟信标未安装）
+            "collectableWithSim": sim_cov["collectableWithSim"],
+            "simAdded": bool(sim_cov["collectableWithSim"] and not cov["collectablePlan10m"]),
+            "simAddedBy": sim_cov["simAddedBy"],
             "routeTags": tags,
         })
     points.sort(key=lambda p: (p["row"], p["col"]))
@@ -543,6 +582,13 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors):
         "collectableGeo15m": sum(1 for p in points if p["collectableGeo15m"]),
         "routeTagged": sum(1 for p in points if p["routeTags"]),
         "routeCollectablePlan10m": sum(1 for p in points if p["routeTags"] and p["collectablePlan10m"]),
+        "collectableWithSim": sum(1 for p in points if p["collectableWithSim"]),
+        "routeCollectableWithSim": sum(1 for p in points if p["routeTags"] and p["collectableWithSim"]),
+        "simAdded": sum(1 for p in points if p["simAdded"]),
+        "simBeaconAdds": {
+            b["beaconId"]: sum(1 for p in points if b["beaconId"] in p["simAddedBy"])
+            for b in floor_sim
+        },
         "nearestNeighbor": nn,
     }
     return points, stats, walls
@@ -654,6 +700,28 @@ def load_beacons(path=BEACON_PACKAGE):
             "x": float(b["x"]),
             "y": float(b["y"]),
             "installHeightM": float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M),
+        })
+    return out
+
+
+def load_sim_beacons(path=SIM_BEACONS):
+    """读取补装/虚拟信标（仅仿真，不进 result/ble_deployment.json 部署计划）。"""
+    p = Path(path) if path else None
+    if p is None or not p.exists():
+        return []
+    with p.open(encoding="utf-8") as f:
+        data = json.load(f)
+    out = []
+    for b in data.get("beacons", []):
+        out.append({
+            "beaconId": b.get("simId") or b.get("beaconId"),
+            "floorId": str(b.get("floorId")),
+            "x": float(b["x"]),
+            "y": float(b["y"]),
+            "installHeightM": float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M),
+            "simulated": True,
+            "status": b.get("status") or "not_installed",
+            "label": b.get("label"),
         })
     return out
 
@@ -799,6 +867,7 @@ def main():
     ap.add_argument("--mode", default="full", choices=("full", "route"))
     ap.add_argument("--routes", default=ROUTES_DEFAULT, help="路线定义 JSON")
     ap.add_argument("--beacons", default=BEACON_PACKAGE, help="实际部署信标地图包")
+    ap.add_argument("--sim-beacons", default=SIM_BEACONS, help="补装/虚拟信标 JSON（仅仿真）")
     ap.add_argument("--f2-out-dir", default=str(BASE_DIR / "result"))
     args = ap.parse_args()
 
@@ -820,15 +889,19 @@ def main():
 
     origin = even_origin(geo)
     beacons = load_beacons(args.beacons)
+    sim_beacons = load_sim_beacons(args.sim_beacons)
     routes = json.load(open(args.routes, encoding="utf-8")).get("routes", []) if Path(args.routes).exists() else []
     corridors, route_meta, route_geom = collect_route_corridors(geo, routes)
 
     floors_out, summary = {}, {}
     total = {"total": 0, "base2m": 0, "split1m": 0, "collectablePlan10m": 0,
-             "collectableGeo15m": 0, "routeTagged": 0, "routeCollectablePlan10m": 0}
+             "collectableGeo15m": 0, "routeTagged": 0, "routeCollectablePlan10m": 0,
+             "collectableWithSim": 0, "routeCollectableWithSim": 0, "simAdded": 0,
+             "simBeaconAdds": {}}
     all_points = []
     for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
-        pts, stats, _walls = build_floor_grid(geo["floors"][fk], int(fk), origin, beacons, corridors)
+        pts, stats, _walls = build_floor_grid(geo["floors"][fk], int(fk), origin, beacons, corridors,
+                                             sim_beacons)
         floors_out[fk] = {
             "floor": int(fk),
             "parameters": {
@@ -841,10 +914,14 @@ def main():
         summary[fk] = stats
         all_points.extend(pts)
         for k in total:
-            total[k] += stats.get(k, 0)
+            if k == "simBeaconAdds":
+                for bid, n in (stats.get("simBeaconAdds") or {}).items():
+                    total["simBeaconAdds"][bid] = total["simBeaconAdds"].get(bid, 0) + n
+            else:
+                total[k] += stats.get(k, 0)
         print(f"  [F{fk}] 总={stats['total']} 2m={stats['base2m']} 1m={stats['split1m']} "
               f"可采10m={stats['collectablePlan10m']} 可采15m={stats['collectableGeo15m']} "
-              f"路线点={stats['routeTagged']}")
+              f"路线点={stats['routeTagged']} 含补装={stats['collectableWithSim']}")
 
     summary["total"] = total
     bx0, by0, bx1, by1 = wall_bbox(geo)
@@ -861,7 +938,8 @@ def main():
             "collection": f"当前实际部署 {len(beacons)} 枚信标"
                           f"（F1 {_floor_beacon_count(beacons, 1)} / F2 {_floor_beacon_count(beacons, 2)}）"
                           f"，地图包 {Path(args.beacons).stem}，"
-                          "按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable",
+                          "按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable"
+                          + (f"；另含 {len(sim_beacons)} 枚未安装补装信标的仿真口径 collectableWithSim" if sim_beacons else ""),
         },
         "origin": {
             "x": origin[0], "y": origin[1],
@@ -897,8 +975,19 @@ def main():
             },
             "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
                        "distanceModel": "3d_slant"},
+            "withSim": {
+                "note": "补装仿真口径：真实部署 + simulatedBeacons 叠加后的 RSSI，字段 collectableWithSim；"
+                        "不改 collectable/collectablePlan10m 语义（v11 真实口径基线）",
+                "simBeaconCount": len(sim_beacons),
+                "simBeaconIds": [b["beaconId"] for b in sim_beacons],
+            },
         },
         "beacons": beacons,
+        "simulatedBeacons": {
+            "policy": "未安装·仅仿真：不进 result/ble_deployment.json 部署计划，不参与 collectable 判定",
+            "source": Path(args.sim_beacons).name if sim_beacons else None,
+            "beacons": sim_beacons,
+        },
         "routes": route_meta,
         "summary": summary,
         "floors": floors_out,

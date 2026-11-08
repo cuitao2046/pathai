@@ -23,6 +23,7 @@ import { StaticPointsStore } from '../../../core/collection/points-store';
 import { buildStaticExport, type CollectionExportMeta } from '../../../core/collection/export-builder';
 import type { CalibrationPointRec } from '../../../core/collection/types';
 import { PRESET_CALIBRATION_POINTS } from '../../../data/calibration_points';
+import { SIMULATED_BEACONS } from '../../../data/fingerprint_grid';
 import type { PositionEstimateResponse } from '../../../typings/api';
 
 const log = createLogger('collect-static');
@@ -65,6 +66,8 @@ Page({
     durationIndex: 1,
     durationS: DURATION_OPTIONS[1],
     stats: { pointCount: 0, sampledPointCount: 0, sessionCount: 0 },
+    /** 是否在标定地图上叠加 5 枚未安装虚拟信标（设置项，默认关闭＝现状口径）。 */
+    simPreview: false,
     // 采集进行中
     collecting: false,
     countdownText: '',
@@ -107,6 +110,7 @@ Page({
       (d) => setJson(STORE_KEY, d),
     );
     this.sequence = new SequenceCounter();
+    this.setData({ simPreview: appContext.getSimBeaconPreviewSetting() });
     void this.bootstrap();
   },
 
@@ -128,6 +132,12 @@ Page({
 
   onShow(): void {
     void this.pipeline?.start('navigating');
+    // 设置页开关可能刚被改动：回前台时同步并重绘（打开后地图出现 5 枚虚拟信标）
+    const simPreview = appContext.getSimBeaconPreviewSetting();
+    if (simPreview !== this.data.simPreview) {
+      this.setData({ simPreview });
+      this.mapView?.requestDraw();
+    }
     if (this.data.collecting && this.pausedRemainingS > 0) {
       this.remainingS = this.pausedRemainingS;
       this.pausedRemainingS = 0;
@@ -657,6 +667,38 @@ Page({
       ctx.strokeText(p.pointId, sx, sy - 15);
       ctx.fillStyle = '#374151';
       ctx.fillText(p.pointId, sx, sy - 15);
+    }
+
+    // 补装 5 枚虚拟信标（未安装·仅仿真）：仅当设置开关打开时叠加，紫色虚线环 + 菱形
+    // 与实装信标（地图底图的实心点）和标定点（白心蓝圈）都不同，避免误认为已部署。
+    if (this.data.simPreview) {
+      for (const b of SIMULATED_BEACONS) {
+        if (b.floorId !== vp.floorId) {
+          continue;
+        }
+        const { sx, sy } = vp.toScreen(b.x, b.y);
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 12, 0, Math.PI * 2);
+        ctx.strokeStyle = '#8E24AA';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 6);
+        ctx.lineTo(sx + 6, sy);
+        ctx.lineTo(sx, sy + 6);
+        ctx.lineTo(sx - 6, sy);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(142, 36, 170, 0.85)';
+        ctx.fill();
+        ctx.font = '10px -apple-system, "PingFang SC", sans-serif';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+        ctx.strokeText('未安装·仅仿真', sx, sy - 19);
+        ctx.fillStyle = '#6b21a8';
+        ctx.fillText('未安装·仅仿真', sx, sy - 19);
+      }
     }
 
     // 定位估计（可信蓝点，与导航地图同样式）

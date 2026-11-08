@@ -21,9 +21,15 @@
 
   <!-- 图例 + 三档筛选（默认「仅可采集」：填充色只表达可采集，橙描边表达路线优先） -->
   <view class="legend-bar">
+    <!-- 补装仿真预览：仅设置开关打开时出现，避免默认态混入虚拟信标口径 -->
+    <view class="sim-row" wx:if="{{simPreview}}">
+      <text class="sim-tag">含虚拟信标预览</text>
+      <text class="sim-text">本层 {{floorStats.simOnly}} 个点仅因补装 5 枚（未安装）才可采</text>
+    </view>
     <view class="legend-items">
       <view class="legend-item"><view class="dot collectable"></view><text>可采集（只采这些）</text></view>
       <view class="legend-item"><view class="dot route"></view><text>路线点（优先）</text></view>
+      <view class="legend-item" wx:if="{{simPreview}}"><view class="dot sim"></view><text>仅补装仿真可采（未安装）</text></view>
       <view class="legend-item"><view class="dot blind"></view><text>当前不可采集</text></view>
       <view class="legend-item"><view class="dot done"></view><text>已采集</text></view>
     </view>

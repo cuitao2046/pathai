@@ -90,6 +90,13 @@ describe('pointStyle（填充=可采集，描边=路线优先）', () => {
     expect(blind.fill).toBeNull();
     expect(blind.stroke).toBe(FP_POINT_COLORS.unavailable);
   });
+
+  test('仅补装仿真可采的点：紫色虚线空心，不冒充真实可采', () => {
+    const s = pointStyle(false, false, false, true);
+    expect(s.fill).toBeNull();
+    expect(s.stroke).toBe(FP_POINT_COLORS.simOnly);
+    expect(s.dashed).toBe(true);
+  });
 });
 
 describe('routeText', () => {
@@ -107,10 +114,46 @@ describe('floorCounts（本层可采集 / 总 / 已采）', () => {
       { fpId: 'c', isBase2m: true, collectable: true, routeTags: ['R2'] },
     ];
     const counts = floorCounts(pts, new Map([['a', 3], ['b', 1]]));
-    expect(counts).toEqual({ total: 3, collectable: 2, collected: 2 });
+    expect(counts).toEqual({ total: 3, collectable: 2, collected: 2, simOnly: 0 });
   });
 
   test('空楼层返回全零（不抛错）', () => {
-    expect(floorCounts([], new Map())).toEqual({ total: 0, collectable: 0, collected: 0 });
+    expect(floorCounts([], new Map())).toEqual({
+      total: 0,
+      collectable: 0,
+      collected: 0,
+      simOnly: 0,
+    });
+  });
+
+  test('includeSim 时并入补装可采点，并单列 simOnly（默认口径不受影响）', () => {
+    const pts = [
+      { fpId: 'a', isBase2m: true, collectable: true, routeTags: [] },
+      { fpId: 'b', isBase2m: false, collectable: false, collectableWithSim: true, routeTags: [] },
+      { fpId: 'c', isBase2m: true, collectable: false, collectableWithSim: false, routeTags: [] },
+    ];
+    expect(floorCounts(pts, new Map())).toEqual({
+      total: 3,
+      collectable: 1,
+      collected: 0,
+      simOnly: 0,
+    });
+    expect(floorCounts(pts, new Map(), true)).toEqual({
+      total: 3,
+      collectable: 2,
+      collected: 0,
+      simOnly: 1,
+    });
+  });
+
+  test('含补装时筛选档「可采集」纳入仿真点，关闭时不纳入', () => {
+    const sim: GridPointLike = {
+      isBase2m: false,
+      collectable: false,
+      collectableWithSim: true,
+      routeTags: [],
+    };
+    expect(isPointVisible(sim, LOW_SCALE, 'collectable')).toBe(false);
+    expect(isPointVisible(sim, LOW_SCALE, 'collectable', LOD_1M_MIN_SPACING_PX, true)).toBe(true);
   });
 });

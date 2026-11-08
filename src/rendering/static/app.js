@@ -433,9 +433,9 @@ function setAll(v) {
   });
   document.querySelectorAll('#layerControls input[type=checkbox]').forEach(function(cb){ cb.checked = v; });
 }
-// ---- 隐藏冗余信标（清理调研判定可删的 13 枚）：仅切换显示，不改数据 ----
-function toggleRedundantBeacons(on) {
-  document.body.classList.toggle('hide-redundant', !!on);
+// ---- 补装信标仿真（5 枚未安装）：仅叠加显示虚拟信标与「因补装新增可采」点，不改数据 ----
+function toggleSimBeacons(on) {
+  document.body.classList.toggle('show-sim-beacons', !!on);
 }
 
 // ---- 导出所选图层为独立 SVG 图片 ----

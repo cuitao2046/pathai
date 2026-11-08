@@ -27,6 +27,7 @@ import {
   filterVisiblePoints,
   floorCounts,
   isRoutePoint,
+  isSimOnly,
   pointStyle,
   routeText,
   type FilterMode,
@@ -99,7 +100,12 @@ Page({
      */
     filterMode: 'collectable' as FilterMode,
     /** 本层点数统计（总 / 可采集 / 已采），随换层与采集刷新。 */
-    floorStats: { total: 0, collectable: 0, collected: 0 } as FloorCounts,
+    floorStats: { total: 0, collectable: 0, collected: 0, simOnly: 0 } as FloorCounts,
+    /**
+     * 是否叠加「补装 5 枚未安装虚拟信标」的覆盖影响（设置项，默认关闭）。
+     * 关闭时展示 v11 真实口径；打开后多出的可采点用紫色虚线标出。
+     */
+    simPreview: false,
     // 快照进行中
     collecting: false,
     countdownText: '',
@@ -138,6 +144,7 @@ Page({
       (d) => setJson(STORE_KEY, d),
     );
     this.sequence = new SequenceCounter();
+    this.setData({ simPreview: appContext.getSimBeaconPreviewSetting() });
     void this.bootstrap();
   },
 
@@ -158,6 +165,15 @@ Page({
 
   onShow(): void {
     void this.pipeline?.start('navigating');
+    // 设置页开关可能刚被改动：回前台时同步，切换口径要立即重算计数并重绘
+    const simPreview = appContext.getSimBeaconPreviewSetting();
+    if (simPreview !== this.data.simPreview) {
+      this.setData({ simPreview });
+      if (!this.data.loading) {
+        this.refreshFloorStats(this.data.currentFloor);
+        this.mapView?.requestDraw();
+      }
+    }
     if (this.data.collecting && this.pausedRemainingS > 0) {
       this.remainingS = this.pausedRemainingS;
       this.pausedRemainingS = 0;
@@ -272,7 +288,9 @@ Page({
   /** 本层「可采集 N / 总 M / 已采 K」计数（顶栏展示）。 */
   refreshFloorStats(floorId: string): void {
     const pts = this.gridByFloor!.get(floorId) ?? [];
-    this.setData({ floorStats: floorCounts(pts, this.recordCounts!) });
+    this.setData({
+      floorStats: floorCounts(pts, this.recordCounts!, this.data.simPreview),
+    });
   },
 
   // ------------------------------------------------------------------
@@ -325,7 +343,7 @@ Page({
     pts: FpGridPoint[],
     vp: NonNullable<CollectMapView['vp']>,
   ): FpGridPoint[] {
-    return filterVisiblePoints(pts, vp.scale, this.data.filterMode);
+    return filterVisiblePoints(pts, vp.scale, this.data.filterMode, undefined, this.data.simPreview);
   },
 
   /** 筛选档位切换：全部 / 仅可采集 / 仅路线点。 */
@@ -360,8 +378,10 @@ Page({
         coordText: `${p.x.toFixed(1)}, ${p.y.toFixed(1)}`,
         gridText: `列 ${p.col} / 行 ${p.row}`,
         collectText: p.collectable
-          ? `可采集（10m ≥3 且预测 ${p.strongestRssi ?? '—'}dBm）`
-          : `当前不可采集（10m 可见 ${p.visible10m} 个）`,
+          ? `可采集（3D 10m 内可见 ≥3，最强 ${p.strongestRssi ?? '—'}dBm）`
+          : this.data.simPreview && p.collectableWithSim === true
+            ? `仅补装仿真可采（${p.simAddedBy.length} 枚未安装虚拟信标补足 ≥3）`
+            : `当前不可采集（3D 10m 内可见 ${p.visible10m} 个）`,
         refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
         routeText: routeText(p.routeTags),
         recordCount: this.recordCounts!.get(p.fpId) ?? 0,
@@ -615,7 +635,9 @@ Page({
     for (const p of [...normalPts, ...routePts]) {
       const { sx, sy } = vp.toScreen(p.x, p.y);
       const n = this.recordCounts!.get(p.fpId) ?? 0;
-      const style = pointStyle(n > 0, isRoutePoint(p), p.collectable);
+      // 仅因补装虚拟信标才可采的点：紫色虚线空心，与 v11 真实可采（蓝实心）区分
+      const simOnly = isSimOnly(p, this.data.simPreview);
+      const style = pointStyle(n > 0, isRoutePoint(p), p.collectable, simOnly);
       const half = style.sizePx / 2;
       if (style.fill !== null) {
         ctx.fillStyle = style.fill;
@@ -625,7 +647,13 @@ Page({
         // 路线点（含已采集）保留橙色/白色描边，避免丢失路线标记
         ctx.strokeStyle = style.stroke;
         ctx.lineWidth = style.strokeWidth;
+        if (style.dashed === true) {
+          ctx.setLineDash([3, 3]);
+        }
         ctx.strokeRect(sx - half, sy - half, style.sizePx, style.sizePx);
+        if (style.dashed === true) {
+          ctx.setLineDash([]);
+        }
       }
       if (n > 0) {
         ctx.font = 'bold 10px -apple-system, "PingFang SC", sans-serif';

@@ -91,14 +91,24 @@ BEACON_COLORS = {
     "placement_quality_fill": "#EF6C00",    # 放置质量后处理补点（深橙）
 }
 
-# 路线三点定位方案的冗余信标清理候选（F1 12 枚 + F2 1 枚），依据路线掩码贪心剔除 +
-# 抗单点故障校验（docs/13、docs/17）。交互图「隐藏13枚冗余信标」开关据此隐藏显示，
-# 不改 data-info、坐标与导出数据。
-REDUNDANT_BEACON_IDS = frozenset({
-    "BK-01-006", "BK-01-009", "BK-01-018", "BK-01-019", "BK-01-031",
-    "BK-01-033", "BK-01-040", "BK-01-043", "BK-TR-F1-005", "BK-TR-F1-007",
-    "BK-TR-F1-008", "BK-M-1-002", "BK-02-003",
-})
+# 补装信标（未安装·仅仿真）：来自 result/simulated_beacons.json，与部署台账完全分离。
+# 交互图「补装5枚信标」开关打开后叠加显示这 5 枚虚拟信标与「因补装才可采」的网格点，
+# 不改 data-info / 坐标 / 导出数据（导出只读取部署台账）。
+SIM_BEACONS_FILE = BASE_DIR / "result" / "simulated_beacons.json"
+
+
+def load_sim_beacons():
+    if not SIM_BEACONS_FILE.exists():
+        return []
+    try:
+        data = json.load(open(SIM_BEACONS_FILE, encoding="utf-8"))
+    except Exception as e:
+        print("  [warn] 读取补装信标失败：", e)
+        return []
+    return data.get("beacons") or []
+
+
+SIM_BEACONS = load_sim_beacons()
 
 # 建筑外轮廓：面积过滤阈值（m²）。小于该值的连通块视为家具/孤立柱簇噪声，不绘制。
 OUTLINE_MIN_AREA = 100.0
@@ -2255,9 +2265,8 @@ def main():
                     det["rows"].insert(-1, ("原始坐标",
                         f"({float(_op[0]):.2f}, {float(_op[1]):.2f})"))
                 attr = info_attr({"tip": tip, "detail": det, "kind": "beacon", "id": bid, "b": b})
-                extra_cls = " beacon-redundant" if bid in REDUNDANT_BEACON_IDS else ""
                 parts.append(
-                    f'<g class="layer_beacon{extra_cls}" data-floor="{fk}" data-mode="{mode}" {attr}>'
+                    f'<g class="layer_beacon" data-floor="{fk}" data-mode="{mode}" {attr}>'
                     f'<circle cx="{sx}" cy="{sy}" r="{r}" fill="{col}" '
                     f'fill-opacity="0.9" stroke="#ffffff" stroke-width="0.5"/>'
                     f'<text x="{fmt(float(sx) + 4)}" y="{fmt(float(sy) + 1.5)}" '
@@ -2272,6 +2281,70 @@ def main():
         render_scheme_group(fp_floors.get(str(fk)), beacon_floors.get(str(fk)), "global")
         # 测试路线模式组（默认隐藏，顶部开关切换）
         render_scheme_group(fp_floors_routes.get(str(fk)), beacon_floors_routes.get(str(fk)), "route")
+
+        # ===== 补装信标（未安装·仅仿真）叠加层：默认隐藏，由「补装5枚信标」开关显示 =====
+        sim_fk = [b for b in SIM_BEACONS if str(b.get("floorId")) == str(fk)]
+        sim_added = [p for p in (fp_floors.get(str(fk)) or {}).get("points", []) if p.get("simAdded")]
+        if sim_fk or sim_added:
+            parts.append(f'<g class="layer_sim_beacon" data-floor="{fk}">\n')
+            # 1) 因补装才变成可采集的网格点（紫色虚环 + 十字，与实采点区分）
+            for p in sim_added:
+                cx, cy = float(p["x"]), float(p["y"])
+                sx, sy = tosvg(cx, cy)
+                by = "、".join(p.get("simAddedBy") or [])
+                attr = info_attr({
+                    "tip": f"补装后新增可采 {p.get('fpId')}\n由 {by or '补装信标'} 补齐（未安装·仅仿真）",
+                    "detail": {"title": f"补装新增可采点 {p.get('fpId')}", "rows": [
+                        ("网格点", p.get("fpId", "")),
+                        ("楼层", f"{fk}F"),
+                        ("坐标", f"({cx:.0f}, {cy:.0f})"),
+                        ("区域类型", p.get("regionType", "")),
+                        ("基线可采", "否（v11 真实口径）"),
+                        ("补装后可采", "是"),
+                        ("贡献虚拟信标", by or "—"),
+                    ]},
+                    "kind": "sim_grid", "id": p.get("fpId", ""),
+                })
+                parts.append(
+                    f'<g class="sim-added-point" {attr}>'
+                    f'<circle cx="{sx}" cy="{sy}" r="3.4" fill="none" stroke="#8E24AA" '
+                    f'stroke-width="1.1" stroke-dasharray="1.6 1.1"/>'
+                    f'<path d="M{fmt(float(sx) - 1.8)},{sy} h3.6 M{sx},{fmt(float(sy) - 1.8)} v3.6" '
+                    f'stroke="#8E24AA" stroke-width="0.8"/></g>\n'
+                )
+            # 2) 虚拟信标本体（紫色菱形 + 双环 + 「未安装·仅仿真」标签）
+            for b in sim_fk:
+                cx, cy = float(b["x"]), float(b["y"])
+                sx, sy = tosvg(cx, cy)
+                sid = b.get("simId") or b.get("beaconId", "")
+                attr = info_attr({
+                    "tip": f"补装信标 {sid}（未安装·仅仿真）\n{b.get('label', '')}",
+                    "detail": {"title": f"补装信标 {sid}", "rows": [
+                        ("虚拟信标", sid),
+                        ("状态", "未安装·仅仿真"),
+                        ("楼层", f"{b.get('floorId')}F"),
+                        ("坐标", f"({cx:.1f}, {cy:.1f})"),
+                        ("安装高度", f"{b.get('installHeightM', 2.5)} m"),
+                        ("目标区域", b.get("targetArea", "")),
+                        ("理由", b.get("rationale", "")),
+                    ]},
+                    "kind": "sim_beacon", "id": sid, "b": b,
+                })
+                parts.append(
+                    f'<g class="sim-beacon" {attr}>'
+                    f'<circle cx="{sx}" cy="{sy}" r="6.2" fill="none" stroke="#8E24AA" '
+                    f'stroke-width="0.9" stroke-dasharray="2.2 1.6"/>'
+                    f'<path d="M{sx},{fmt(float(sy) - 3.6)} L{fmt(float(sx) + 3.6)},{sy} '
+                    f'L{sx},{fmt(float(sy) + 3.6)} L{fmt(float(sx) - 3.6)},{sy} Z" '
+                    f'fill="#8E24AA" fill-opacity="0.92" stroke="#fff" stroke-width="0.6"/>'
+                    f'<text x="{fmt(float(sx) + 4.5)}" y="{fmt(float(sy) - 3.2)}" '
+                    f'font-size="4.2" fill="#6A1B9A" font-weight="bold">{sid}</text>'
+                    f'<text x="{fmt(float(sx) + 4.5)}" y="{fmt(float(sy) + 1.2)}" '
+                    f'font-size="3.6" fill="#8E24AA">未安装·仅仿真</text></g>\n'
+                )
+            parts.append('</g>\n')
+            if sim_fk or sim_added:
+                print(f"  [F{fk}] 补装仿真图层: {len(sim_fk)} 枚虚拟信标 + {len(sim_added)} 个新增可采点")
 
         # ===== 实际坐标系（与地图真实位置对齐，非图例）：5m 网格 + 1m 刻度尺
         #       + y=0/x=0 轴高亮 + 原点(0,0)。独立 class，不随图层开关显隐 =====

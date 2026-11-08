@@ -119,6 +119,34 @@
   background: #16a34a;
 }
 
+/* 补装仿真点：紫色虚线空心（与 v11 真实可采的蓝实心区分） */
+.dot.sim {
+  border: 1rpx dashed #8e24aa;
+  background: transparent;
+}
+
+/* 含虚拟信标预览提示条（仅开关打开时渲染） */
+.sim-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 20rpx;
+  color: #6b21a8;
+}
+
+.sim-tag {
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: rgba(142, 36, 170, 0.12);
+  border: 1rpx solid rgba(142, 36, 170, 0.45);
+  font-weight: 600;
+}
+
+.sim-text {
+  color: #7e22ce;
+}
+
 .filter-group {
   display: flex;
   gap: 10rpx;

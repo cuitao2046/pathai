@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "simulated_beacons_v1",
+  "venueId": "school-building-01",
+  "generatedAt": "2026-11-08",
+  "policy": "未安装·仅仿真：本文件只用于覆盖率仿真与界面预览，不进入 result/ble_deployment.json 部署计划，不改变 collectable（v11 真实口径）判定。",
+  "model": {
+    "rssiAt1mDbm": -52.0,
+    "pathLossN": 3.5,
+    "distanceModel": "3d_slant",
+    "installHeightM": 2.5,
+    "phoneHeightM": 1.2,
+    "wallAttenuationDb": {"partition": 8.0, "brick": 12.0, "concrete": 15.0},
+    "doorAttenuationDb": 2.0,
+    "rssiThresholdDbm": -85.0,
+    "minBeacons": 3
+  },
+  "expectedEffect": {
+    "floor1": {"collectable": 572, "collectableWithSim": 591, "routeCollectable": 401, "routeCollectableWithSim": 418},
+    "floor2": {"collectable": 22, "collectableWithSim": 59, "routeCollectable": 21, "routeCollectableWithSim": 48}
+  },
+  "beacons": [
+    {
+      "simId": "SIM-BK-01-001",
+      "floorId": "1",
+      "x": -39.0,
+      "y": 12.0,
+      "installHeightM": 2.5,
+      "simulated": true,
+      "status": "not_installed",
+      "label": "F1 北厅西入口补装",
+      "targetArea": "F1 北端门厅 y∈[8,16)（路线 R1/R2 收尾段）",
+      "rationale": "北厅远离既有 51 枚信标，最近可用信标 >15m；补 1 枚可把该段路线点从 401 提升到 414。"
+    },
+    {
+      "simId": "SIM-BK-01-002",
+      "floorId": "1",
+      "x": -34.0,
+      "y": 18.0,
+      "installHeightM": 2.5,
+      "simulated": true,
+      "status": "not_installed",
+      "label": "F1 北厅中部补装",
+      "targetArea": "F1 北厅深处 y∈[16,23)、x∈[-41,-26]（含 2 个外门与楼梯口）",
+      "rationale": "北厅深处仍有 24 个点达标信标数 ≤1；补 1 枚覆盖该簇，路线再 +4 点（414→418），全楼 585→591。"
+    },
+    {
+      "simId": "SIM-BK-02-001",
+      "floorId": "2",
+      "x": -31.0,
+      "y": -77.0,
+      "installHeightM": 2.5,
+      "simulated": true,
+      "status": "not_installed",
+      "label": "F2 南区走廊北段补装 1",
+      "targetArea": "F2 南区走廊 y∈[-80,-72]",
+      "rationale": "F2 仅 5 枚实装信标且集中在南端；该点补齐走廊南段，路线点 21→39。"
+    },
+    {
+      "simId": "SIM-BK-02-002",
+      "floorId": "2",
+      "x": -31.0,
+      "y": -72.0,
+      "installHeightM": 2.5,
+      "simulated": true,
+      "status": "not_installed",
+      "label": "F2 南区走廊北段补装 2",
+      "targetArea": "F2 南区走廊 y∈[-72,-64]",
+      "rationale": "向南延伸覆盖，路线 39→42，全楼 40→43。"
+    },
+    {
+      "simId": "SIM-BK-02-003",
+      "floorId": "2",
+      "x": -30.0,
+      "y": -66.0,
+      "installHeightM": 2.5,
+      "simulated": true,
+      "status": "not_installed",
+      "label": "F2 南区走廊北段补装 3",
+      "targetArea": "F2 南区走廊 y∈[-66,-56]",
+      "rationale": "补齐南区走廊北边界，路线 42→48、全楼 43→59；北段 y>-56 仍无覆盖（需另行评估）。"
+    }
+  ]
+}

@@ -54,6 +54,9 @@ export const FULL_SCREEN_PTT_KEY = 'cfg:fullScreenPtt';
 /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
 export const NAV_ARROW_KEY = 'cfg:navArrow';
 
+/** 采集页是否叠加「补装 5 枚虚拟信标」的影响（默认关闭＝v11 真实口径）。 */
+export const SIM_BEACON_PREVIEW_KEY = 'cfg:simBeaconPreview';
+
 export type A11yMode = 'a11y' | 'normal';
 
 /** 标定模式轨迹缓冲 key。 */
@@ -188,6 +191,16 @@ class AppContext {
   /** 首页/设置页回显：现场采集工具开关（默认关闭）。 */
   getFieldCollectionToolSetting(): boolean {
     return getJson<boolean>(FIELD_COLLECTION_TOOL_KEY) === true;
+  }
+
+  /** 设置页：写入「采集页叠加补装信标影响」开关（即时生效；默认关闭）。 */
+  setSimBeaconPreviewSetting(on: boolean): void {
+    setJson(SIM_BEACON_PREVIEW_KEY, on);
+  }
+
+  /** 采集页读取：是否叠加 5 枚未安装虚拟信标的仿真覆盖（默认关闭＝v11 真实口径）。 */
+  getSimBeaconPreviewSetting(): boolean {
+    return getJson<boolean>(SIM_BEACON_PREVIEW_KEY) === true;
   }
 
   /** 设置页：写入无障碍模式（即时生效；默认「视障模式」）。 */

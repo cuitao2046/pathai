@@ -70,6 +70,11 @@
       <switch checked="{{fieldCollectionSetting}}" bindchange="onChangeFieldCollection" aria-label="切换首页是否显示现场采集工具入口" />
     </view>
     <view class="hint">开启后首页右上角显示「采集」按键（静态标定 / 网格指纹采集），<text style="color:#1f2937">即时生效</text>；默认关闭（不对视障终端用户展示）。</view>
+    <view class="row">
+      <text class="label">采集页叠加补装信标</text>
+      <switch checked="{{simBeaconPreviewSetting}}" bindchange="onChangeSimBeaconPreview" aria-label="切换采集页是否叠加补装虚拟信标的影响" />
+    </view>
+    <view class="hint">开启后，静态标定 / 网格指纹页会叠加 5 枚<text style="color:#1f2937">未安装·仅仿真</text>补装信标（F1 2 枚 / F2 3 枚），并把「因补装才可采」的点用紫色样式标出，页面顶部会显示虚拟信标提示。<text style="color:#1f2937">默认关闭</text>：关闭时展示 v11 真实口径（全楼可采 594 点），不会静默混入虚拟信标。</view>
   </view>
 
   <view class="section">

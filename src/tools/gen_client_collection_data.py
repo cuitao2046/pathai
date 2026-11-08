@@ -31,6 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json"
 ROUTES_GRID = PROJECT_ROOT / "result" / "fingerprint_grid_routes.json"
 FULL_GRID = PROJECT_ROOT / "result" / "fingerprint_grid.json"
+SIM_BEACONS = PROJECT_ROOT / "result" / "simulated_beacons.json"
 OUT_DIR = PROJECT_ROOT / "client" / "data"
 COLLECTOR_JS = PROJECT_ROOT / "fingerprint-collector" / "data" / "fingerprint_grid.js"
 
@@ -38,14 +39,14 @@ VIS_RADIUS_M = 15.0  # E5 -12dBm 标称覆盖半径（与选弱区口径一致�
 
 GRID_FULL_KEYS = [
     "fpId", "floorId", "x", "y", "regionType", "shortId", "col", "row", "isBase2m",
-    "collectable", "collectable15m", "routeTags",
+    "collectable", "collectable15m", "collectableWithSim", "simAddedBy", "routeTags",
     "visible10m", "visible15m", "nearestBeaconM", "strongestRssi",
 ]
 
 GRID_JS_KEYS = [
     "id", "fpId", "shortId", "floor", "coordinates", "x", "y", "col", "row",
     "regionType", "priority", "source", "tier", "isBase2m",
-    "collectable", "collectable15m", "routeTags",
+    "collectable", "collectable15m", "collectableWithSim", "simAdded", "simAddedBy", "routeTags",
     "visible10m", "visible15m", "nearestBeaconM", "strongestRssi",
     "nearNodeId", "nearNodeType",
 ]
@@ -96,6 +97,8 @@ def load_full_grid() -> list[dict]:
                 "isBase2m": bool(p.get("isBase2m")),
                 "collectable": bool(p.get("collectablePlan10m")),
                 "collectable15m": bool(p.get("collectableGeo15m")),
+                "collectableWithSim": bool(p.get("collectableWithSim")),
+                "simAddedBy": list(p.get("simAddedBy") or []),
                 "routeTags": list(p.get("routeTags") or []),
                 "visible10m": int(p.get("visible10m") or 0),
                 "visible15m": int(p.get("visible15m") or 0),
@@ -395,6 +398,10 @@ export interface FpGridPoint {
   collectable: boolean;
   /** 备用口径：15m（3D 斜距）/ >=3 信标 */
   collectable15m: boolean;
+  /** 补装仿真口径：叠加 5 枚未安装虚拟信标后的可采集（不改 collectable 语义） */
+  collectableWithSim: boolean;
+  /** 因补装才变得可采的虚拟信标 simId 列表（空=基线已可采或仍不可采） */
+  simAddedBy: string[];
   /** 命中的测试路线标签，如 ['R1'] */
   routeTags: string[];
   visible10m: number;
@@ -403,9 +410,24 @@ export interface FpGridPoint {
   strongestRssi: number | null;
 }
 
+/** 补装/虚拟信标（未安装·仅仿真，不在地图包部署台账内）。 */
+export interface SimulatedBeacon {
+  simId: string;
+  floorId: string;
+  x: number;
+  y: number;
+  installHeightM: number;
+  simulated: boolean;
+  /** not_installed = 未安装 */
+  status: string;
+  label: string;
+  targetArea?: string;
+  rationale?: string;
+}
+
 export const FINGERPRINT_GRID_VERSION = '{version}';
 
-export const FINGERPRINT_GRID: FpGridPoint[] = """
+export const SIMULATED_BEACONS: SimulatedBeacon[] = """
 
 
 def render_value(v):
@@ -443,13 +465,17 @@ def write_collector_js(version: str) -> int:
     full_points: list[dict] = []
     for fl, data in sorted(full["floors"].items(), key=lambda kv: int(kv[0])):
         for p in sorted(data["points"], key=lambda q: (q["row"], q["col"])):
-            rec = _pick(p, [k for k in GRID_JS_KEYS if k not in ("collectable", "collectable15m")])
+            rec = _pick(p, [k for k in GRID_JS_KEYS
+                            if k not in ("collectable", "collectable15m", "collectableWithSim")])
             rec["id"] = p["fpId"]
             rec["fpId"] = p["fpId"]
             rec["floor"] = int(fl)
             rec["coordinates"] = [p["x"], p["y"]]
             rec["collectable"] = bool(p.get("collectablePlan10m"))
             rec["collectable15m"] = bool(p.get("collectableGeo15m"))
+            rec["collectableWithSim"] = bool(p.get("collectableWithSim"))
+            rec["simAdded"] = bool(p.get("collectableWithSim") and not p.get("collectablePlan10m"))
+            rec["simAddedBy"] = list(p.get("simAddedBy") or [])
             full_points.append(rec)
 
     route_points: list[dict] = []
@@ -473,7 +499,9 @@ def write_collector_js(version: str) -> int:
         "module.exports = {\n"
         f"  venueId: {json.dumps(full.get('venueId'), ensure_ascii=False)},\n"
         f"  venueName: {json.dumps(full.get('venueName'), ensure_ascii=False)},\n"
-        f"  version: {json.dumps(version)},\n"
+        "  version: " + json.dumps(version) + ",\n"
+        "  simulatedBeacons: " + json.dumps(
+            (full.get("simulatedBeacons") or {}).get("beacons") or [], ensure_ascii=False) + ",\n"
         "  datasets: {\n"
         f"    full:  {{ label: \"全楼网格(2m底网+1m细分)\", points: {dump(full_points)} }},\n"
         f"    route: {{ label: \"路线网格(1m)\", points: {dump(route_points)} }}\n"
@@ -494,7 +522,9 @@ def main() -> int:
         scenes[(p["floorId"], p["scene"])] += 1
 
     grid = load_full_grid()
-    grid_version = str(load_json(FULL_GRID).get("version") or "unknown")
+    grid_raw = load_json(FULL_GRID)
+    grid_version = str(grid_raw.get("version") or "unknown")
+    sim_beacons = load_json(SIM_BEACONS).get("beacons") or []
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     cal_ts = render_ts(
@@ -503,6 +533,9 @@ def main() -> int:
     (OUT_DIR / "calibration_points.ts").write_text(cal_ts, encoding="utf-8")
     fp_ts = (
         FP_TS_HEADER.replace("{version}", grid_version)
+        + render_ts("", sim_beacons, ["simId", "floorId", "x", "y", "installHeightM",
+                                      "simulated", "status", "label", "targetArea", "rationale"]).lstrip("\n")
+        + "\nexport const FINGERPRINT_GRID: FpGridPoint[] = "
         + render_ts("", grid, GRID_FULL_KEYS).lstrip("\n")
     )
     (OUT_DIR / "fingerprint_grid.ts").write_text(fp_ts, encoding="utf-8")

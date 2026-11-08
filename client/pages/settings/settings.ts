@@ -49,6 +49,8 @@ Page({
     calibrationExportPath: '',
     /** 现场采集工具开关（首页「采集」入口可见性，即时生效）。 */
     fieldCollectionSetting: false,
+    /** 采集页叠加补装（5 枚未安装虚拟信标）影响，即时生效；默认关闭＝v11 真实口径。 */
+    simBeaconPreviewSetting: false,
     /** 无障碍模式：'a11y' 视障模式（默认）/ 'normal' 普通模式，即时生效。 */
     a11yMode: 'a11y' as 'a11y' | 'normal',
     /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
@@ -85,6 +87,7 @@ Page({
         calibrationCount: appContext.calibration.count,
         calibrationOperator: appContext.getCalibrationOperator(),
         fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
+        simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
         a11yMode: appContext.getA11yMode(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
         navArrowSetting: appContext.getNavArrowSetting(),
@@ -236,6 +239,18 @@ Page({
     appContext.setFieldCollectionToolSetting(on);
     this.setData({ fieldCollectionSetting: on });
     wx.showToast({ title: on ? '已开启，返回首页可见' : '已关闭', icon: 'none', duration: 2000 });
+  },
+
+  /** 采集页叠加补装信标影响：默认关闭，开启后展示 5 枚未安装虚拟信标的仿真覆盖。 */
+  onChangeSimBeaconPreview(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setSimBeaconPreviewSetting(on);
+    this.setData({ simBeaconPreviewSetting: on });
+    wx.showToast({
+      title: on ? '采集页已叠加补装仿真' : '已回到真实口径',
+      icon: 'none',
+      duration: 2000,
+    });
   },
 
   /** 无障碍模式：视障模式（大箭头 + 全屏按住说话）/ 普通模式，即时生效。 */
