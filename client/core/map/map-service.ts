@@ -23,7 +23,7 @@ import {
 import { nowMs } from '../../utils/clock';
 import { createSha256Stream, type Sha256Stream } from '../../utils/sha256';
 import { createLogger } from '../../utils/logger';
-import { logPerfPhase, startPerfTrace } from '../../utils/perf-trace';
+import { startPerfTrace } from '../../utils/perf-trace';
 import { getJson, getString, remove, setJson, setString } from '../../utils/kv';
 import {
   appendMapPartial,
@@ -454,7 +454,7 @@ export class MapService {
         // 用实际文件大小参与哈希：文件被多写/截断时摘要必然不符，走丢弃重下
         await this.feedPartialToHasher(hasher, siteId, version, fileSize);
         trace.mark('reuse-digest', 3000);
-        if (hasher.digestHex() === summary.dataSha256) {
+        if ((await hasher.digestHex()) === summary.dataSha256) {
           await commitMapPartial(siteId, version);
           this.logDigestStats(hasher, trace.traceId);
           this.clearDownloadState();
@@ -548,8 +548,10 @@ export class MapService {
           throw mapUnavailable(`地图数据响应状态异常：${resp.statusCode}`);
         }
 
-        // 边下边算：写入成功后立即把本片字节喂给流式哈希，不再在下载结束后读回全文重算
-        hasher.updateSync(new Uint8Array(body));
+        // 边下边算：写入成功后立即把本片字节喂给流式哈希，不再在下载结束后读回全文重算。
+        // 走异步 update：webcrypto 模式仅 memcpy；纯 JS 回退模式内部按 256KB 切片让出，
+        // 避免个别无 WebCrypto 且解释执行的环境长时间霸占主线程。
+        await hasher.update(new Uint8Array(body));
 
         this.patchProgress(offset, total);
         if (total !== null && offset >= total) {
@@ -560,10 +562,10 @@ export class MapService {
         }
       }
 
-      // 下载过程中已按片完成全量哈希，这里只做收尾比对；校验对象是服务端原始字节，
+      // 下载过程中已按片喂入流式哈希，这里只做收尾比对；校验对象是服务端原始字节，
       // 仍与后端 dataSha256 全量比对（不走 size/ETag 弱校验）。
       trace.mark('chunks-done', 3000);
-      const digest = hasher.digestHex();
+      const digest = await hasher.digestHex();
       const stats = hasher.stats();
       this.logDigestStats(hasher, trace.traceId);
       log.info(
@@ -610,7 +612,7 @@ export class MapService {
       if (piece === null || piece.length === 0) {
         throw mapUnavailable('地图半成品分片读取失败');
       }
-      hasher.updateSync(piece);
+      await hasher.update(piece);
       pos += piece.length;
     }
   }
@@ -618,15 +620,9 @@ export class MapService {
   /** 摘要耗时拆分：同步压缩 CPU 与 macrotask 让出等待分别记录，便于复查回归。 */
   private logDigestStats(hasher: Sha256Stream, traceId: string): void {
     const stats = hasher.stats();
-    logPerfPhase('map', 'map-digest', 'hash-cpu', stats.syncMs, { thresholdMs: 1000, traceId });
-    logPerfPhase('map', 'map-digest', 'hash-yield-wait', stats.yieldWaitMs, {
-      thresholdMs: 1000,
-      traceId,
-    });
-    logPerfPhase('map', 'map-digest', 'hash-bytes', stats.bytes, {
-      thresholdMs: Number.MAX_SAFE_INTEGER,
-      traceId,
-    });
+    log.info(
+      `[perf] page=map action=map-digest engine=${stats.engine} bytes=${stats.bytes} cpuMs=${stats.syncMs} yieldWaitMs=${stats.yieldWaitMs} yields=${stats.yields} traceId=${traceId}`,
+    );
   }
 
   private dataUrlFor(summary: MapVersionResponse): string {

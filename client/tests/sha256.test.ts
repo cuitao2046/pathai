@@ -107,32 +107,60 @@ describe('异步分片版（sha256Async / utf8BytesAsync）', () => {
 });
 
 describe('流式哈希（增量 update，边下载边算）', () => {
-  test('任意非 64 字节对齐切片与一次性同步版一致', async () => {
+  test('任意非 64 字节对齐切片与一次性同步版一致（纯 JS 路径）', async () => {
     const text = 'abc中文\u{1D54A}'.repeat(2000);
     const bytes = utf8Bytes(text);
-    const stream = createSha256Stream();
+    const stream = createSha256Stream({ subtle: null });
     for (let pos = 0; pos < bytes.length; pos += 37) {
       await stream.update(bytes.subarray(pos, Math.min(pos + 37, bytes.length)));
     }
-    expect(stream.digestHex()).toBe(sha256Hex(bytes));
+    expect(await stream.digestHex()).toBe(sha256Hex(bytes));
   }, 30000);
 
-  test('跨 update 的残留块也要正确拼接', () => {
+  test('跨 update 的残留块也要正确拼接（纯 JS 路径）', async () => {
     const bytes = new Uint8Array(1000).map((_, i) => i % 251);
-    const stream = createSha256Stream();
+    const stream = createSha256Stream({ subtle: null });
     stream.updateSync(bytes.subarray(0, 63));
     stream.updateSync(bytes.subarray(63, 64));
     stream.updateSync(bytes.subarray(64));
-    expect(stream.digestHex()).toBe(sha256Hex(bytes));
+    expect(await stream.digestHex()).toBe(sha256Hex(bytes));
   });
 
-  test('防回归：大输入按片让出，单片同步字节有上限', async () => {
+  test('webcrypto 模式：分片缓存后一次性交给原生 digest，结果与纯 JS 一致', async () => {
+    // 用本文件 sha256Hex 冒充宿主原生实现（校验 webcrypto 模式的缓存/合并管道；
+    // 引擎本身的正确性由 NIST 向量用例保证）
+    const subtle = {
+      digest: async (_alg: 'SHA-256', data: ArrayBuffer) => {
+        const hex = sha256Hex(new Uint8Array(data));
+        const out = new Uint8Array(32);
+        for (let i = 0; i < 32; i++) {
+          out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+        }
+        return out.buffer;
+      },
+    };
+    const bytes = utf8Bytes('abc中文\u{1D54A}'.repeat(5000));
+    const stream = createSha256Stream({ subtle });
+    for (let pos = 0; pos < bytes.length; pos += 1024 * 1024) {
+      await stream.update(bytes.subarray(pos, Math.min(pos + 1024 * 1024, bytes.length)));
+    }
+    expect(await stream.digestHex()).toBe(sha256Hex(bytes));
+    expect(stream.stats().engine).toBe('webcrypto');
+    expect(stream.stats().bytes).toBe(bytes.length);
+  }, 30000);
+
+  test('默认探测：显式 null 强制 js 引擎，stats 标注引擎', () => {
+    const jsStream = createSha256Stream({ subtle: null });
+    expect(jsStream.stats().engine).toBe('js');
+  });
+
+  test('防回归：大输入按片让出，单片同步字节有上限（纯 JS 路径）', async () => {
     // 上限本身就是契约：不允许为了少让出而整块同步压缩
     expect(SHA256_SYNC_SLICE_BYTES).toBeLessThanOrEqual(256 * 1024);
     const bytes = new Uint8Array(SHA256_SYNC_SLICE_BYTES * 4 + 123);
     const setTimeoutSpy = jest.spyOn(globalThis, 'setTimeout');
     try {
-      const stream = createSha256Stream();
+      const stream = createSha256Stream({ subtle: null });
       await stream.update(bytes);
       const yields = setTimeoutSpy.mock.calls.length;
       // 5 片（4 整 + 1 尾）之间让出 4 次

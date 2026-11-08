@@ -235,31 +235,127 @@ export async function utf8BytesAsync(text: string): Promise<Uint8Array> {
 /** 流式哈希统计：同步压缩 CPU 与让出等待分开累计（真机定位「278s 是 CPU 还是等待」）。 */
 export interface Sha256StreamStats {
   bytes: number;
-  /** updateSync 累计同步压缩耗时。 */
+  /** updateSync 累计同步耗时（webcrypto 模式下为分片拷贝与收尾耗时）。 */
   syncMs: number;
   /** update 中等待 macrotask 让出的累计耗时。 */
   yieldWaitMs: number;
   yields: number;
+  /** 摘要引擎：webcrypto=宿主原生实现，js=本文件纯 JS 回退。 */
+  engine: 'webcrypto' | 'js';
+}
+
+/** 宿主 WebCrypto 中本实现用到的最小子集。 */
+export interface SubtleSha256 {
+  digest(algorithm: 'SHA-256', data: ArrayBuffer): Promise<ArrayBuffer>;
+}
+
+type SubtleDigest = SubtleSha256;
+
+/**
+ * 宿主是否有原生 SHA-256（开发者工具的逻辑层带 WebCrypto；部分真机基础库没有）。
+ * 实测开发者工具里纯 JS 压缩 6MB 需要 ~260s（调试器插桩/无 JIT），原生为毫秒级，
+ * 因此凡有 WebCrypto 必须优先走原生；纯 JS 只作不可用时的回退。
+ */
+export function detectSubtleSha256(): SubtleSha256 | null {
+  const subtle = (globalThis as { crypto?: { subtle?: SubtleSha256 } }).crypto?.subtle;
+  return typeof subtle?.digest === 'function' ? subtle : null;
+}
+
+export interface Sha256StreamOptions {
+  /** 注入原生 digest 实现（测试用）；缺省自动探测，显式传 null 强制纯 JS 路径。 */
+  subtle?: SubtleDigest | null;
 }
 
 /**
  * 流式 SHA-256：边下载边喂字节，完整包不再「读回全文 + UTF-8 重编码 + 重算」。
- * 分片下载每片调用 updateSync（字节已在内存），已落盘半成品按片读出后同样喂入；
- * 只有最终 digest 才做填充收尾。
+ *
+ * 两种引擎：
+ * - webcrypto（默认可用时）：update 只缓存分片（拷贝为 memcpy，毫秒级），digest 一次
+ *   交给宿主原生实现 —— 开发者工具从 260s 降到毫秒级；
+ * - js（回退）：分片增量压缩，片间可让出，真机 JIT 下 6MB 约几百毫秒。
+ *
+ * 两种引擎输出与 sha256Hex 完全一致（NIST 向量 + 交叉对拍保证）。
  */
 export interface Sha256Stream {
-  /** 追加一段字节；按 SHA256_SYNC_SLICE_BYTES 切片，片间让出主线程。 */
+  /** 追加一段字节；纯 JS 模式按 SHA256_SYNC_SLICE_BYTES 切片并让出主线程。 */
   update(bytes: Uint8Array): Promise<void>;
   /** 追加一段字节（同步）；调用方保证单次传入量有界（如一个下载分片）。 */
   updateSync(bytes: Uint8Array): void;
   /** 结束并返回 32 字节摘要；之后不可再追加。 */
-  digestBytes(): Uint8Array;
+  digestBytes(): Promise<Uint8Array>;
   /** 结束并返回 64 位小写 hex 摘要。 */
-  digestHex(): string;
+  digestHex(): Promise<string>;
   stats(): Readonly<Sha256StreamStats>;
 }
 
-export function createSha256Stream(): Sha256Stream {
+export function createSha256Stream(options: Sha256StreamOptions = {}): Sha256Stream {
+  const subtle = options.subtle !== undefined ? options.subtle : detectSubtleSha256();
+  if (subtle !== null) {
+    return createWebCryptoStream(subtle);
+  }
+  return createJsStream();
+}
+
+/** 原生模式：缓存分片（拷贝），digest 一次性交给宿主 WebCrypto。 */
+function createWebCryptoStream(subtle: SubtleDigest): Sha256Stream {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let finalized = false;
+  let digestPromise: Promise<Uint8Array> | null = null;
+  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0, engine: 'webcrypto' };
+
+  const updateSync = (bytes: Uint8Array): void => {
+    if (finalized) {
+      throw new Error('SHA-256 流已结束，不能再追加');
+    }
+    if (bytes.length === 0) {
+      return;
+    }
+    const startedAtMs = Date.now();
+    chunks.push(bytes.slice()); // 拷贝，防调用方复用底层缓冲
+    totalBytes += bytes.length;
+    stats.bytes = totalBytes;
+    stats.syncMs += Date.now() - startedAtMs;
+  };
+
+  const update = async (bytes: Uint8Array): Promise<void> => {
+    updateSync(bytes); // 仅 memcpy，无需让出
+  };
+
+  const digestBytes = (): Promise<Uint8Array> => {
+    let promise = digestPromise;
+    if (promise === null) {
+      finalized = true;
+      const merged = new Uint8Array(totalBytes);
+      let pos = 0;
+      for (const piece of chunks) {
+        merged.set(piece, pos);
+        pos += piece.length;
+      }
+      chunks.length = 0;
+      const startedAtMs = Date.now();
+      promise = subtle
+        .digest('SHA-256', merged.buffer)
+        .then((buf) => {
+          stats.syncMs += Date.now() - startedAtMs;
+          return new Uint8Array(buf);
+        });
+      digestPromise = promise;
+    }
+    return promise;
+  };
+
+  return {
+    update,
+    updateSync,
+    digestBytes,
+    digestHex: async () => toHex(await digestBytes()),
+    stats: () => stats,
+  };
+}
+
+/** 纯 JS 回退：分片增量压缩，片间让出主线程。 */
+function createJsStream(): Sha256Stream {
   const h = initHash();
   const w = new Uint32Array(64);
   /** 不足 64 字节的残留（跨 update 边界）。 */
@@ -268,7 +364,7 @@ export function createSha256Stream(): Sha256Stream {
   let tailLen = 0;
   let totalBytes = 0;
   let finalized = false;
-  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0 };
+  const stats: Sha256StreamStats = { bytes: 0, syncMs: 0, yieldWaitMs: 0, yields: 0, engine: 'js' };
 
   const updateSync = (bytes: Uint8Array): void => {
     if (finalized) {
@@ -341,8 +437,8 @@ export function createSha256Stream(): Sha256Stream {
   return {
     update,
     updateSync,
-    digestBytes,
-    digestHex: () => toHex(digestBytes()),
+    digestBytes: async () => digestBytes(),
+    digestHex: async () => toHex(digestBytes()),
     stats: () => stats,
   };
 }
