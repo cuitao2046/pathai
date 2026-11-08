@@ -112,12 +112,17 @@ Page({
   pipeline: null as LocationPipeline | null,
   sequence: null as SequenceCounter | null,
   aggregator: null as ScanWindowAggregator | null,
-  /** beaconId → 三元组（fp 记录回填 uuid/major/minor 用）。 */
-  tripletById: new Map<string, { uuid: string; major: number; minor: number }>(),
+  /**
+   * beaconId → 三元组（fp 记录回填 uuid/major/minor 用）。
+   * Page 定义期只允许简单值，Map 会被框架深拷贝并丢失方法（console 告警
+   * `Free data with key ... seems not a simple value`），故定义期 null 占位，
+   * onLoad 实例化，使用点 `!` 断言（均发生在 onLoad 之后）。
+   */
+  tripletById: null as Map<string, { uuid: string; major: number; minor: number }> | null,
   /** fpId → 已采记录数。 */
-  recordCounts: new Map<string, number>(),
+  recordCounts: null as Map<string, number> | null,
   /** floorId → 该层网格点。 */
-  gridByFloor: new Map<string, FpGridPoint[]>(),
+  gridByFloor: null as Map<string, FpGridPoint[]> | null,
   lastEstimate: null as PositionEstimateResponse | null,
   collectPoint: null as FpSnapshotPoint | null,
   tickTimer: null as ReturnType<typeof setInterval> | null,
@@ -125,6 +130,9 @@ Page({
   pausedRemainingS: 0,
 
   onLoad(): void {
+    this.tripletById = new Map();
+    this.recordCounts = new Map();
+    this.gridByFloor = new Map();
     this.store = new FpRecordsStore(
       () => getJson<FpRecord[]>(STORE_KEY),
       (d) => setJson(STORE_KEY, d),
@@ -170,17 +178,17 @@ Page({
     this.tripletById = new Map();
     for (const b of appContext.map.beacons) {
       if (typeof b.uuid === 'string' && typeof b.major === 'number' && typeof b.minor === 'number') {
-        this.tripletById.set(b.beaconId, { uuid: b.uuid, major: b.major, minor: b.minor });
+        this.tripletById!.set(b.beaconId, { uuid: b.uuid, major: b.major, minor: b.minor });
       }
     }
     // 网格按层分组
     this.gridByFloor = new Map();
     for (const p of FINGERPRINT_GRID) {
-      const list = this.gridByFloor.get(p.floorId);
+      const list = this.gridByFloor!.get(p.floorId);
       if (list) {
         list.push(p);
       } else {
-        this.gridByFloor.set(p.floorId, [p]);
+        this.gridByFloor!.set(p.floorId, [p]);
       }
     }
     this.refreshStats();
@@ -254,7 +262,7 @@ Page({
     }
     this.recordCounts = new Map();
     for (const r of this.store.allRecords()) {
-      this.recordCounts.set(r.fpId, (this.recordCounts.get(r.fpId) ?? 0) + 1);
+      this.recordCounts!.set(r.fpId, (this.recordCounts!.get(r.fpId) ?? 0) + 1);
     }
     this.setData({ stats: this.store.stats() });
     this.refreshFloorStats(this.data.currentFloor);
@@ -263,8 +271,8 @@ Page({
 
   /** 本层「可采集 N / 总 M / 已采 K」计数（顶栏展示）。 */
   refreshFloorStats(floorId: string): void {
-    const pts = this.gridByFloor.get(floorId) ?? [];
-    this.setData({ floorStats: floorCounts(pts, this.recordCounts) });
+    const pts = this.gridByFloor!.get(floorId) ?? [];
+    this.setData({ floorStats: floorCounts(pts, this.recordCounts!) });
   },
 
   // ------------------------------------------------------------------
@@ -298,7 +306,7 @@ Page({
       return;
     }
     // 只对当前实际绘制出来的点做命中，避免低缩放下误点未显示的 1m 点
-    const pts = this.visiblePoints(this.gridByFloor.get(vp.floorId) ?? [], vp);
+    const pts = this.visiblePoints(this.gridByFloor!.get(vp.floorId) ?? [], vp);
     // 屏幕空间命中：网格点按当前视口投影后再比距离，缩放/平移后不偏移
     const hit = pickPointOnScreen(
       pts,
@@ -356,7 +364,7 @@ Page({
           : `当前不可采集（10m 可见 ${p.visible10m} 个）`,
         refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
         routeText: routeText(p.routeTags),
-        recordCount: this.recordCounts.get(p.fpId) ?? 0,
+        recordCount: this.recordCounts!.get(p.fpId) ?? 0,
         distanceText,
       },
     });
@@ -442,7 +450,7 @@ Page({
       });
       return;
     }
-    const lookup: FpBeaconLookup = (beaconId) => this.tripletById.get(beaconId) ?? null;
+    const lookup: FpBeaconLookup = (beaconId) => this.tripletById!.get(beaconId) ?? null;
     const rec = buildFpRecord({
       point: p,
       window,
@@ -601,12 +609,12 @@ Page({
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
     // LOD（路线点豁免）+ 筛选档位；路线点最后绘制，保证在最上层
-    const pts = this.visiblePoints(this.gridByFloor.get(vp.floorId) ?? [], vp);
+    const pts = this.visiblePoints(this.gridByFloor!.get(vp.floorId) ?? [], vp);
     const normalPts = pts.filter((p) => !isRoutePoint(p));
     const routePts = pts.filter((p) => isRoutePoint(p));
     for (const p of [...normalPts, ...routePts]) {
       const { sx, sy } = vp.toScreen(p.x, p.y);
-      const n = this.recordCounts.get(p.fpId) ?? 0;
+      const n = this.recordCounts!.get(p.fpId) ?? 0;
       const style = pointStyle(n > 0, isRoutePoint(p), p.collectable);
       const half = style.sizePx / 2;
       if (style.fill !== null) {
