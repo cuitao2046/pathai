@@ -47,6 +47,9 @@ result/*
 !result/skeleton_manual_parsed.json
 !result/open_column_wraps.json
 !result/ble_deployment.json
+!result/simulated_beacons.json
+!result/f2_collectable_points.csv
+!result/f2_collectable_points.md
 !result/fingerprint_valid_region.json
 !result/fingerprint_coverage_compare.html
 !result/fingerprint_coverage_compare.json
