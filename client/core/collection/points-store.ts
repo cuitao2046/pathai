@@ -9,7 +9,16 @@ import type { CalibrationPointRec, FpRecord, StaticSessionRec } from './types';
 import type { PresetCalibrationPoint } from '../../data/calibration_points';
 
 export type KvLoad<T> = () => T | null;
-export type KvSave<T> = (data: T) => void;
+/** 返回 false 表示只写进了会话内存、未真正落盘（调用方需回滚/告警）。 */
+export type KvSave<T> = (data: T) => boolean | void;
+
+/** 指纹记录落盘失败（storage 满/不可用）；调用方应提示现场先导出并清理。 */
+export class FpRecordsPersistError extends Error {
+  constructor() {
+    super('指纹记录写入本地存储失败');
+    this.name = 'FpRecordsPersistError';
+  }
+}
 
 interface StaticPersist {
   /** 现场补标点（预置点来自数据文件，不落盘）。 */
@@ -170,18 +179,25 @@ export class FpRecordsStore {
     this.records = load() ?? [];
   }
 
-  private commit(): void {
-    this.save(this.records);
+  private commit(): boolean {
+    return this.save(this.records) !== false;
   }
 
-  /** 追加快照并落定 captureIndex（该点已有记录数 + 1）。 */
+  /**
+   * 追加快照并落定 captureIndex（该点已有记录数 + 1）。
+   * 落盘失败时回滚本条并抛错——不能让界面显示出「只在内存里」的记录，
+   * 否则重启后已采集数会突然变少。
+   */
   addRecord(rec: Omit<FpRecord, 'captureIndex'>): FpRecord {
     const full: FpRecord = {
       ...rec,
       captureIndex: this.records.filter((r) => r.fpId === rec.fpId).length + 1,
     };
     this.records.push(full);
-    this.commit();
+    if (!this.commit()) {
+      this.records.pop();
+      throw new FpRecordsPersistError();
+    }
     return full;
   }
 

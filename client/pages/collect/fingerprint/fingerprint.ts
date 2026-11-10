@@ -11,7 +11,6 @@
 import { appContext } from '../../../services/app-context';
 import { DEFAULT_SITE_ID, BEACON_RSSI_AT_1M_DBM } from '../../../config/env';
 import { createLogger } from '../../../utils/logger';
-import { getJson, setJson } from '../../../utils/kv';
 import { vibrateShort } from '../../../utils/haptic';
 import { createBeaconSource } from '../../../core/ble/beacon-source-factory';
 import {
@@ -35,7 +34,8 @@ import {
 } from '../../../core/collection/fingerprint-visibility';
 import { createTeeSource } from '../../../core/collection/collect-scan';
 import { buildFpRecord, type FpBeaconLookup, type FpSnapshotPoint } from '../../../core/collection/fp-snapshot';
-import { FpRecordsStore } from '../../../core/collection/points-store';
+import { FpRecordsStore, FpRecordsPersistError } from '../../../core/collection/points-store';
+import { loadFpRecords, saveFpRecords } from '../../../core/collection/fp-records-storage';
 import {
   buildFpExport,
   type CollectionExportMeta,
@@ -197,8 +197,8 @@ Page({
     this.recordCounts = new Map();
     this.gridByFloor = new Map();
     this.store = new FpRecordsStore(
-      () => getJson<FpRecord[]>(STORE_KEY),
-      (d) => setJson(STORE_KEY, d),
+      () => loadFpRecords(STORE_KEY),
+      (d) => saveFpRecords(STORE_KEY, d),
     );
     this.sequence = new SequenceCounter();
     this.setData({ simPreview: appContext.getSimBeaconPreviewSetting() });
@@ -634,7 +634,24 @@ Page({
           : undefined,
       paramsVersion: this.runtimeParamsVersion ?? undefined,
     });
-    const full = this.store.addRecord(rec);
+    let full: FpRecord;
+    try {
+      full = this.store.addRecord(rec);
+    } catch (err) {
+      // 落盘失败：addRecord 已回滚，界面计数保持与磁盘一致
+      log.error('指纹记录写入失败', err instanceof Error ? err.message : String(err));
+      this.collectPoint = null;
+      this.setData({ collecting: false, countdownText: '' });
+      wx.showModal({
+        title: '未保存',
+        content:
+          err instanceof FpRecordsPersistError
+            ? '本地存储写入失败（多半是空间已满）。请先用「导出」备份，再点「清理」释放空间后重试。'
+            : '本地存储写入失败，本条记录未保存，请重试。',
+        showCancel: false,
+      });
+      return;
+    }
     log.info('指纹已记录', full.fpId, `#${full.captureIndex}`, `${full.beaconCount} 信标`);
     this.collectPoint = null;
     this.setData({ collecting: false, countdownText: '' });

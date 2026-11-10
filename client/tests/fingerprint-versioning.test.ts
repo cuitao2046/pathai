@@ -53,7 +53,9 @@ describe('指纹记录版本标记（C8 / P2）', () => {
     const saved: FpRecord[] = [];
     const store = new FpRecordsStore(
       () => null,
-      (data) => saved.splice(0, saved.length, ...data),
+      (data) => {
+        saved.splice(0, saved.length, ...data);
+      },
     );
     store.addRecord(
       buildFpRecord({
