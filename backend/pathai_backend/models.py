@@ -220,3 +220,96 @@ class BeaconProvisioningRound(Base):
 
 Index("ix_beacon_rounds_site", BeaconProvisioningRound.site_id)
 
+
+class FingerprintLibraryVersion(Base):
+    """指纹库版本：不可变快照；每次有效入库新增一行并切换 active。"""
+
+    __tablename__ = "fingerprint_library_versions"
+
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    source_file_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    dataset: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    fp_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    inserted_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    conflict_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    operator: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    device_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    map_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    grid_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    params_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: 四类计数：record_count（本版最终条数）= inserted + updated + retained；
+    #: previous_count 为上一 active 版本条数，配合 deleted 可完整复算变更。
+    updated_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    deleted_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    retained_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    previous_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    #: 入库模式：merge（默认）/ replaceFloor（显式整层重采）。
+    ingest_mode: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default="merge"
+    )
+    replace_floors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 保留策略：明细（records/points）已被裁剪；摘要行永久保留供审计。
+    details_pruned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0"
+    )
+    pruned_at_epoch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+Index("ix_fingerprint_library_versions_site", FingerprintLibraryVersion.site_id)
+
+
+class FingerprintLibraryRecord(Base):
+    """版本内的原始指纹记录：按 (version, fpId, collectedAt) 唯一，供审计/重算。"""
+
+    __tablename__ = "fingerprint_library_records"
+
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    collected_at: Mapped[str] = mapped_column(String(40), primary_key=True)
+    floor_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    record_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+Index("ix_fingerprint_library_records_version", FingerprintLibraryRecord.version)
+
+
+class FingerprintLibraryPoint(Base):
+    """版本内的按点聚合向量（查询模型）：beaconId → 中位 RSSI。"""
+
+    __tablename__ = "fingerprint_library_points"
+
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    floor_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    x: Mapped[float] = mapped_column(nullable=False)
+    y: Mapped[float] = mapped_column(nullable=False)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    beacon_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    vector_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+Index("ix_fingerprint_library_points_version", FingerprintLibraryPoint.version)
+
+
+class FingerprintLibraryPointer(Base):
+    """每个场地当前生效的指纹库版本。"""
+
+    __tablename__ = "fingerprint_library_pointer"
+
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    version: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+

@@ -51,11 +51,25 @@ class LocationEstimateRequest(StrictModel):
         min_length=1, max_length=MAX_BEACONS_PER_BATCH
     )
     imu: ImuPayload | None = None
+    #: 是否启用指纹库优先匹配（设置页开关，默认关闭＝仅蓝牙三点定位）。
+    #: 缺省字段时请求体与旧版完全一致，服务端行为不变。
+    useFingerprintDb: bool = False
 
 
 class MatchedArea(StrictModel):
     placeId: str = Field(min_length=1)
     name: str = Field(min_length=1)
+
+
+class FingerprintMatchInfo(StrictModel):
+    """指纹库命中详情（便于客户端/排查判断本次定位来源）。"""
+
+    libraryVersion: str = Field(min_length=1)
+    fpId: str = Field(min_length=1)
+    floorId: str = Field(min_length=1)
+    confidence: float = Field(ge=0, le=1)
+    rmseDb: float = Field(ge=0)
+    overlap: int = Field(ge=1)
 
 
 class PositionEstimateResponse(StrictModel):
@@ -72,6 +86,12 @@ class PositionEstimateResponse(StrictModel):
     paramsVersion: str = Field(min_length=1)
     observedAt: datetime
     ignoredBeaconIds: list[str] = Field(default_factory=list)
+    #: 本次坐标来源：指纹库命中 / 蓝牙三点定位（默认，与旧版行为一致）。
+    positionSource: str = Field(default="trilateration", pattern="^(fingerprint|trilateration)$")
+    #: 指纹库命中详情；positionSource=trilateration 时恒为 None。
+    fingerprint: FingerprintMatchInfo | None = None
+    #: 请求启用指纹库但降级到三点定位的原因（未启用时为 None）。
+    fallbackReason: str | None = None
 
     @model_validator(mode="after")
     def _check_position_trust(self) -> "PositionEstimateResponse":
