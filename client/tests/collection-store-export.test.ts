@@ -1,6 +1,6 @@
 /**
  * 点位存储与导出构造：断言与两个独立工具的导出 envelope 完全一致
- * （positioning_calibration_static 1.0 / ble_fingerprint_collection 1.1.0）。
+ * （positioning_calibration_static 1.0 / ble_fingerprint_collection 1.2.0）。
  */
 import { StaticPointsStore, FpRecordsStore, type StaticPointsPersist } from '../core/collection/points-store';
 import { buildStaticExport, buildFpExport } from '../core/collection/export-builder';
@@ -76,6 +76,20 @@ describe('StaticPointsStore', () => {
     expect(store.sessionsFor('CAL-F1-01').map((s) => s.sessionIndex)).toEqual([2]);
     expect(store.stats()).toEqual({ pointCount: 2, sampledPointCount: 2, sessionCount: 2, beaconPairs: 2 });
   });
+
+  it('clearAll 一次清空会话、补标点与隐藏状态并落盘', () => {
+    const k = kv<StaticPointsPersist>();
+    const store = new StaticPointsStore(PRESET, k.load, k.save);
+    store.addSession('CAL-F1-01', session('CAL-F1-01', 0));
+    store.addCustomPoint([1.23, 4.56], '1', '我的点');
+    store.setPresetHidden('CAL-F2-01', true);
+    store.clearAll();
+    expect(store.allSessions()).toHaveLength(0);
+    expect(store.listPoints().map((p) => p.pointId)).toEqual(['CAL-F1-01', 'CAL-F2-01']);
+    expect(store.stats()).toEqual({ pointCount: 2, sampledPointCount: 0, sessionCount: 0, beaconPairs: 0 });
+    // 落盘内容同步清空（不是只清内存）
+    expect(k.data()).toEqual({ customPoints: [], hiddenPreset: [], sessions: [] });
+  });
 });
 
 describe('buildStaticExport（positioning_calibration_static 1.0 契约）', () => {
@@ -112,7 +126,7 @@ describe('buildStaticExport（positioning_calibration_static 1.0 契约）', () 
   });
 });
 
-describe('buildFpExport（ble_fingerprint_collection 1.1.0 契约）', () => {
+describe('buildFpExport（ble_fingerprint_collection 1.2.0 契约）', () => {
   it('envelope 字段与 fpstore.js buildExport 一致', () => {
     let saved: ReturnType<FpRecordsStore['allRecords']> | null = null;
     const store = new FpRecordsStore(
@@ -141,11 +155,14 @@ describe('buildFpExport（ble_fingerprint_collection 1.1.0 契约）', () => {
       },
       { dataset: 'routes', beaconUuid: 'B9407F30-F5F8-466E-AFF9-25556B57FE6D' },
     );
-    expect(data.schemaVersion).toBe('1.1.0');
+    expect(data.schemaVersion).toBe('1.2.0');
     expect(data.type).toBe('ble_fingerprint_collection');
     expect(data.dataset).toBe('routes');
     expect(data.exportScope).toBe('all');
     expect(data.zones).toEqual([]);
+    expect(data.deletions).toEqual([]);
+    expect(data.mode).toBe('merge');
+    expect(data.replaceFloors).toBeUndefined();
     expect(data.beaconConfig).toEqual({
       uuid: 'B9407F30-F5F8-466E-AFF9-25556B57FE6D',
       majors: [1, 2],

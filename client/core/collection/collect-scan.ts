@@ -25,6 +25,9 @@ export function createTeeSource(
     stop(): void {
       base.stop();
     },
+    subscribeStatus(listener) {
+      return base.subscribeStatus !== undefined ? base.subscribeStatus(listener) : () => undefined;
+    },
   };
 }
 

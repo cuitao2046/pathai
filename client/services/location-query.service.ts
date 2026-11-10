@@ -42,6 +42,8 @@ export interface LocationQueryDeps {
   timeoutMs?: number;
   /** 聚合窗口毫秒（传给管线），测试可缩短。 */
   windowMs?: number;
+  /** 指纹库开关（默认关闭）；关闭时请求体与旧版完全一致。 */
+  useFingerprintDb?: () => boolean;
 }
 
 /** 质量策略播报文本（FE-01；estimate 仅会是 reliable/degraded）。 */
@@ -106,6 +108,7 @@ export class LocationQueryService {
       source: makeSource(),
       sequence: new SequenceCounter(),
       windowMs: this.deps.windowMs ?? WINDOW_MS,
+      useFingerprintDb: this.deps.useFingerprintDb,
       onEstimate: (estimate) => {
         settled = true;
         // 管线会把任意质量都交上来：unreliable/lost 只给安全文案，不报点位

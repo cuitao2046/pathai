@@ -1,0 +1,137 @@
+<view class="page">
+  <view class="topbar">
+    <text class="title">对数等距</text>
+    <view
+      class="beacon-pill {{selectedBeaconId ? 'picked' : ''}}"
+      bindtap="onOpenPicker"
+      aria-role="button"
+      aria-label="{{selectedBeaconId ? '已选信标' + selectedBeaconId + '，点按切换' : '从地图包选择测量信标'}}"
+    >
+      {{selectedBeaconId ? selectedBeaconId : '选择信标'}}
+    </view>
+    <picker
+      mode="selector"
+      range="{{durationOptions}}"
+      value="{{durationIndex}}"
+      bindchange="onDurationChange"
+      aria-label="采集倒计时时长"
+    >
+      <button class="pill" aria-label="倒计时时长{{durationS}}秒">倒计时 {{durationS}}s</button>
+    </picker>
+  </view>
+
+  <view class="sel-card" aria-label="当前选中信标">
+    <view class="sel-line">
+      <text wx:if="{{selectedBeaconId}}" class="sel-id">{{selectedBeaconId}}</text>
+      <text wx:if="{{selectedBeaconId}}" class="sel-floor">{{selectedFloorText}}</text>
+      <text wx:if="{{!selectedBeaconId}}" class="sel-empty">未选择信标 · 点上方「选择信标」从地图包挑一枚</text>
+    </view>
+    <view class="sel-desc" wx:if="{{selectedBeaconId}}">{{selectedLocation}}</view>
+    <view class="sel-meta" wx:if="{{selectedBeaconId}}">
+      地图包安装高度 {{selectedHeightText}} · 来源：当前地图包 · 该信标本页会话 {{selectedSessionCount}}
+    </view>
+    <view class="height-row" aria-label="安装高度微调">
+      <text class="height-text">当前采集高度 {{installHeightText}}</text>
+      <view class="stepper">
+        <view class="step-btn" bindtap="onHeightMinus" aria-role="button" aria-label="降低安装高度">－</view>
+        <view class="step-btn" bindtap="onHeightPlus" aria-role="button" aria-label="提高安装高度">＋</view>
+      </view>
+    </view>
+  </view>
+  <view class="hint">手机高固定 1.2 m；安装高度默认取地图包值，可微调；采集时按会话快照。</view>
+
+  <view class="grid" aria-label="水平距离档位">
+    <view
+      wx:for="{{stops}}"
+      wx:key="stopId"
+      class="stop {{item.sampled ? 'sampled' : ''}} {{item.stopId === selectedStopId ? 'selected' : ''}}"
+      data-stop="{{item.stopId}}"
+      bindtap="onSelectStop"
+      aria-role="button"
+      aria-label="{{item.horizontalDistanceM}}米档位，斜距{{item.slantDistanceM}}米，已采{{item.sessionCount}}次"
+    >
+      <text class="stop-h">{{item.horizontalDistanceM}} m</text>
+      <text class="stop-d">斜距 {{item.slantDistanceM}} m</text>
+      <text wx:if="{{item.sessionCount > 0}}" class="badge">{{item.sessionCount}}</text>
+    </view>
+  </view>
+
+  <view class="stats-bar" aria-live="polite">
+    <text>全页 档位 {{stats.stopCount}}/10 · 会话 {{stats.sessionCount}} · 观测 {{stats.observationCount}}</text>
+    <text class="phase">{{phaseText}}</text>
+  </view>
+
+  <view class="detect-bar {{uniqueBeaconId ? 'unique' : ''}}" aria-live="polite">{{detectHint}}</view>
+
+  <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
+
+  <!-- 信标列表：来源=当前地图包（与 BeaconRegistry 同源），按楼层分组；探测只作标记 -->
+  <view class="picker-mask" wx:if="{{beaconPickerOpen}}" bindtap="onClosePicker">
+    <view class="picker-card" catchtap="noop" aria-label="选择测量信标">
+      <view class="picker-head">
+        <view>
+          <text class="picker-title">选择测量信标</text>
+          <text class="picker-sub">来源：当前地图包 · 共 {{beaconCount}} 枚 · 按楼层分组</text>
+        </view>
+        <view class="picker-close" bindtap="onClosePicker" aria-role="button" aria-label="关闭信标列表">关闭</view>
+      </view>
+      <view class="picker-empty" wx:if="{{beaconCount === 0}}">
+        {{loadError !== '' ? loadError : '当前地图包未登记信标'}}
+      </view>
+      <scroll-view scroll-y class="picker-list" wx:else>
+        <view wx:for="{{beaconGroups}}" wx:for-item="group" wx:key="floorId" class="bk-group">
+          <view class="bk-group-title">{{group.title}}（{{group.items.length}} 枚）</view>
+          <view
+            wx:for="{{group.items}}"
+            wx:for-item="bk"
+            wx:key="beaconId"
+            class="bk-row {{bk.selected ? 'selected' : ''}} {{bk.received ? '' : 'not-received'}} {{bk.unique ? 'unique' : ''}} {{bk.resolvable ? '' : 'unresolvable'}}"
+            data-beacon-id="{{bk.beaconId}}"
+            bindtap="onPickBeacon"
+            aria-role="button"
+            aria-label="{{bk.beaconId}}，{{bk.received ? '已收到信号' : '未收到信号，仍可选择'}}"
+          >
+            <view class="bk-top">
+              <text class="bk-id">{{bk.beaconId}}</text>
+              <text class="bk-tag" wx:if="{{bk.unique}}">唯一探测</text>
+              <text class="bk-tag warn" wx:if="{{!bk.resolvable}}">缺少三元组</text>
+              <text class="bk-rssi {{bk.rssiLevel}}" wx:if="{{bk.received}}">{{bk.rssiText}}</text>
+              <text class="bk-rssi none" wx:else>未收到</text>
+            </view>
+            <view class="bk-desc">{{bk.locationDesc}}</view>
+            <view class="bk-meta">
+              <text>坐标 {{bk.coordText}}</text>
+              <text>地图包高度 {{bk.installHeightText}}</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 采集中实时表（单信标单行） -->
+  <view class="obs-panel" wx:if="{{collecting && obsRow !== null}}">
+    <view class="obs-row obs-head"><text>信标</text><text>样本数</text><text>中位数 dBm</text></view>
+    <view class="obs-row">
+      <text>{{obsRow.beaconId}}</text><text>{{obsRow.n}}</text><text>{{obsRow.rssiMedian}}</text>
+    </view>
+  </view>
+
+  <view class="countdown-hud" wx:if="{{collecting}}" aria-live="polite">
+    <text class="countdown">{{countdownText}}</text>
+    <text class="meta">{{selectedStopText}} · 样本 {{sampleCount}}</text>
+  </view>
+
+  <view class="op-tools" aria-label="测量操作">
+    <view class="op-btn danger" bindtap="onClearRecords" aria-role="button" aria-label="清理本页记录">清理</view>
+    <view class="op-btn" bindtap="onExport" aria-role="button" aria-label="导出当前信标对数等距记录">导出</view>
+    <view class="op-btn primary" bindtap="onToggleCapture" aria-role="button" aria-label="{{collecting ? '结束采集' : '开始采集'}}">
+      {{collecting ? '结束' : '采集'}}
+    </view>
+  </view>
+
+  <view class="overlay" wx:if="{{loading || loadError !== ''}}">
+    <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图包信标…'}}</text>
+    <button class="retry-btn" wx:if="{{loadError !== ''}}" bindtap="onRetry">重试</button>
+  </view>
+</view>

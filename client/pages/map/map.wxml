@@ -113,7 +113,13 @@
           aria-role="button"
           bindtap="onGoCollectFingerprint"
           aria-label="打开网格指纹采集"
-        ><view class="zoom-face collect-pill collect-opt-last" style="width:{{collectOptWidth}}rpx">网格指纹</view></view>
+        ><view class="zoom-face collect-pill" style="width:{{collectOptWidth}}rpx">网格指纹</view></view>
+        <view
+          class="zoom-hit"
+          aria-role="button"
+          bindtap="onGoCollectLogdist"
+          aria-label="打开对数等距测量"
+        ><view class="zoom-face collect-pill collect-opt-last" style="width:{{collectOptWidth}}rpx">对数等距</view></view>
       </view>
     </view>
   </view>

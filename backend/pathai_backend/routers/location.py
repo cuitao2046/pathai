@@ -8,13 +8,14 @@
 """
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from pathai_backend import auth
+from pathai_backend import auth, fingerprint_library
 from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
@@ -22,9 +23,17 @@ from pathai_backend.map_repository import MapRepository
 from pathai_backend.models import LocationSequence
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.common import GeoPosition
-from pathai_backend.schemas.location import LocationEstimateRequest, PositionEstimateResponse
+from pathai_backend.schemas.location import (
+    FingerprintMatchInfo,
+    LocationEstimateRequest,
+    PositionEstimateResponse,
+)
 
 router = APIRouter(prefix="/api/v1/locations", tags=["location"])
+logger = logging.getLogger(__name__)
+
+#: 指纹匹配置信度 ≥ 该值时按 reliable 返回，否则 degraded（两者都带坐标）。
+FINGERPRINT_RELIABLE_CONFIDENCE = 0.75
 
 
 def _nearest_area(
@@ -119,20 +128,53 @@ def estimate(
         residual_degraded_m=settings.location_residual_degraded_m,
         params_version=settings.location_params_version,
     )
-    estimate = estimate_location(
-        pkg=published.pkg,
-        observations=[BeaconInput(beacon_id=b.beaconId, rssi=b.rssi) for b in body.beacons],
-        floor_hint=body.floorHint,
-        params=params,
-    )
 
-    position = (
-        GeoPosition(x=estimate.x, y=estimate.y, floorId=estimate.floor_id)
-        if estimate.x is not None and estimate.y is not None
-        else None
-    )
+    # 指纹库优先：命中阈值（重叠/RMSE/置信度/与次优差距）由服务层判定；
+    # 未启用开关时完全不触达指纹库，行为与旧版一致。
+    fp_match: fingerprint_library.FingerprintMatch | None = None
+    fallback_reason: str | None = None
+    if body.useFingerprintDb:
+        try:
+            fp_match, fallback_reason = fingerprint_library.query(
+                db,
+                pkg=published.pkg,
+                beacons=body.beacons,
+                site_id=body.siteId,
+                floor_hint=body.floorHint,
+            )
+        except Exception:  # 指纹库异常不得影响定位主链路：降级三点定位
+            logger.exception("指纹库查询失败，降级为三点定位")
+            fp_match, fallback_reason = None, "library_unavailable"
+
+    if fp_match is not None:
+        position = GeoPosition(x=fp_match.x, y=fp_match.y, floorId=fp_match.floor_id)
+        confidence = fp_match.confidence
+        quality = (
+            "reliable"
+            if fp_match.confidence >= FINGERPRINT_RELIABLE_CONFIDENCE
+            else "degraded"
+        )
+        ignored_beacon_ids: list[str] = []
+        algorithm_version = "fingerprint-0.1"
+    else:
+        estimate = estimate_location(
+            pkg=published.pkg,
+            observations=[BeaconInput(beacon_id=b.beaconId, rssi=b.rssi) for b in body.beacons],
+            floor_hint=body.floorHint,
+            params=params,
+        )
+        position = (
+            GeoPosition(x=estimate.x, y=estimate.y, floorId=estimate.floor_id)
+            if estimate.x is not None and estimate.y is not None
+            else None
+        )
+        confidence = estimate.confidence
+        quality = estimate.quality
+        ignored_beacon_ids = list(estimate.ignored_beacon_ids)
+        algorithm_version = "location-0.3"  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
+
     area = (
-        _nearest_area(published.pkg, estimate.x, estimate.y, estimate.floor_id)
+        _nearest_area(published.pkg, position.x, position.y, position.floorId)
         if position is not None
         else None
     )
@@ -148,13 +190,25 @@ def estimate(
         mapVersion=published.map_version,
         position=position,
         headingDeg=heading,
-        confidence=estimate.confidence,
-        quality=estimate.quality,
+        confidence=confidence,
+        quality=quality,
         matchedArea=None
         if area is None
         else {"placeId": area.placeId, "name": area.name},
-        algorithmVersion="location-0.3",  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
+        algorithmVersion=algorithm_version,
         paramsVersion=params.params_version,
         observedAt=body.collectedAt,
-        ignoredBeaconIds=list(estimate.ignored_beacon_ids),
+        ignoredBeaconIds=ignored_beacon_ids,
+        positionSource="fingerprint" if fp_match is not None else "trilateration",
+        fingerprint=None
+        if fp_match is None
+        else FingerprintMatchInfo(
+            libraryVersion=fp_match.library_version,
+            fpId=fp_match.fp_id,
+            floorId=fp_match.floor_id,
+            confidence=fp_match.confidence,
+            rmseDb=fp_match.rmse_db,
+            overlap=fp_match.overlap,
+        ),
+        fallbackReason=fallback_reason,
     )

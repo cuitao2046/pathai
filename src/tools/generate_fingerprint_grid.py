@@ -379,17 +379,18 @@ def wall_attenuation_db(a, b, model):
     return att
 
 
-def _rssi_at(x, y, b, wall_model):
-    """单枚信标在 (x,y) 处的 3D 含墙预测 RSSI。"""
+def _rssi_at(x, y, b, wall_model, a=BEACON_RSSI_AT_1M_DBM, n=BEACON_PATH_LOSS_N):
+    """单枚信标在 (x,y) 处的 3D 含墙预测 RSSI；a/n 可注入标定实测值。"""
     dxy = dist((x, y), (b["x"], b["y"]))
     dz = float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M) - PHONE_HEIGHT_M
     d3 = math.hypot(dxy, dz)
-    return (BEACON_RSSI_AT_1M_DBM
-            - 10 * BEACON_PATH_LOSS_N * math.log10(max(d3, 0.3))
+    return (float(a)
+            - 10 * float(n) * math.log10(max(d3, 0.3))
             - wall_attenuation_db((x, y), (b["x"], b["y"]), wall_model))
 
 
-def coverage_flags(x, y, floor_beacons, wall_model=None):
+def coverage_flags(x, y, floor_beacons, wall_model=None,
+                   a=BEACON_RSSI_AT_1M_DBM, n=BEACON_PATH_LOSS_N):
     """采集层覆盖判定（v11 口径：3D 斜距 + 材质墙衰减 + 门 2dB）。
 
     - plan10m85：预测 RSSI>=-85dBm 的信标 >=3（字段名保留兼容；10m 半径不再是硬门槛，
@@ -404,7 +405,7 @@ def coverage_flags(x, y, floor_beacons, wall_model=None):
         dxy = dist((x, y), (b["x"], b["y"]))
         dz = float(b.get("installHeightM") or DEFAULT_INSTALL_HEIGHT_M) - PHONE_HEIGHT_M
         d3 = math.hypot(dxy, dz)
-        rssi = _rssi_at(x, y, b, wall_model)
+        rssi = _rssi_at(x, y, b, wall_model, a=a, n=n)
         if nearest is None or dxy < nearest:
             nearest = dxy
         if strongest is None or rssi > strongest:
@@ -428,7 +429,8 @@ def coverage_flags(x, y, floor_beacons, wall_model=None):
     }
 
 
-def coverage_with_sim(base_ok, x, y, floor_sim, wall_model):
+def coverage_with_sim(base_ok, x, y, floor_sim, wall_model,
+                      a=BEACON_RSSI_AT_1M_DBM, n=BEACON_PATH_LOSS_N):
     """补装仿真口径：在真实部署基线之上叠加虚拟信标（不改 collectable 语义）。
 
     返回 collectableWithSim 与 simAddedBy（使该点达标的虚拟信标，按 RSSI 从强到弱，
@@ -438,7 +440,7 @@ def coverage_with_sim(base_ok, x, y, floor_sim, wall_model):
         return {"collectableWithSim": base_ok >= COLLECT_MIN_BEACONS, "simAddedBy": [], "okWithSim": base_ok}
     hits = []
     for b in floor_sim:
-        r = _rssi_at(x, y, b, wall_model)
+        r = _rssi_at(x, y, b, wall_model, a=a, n=n)
         if r >= RSSI_THRESHOLD_DBM:
             hits.append((r, b["beaconId"]))
     hits.sort(key=lambda z: -z[0])
@@ -451,7 +453,8 @@ def coverage_with_sim(base_ok, x, y, floor_sim, wall_model):
     }
 
 
-def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors, sim_beacons=None):
+def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors, sim_beacons=None,
+                     a=BEACON_RSSI_AT_1M_DBM, n=BEACON_PATH_LOSS_N):
     walk = build_walkable(geo_floor)
     if walk is None:
         return [], {"error": "no walkable regions"}, None
@@ -515,8 +518,8 @@ def build_floor_grid(geo_floor, floor_no, origin, beacons, route_corridors, sim_
     floor_sim = [b for b in (sim_beacons or []) if str(b.get("floorId")) == str(floor_no)]
     for (u, v), c in kept.items():
         x, y = _coord(origin, u, v)
-        cov = coverage_flags(x, y, floor_beacons, wall_model)
-        sim_cov = coverage_with_sim(cov["okBeacons"], x, y, floor_sim, wall_model)
+        cov = coverage_flags(x, y, floor_beacons, wall_model, a=a, n=n)
+        sim_cov = coverage_with_sim(cov["okBeacons"], x, y, floor_sim, wall_model, a=a, n=n)
         tags = []
         for tag, poly in route_corridors.get(str(floor_no), []):
             if poly.contains(Point(x, y)) or poly.distance(Point(x, y)) < 1e-6:
@@ -860,6 +863,120 @@ def write_f2_collectable(points, floor_no, out_dir, route_geom=None):
     return rows, csv_path, md_path
 
 
+def generate_full_grid(geo, beacons, sim_beacons, routes, *, beacons_label="",
+                       a=BEACON_RSSI_AT_1M_DBM, n=BEACON_PATH_LOSS_N,
+                       grid_version=GRID_VERSION, progress=True):
+    """可直接被服务端复用的整包生成入口（CLI 行为保持不变）。
+
+    返回 (out_doc, all_points, route_geom)；不写文件、不写 F2 清单。
+    a/n 为标定实测值时可覆盖默认常量；墙/门衰减与 -85dBm/≥3 口径保持工程常量。
+    """
+    origin = even_origin(geo)
+    corridors, route_meta, route_geom = collect_route_corridors(geo, routes)
+
+    floors_out, summary = {}, {}
+    total = {"total": 0, "base2m": 0, "split1m": 0, "collectablePlan10m": 0,
+             "collectableGeo15m": 0, "routeTagged": 0, "routeCollectablePlan10m": 0,
+             "collectableWithSim": 0, "routeCollectableWithSim": 0, "simAdded": 0,
+             "simBeaconAdds": {}}
+    all_points = []
+    for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
+        pts, stats, _walls = build_floor_grid(geo["floors"][fk], int(fk), origin, beacons, corridors,
+                                              sim_beacons, a=a, n=n)
+        floors_out[fk] = {
+            "floor": int(fk),
+            "parameters": {
+                "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
+                "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
+                "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
+            },
+            "points": pts,
+        }
+        summary[fk] = stats
+        all_points.extend(pts)
+        for k in total:
+            if k == "simBeaconAdds":
+                for bid, cnt in (stats.get("simBeaconAdds") or {}).items():
+                    total["simBeaconAdds"][bid] = total["simBeaconAdds"].get(bid, 0) + cnt
+            else:
+                total[k] += stats.get(k, 0)
+        if progress:
+            print(f"  [F{fk}] 总={stats['total']} 2m={stats['base2m']} 1m={stats['split1m']} "
+                  f"可采10m={stats['collectablePlan10m']} 可采15m={stats['collectableGeo15m']} "
+                  f"路线点={stats['routeTagged']} 含补装={stats['collectableWithSim']}")
+
+    summary["total"] = total
+    bx0, by0, bx1, by1 = wall_bbox(geo)
+    out = {
+        "schemaVersion": "fingerprint_grid_v2",
+        "venueId": geo.get("venueId"),
+        "venueName": geo.get("venueName"),
+        "version": grid_version,
+        "generator": "generate_fingerprint_grid.py",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "mode": "full",
+        "layers": {
+            "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",
+            "collection": f"当前实际部署 {len(beacons)} 枚信标"
+                          f"（F1 {_floor_beacon_count(beacons, 1)} / F2 {_floor_beacon_count(beacons, 2)}）"
+                          f"，地图包 {beacons_label}，"
+                          "按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable"
+                          + (f"；另含 {len(sim_beacons)} 枚未安装补装信标的仿真口径 collectableWithSim" if sim_beacons else ""),
+        },
+        "origin": {
+            "x": origin[0], "y": origin[1],
+            "rule": "venue_wall_bbox_lower_left_floor_even",
+            "wallBbox": [round(bx0, 3), round(by0, 3), round(bx1, 3), round(by1, 3)],
+        },
+        "parameters": {
+            "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
+            "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
+            "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
+            "dedup": "lattice_key_1m",
+            "fpIdPattern": FP_ID_RE,
+            "priority": ["intersection", "doorway", "high_risk", "normal"],
+            "largeSpacingM": LARGE_SPACING_M, "largeAreaMinM2": LARGE_AREA_MIN_M2,
+        },
+        "coverage": {
+            "plan10m85": {
+                "minBeacons": COLLECT_MIN_BEACONS,
+                "rssiThresholdDbm": RSSI_THRESHOLD_DBM,
+                "rssiAt1mDbm": float(a),
+                "pathLossN": float(n),
+                "distanceModel": "3d_slant",
+                "phoneHeightM": PHONE_HEIGHT_M,
+                "installHeightMDefault": DEFAULT_INSTALL_HEIGHT_M,
+                "wallAttenuationDb": WALL_ATTENUATION_DB,
+                "unknownWallMaterialDb": UNKNOWN_MATERIAL_DB,
+                "doorAttenuationDb": DOOR_ATTENUATION_DB,
+                "doorProximityM": DOOR_PROXIMITY_M,
+                "crossingClusterTolM": CROSSING_CLUSTER_TOL_M,
+                "radiusMLegacy": PLAN_RADIUS_M,
+                "note": "v11 起由『10m 几何半径 + 无墙 RSSI(A=-50)』升级为『3D 斜距 + 材质墙衰减 + 门 2dB 的 RSSI>=-85 信标数>=3』；"
+                        "字段名 plan10m85/collectablePlan10m 保留以兼容客户端，10m 半径不再是硬门槛",
+            },
+            "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
+                       "distanceModel": "3d_slant"},
+            "withSim": {
+                "note": "补装仿真口径：真实部署 + simulatedBeacons 叠加后的 RSSI，字段 collectableWithSim；"
+                        "不改 collectable/collectablePlan10m 语义（v11 真实口径基线）",
+                "simBeaconCount": len(sim_beacons),
+                "simBeaconIds": [b["beaconId"] for b in sim_beacons],
+            },
+        },
+        "beacons": beacons,
+        "simulatedBeacons": {
+            "policy": "未安装·仅仿真：不进 result/ble_deployment.json 部署计划，不参与 collectable 判定",
+            "source": Path(beacons_label).name if beacons_label else None,
+            "beacons": sim_beacons,
+        },
+        "routes": route_meta,
+        "summary": summary,
+        "floors": floors_out,
+    }
+    return out, all_points, route_geom
+
+
 def main():
     ap = argparse.ArgumentParser(description="指纹采集网格生成（设计层/采集层）")
     ap.add_argument("geo", nargs="?", default=GEO_IN, help="输入 GeoJSON 路径")
@@ -887,111 +1004,14 @@ def main():
         print(f"总计 {total_all} 个路线采集点 → {args.out}")
         return
 
-    origin = even_origin(geo)
     beacons = load_beacons(args.beacons)
     sim_beacons = load_sim_beacons(args.sim_beacons)
     routes = json.load(open(args.routes, encoding="utf-8")).get("routes", []) if Path(args.routes).exists() else []
-    corridors, route_meta, route_geom = collect_route_corridors(geo, routes)
-
-    floors_out, summary = {}, {}
-    total = {"total": 0, "base2m": 0, "split1m": 0, "collectablePlan10m": 0,
-             "collectableGeo15m": 0, "routeTagged": 0, "routeCollectablePlan10m": 0,
-             "collectableWithSim": 0, "routeCollectableWithSim": 0, "simAdded": 0,
-             "simBeaconAdds": {}}
-    all_points = []
-    for fk in sorted(geo["floors"].keys(), key=lambda x: int(x)):
-        pts, stats, _walls = build_floor_grid(geo["floors"][fk], int(fk), origin, beacons, corridors,
-                                             sim_beacons)
-        floors_out[fk] = {
-            "floor": int(fk),
-            "parameters": {
-                "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
-                "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
-                "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
-            },
-            "points": pts,
-        }
-        summary[fk] = stats
-        all_points.extend(pts)
-        for k in total:
-            if k == "simBeaconAdds":
-                for bid, n in (stats.get("simBeaconAdds") or {}).items():
-                    total["simBeaconAdds"][bid] = total["simBeaconAdds"].get(bid, 0) + n
-            else:
-                total[k] += stats.get(k, 0)
-        print(f"  [F{fk}] 总={stats['total']} 2m={stats['base2m']} 1m={stats['split1m']} "
-              f"可采10m={stats['collectablePlan10m']} 可采15m={stats['collectableGeo15m']} "
-              f"路线点={stats['routeTagged']} 含补装={stats['collectableWithSim']}")
-
-    summary["total"] = total
-    bx0, by0, bx1, by1 = wall_bbox(geo)
-    out = {
-        "schemaVersion": "fingerprint_grid_v2",
-        "venueId": geo.get("venueId"),
-        "venueName": geo.get("venueName"),
-        "version": GRID_VERSION,
-        "generator": "generate_fingerprint_grid.py",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "mode": "full",
-        "layers": {
-            "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",
-            "collection": f"当前实际部署 {len(beacons)} 枚信标"
-                          f"（F1 {_floor_beacon_count(beacons, 1)} / F2 {_floor_beacon_count(beacons, 2)}）"
-                          f"，地图包 {Path(args.beacons).stem}，"
-                          "按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable"
-                          + (f"；另含 {len(sim_beacons)} 枚未安装补装信标的仿真口径 collectableWithSim" if sim_beacons else ""),
-        },
-        "origin": {
-            "x": origin[0], "y": origin[1],
-            "rule": "venue_wall_bbox_lower_left_floor_even",
-            "wallBbox": [round(bx0, 3), round(by0, 3), round(bx1, 3), round(by1, 3)],
-        },
-        "parameters": {
-            "normalSpacingM": NORMAL_SPACING_M, "splitSpacingM": SPLIT_SPACING_M,
-            "intersectionRadiusM": INTERSECTION_RADIUS_M, "doorRadiusM": DOOR_RADIUS_M,
-            "riskRadiusM": RISK_RADIUS_M, "wallClearanceM": WALL_CLEARANCE_M,
-            "dedup": "lattice_key_1m",
-            "fpIdPattern": FP_ID_RE,
-            "priority": ["intersection", "doorway", "high_risk", "normal"],
-            "largeSpacingM": LARGE_SPACING_M, "largeAreaMinM2": LARGE_AREA_MIN_M2,
-        },
-        "coverage": {
-            "plan10m85": {
-                "minBeacons": COLLECT_MIN_BEACONS,
-                "rssiThresholdDbm": RSSI_THRESHOLD_DBM,
-                "rssiAt1mDbm": BEACON_RSSI_AT_1M_DBM,
-                "pathLossN": BEACON_PATH_LOSS_N,
-                "distanceModel": "3d_slant",
-                "phoneHeightM": PHONE_HEIGHT_M,
-                "installHeightMDefault": DEFAULT_INSTALL_HEIGHT_M,
-                "wallAttenuationDb": WALL_ATTENUATION_DB,
-                "unknownWallMaterialDb": UNKNOWN_MATERIAL_DB,
-                "doorAttenuationDb": DOOR_ATTENUATION_DB,
-                "doorProximityM": DOOR_PROXIMITY_M,
-                "crossingClusterTolM": CROSSING_CLUSTER_TOL_M,
-                "radiusMLegacy": PLAN_RADIUS_M,
-                "note": "v11 起由『10m 几何半径 + 无墙 RSSI(A=-50)』升级为『3D 斜距 + 材质墙衰减 + 门 2dB 的 RSSI>=-85 信标数>=3』；"
-                        "字段名 plan10m85/collectablePlan10m 保留以兼容客户端，10m 半径不再是硬门槛",
-            },
-            "geo15m": {"radiusM": GEO_RADIUS_M, "minBeacons": COLLECT_MIN_BEACONS,
-                       "distanceModel": "3d_slant"},
-            "withSim": {
-                "note": "补装仿真口径：真实部署 + simulatedBeacons 叠加后的 RSSI，字段 collectableWithSim；"
-                        "不改 collectable/collectablePlan10m 语义（v11 真实口径基线）",
-                "simBeaconCount": len(sim_beacons),
-                "simBeaconIds": [b["beaconId"] for b in sim_beacons],
-            },
-        },
-        "beacons": beacons,
-        "simulatedBeacons": {
-            "policy": "未安装·仅仿真：不进 result/ble_deployment.json 部署计划，不参与 collectable 判定",
-            "source": Path(args.sim_beacons).name if sim_beacons else None,
-            "beacons": sim_beacons,
-        },
-        "routes": route_meta,
-        "summary": summary,
-        "floors": floors_out,
-    }
+    out, all_points, route_geom = generate_full_grid(
+        geo, beacons, sim_beacons, routes,
+        beacons_label=Path(args.beacons).stem,
+    )
+    total = out["summary"]["total"]
     Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 
     f2_rows, csv_path, md_path = write_f2_collectable(all_points, 2, args.f2_out_dir, route_geom)

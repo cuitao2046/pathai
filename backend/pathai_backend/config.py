@@ -64,6 +64,12 @@ class Settings:
     location_residual_degraded_m: float = 4.0
     #: 参数版本号（写入 API-05 响应与导航会话，便于跨版本追溯）
     location_params_version: str = "unset"
+    # 标定控制台（specs/calibration-console）：样本/网格产物目录与运行时热切换 TTL
+    calibration_data_dir: Path = Path(__file__).resolve().parent.parent / ".local" / "calibration"
+    #: 网格基线（geo/台账/路线/虚拟信标）所在目录；缺失时 ready 判定为不可计算
+    calibration_grid_baseline_dir: Path = Path(__file__).resolve().parent.parent.parent / "result"
+    #: 多 worker 从库中读取生效参数的最长缓存时间（秒）
+    calibration_params_ttl_s: float = 2.0
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
@@ -102,11 +108,34 @@ class Settings:
                 env.get("PATHAI_LOCATION_RESIDUAL_DEGRADED_M", "4.0")
             ),
             location_params_version=env.get("PATHAI_LOCATION_PARAMS_VERSION", "unset"),
+            calibration_data_dir=Path(
+                env.get(
+                    "PATHAI_CALIBRATION_DATA_DIR",
+                    str(cls._default_calibration_data_dir()),
+                )
+            ),
+            calibration_grid_baseline_dir=Path(
+                env.get(
+                    "PATHAI_GRID_BASELINE_DIR",
+                    str(cls._default_grid_baseline_dir()),
+                )
+            ),
+            calibration_params_ttl_s=float(
+                env.get("PATHAI_CALIBRATION_PARAMS_TTL_S", "2.0")
+            ),
         )
 
     @staticmethod
     def _default_map_data_dir() -> Path:
         return Path(__file__).resolve().parent.parent / "maps_data"
+
+    @staticmethod
+    def _default_calibration_data_dir() -> Path:
+        return Path(__file__).resolve().parent.parent / ".local" / "calibration"
+
+    @staticmethod
+    def _default_grid_baseline_dir() -> Path:
+        return Path(__file__).resolve().parent.parent.parent / "result"
 
     @property
     def resolved_database_url(self) -> str:

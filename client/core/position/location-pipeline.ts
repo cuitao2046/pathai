@@ -46,6 +46,11 @@ export interface LocationPipelineOptions {
   onUnusable: (err: ApiClientError) => void;
   /** 窗口时长（毫秒），默认 2000；测试可缩短。 */
   windowMs?: number;
+  /**
+   * 指纹库开关（设置页，默认关闭）。仅在返回 true 时给请求体加
+   * useFingerprintDb=true；关闭时请求体与旧版逐字节一致。
+   */
+  useFingerprintDb?: () => boolean;
 }
 
 export class LocationPipeline {
@@ -69,7 +74,14 @@ export class LocationPipeline {
     }
     this.running = true;
     this.mode = mode;
-    await this.opts.source.start((sample) => this.aggregator.push(sample));
+    try {
+      await this.opts.source.start((sample) => this.aggregator.push(sample));
+    } catch (err) {
+      // 蓝牙未开/权限不足等启动失败必须可重试：否则 running 卡在 true，
+      // 后续 onShow/重试全部变成空操作，页面永远收不到样本。
+      this.running = false;
+      throw err;
+    }
     this.schedule();
   }
 
@@ -144,6 +156,10 @@ export class LocationPipeline {
       floorHint: this.lastFloorId,
       beacons: snapshot.map(toObservation),
     };
+    // 关闭（默认）时不写该字段：请求体与旧版完全一致，服务端行为不变
+    if (this.opts.useFingerprintDb?.() === true) {
+      body.useFingerprintDb = true;
+    }
     let estimate: PositionEstimateResponse;
     try {
       const resp = await this.opts.client.request<PositionEstimateResponse>({

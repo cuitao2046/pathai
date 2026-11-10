@@ -57,6 +57,12 @@ export const NAV_ARROW_KEY = 'cfg:navArrow';
 /** 采集页是否叠加「补装 5 枚虚拟信标」的影响（默认关闭＝v11 真实口径）。 */
 export const SIM_BEACON_PREVIEW_KEY = 'cfg:simBeaconPreview';
 
+/**
+ * 启用指纹库提升导航定位精度（默认关闭；关闭＝仅蓝牙三点定位）。
+ * 读取方：地图页导航管线与「我在哪儿」定位查询。
+ */
+export const FINGERPRINT_DB_KEY = 'cfg:fingerprintDb';
+
 export type A11yMode = 'a11y' | 'normal';
 
 /** 标定模式轨迹缓冲 key。 */
@@ -201,6 +207,16 @@ class AppContext {
   /** 采集页读取：是否叠加 5 枚未安装虚拟信标的仿真覆盖（默认关闭＝v11 真实口径）。 */
   getSimBeaconPreviewSetting(): boolean {
     return getJson<boolean>(SIM_BEACON_PREVIEW_KEY) === true;
+  }
+
+  /** 设置页：写入「启用指纹库提升导航定位精度」（即时生效；默认关闭）。 */
+  setFingerprintDbSetting(on: boolean): void {
+    setJson(FINGERPRINT_DB_KEY, on);
+  }
+
+  /** 定位链路读取：指纹库开关（默认关闭＝仅蓝牙三点定位）。 */
+  getFingerprintDbSetting(): boolean {
+    return getJson<boolean>(FINGERPRINT_DB_KEY) === true;
   }
 
   /** 设置页：写入无障碍模式（即时生效；默认「视障模式」）。 */

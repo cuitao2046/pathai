@@ -78,6 +78,25 @@
   </view>
 
   <view class="section">
+    <view class="section-title">定位增强</view>
+    <view class="row">
+      <text class="label">启用指纹库提升导航定位精度</text>
+      <switch checked="{{fingerprintDbSetting}}" bindchange="onChangeFingerprintDb" aria-label="启用指纹库提升导航定位精度" />
+    </view>
+    <view class="hint">开启后定位优先用指纹库匹配（需先在采集页完成入库），匹配命中时返回指纹点坐标；<text style="color:#1f2937">指纹库不可用、无对应网格点记录、匹配置信度低或多点难区分时自动回退到现有蓝牙三点定位</text>。默认关闭：关闭时仅用蓝牙三点定位，行为与现在完全一致。<text style="color:#1f2937">切换即时生效</text>（含进行中的导航）。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">定位常量计算</view>
+    <view class="row"><text class="label">参数版本</text><text user-select>{{runtimeParamVersion}}</text></view>
+    <view class="row"><text class="label">网格版本</text><text user-select>{{runtimeGridVersion}}</text></view>
+    <view class="row" wx:if="{{runtimeParamsText !== ''}}"><text class="label">A / n</text><text>{{runtimeParamsText}}</text></view>
+    <view class="hint" wx:if="{{runtimeParamsHint !== ''}}">{{runtimeParamsHint}}</view>
+    <button class="action" bindtap="onOpenCalc" aria-label="打开定位常量计算控制台">打开计算控制台</button>
+    <view class="hint">上传现场样本 → 服务端计算 A/n 与指纹网格预览 → 二次确认后成对生效；阶段一样本只评审、不可 apply。</view>
+  </view>
+
+  <view class="section">
     <view class="section-title">标定模式（现场工具）</view>
     <view class="row">
       <text class="label">记录可信位置估计</text>

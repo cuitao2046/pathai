@@ -178,6 +178,28 @@ describe('LocationPipeline 定位管线', () => {
     expect(unusable).toHaveLength(0);
   });
 
+  it('指纹库开关开启时请求体带 useFingerprintDb=true', async () => {
+    const pipeline = new LocationPipeline({
+      client: createHttpStack('http://localhost:8000').client,
+      map,
+      source,
+      sequence: { next: () => (seq += 1) },
+      onEstimate: (e) => estimates.push(e),
+      onUnusable: (e) => unusable.push(e),
+      windowMs: 60_000,
+      useFingerprintDb: () => true,
+    });
+    await pipeline.start();
+    await flush();
+
+    source.emitAll(now);
+    await advance(8000);
+    expect(estimateRequests()).toHaveLength(1);
+    expect(estimateRequests()[0].data).toEqual(
+      expect.objectContaining({ useFingerprintDb: true }),
+    );
+  });
+
   it('setMode(navigating) 后按 2.5s 节流', async () => {
     const pipeline = makePipeline();
     await pipeline.start();

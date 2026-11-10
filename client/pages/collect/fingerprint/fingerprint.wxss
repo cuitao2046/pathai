@@ -9,23 +9,7 @@
   background: #eef3f8;
 }
 
-.topbar {
-  position: absolute;
-  top: 16rpx;
-  left: 16rpx;
-  right: 16rpx;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  flex-wrap: wrap;
-}
-
-.floor-pills {
-  display: flex;
-  gap: 8rpx;
-}
-
+/* 筛选档位按钮（楼层/导出已移到右下操作列，此基础样式仅服务 .pill.filter） */
 .pill {
   margin: 0;
   padding: 0 22rpx;
@@ -46,7 +30,7 @@
 
 .stats-bar {
   position: absolute;
-  top: 92rpx;
+  top: 16rpx;
   left: 24rpx;
   z-index: 3;
   display: flex;
@@ -64,10 +48,27 @@
   color: #64748b;
 }
 
+/* 覆盖层降级提示：贴底部操作列上方，避免遮挡顶部图例 */
+.grid-notice {
+  position: absolute;
+  bottom: 190rpx;
+  left: 24rpx;
+  /* 与静态标定页一致：右侧让出右下操作列宽度，避免被按钮压住 */
+  right: 130rpx;
+  z-index: 4;
+  padding: 8rpx 14rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid #f59e0b;
+  background: rgba(255, 251, 235, 0.95);
+  font-size: 20rpx;
+  line-height: 1.4;
+  color: #92400e;
+}
+
 .legend-bar {
   position: absolute;
-  /* 统计栏改成两行（本层计数 + 版本/记录）后下移，避免重叠 */
-  top: 178rpx;
+  /* 顶栏移走后统计栏上移到 16rpx，图例相应上移，避免重叠 */
+  top: 86rpx;
   left: 24rpx;
   right: 24rpx;
   z-index: 3;
@@ -178,28 +179,72 @@
   height: 100%;
 }
 
-/* 缩放控件：共享样式见 styles/map-tools.wxss；此处只定位到图例下方 */
+/* 缩放控件：共享样式见 styles/map-tools.wxss；此处只定位到图例下方（保持原位不动） */
 .map-tools {
   top: 300rpx;
 }
 
-/* 快照倒计时面板 */
-.collect-panel {
+/* 操作按键列：楼层切换 + 导出，贴屏幕右下边缘垂直一列（贴右、贴下）。
+ * 可视面随文字宽度（min 56rpx），点按热区高度 72rpx（36 CSS px）满足既有无障碍下限。 */
+.op-tools {
   position: absolute;
-  left: 24rpx;
-  right: 24rpx;
-  bottom: 32rpx;
-  z-index: 4;
-  background: rgba(255, 255, 255, 0.97);
-  border-radius: 16rpx;
-  padding: 20rpx 24rpx;
-  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.18);
+  right: 0;
+  bottom: 24rpx;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
 }
 
-.countdown-row {
+.op-btn {
+  box-sizing: border-box;
+  min-width: 56rpx;
+  height: 72rpx;
+  line-height: 68rpx;
+  padding: 0 22rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2rpx solid #cbd5e1;
+  border-right: none;
+  border-radius: 14rpx 0 0 14rpx;
+}
+
+/* 入库前置条件未满足（有未导出记录）或正在入库：视觉弱化，点击仍给出原因提示 */
+.op-btn.disabled {
+  color: #94a3b8;
+  background: rgba(241, 245, 249, 0.92);
+}
+
+.op-btn.active {
+  background: #1a56db;
+  border-color: #1a56db;
+  color: #ffffff;
+}
+
+/* 危险操作（清理记录）：与楼层/导出同列，红字弱化，靠列顶远离拇指误触 */
+.op-btn.danger {
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+/* 快照倒计时：屏幕底部居中（贴下），与右下操作列留出间距 */
+.countdown-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 24rpx;
+  transform: translateX(-50%);
+  z-index: 4;
   display: flex;
   align-items: baseline;
-  gap: 20rpx;
+  gap: 16rpx;
+  max-width: calc(100% - 260rpx);
+  padding: 10rpx 28rpx;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 999rpx;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.18);
 }
 
 .countdown {

@@ -2,7 +2,7 @@
  * 现场采集（静态标定 + 网格指纹）共享类型。
  * 导出契约与独立工具严格一致：
  * - 静态标定 = positioning-calibrator utils/cstore.js 的 static_samples.json（schemaVersion 1.0）
- * - 网格指纹 = fingerprint-collector utils/fpstore.js 的 ble_fingerprint_collection（schemaVersion 1.1.0）
+ * - 网格指纹 = fingerprint-collector utils/fpstore.js 的 ble_fingerprint_collection（schemaVersion 1.2.0）
  * 新增字段必须为可选（PC 侧工具链忽略未知字段），禁止改名/改语义。
  */
 import type { ResolvedObservation } from '../ble/scan-window';
@@ -86,7 +86,26 @@ export interface FpRecord {
   collectedAt: string;
   beaconCount: number;
   beacons: FpBeaconObs[];
+  /**
+   * 采集时的网格/参数版本（spec calibration-console §7.5）。
+   * 旧记录没有这两个字段：导出保持缺失，下游按 unknown 处理，不回填。
+   */
+  gridVersion?: string | null;
+  paramsVersion?: string | null;
 }
 
 /** 快照输入：2s 窗口逐信标中位数（与生产同口径）。 */
 export type SnapshotWindow = ResolvedObservation[];
+
+/**
+ * 删除墓碑（ble_fingerprint_collection 1.2.0 deletions[] 契约）。
+ * 删除必须显式声明：只有本地真实删除的记录才生成墓碑，绝不按「本批未出现」推断。
+ */
+export interface FpDeletion {
+  fpId: string;
+  collectedAt: string;
+  /** 删除时记录的内容哈希（服务端校验墓碑与库中记录一致，防止误删）。 */
+  contentSha256: string;
+  /** 楼层（对账清单驱动删除时由服务端清单回填；导出时可缺省）。 */
+  floor?: string;
+}

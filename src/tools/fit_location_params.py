@@ -180,6 +180,152 @@ def validate_samples(
     return pairs
 
 
+# ---------------------------------------------------------------------------
+# 阶段一：对数等距样本（positioning_calibration_logdist）
+# ---------------------------------------------------------------------------
+
+LOGDIST_TYPE = "positioning_calibration_logdist"
+LOGDIST_RESULT_TYPE = "positioning_calibration_logdist_result"
+#: 阶段一稳定性门槛：至少 3 个档位、10 个观测对；不满足只告警不阻断。
+LOGDIST_MIN_STOPS = 3
+LOGDIST_MIN_PAIRS = 10
+
+
+def is_logdist_samples(samples: dict) -> bool:
+    return samples.get("type") == LOGDIST_TYPE
+
+
+def validate_logdist_samples(samples: dict) -> list[Pair]:
+    """校验阶段一样本并产出 OLS 观测对；单个文件只允许一枚信标。"""
+    if samples.get("schemaVersion") != "1.0":
+        raise CalibrationError("logdist_samples.schemaVersion 必须是 1.0")
+    if samples.get("type") != LOGDIST_TYPE:
+        raise CalibrationError(f"logdist_samples.type 必须是 {LOGDIST_TYPE}")
+    if samples.get("deployable") is not False:
+        raise CalibrationError("logdist_samples.deployable 必须是 false（阶段一不可部署）")
+    stops = samples.get("stops")
+    if not isinstance(stops, list) or not stops:
+        raise CalibrationError("logdist_samples.stops 为空")
+
+    beacon_ids: set[str] = set()
+    pairs: list[Pair] = []
+    for stop in stops:
+        stop_id = stop.get("stopId")
+        horizontal = stop.get("horizontalDistanceM")
+        if not stop_id or not isinstance(horizontal, (int, float)) or horizontal < 0:
+            raise CalibrationError(f"档位缺 stopId/horizontalDistanceM：{stop_id!r}")
+        sessions = stop.get("sessions")
+        if not isinstance(sessions, list) or not sessions:
+            raise CalibrationError(f"{stop_id} 没有采样会话")
+        for session in sessions:
+            session_index = session.get("sessionIndex")
+            install_height = session.get("installHeightM", samples.get("installHeightM"))
+            if not isinstance(install_height, (int, float)):
+                raise CalibrationError(f"{stop_id} 会话缺 installHeightM")
+            for obs in session.get("observations") or []:
+                beacon_id = obs.get("beaconId")
+                if not beacon_id:
+                    raise CalibrationError(f"{stop_id} 观测缺 beaconId")
+                beacon_ids.add(str(beacon_id))
+                rssi = obs.get("rssiMedian")
+                if not isinstance(rssi, int) or not RSSI_MIN_DBM <= rssi <= RSSI_MAX_DBM:
+                    raise CalibrationError(
+                        f"{stop_id}/{beacon_id} 的 rssiMedian 越界：{rssi!r}"
+                    )
+                expected = math.sqrt(
+                    float(horizontal) ** 2 + (float(install_height) - PHONE_HEIGHT_M) ** 2
+                )
+                declared = obs.get("truthDistanceM")
+                if declared is not None and abs(float(declared) - expected) > DISTANCE_TOLERANCE_M:
+                    raise CalibrationError(
+                        f"{stop_id}/{beacon_id} 的 truthDistanceM={declared} 与档位重算 "
+                        f"{expected:.3f} m 不一致（容差 {DISTANCE_TOLERANCE_M} m）"
+                    )
+                if expected < MIN_DISTANCE_M:
+                    raise CalibrationError(f"{stop_id} 的斜距 {expected:.2f} m 过小")
+                pairs.append(
+                    Pair(str(stop_id), int(session_index or 0), 0, str(beacon_id), expected, rssi)
+                )
+    if len(beacon_ids) > 1:
+        raise CalibrationError(f"一个文件只允许一枚信标，实际出现：{sorted(beacon_ids)}")
+    return pairs
+
+
+def fit_logdist(samples_path: Path, out_path: Path) -> dict:
+    """阶段一 A/n 拟合：只产参数与质量，不产阈值、不产可部署版本。"""
+    samples = load_json(samples_path)
+    pairs = validate_logdist_samples(samples)
+    fit = fit_pairs(pairs)
+    stop_count = len({p.point_id for p in pairs})
+    warnings: list[str] = []
+    if stop_count < LOGDIST_MIN_STOPS:
+        warnings.append(f"档位仅 {stop_count} 个，少于建议的 {LOGDIST_MIN_STOPS} 个")
+    if len(pairs) < LOGDIST_MIN_PAIRS:
+        warnings.append(f"观测对仅 {len(pairs)} 个，少于建议的 {LOGDIST_MIN_PAIRS} 个")
+    if fit.r2 < 0.6:
+        warnings.append(f"拟合 R²={fit.r2:.2f} 偏低，现场距离/朝向可能不稳定")
+
+    sensitivity: dict | None = None
+    nonzero = [p for p in pairs if p.distance_m > 1.5]
+    if len(nonzero) >= MIN_FIT_PAIRS:
+        alt = fit_pairs(nonzero)
+        sensitivity = {
+            "excludeNearField": {
+                "rssiAt1mDbm": round(alt.intercept, 3),
+                "pathLossExponent": round(alt.path_loss_n, 4),
+                "deltaA": round(alt.intercept - fit.intercept, 3),
+                "deltaN": round(alt.path_loss_n - fit.path_loss_n, 4),
+            }
+        }
+
+    doc = {
+        "schemaVersion": "1.0",
+        "type": LOGDIST_RESULT_TYPE,
+        "deployable": False,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "sourceSamples": {
+            "fileName": samples_path.name,
+            "sha256": sha256_file(samples_path),
+            "operator": samples.get("operator"),
+            "device": samples.get("device"),
+            "mapVersion": samples.get("mapVersion"),
+            "beacon": samples.get("beacon"),
+            "installHeightM": samples.get("installHeightM"),
+        },
+        "model": {
+            "form": "log_distance",
+            "expression": "rssi = A - 10 * n * log10(d)",
+        },
+        "params": {
+            "rssiAt1mDbm": round(fit.intercept, 3),
+            "pathLossExponent": round(fit.path_loss_n, 4),
+        },
+        "metrics": {
+            "pairs": fit.pairs,
+            "stops": stop_count,
+            "sessions": sum(len(s.get("sessions") or []) for s in samples.get("stops") or []),
+            "r2": round(fit.r2, 4),
+            "rmseDb": round(fit.rmse, 3),
+        },
+        "sensitivity": sensitivity,
+        "stability": {
+            "stopCoverage": f"{stop_count}/10",
+            "minStops": LOGDIST_MIN_STOPS,
+            "minPairs": LOGDIST_MIN_PAIRS,
+            "passed": stop_count >= LOGDIST_MIN_STOPS and len(pairs) >= LOGDIST_MIN_PAIRS,
+        },
+        "warnings": warnings,
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"[fit_location_params] logdist A={doc['params']['rssiAt1mDbm']} "
+        f"n={doc['params']['pathLossExponent']} pairs={fit.pairs} r2={doc['metrics']['r2']} "
+        f"→ {out_path}"
+    )
+    return doc
+
+
 def fit_pairs(pairs: list[Pair]) -> FitResult:
     """OLS：x=log10(d), y=rssi → 斜率=−10n、截距=A（docs/28 §5.1）。"""
     if len(pairs) < MIN_FIT_PAIRS:
@@ -188,6 +334,12 @@ def fit_pairs(pairs: list[Pair]) -> FitResult:
     ys = [float(p.rssi) for p in pairs]
     mean_x = sum(xs) / len(xs)
     mean_y = sum(ys) / len(ys)
+    sst = sum((y - mean_y) ** 2 for y in ys)
+    if sst == 0:
+        raise CalibrationError(
+            f"所有观测的 RSSI 都是 {ys[0]:.0f} dBm，没有随距离衰减，无法拟合路径损耗指数；"
+            "请检查信标是否正常广播、是否被遮挡或超出扫描范围，并重新采集样本"
+        )
     sxx = sum((x - mean_x) ** 2 for x in xs)
     if sxx == 0:
         raise CalibrationError("所有真值距离相同，无法拟合路径损耗指数")
@@ -196,10 +348,12 @@ def fit_pairs(pairs: list[Pair]) -> FitResult:
     intercept = mean_y - slope * mean_x
     path_loss_n = -slope / 10.0
     if not path_loss_n > 0:
-        raise CalibrationError(f"拟合得到非法路径损耗指数 n={path_loss_n:.3f}")
+        raise CalibrationError(
+            f"拟合得到非法路径损耗指数 n={path_loss_n:.3f}：RSSI 未随距离衰减；"
+            "请核对档位/点位与信标的对应关系，确认远距离采样没有比近距离更强，再重新导出样本"
+        )
     residuals = [y - (intercept + slope * x) for x, y in zip(xs, ys)]
     sse = sum(r * r for r in residuals)
-    sst = sum((y - mean_y) ** 2 for y in ys)
     r2 = 1.0 - sse / sst if sst > 0 else 0.0
     rmse = math.sqrt(sse / len(pairs))
     return FitResult(intercept, path_loss_n, r2, rmse, len(pairs))
@@ -467,6 +621,9 @@ def run(
     target_cep90_m: float = DEFAULT_TARGET_CEP90_M,
 ) -> dict:
     samples = load_json(samples_path)
+    # 阶段一（对数等距）与阶段二（静态标定）按 type 分派，产物 schema 不同
+    if is_logdist_samples(samples):
+        return fit_logdist(samples_path, out_path)
     ledger = load_json(ledger_path)
     pairs = validate_samples(samples, ledger)
     global_fit = fit_pairs(pairs)
