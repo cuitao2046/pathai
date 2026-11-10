@@ -29,6 +29,12 @@ const MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   SESSION_NOT_ACTIVE: '导航会话已结束',
   STALE_NAV_UPDATE: '位置更新滞后，正在同步',
   IDEMPOTENCY_CONFLICT: '请求冲突，请重新操作',
+  // 指纹库（版本保留 / 删除语义）
+  VERSION_NOT_FOUND: '指纹库版本不存在，请刷新版本列表',
+  VERSION_EXPIRED: '版本已过期：明细已被保留策略裁剪，请选择最近 10 个版本',
+  TOMBSTONE_MISMATCH: '删除墓碑与库中记录不一致，请重新对账后再入库',
+  DELETION_CONFLICT: '同一记录既被删除又被提交，请检查后重试',
+  NO_ACTIVE_LIBRARY: '指纹库为空，没有可应用的变更',
   // 兜底
   FORBIDDEN: '没有权限执行该操作',
   INTERNAL_ERROR: '服务暂时不可用，请稍后再试',

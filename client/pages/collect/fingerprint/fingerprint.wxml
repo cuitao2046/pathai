@@ -1,23 +1,11 @@
 <view class="page">
-  <!-- 顶栏：楼层 / 网格版本 / 导出 -->
-  <view class="topbar">
-    <view class="floor-pills" aria-label="楼层选择">
-      <button
-        wx:for="{{floors}}"
-        wx:key="floorId"
-        class="pill {{item.floorId === currentFloor ? 'active' : ''}}"
-        data-floor="{{item.floorId}}"
-        bindtap="onSwitchFloor"
-        aria-label="切换到{{item.displayName}}"
-      >{{item.level}}F</button>
-    </view>
-    <button class="pill" bindtap="onExport" aria-label="导出指纹记录">导出</button>
-  </view>
-
+  <!-- 本层统计（楼层切换与导出已移到右下操作列） -->
   <view class="stats-bar" aria-live="polite">
     <text>本层可采集 {{floorStats.collectable}} / {{floorStats.total}} · 已采 {{floorStats.collected}}</text>
-    <text class="stats-sub">网格 v{{gridVersion}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
+    <text class="stats-sub">网格 {{gridVersion}} · {{gridSourceText}} · 记录 {{stats.recordCount}} · 点位 {{stats.fpCount}}</text>
+    <text class="stats-sub">{{libraryStatusText}}<text wx:if="{{unexportedCount > 0}}"> · 未导出 {{unexportedCount}} 条</text><text wx:if="{{tombstoneCount > 0}}"> · 待删墓碑 {{tombstoneCount}} 条</text><text wx:if="{{unexportedDeletionCount > 0}}">（未导出 {{unexportedDeletionCount}}）</text></text>
   </view>
+  <view class="grid-notice" wx:if="{{gridMessage !== ''}}">{{gridMessage}}</view>
 
   <!-- 图例 + 三档筛选（默认「仅可采集」：填充色只表达可采集，橙描边表达路线优先） -->
   <view class="legend-bar">
@@ -73,12 +61,32 @@
     <view class="zoom-hit zoom-reset" aria-role="button" bindtap="onResetView" aria-label="回到全图"><view class="zoom-face">全图</view></view>
   </view>
 
-  <!-- 快照倒计时 -->
-  <view class="collect-panel" wx:if="{{collecting}}" aria-live="polite">
-    <view class="countdown-row">
-      <text class="countdown">{{countdownText}}</text>
-      <text class="meta">快照采集中，请原地站立保持不动</text>
-    </view>
+  <!-- 操作按键列：清理 / 楼层切换 / 导出，贴屏幕右下边缘垂直排列（可视面随文字宽度） -->
+  <view class="op-tools" aria-label="采集操作">
+    <view class="op-btn danger" bindtap="onClearRecords" aria-role="button" aria-label="清理本机指纹记录">清理</view>
+    <view
+      wx:for="{{floors}}"
+      wx:key="floorId"
+      class="op-btn {{item.floorId === currentFloor ? 'active' : ''}}"
+      data-floor="{{item.floorId}}"
+      bindtap="onSwitchFloor"
+      aria-role="button"
+      aria-label="切换到{{item.displayName}}"
+    >{{item.level}}F</view>
+    <view class="op-btn" bindtap="onExport" aria-role="button" aria-label="导出指纹记录">导出</view>
+    <view
+      class="op-btn {{unexportedCount > 0 || unexportedDeletionCount > 0 || ingestBusy ? 'disabled' : ''}}"
+      bindtap="onIngest"
+      aria-role="button"
+      aria-label="{{unexportedCount > 0 || unexportedDeletionCount > 0 ? '入库（有未导出变更，需先导出）' : '入库到服务端指纹库'}}"
+    >{{ingestBusy ? '入库中' : '入库'}}</view>
+    <view class="op-btn" bindtap="onVersionHistory" aria-role="button" aria-label="查看指纹库版本并回滚">版本</view>
+  </view>
+
+  <!-- 快照倒计时（屏幕底部居中，与右下按键列留出间距） -->
+  <view class="countdown-hud" wx:if="{{collecting}}" aria-live="polite">
+    <text class="countdown">{{countdownText}}</text>
+    <text class="meta">快照采集中，请原地站立</text>
   </view>
 
   <!-- 点位确认卡 -->

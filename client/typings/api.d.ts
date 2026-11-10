@@ -104,7 +104,13 @@ export type ApiErrorCode =
   // 客户端合成（本地生成，不发往服务端）
   | 'NETWORK_ERROR'
   | 'REQUEST_TIMEOUT'
-  | 'MAP_UNAVAILABLE';
+  | 'MAP_UNAVAILABLE'
+  // 指纹库（版本保留 / 删除语义）
+  | 'VERSION_NOT_FOUND'
+  | 'VERSION_EXPIRED'
+  | 'TOMBSTONE_MISMATCH'
+  | 'DELETION_CONFLICT'
+  | 'NO_ACTIVE_LIBRARY';
 
 // ---------------------------------------------------------------------------
 // 公共模型（schemas/common.py）
@@ -233,6 +239,12 @@ export interface MapBeaconEntry {
   uuid?: string | null;
   major?: number | null;
   minor?: number | null;
+  /** 地图包内的位置描述（对数等距页信标列表展示）。 */
+  locationDesc?: string | null;
+  /** 安装方式（door_frame/wall 等，仅展示）。 */
+  mountType?: string | null;
+  /** 语义标签（如 trilateration_route_base，仅展示）。 */
+  semanticTag?: string | null;
 }
 
 /** 地图包地点目录（字段与 API-03 Place 一致）。 */
@@ -349,11 +361,23 @@ export interface LocationEstimateRequest {
   floorHint?: string | null;
   beacons: BeaconObservation[];
   imu?: ImuPayload | null;
+  /** 启用指纹库优先匹配；未开启时请求体与旧版完全一致（字段不发送）。 */
+  useFingerprintDb?: boolean;
 }
 
 export interface MatchedArea {
   placeId: string;
   name: string;
+}
+
+/** 指纹库命中详情（服务端 schemas/location.py FingerprintMatchInfo）。 */
+export interface FingerprintMatchInfo {
+  libraryVersion: string;
+  fpId: string;
+  floorId: string;
+  confidence: number;
+  rmseDb: number;
+  overlap: number;
 }
 
 export interface PositionEstimateResponse {
@@ -370,6 +394,104 @@ export interface PositionEstimateResponse {
   paramsVersion: string;
   observedAt: IsoDateTime;
   ignoredBeaconIds: string[];
+  /** 本次坐标来源；旧版服务端不返回时按 trilateration 处理。 */
+  positionSource?: 'fingerprint' | 'trilateration';
+  fingerprint?: FingerprintMatchInfo | null;
+  /** 启用指纹库但降级到三点定位的原因（未启用时为空）。 */
+  fallbackReason?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// 指纹库（schemas/fingerprint_db.py）
+// ---------------------------------------------------------------------------
+
+/** 入库/版本摘要：每次有效入库产生一个不可变版本。 */
+export interface FingerprintLibraryVersionSummary {
+  version: string;
+  siteId: string;
+  recordCount: number;
+  fpCount: number;
+  insertedCount: number;
+  /** 同键内容变化（本批为准）。 */
+  updatedCount: number;
+  /** 兼容旧字段：数值等于 updatedCount。 */
+  conflictCount: number;
+  /** 墓碑/整层替换删除的条数。 */
+  deletedCount: number;
+  /** 从上一版本原样保留的条数。 */
+  retainedCount: number;
+  /** 上一 active 版本条数（recordCount = previous - deleted + inserted + updated）。 */
+  previousCount: number;
+  mode: 'merge' | 'replaceFloor';
+  replaceFloors: string[];
+  operator?: string | null;
+  device?: Record<string, unknown> | null;
+  appVersion?: string | null;
+  mapVersion?: string | null;
+  gridVersion?: string | null;
+  paramsVersion?: string | null;
+  sourceFileName: string;
+  createdAt: IsoDateTime;
+  active: boolean;
+  duplicated: boolean;
+  /** 墓碑重放/无变化入库：未产生新版本。 */
+  noChanges: boolean;
+  /** 明细已被保留策略裁剪（摘要行仍在，不可回滚/查询）。 */
+  detailsPruned: boolean;
+  prunedAt?: IsoDateTime | null;
+}
+
+/** 入库响应额外带本次被裁剪明细的版本号。 */
+export interface FingerprintIngestResponse extends FingerprintLibraryVersionSummary {
+  prunedVersions?: string[];
+}
+
+export interface FingerprintIngestRequest {
+  fileName: string;
+  /** 导出 JSON 原文（服务端负责 schema/语义校验）。 */
+  content: string;
+  operator?: string;
+}
+
+export interface FingerprintActiveResponse {
+  active: FingerprintLibraryVersionSummary | null;
+}
+
+/** 保留策略与存储占用（按每版本约 5.2MB 估算）。 */
+export interface FingerprintRetentionInfo {
+  keepVersions: number;
+  versionCount: number;
+  detailVersions: number;
+  prunedVersions: number;
+  estimatedBytesPerVersion: number;
+  estimatedDetailBytes: number;
+}
+
+export interface FingerprintVersionsResponse {
+  active: FingerprintLibraryVersionSummary | null;
+  items: FingerprintLibraryVersionSummary[];
+  retention: FingerprintRetentionInfo;
+}
+
+/** 对账清单条目。 */
+export interface FingerprintManifestItem {
+  fpId: string;
+  collectedAt: string;
+  floorId: string;
+  contentSha256: string;
+}
+
+export interface FingerprintManifestResponse {
+  version: string | null;
+  siteId: string;
+  floor: string | null;
+  recordCount: number;
+  items: FingerprintManifestItem[];
+}
+
+export interface FingerprintRollbackRequest {
+  version: string;
+  operator?: string;
 }
 
 // ---------------------------------------------------------------------------

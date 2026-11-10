@@ -36,10 +36,45 @@ import {
 import { createTeeSource } from '../../../core/collection/collect-scan';
 import { buildFpRecord, type FpBeaconLookup, type FpSnapshotPoint } from '../../../core/collection/fp-snapshot';
 import { FpRecordsStore } from '../../../core/collection/points-store';
-import { buildFpExport, type CollectionExportMeta } from '../../../core/collection/export-builder';
-import type { FpRecord } from '../../../core/collection/types';
+import {
+  buildFpExport,
+  type CollectionExportMeta,
+  type FpExportData,
+} from '../../../core/collection/export-builder';
+import {
+  countUnexported,
+  countUnexportedDeletions,
+  listUnexported,
+  markDeletionsExported,
+  markRecordsExported,
+} from '../../../core/collection/export-ledger';
+import {
+  addTombstones,
+  buildTombstone,
+  listTombstones,
+  removeTombstones,
+} from '../../../core/collection/tombstones';
+import { diffManifest } from '../../../core/collection/manifest-diff';
+import { describeError } from '../../../core/http/error-messages';
+import { ApiClientError } from '../../../core/http/errors';
+import type { ApiResponse } from '../../../core/http/api-client';
+import type { FpDeletion, FpRecord } from '../../../core/collection/types';
 import { FINGERPRINT_GRID, FINGERPRINT_GRID_VERSION, type FpGridPoint } from '../../../data/fingerprint_grid';
-import type { PositionEstimateResponse } from '../../../typings/api';
+import {
+  resolveRuntimeGrid,
+  type RuntimeGrid,
+} from '../../../core/collection/grid-overlay';
+import {
+  cachedRuntimeParams,
+  refreshRuntimeParams,
+} from '../../../core/config/runtime-config';
+import type {
+  FingerprintActiveResponse,
+  FingerprintIngestResponse,
+  FingerprintManifestResponse,
+  FingerprintVersionsResponse,
+  PositionEstimateResponse,
+} from '../../../typings/api';
 
 const log = createLogger('collect-fp');
 
@@ -90,10 +125,26 @@ Page({
     loadError: '',
     isMock: appContext.dataSource === 'mock',
     gridVersion: FINGERPRINT_GRID_VERSION,
+    /** 网格来源：内置快照 / 在线覆盖层 / 缓存覆盖层（顶栏展示）。 */
+    gridSourceText: '内置快照',
+    /** 覆盖层降级说明（基线不一致、离线等），空串=正常。 */
+    gridMessage: '',
+    /** 采集时写入记录的参数版本（未知时不写）。 */
+    gridParamsVersion: '',
     floors: [] as Array<{ floorId: string; displayName: string; level: number }>,
     currentFloor: '1',
     currentFloorText: '1F',
     stats: { recordCount: 0, fpCount: 0 },
+    /** 相对导出台账尚未导出的记录数（>0 时禁止入库并提示先导出）。 */
+    unexportedCount: 0,
+    /** 本地删除墓碑数量（本地删了→导出→入库→库里真删）。 */
+    tombstoneCount: 0,
+    /** 尚未随导出文件落盘的墓碑数（>0 时同样禁止入库）。 */
+    unexportedDeletionCount: 0,
+    /** 入库进行中（防重复点击）。 */
+    ingestBusy: false,
+    /** 服务端当前指纹库状态（顶栏展示）：'未入库' / '已入库 fpl-…' / '不可用…'。 */
+    libraryStatusText: '指纹库未入库',
     /**
      * 筛选档位：collectable（默认，仅可采集）/ all / route（仅路线点）。
      * 现场口径是「只采高亮点」，默认就该只显示这些点，避免在几百个灰点里找目标。
@@ -129,6 +180,12 @@ Page({
   recordCounts: null as Map<string, number> | null,
   /** floorId → 该层网格点。 */
   gridByFloor: null as Map<string, FpGridPoint[]> | null,
+  /** 当前生效的运行时网格（内置或覆盖层合并结果）。 */
+  runtimeGrid: null as RuntimeGrid | null,
+  /** 采集时写入记录的参数版本（null=未知）。 */
+  runtimeParamsVersion: null as string | null,
+  /** 防止 onShow/bootstrap 重复拉取覆盖层。 */
+  gridRefreshInFlight: false,
   lastEstimate: null as PositionEstimateResponse | null,
   collectPoint: null as FpSnapshotPoint | null,
   tickTimer: null as ReturnType<typeof setInterval> | null,
@@ -179,6 +236,11 @@ Page({
       this.pausedRemainingS = 0;
       this.startTick();
     }
+    // 再次进入页面时校核一次版本（非阻塞；失败保留当前点集）
+    if (!this.data.loading) {
+      void this.refreshRuntimeGrid();
+      void this.refreshLibraryStatus();
+    }
   },
 
   async bootstrap(): Promise<void> {
@@ -211,6 +273,61 @@ Page({
     this.setData({ loading: false });
     this.initPipeline();
     this.initMap();
+    // 覆盖层异步下发：不阻塞采集页首帧（spec P1），失败自动回退内置/缓存
+    void this.refreshRuntimeGrid();
+    // 指纹库状态（是否已入库/版本号）：异步，不影响采集
+    void this.refreshLibraryStatus();
+  },
+
+  /**
+   * 拉取运行时网格覆盖层（启动 + 进页各一次，异步非阻塞）。
+   * 基线不一致/离线时 resolveRuntimeGrid 内部降级，不会抛错。
+   */
+  async refreshRuntimeGrid(): Promise<void> {
+    if (this.gridRefreshInFlight || this.data.loading) {
+      return;
+    }
+    this.gridRefreshInFlight = true;
+    try {
+      const grid = await resolveRuntimeGrid(appContext.http.client, FINGERPRINT_GRID);
+      const params =
+        cachedRuntimeParams() ??
+        (await refreshRuntimeParams(appContext.http.client, { maxAgeMs: 60_000 }));
+      this.applyRuntimeGrid(grid, params?.paramsVersion ?? grid.paramsVersion);
+    } catch (err) {
+      log.warn('运行时网格解析失败，保留当前点集', err);
+    } finally {
+      this.gridRefreshInFlight = false;
+    }
+  },
+
+  /** 应用合并后的点集；不影响当前楼层、筛选档位与已采记录。 */
+  applyRuntimeGrid(grid: RuntimeGrid, paramsVersion: string | null): void {
+    this.runtimeGrid = grid;
+    this.runtimeParamsVersion = paramsVersion;
+    const byFloor = new Map<string, FpGridPoint[]>();
+    for (const p of grid.points) {
+      const list = byFloor.get(p.floorId);
+      if (list) {
+        list.push(p);
+      } else {
+        byFloor.set(p.floorId, [p]);
+      }
+    }
+    this.gridByFloor = byFloor;
+    this.setData({
+      gridVersion: grid.gridVersion,
+      gridSourceText:
+        grid.source === 'online'
+          ? '在线覆盖层'
+          : grid.source === 'cache'
+            ? '缓存覆盖层'
+            : '内置快照',
+      gridMessage: grid.message,
+      gridParamsVersion: paramsVersion ?? '',
+    });
+    this.refreshStats();
+    this.mapView?.requestDraw();
   },
 
   onRetry(): void {
@@ -276,11 +393,18 @@ Page({
     if (this.store === null) {
       return;
     }
+    const records = this.store.allRecords();
+    const tombstones = listTombstones();
     this.recordCounts = new Map();
-    for (const r of this.store.allRecords()) {
+    for (const r of records) {
       this.recordCounts!.set(r.fpId, (this.recordCounts!.get(r.fpId) ?? 0) + 1);
     }
-    this.setData({ stats: this.store.stats() });
+    this.setData({
+      stats: this.store.stats(),
+      unexportedCount: countUnexported(records),
+      tombstoneCount: tombstones.length,
+      unexportedDeletionCount: countUnexportedDeletions(tombstones),
+    });
     this.refreshFloorStats(this.data.currentFloor);
     this.mapView?.requestDraw();
   },
@@ -359,6 +483,8 @@ Page({
   openCard(p: FpGridPoint): void {
     const floorItem = (this.mapView?.floorList ?? []).find((f) => f.floorId === p.floorId);
     const est = this.lastEstimate;
+    const recordCount = this.recordCounts!.get(p.fpId) ?? 0;
+    const collectableNow = p.collectable || (this.data.simPreview && p.collectableWithSim === true);
     let distanceText = '—';
     if (
       est !== null &&
@@ -369,6 +495,11 @@ Page({
       const d = Math.hypot(est.position.x - p.x, est.position.y - p.y);
       distanceText = `≈${d.toFixed(1)} m`;
     }
+    const collectText = p.collectable
+      ? `可采集（3D 10m 内可见 ≥3，最强 ${p.strongestRssi ?? '—'}dBm）`
+      : this.data.simPreview && p.collectableWithSim === true
+        ? `仅补装仿真可采（${p.simAddedBy.length} 枚未安装虚拟信标补足 ≥3）`
+        : `当前不可采集（3D 10m 内可见 ${p.visible10m} 个）`;
     this.setData({
       card: {
         fpId: p.fpId,
@@ -377,14 +508,13 @@ Page({
         floorText: floorItem !== undefined ? `${floorItem.level}F` : p.floorId,
         coordText: `${p.x.toFixed(1)}, ${p.y.toFixed(1)}`,
         gridText: `列 ${p.col} / 行 ${p.row}`,
-        collectText: p.collectable
-          ? `可采集（3D 10m 内可见 ≥3，最强 ${p.strongestRssi ?? '—'}dBm）`
-          : this.data.simPreview && p.collectableWithSim === true
-            ? `仅补装仿真可采（${p.simAddedBy.length} 枚未安装虚拟信标补足 ≥3）`
-            : `当前不可采集（3D 10m 内可见 ${p.visible10m} 个）`,
+        collectText:
+          recordCount > 0 && !collectableNow
+            ? `${collectText}；已采记录保留，导出不丢弃`
+            : collectText,
         refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
         routeText: routeText(p.routeTags),
-        recordCount: this.recordCounts!.get(p.fpId) ?? 0,
+        recordCount,
         distanceText,
       },
     });
@@ -476,6 +606,13 @@ Page({
       window,
       lookup,
       rssiAt1m: BEACON_RSSI_AT_1M_DBM,
+      // 版本标记：仅当覆盖层成功解析（在线/缓存）时写入；
+      // 内置快照（含拉取失败降级）不写网格版本，下游按 unknown 处理，避免误标（spec P2）。
+      gridVersion:
+        this.runtimeGrid !== null && this.runtimeGrid.source !== 'builtin'
+          ? this.runtimeGrid.gridVersion
+          : undefined,
+      paramsVersion: this.runtimeParamsVersion ?? undefined,
     });
     const full = this.store.addRecord(rec);
     log.info('指纹已记录', full.fpId, `#${full.captureIndex}`, `${full.beaconCount} 信标`);
@@ -501,13 +638,17 @@ Page({
         const list = this.store?.recordsFor(p.fpId) ?? [];
         const last = list[list.length - 1];
         if (last !== undefined) {
+          // 删除即留墓碑：导出后服务端据此生成含 deletedCount 的新版本
+          addTombstones([buildTombstone(last)]);
           this.store?.removeRecord(p.fpId, last.collectedAt);
           this.refreshStats();
         }
       });
       items.push(`清空该点全部记录（${n} 条）`);
       actions.push(() => {
-        for (const r of this.store?.recordsFor(p.fpId) ?? []) {
+        const list = this.store?.recordsFor(p.fpId) ?? [];
+        addTombstones(list.map((r) => buildTombstone(r)));
+        for (const r of list) {
           this.store?.removeRecord(p.fpId, r.collectedAt);
         }
         this.refreshStats();
@@ -522,6 +663,47 @@ Page({
         }
       },
       fail: () => undefined,
+    });
+  },
+
+  // ------------------------------------------------------------------
+  // 清理记录
+  // ------------------------------------------------------------------
+
+  /**
+   * 清理本机指纹记录：确认后清空 col:fp:v1（全部快照记录），
+   * 计数 / 点位着色 / 筛选结果同步刷新。已导出的 JSON 文件保留不动。
+   */
+  onClearRecords(): void {
+    const store = this.store;
+    if (store === null) {
+      return;
+    }
+    if (this.data.collecting) {
+      wx.showToast({ title: '采集中不能清理', icon: 'none' });
+      return;
+    }
+    const stats = store.stats();
+    if (stats.recordCount === 0) {
+      wx.showToast({ title: '还没有指纹记录', icon: 'none' });
+      return;
+    }
+    wx.showModal({
+      title: '清理指纹记录',
+      content:
+        `将清除本机保存的全部指纹记录：${stats.recordCount} 条记录（覆盖 ${stats.fpCount} 个网格点）。\n` +
+        '清理后不可恢复；已导出的 JSON 文件不受影响。',
+      confirmText: '清理',
+      confirmColor: '#b91c1c',
+      success: (res) => {
+        if (!res.confirm) {
+          return;
+        }
+        store.clearAll();
+        this.setData({ card: null });
+        this.refreshStats();
+        wx.showToast({ title: '已清理', icon: 'success' });
+      },
     });
   },
 
@@ -547,15 +729,14 @@ Page({
     this.mapView?.fit();
   },
 
-  onExport(): void {
+  /** 构建导出/入库共用的载荷（入库上传的即「当前已全部导出」的同一份数据）。 */
+  buildExportBundle(opts?: {
+    mode?: 'merge' | 'replaceFloor';
+    replaceFloors?: string[];
+  }): { data: FpExportData; warnings: string[] } | null {
     const store = this.store;
     if (store === null) {
-      return;
-    }
-    const stats = store.stats();
-    if (stats.recordCount === 0) {
-      wx.showToast({ title: '还没有指纹记录', icon: 'none' });
-      return;
+      return null;
     }
     let device: unknown = null;
     try {
@@ -585,10 +766,31 @@ Page({
       mapVersion: appContext.map.isLoaded ? appContext.map.requireVersion() : '',
       ledgerSha256: null,
     };
-    const { data, warnings } = buildFpExport(store, meta, {
+    return buildFpExport(store, meta, {
       beaconUuid: [...uuidSet][0] ?? '',
       majors,
+      deletions: listTombstones(),
+      mode: opts?.mode,
+      replaceFloors: opts?.replaceFloors,
     });
+  },
+
+  onExport(): void {
+    const store = this.store;
+    if (store === null) {
+      return;
+    }
+    const stats = store.stats();
+    const tombstones = listTombstones();
+    if (stats.recordCount === 0 && tombstones.length === 0) {
+      wx.showToast({ title: '还没有指纹记录', icon: 'none' });
+      return;
+    }
+    const bundle = this.buildExportBundle();
+    if (bundle === null) {
+      return;
+    }
+    const { data, warnings } = bundle;
 
     const json = JSON.stringify(data, null, 2);
     const fs = wx.getFileSystemManager();
@@ -598,6 +800,10 @@ Page({
       data: json,
       encoding: 'utf8',
       success: () => {
+        // 写文件成功即视为「已导出」：记录与墓碑一起记账，入库才允许上传
+        const ledgerStored = markRecordsExported(data.records);
+        const deletionLedgerStored = markDeletionsExported(data.deletions);
+        this.refreshStats();
         wx.setClipboardData({
           data: json,
           success: () => {
@@ -608,8 +814,12 @@ Page({
             }
             wx.showModal({
               title: '导出成功',
-              content: `记录 ${stats.recordCount} 条 · 点位 ${stats.fpCount} 个${
+              content: `记录 ${stats.recordCount} 条 · 点位 ${stats.fpCount} 个 · 删除墓碑 ${data.deletions.length} 条${
                 warnings.length > 0 ? `\n提示：${warnings.slice(0, 3).join('；')}` : ''
+              }${
+                ledgerStored && deletionLedgerStored
+                  ? ''
+                  : '\n警告：导出台账写入本地存储失败，入库前请重新导出。'
               }\nJSON 已复制剪贴板并写入文件。`,
               showCancel: false,
             });
@@ -618,6 +828,321 @@ Page({
       },
       fail: () => wx.showModal({ title: '导出失败', content: '写文件失败', showCancel: false }),
     });
+  },
+
+  /**
+   * 入库：只上传已导出的数据。
+   *
+   * 采用「明确拒绝 + 去导出」而非自动导出：导出是可在本地留痕的显式动作，
+   * 自动导出会把写文件/剪贴板等副作用藏在入库流程里；出现未导出记录时
+   * 直接阻断，让现场先完成可审计的导出，再重试入库。
+   */
+  onIngest(): void {
+    const store = this.store;
+    if (store === null || this.data.ingestBusy) {
+      return;
+    }
+    const records = store.allRecords();
+    const tombstones = listTombstones();
+    if (records.length === 0 && tombstones.length === 0) {
+      wx.showToast({ title: '还没有指纹记录', icon: 'none' });
+      return;
+    }
+    const pendingRecords = listUnexported(records);
+    const pendingDeletions = countUnexportedDeletions(tombstones);
+    if (pendingRecords.length > 0 || pendingDeletions > 0) {
+      wx.showModal({
+        title: '存在未导出变更',
+        content: `当前有 ${pendingRecords.length} 条记录、${pendingDeletions} 条删除尚未导出（记录共 ${records.length} 条）。\n入库只接受已成功导出的数据，请先导出后再入库。`,
+        confirmText: '去导出',
+        cancelText: '取消',
+        success: (res) => {
+          if (res.confirm) {
+            this.onExport();
+          }
+        },
+      });
+      return;
+    }
+    void this.startIngestFlow();
+  },
+
+  /** 拉取服务端对账清单（失败不阻断入库，但会明确提示跳过比对）。 */
+  async fetchManifest(): Promise<FingerprintManifestResponse | null> {
+    try {
+      const resp = await appContext.http.client.request<FingerprintManifestResponse>({
+        method: 'GET',
+        path: '/api/v1/fingerprint-db/manifest',
+        auth: false,
+        timeoutMs: 10000,
+      });
+      return resp.data;
+    } catch (err) {
+      log.warn('manifest 获取失败，跳过对账', err);
+      return null;
+    }
+  },
+
+  /** 入库前对账：库中有、本地无的记录必须显式确认，不得静默忽略。 */
+  async startIngestFlow(): Promise<void> {
+    const store = this.store;
+    if (store === null) {
+      return;
+    }
+    const records = store.allRecords();
+    wx.showLoading({ title: '核对库内记录…', mask: true });
+    const manifest = await this.fetchManifest();
+    wx.hideLoading();
+    if (manifest !== null && manifest.version !== null) {
+      const diff = diffManifest(records, manifest.items);
+      if (diff.dbOnly > 0) {
+        wx.showModal({
+          title: '对账发现差异',
+          content: `${diff.dbOnly} 条库中记录本地已不存在（库内 ${manifest.recordCount} 条 / 本地 ${records.length} 条）。\n是否一并删除？确认后会随本次入库提交，并生成可回滚的新版本。`,
+          confirmText: '一并删除',
+          cancelText: '跳过',
+          success: (res) => {
+            if (res.confirm) {
+              const items: FpDeletion[] = diff.dbOnlyItems.map((item) => ({
+                fpId: item.fpId,
+                collectedAt: item.collectedAt,
+                contentSha256: item.contentSha256,
+                floor: item.floorId,
+              }));
+              addTombstones(items);
+              // 墓碑直接来自服务端清单，随本次入库一并提交，无需再导出一次
+              markDeletionsExported(items);
+              this.refreshStats();
+            }
+            this.showIngestModeDialog();
+          },
+        });
+        return;
+      }
+    } else if (manifest === null) {
+      wx.showToast({ title: '对账清单不可用，跳过比对', icon: 'none' });
+    }
+    this.showIngestModeDialog();
+  },
+
+  /** 入库模式必须显式选择；普通入库默认合并且永不推断删除。 */
+  showIngestModeDialog(): void {
+    const floorLabel = this.data.currentFloorText;
+    wx.showActionSheet({
+      alertText: '选择入库方式',
+      itemList: ['合并入库（只增改，不删除）', `整层替换 ${floorLabel}（删除该层库中多余记录）`],
+      success: (res) => {
+        if (res.tapIndex === 1) {
+          wx.showModal({
+            title: `整层替换 ${floorLabel}`,
+            content: `将以本次导出的 ${floorLabel} 记录替换库中该层数据：该层中未出现在本次导出的记录会被删除，并生成可回滚的新版本。其他楼层只做合并。`,
+            confirmText: '确认替换',
+            confirmColor: '#b91c1c',
+            success: (r) => {
+              if (r.confirm) {
+                void this.doIngest('replaceFloor', [this.data.currentFloor]);
+              }
+            },
+          });
+          return;
+        }
+        void this.doIngest('merge');
+      },
+      fail: () => undefined,
+    });
+  },
+
+  /** 上传当前（已全部导出）的数据与墓碑，并刷新服务端指纹库状态。 */
+  async doIngest(mode: 'merge' | 'replaceFloor', replaceFloors?: string[]): Promise<void> {
+    const bundle = this.buildExportBundle({ mode, replaceFloors });
+    if (bundle === null) {
+      return;
+    }
+    const sentDeletions = bundle.data.deletions;
+    this.setData({ ingestBusy: true });
+    wx.showLoading({ title: '入库中…', mask: true });
+    try {
+      const operator = appContext.getCalibrationOperator();
+      const resp = await appContext.http.client.request<FingerprintIngestResponse>({
+        method: 'POST',
+        path: '/api/v1/fingerprint-db/ingest',
+        // 入库不做鉴权（现场私网直连后端），但仍受服务端私网限制
+        auth: false,
+        timeoutMs: 30000,
+        body: {
+          fileName: `ble_fingerprint_${Date.now()}.json`,
+          content: JSON.stringify(bundle.data),
+          ...(operator === '' ? {} : { operator }),
+        },
+      });
+      const summary = resp.data;
+      if (summary === null) {
+        throw new Error('入库响应为空');
+      }
+      // 已应用的墓碑从本地移除，避免重复上传（导出文件已留档）
+      removeTombstones(sentDeletions.map((item) => `${item.fpId}|${item.collectedAt}`));
+      this.refreshStats();
+      this.setData({
+        libraryStatusText: `指纹库 ${summary.version} · ${summary.recordCount} 条/${summary.fpCount} 点 · 本版删 ${summary.deletedCount}`,
+      });
+      wx.hideLoading();
+      const prunedNote =
+        summary.prunedVersions !== undefined && summary.prunedVersions.length > 0
+          ? `\n保留策略：最老 ${summary.prunedVersions.length} 个版本明细已裁剪（摘要保留）。`
+          : '';
+      wx.showModal({
+        title: summary.duplicated ? '内容已入库' : '入库成功',
+        content: `版本 ${summary.version}${
+          summary.mode === 'replaceFloor'
+            ? `（整层替换 ${summary.replaceFloors.join('、')}F）`
+            : ''
+        }\n记录 ${summary.recordCount} 条 · 点位 ${summary.fpCount} 个\n本次新增 ${summary.insertedCount} · 更新 ${summary.updatedCount} · 删除 ${summary.deletedCount} · 保留 ${summary.retainedCount}${
+          summary.duplicated
+            ? summary.noChanges
+              ? '\n墓碑已全部应用过，无新增变更。'
+              : '\n该内容此前已入库，未重复写入。'
+            : ''
+        }${prunedNote}`,
+        showCancel: false,
+      });
+    } catch (err) {
+      wx.hideLoading();
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '网络异常，请检查后端连接';
+      wx.showModal({ title: '入库失败', content: message, showCancel: false });
+      log.warn('ingest failed', err);
+    } finally {
+      this.setData({ ingestBusy: false });
+    }
+  },
+
+  /** 读取服务端当前指纹库版本（页面顶栏状态；失败不影响采集）。 */
+  async refreshLibraryStatus(): Promise<void> {
+    try {
+      const resp = await appContext.http.client.request<FingerprintActiveResponse>({
+        method: 'GET',
+        path: '/api/v1/fingerprint-db/active',
+        auth: false,
+        timeoutMs: 5000,
+      });
+      const active = resp.data?.active ?? null;
+      this.setData({
+        libraryStatusText:
+          active === null
+            ? '指纹库未入库'
+            : `指纹库 ${active.version} · ${active.recordCount} 条/${active.fpCount} 点 · 本版删 ${active.deletedCount}`,
+      });
+    } catch (err) {
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '网络不可用';
+      this.setData({ libraryStatusText: `指纹库状态不可用：${message}` });
+    }
+  },
+
+  /** 版本历史/回滚：只在保留窗口内选择，已裁剪明细的版本不再列出。 */
+  onVersionHistory(): void {
+    void this.showVersionHistory();
+  },
+
+  async showVersionHistory(): Promise<void> {
+    const path = '/api/v1/fingerprint-db/versions?limit=10';
+    const requestOnce = (timeoutMs: number) =>
+      appContext.http.client.request<FingerprintVersionsResponse>({
+        method: 'GET',
+        path,
+        auth: false,
+        timeoutMs,
+      });
+    try {
+      let resp: ApiResponse<FingerprintVersionsResponse>;
+      try {
+        resp = await requestOnce(8000);
+      } catch (err) {
+        // 现场出现过「wx 超时但后端访问日志无该请求」的瞬时链路失败：只对无副作用的 GET
+        // 重试一次（更短超时），避免第一次新连接丢包就让现场误判成服务端故障。
+        if (
+          err instanceof ApiClientError &&
+          (err.code === 'REQUEST_TIMEOUT' || err.code === 'NETWORK_ERROR')
+        ) {
+          log.warn('版本列表请求失败，重试一次', err.code, path);
+          resp = await requestOnce(5000);
+        } else {
+          throw err;
+        }
+      }
+      const items = (resp.data?.items ?? []).filter((item) => !item.detailsPruned);
+      if (items.length === 0) {
+        wx.showToast({ title: '暂无可用版本', icon: 'none' });
+        return;
+      }
+      wx.showActionSheet({
+        alertText: '最近 10 个版本（点击可回滚）',
+        itemList: items.map(
+          (item) =>
+            `${item.version.slice(4, 18)} · ${item.recordCount} 条${item.active ? ' · 当前' : ''}`,
+        ),
+        success: (res) => {
+          const target = items[res.tapIndex];
+          if (target.active) {
+            wx.showToast({ title: '已是当前版本', icon: 'none' });
+            return;
+          }
+          wx.showModal({
+            title: '回滚指纹库',
+            content: `回滚到 ${target.version}（${target.recordCount} 条 / ${target.fpCount} 点）？\n当前 active 指针会切回该版本，历史版本不被改写。`,
+            confirmText: '回滚',
+            success: (r) => {
+              if (r.confirm) {
+                void this.doRollback(target.version);
+              }
+            },
+          });
+        },
+        fail: () => undefined,
+      });
+    } catch (err) {
+      log.warn('版本列表拉取失败', err);
+      // 区分「超时/网络」与「404/500」：HTTP 状态码直接透出，避免把 404 说成超时。
+      const message =
+        err instanceof ApiClientError
+          ? `${describeError(err.code)}${err.statusCode !== null ? `（HTTP ${err.statusCode}）` : ''}`
+          : '网络异常，请稍后重试';
+      wx.showModal({ title: '版本列表不可用', content: message, showCancel: false });
+    }
+  },
+
+  async doRollback(version: string): Promise<void> {
+    wx.showLoading({ title: '回滚中…', mask: true });
+    try {
+      const resp = await appContext.http.client.request<FingerprintIngestResponse>({
+        method: 'POST',
+        path: '/api/v1/fingerprint-db/rollback',
+        auth: false,
+        timeoutMs: 15000,
+        body: { version },
+      });
+      const summary = resp.data;
+      wx.hideLoading();
+      this.setData({
+        libraryStatusText:
+          summary === null
+            ? this.data.libraryStatusText
+            : `指纹库 ${summary.version} · ${summary.recordCount} 条/${summary.fpCount} 点`,
+      });
+      wx.showModal({
+        title: '已回滚',
+        content:
+          summary === null
+            ? `已切换到 ${version}`
+            : `当前版本 ${summary.version}\n记录 ${summary.recordCount} 条 · 点位 ${summary.fpCount} 个 · 本版删 ${summary.deletedCount}`,
+        showCancel: false,
+      });
+    } catch (err) {
+      wx.hideLoading();
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '网络异常，请稍后重试';
+      wx.showModal({ title: '回滚失败', content: message, showCancel: false });
+    }
   },
 
   // ------------------------------------------------------------------
@@ -664,6 +1189,14 @@ Page({
         ctx.strokeText(String(n), sx, sy - 10);
         ctx.fillStyle = COLORS.collectedText;
         ctx.fillText(String(n), sx, sy - 10);
+        // C8：已采但当前不可采（参数/网格更新后）——灰点标记，记录保留
+        const collectableNow = p.collectable || (this.data.simPreview && p.collectableWithSim === true);
+        if (!collectableNow) {
+          ctx.beginPath();
+          ctx.arc(sx + half + 3, sy - half - 3, 3, 0, Math.PI * 2);
+          ctx.fillStyle = '#64748b';
+          ctx.fill();
+        }
       }
     }
 

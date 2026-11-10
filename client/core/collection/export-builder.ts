@@ -1,13 +1,14 @@
 /**
  * 导出构造：schema 与独立工具严格一致（PC 侧工具链零改动）。
  * - 静态标定 = positioning_calibration_static schemaVersion 1.0（cstore.js 契约）
- * - 网格指纹 = ble_fingerprint_collection schemaVersion 1.1.0（fpstore.js 契约）
+ * - 网格指纹 = ble_fingerprint_collection schemaVersion 1.2.0（fpstore.js 契约；含 deletions/mode）
  * 新增可选字段（estimateAtStart/estimateAtEnd 等）仅为超集，PC 侧忽略未知字段。
  * 纯逻辑、不依赖 wx。
  */
 import type {
   CalibrationPointRec,
   EstimateSnapshot,
+  FpDeletion,
   FpRecord,
   StaticSessionRec,
 } from './types';
@@ -140,12 +141,27 @@ export interface FpExportData {
   recordCount: number;
   fpCount: number;
   records: FpRecord[];
+  /** 显式删除墓碑：仅本地真实删除的记录，服务端据此生成新版本。 */
+  deletions: FpDeletion[];
+  /** 入库模式：merge（默认，只增改）/ replaceFloor（显式整层重采）。 */
+  mode: 'merge' | 'replaceFloor';
+  /** replaceFloor 的作用楼层（mode=merge 时缺省）。 */
+  replaceFloors?: string[];
 }
 
 export function buildFpExport(
   store: FpRecordsStore,
   meta: CollectionExportMeta,
-  opts: { dataset?: string; beaconUuid: string; majors?: number[] },
+  opts: {
+    dataset?: string;
+    beaconUuid: string;
+    majors?: number[];
+    /** 待提交的删除墓碑（默认无）。 */
+    deletions?: FpDeletion[];
+    /** 缺省 merge：普通入库永远不推断删除。 */
+    mode?: 'merge' | 'replaceFloor';
+    replaceFloors?: string[];
+  },
 ): { data: FpExportData; warnings: string[] } {
   const records = store.allRecords();
   const warnings: string[] = [];
@@ -153,9 +169,11 @@ export function buildFpExport(
     warnings.push('还没有指纹记录');
   }
   const fpSet = new Set(records.map((r) => r.fpId));
+  const mode = opts.mode ?? 'merge';
+  const deletions = opts.deletions ?? [];
   return {
     data: {
-      schemaVersion: '1.1.0',
+      schemaVersion: '1.2.0',
       type: 'ble_fingerprint_collection',
       venueId: meta.venueId,
       venueName: meta.venueName,
@@ -170,6 +188,9 @@ export function buildFpExport(
       recordCount: records.length,
       fpCount: fpSet.size,
       records,
+      deletions,
+      mode,
+      ...(mode === 'replaceFloor' ? { replaceFloors: opts.replaceFloors ?? [] } : {}),
     },
     warnings,
   };

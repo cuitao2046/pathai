@@ -51,6 +51,8 @@ Page({
     fieldCollectionSetting: false,
     /** 采集页叠加补装（5 枚未安装虚拟信标）影响，即时生效；默认关闭＝v11 真实口径。 */
     simBeaconPreviewSetting: false,
+    /** 启用指纹库提升导航定位精度（默认关闭＝仅蓝牙三点定位），即时生效。 */
+    fingerprintDbSetting: false,
     /** 无障碍模式：'a11y' 视障模式（默认）/ 'normal' 普通模式，即时生效。 */
     a11yMode: 'a11y' as 'a11y' | 'normal',
     /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
@@ -88,6 +90,7 @@ Page({
         calibrationOperator: appContext.getCalibrationOperator(),
         fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
         simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
+        fingerprintDbSetting: appContext.getFingerprintDbSetting(),
         a11yMode: appContext.getA11yMode(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
         navArrowSetting: appContext.getNavArrowSetting(),
@@ -127,6 +130,8 @@ Page({
       calibrationCount: appContext.calibration.count,
       calibrationOperator: appContext.getCalibrationOperator(),
       fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
+      simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
+      fingerprintDbSetting: appContext.getFingerprintDbSetting(),
       a11yMode: appContext.getA11yMode(),
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
       navArrowSetting: appContext.getNavArrowSetting(),
@@ -192,7 +197,6 @@ Page({
     }
   },
 
-  onChangeDataSource(event: WechatMiniprogram.SwitchChange) {
     const source: DataSource = event.detail.value ? 'live' : 'mock';
     appContext.setDataSourceOverride(source);
     this.setData({ dataSource: source }); // 受控回显（二次进入前保持一致）
@@ -248,6 +252,18 @@ Page({
     this.setData({ simBeaconPreviewSetting: on });
     wx.showToast({
       title: on ? '采集页已叠加补装仿真' : '已回到真实口径',
+      icon: 'none',
+      duration: 2000,
+    });
+  },
+
+  /** 指纹库开关：开启后定位优先用指纹库匹配，未命中自动回退三点定位；即时生效。 */
+  onChangeFingerprintDb(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setFingerprintDbSetting(on);
+    this.setData({ fingerprintDbSetting: on });
+    wx.showToast({
+      title: on ? '已启用指纹库定位' : '已回到蓝牙三点定位',
       icon: 'none',
       duration: 2000,
     });

@@ -29,6 +29,10 @@ export interface BuildFpRecordOptions {
   rssiAt1m: number;
   /** 路径损耗指数（默认 2，与生产模型一致）。 */
   pathLossN?: number;
+  /** 采集时的网格版本（可选；旧记录不写）。 */
+  gridVersion?: string | null;
+  /** 采集时的参数版本（可选；旧记录不写）。 */
+  paramsVersion?: string | null;
   collectedAtMs?: number;
 }
 
@@ -64,5 +68,7 @@ export function buildFpRecord(opts: BuildFpRecordOptions): FpRecord {
     collectedAt: new Date(opts.collectedAtMs ?? Date.now()).toISOString(),
     beaconCount: beacons.length,
     beacons,
+    ...(opts.gridVersion !== undefined ? { gridVersion: opts.gridVersion } : {}),
+    ...(opts.paramsVersion !== undefined ? { paramsVersion: opts.paramsVersion } : {}),
   };
 }
