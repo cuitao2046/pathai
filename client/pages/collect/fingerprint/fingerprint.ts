@@ -214,14 +214,18 @@ Page({
   },
 
   onHide(): void {
+    // 倒计时暂停（回前台继续）
     if (this.data.collecting && this.tickTimer !== null) {
       this.pausedRemainingS = this.remainingS;
       this.stopTick();
     }
+    // 释放蓝牙：后台挂起时监听器可能失效，回前台由 onShow 重新建立。
+    // 共享扫描器按 handler 引用计数，这里只释放本页，不会顶掉其他采集页。
+    this.pipeline?.stop();
   },
 
   onShow(): void {
-    void this.pipeline?.start('navigating');
+    this.startScan();
     // 设置页开关可能刚被改动：回前台时同步，切换口径要立即重算计数并重绘
     const simPreview = appContext.getSimBeaconPreviewSetting();
     if (simPreview !== this.data.simPreview) {
@@ -272,6 +276,9 @@ Page({
     this.refreshStats();
     this.setData({ loading: false });
     this.initPipeline();
+    // 首次进入时 onShow 早于异步 bootstrap 完成（pipeline 尚不存在），
+    // 必须在这里补一次启动；否则 mock/live 都不会开始采样。
+    this.startScan();
     this.initMap();
     // 覆盖层异步下发：不阻塞采集页首帧（spec P1），失败自动回退内置/缓存
     void this.refreshRuntimeGrid();
@@ -352,6 +359,19 @@ Page({
         this.mapView?.requestDraw();
       },
       onUnusable: () => undefined,
+    });
+  },
+
+  /** 启动信标源（幂等）：onShow / bootstrap 都可以安全调用。 */
+  startScan(): void {
+    const pipeline = this.pipeline;
+    if (pipeline === null || pipeline.isRunning) {
+      return;
+    }
+    log.info('启动信标源');
+    void pipeline.start('navigating').catch((err: unknown) => {
+      // LocationPipeline.start 失败时已把 running 复位，下一次 onShow/重试可自愈
+      log.warn('信标源启动失败', err instanceof Error ? err.message : String(err));
     });
   },
 
