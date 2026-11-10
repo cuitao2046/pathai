@@ -172,6 +172,103 @@ class AdminAuditEvent(Base):
     details_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class CalibrationSample(Base):
+    """标定样本文件：内容落盘，库内只存索引与哈希（无鉴权，靠私网+审计防护）。"""
+
+    __tablename__ = "calibration_samples"
+
+    sample_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    sample_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    deployable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    operator: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    map_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    uploaded_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_calibration_samples_site", CalibrationSample.site_id)
+
+
+class CalibrationRun(Base):
+    """一次计算任务：computed / compute_failed / applied / superseded / rolled_back / stale。"""
+
+    __tablename__ = "calibration_runs"
+
+    run_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    sample_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    sample_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    grid_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_grid_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    grid_staging_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_calibration_runs_site", CalibrationRun.site_id)
+Index("ix_calibration_runs_sample", CalibrationRun.sample_id)
+
+
+class LocationParamVersion(Base):
+    """定位参数版本：不可变；任何修改都是新增一行。"""
+
+    __tablename__ = "location_param_versions"
+
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rssi_at_1m: Mapped[float] = mapped_column(nullable=False)
+    path_loss_n: Mapped[float] = mapped_column(nullable=False)
+    residual_reliable_m: Mapped[float] = mapped_column(nullable=False)
+    residual_degraded_m: Mapped[float] = mapped_column(nullable=False)
+    grid_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_location_param_versions_site", LocationParamVersion.site_id)
+
+
+class FingerprintGridVersion(Base):
+    """指纹网格版本：与参数版本成对存在。"""
+
+    __tablename__ = "fingerprint_grid_versions"
+
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_grid_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    map_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    rssi_at_1m: Mapped[float] = mapped_column(nullable=False)
+    path_loss_n: Mapped[float] = mapped_column(nullable=False)
+    overlay_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    manifest_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    point_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    collectable_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+Index("ix_fingerprint_grid_versions_site", FingerprintGridVersion.site_id)
+
+
+class CalibrationActivePointer(Base):
+    """每个场地唯一的生效指针：参数版本与网格版本必须成对指向。"""
+
+    __tablename__ = "calibration_active_pointer"
+
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    param_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    grid_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class BeaconDeploymentRecord(Base):
     """真实部署台账：每场地每 beaconId 一条（幂等 upsert）；规划台账保持只读。
 

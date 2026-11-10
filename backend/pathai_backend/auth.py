@@ -100,6 +100,10 @@ def get_wechat_client(request: Request) -> WechatAuthClient:
 
 
 def get_settings(request: Request) -> Settings:
+    # 标定控制台 apply 后由 RuntimeParams 提供热生效值；未初始化时回退环境冻结值
+    runtime = getattr(request.app.state, "runtime_params", None)
+    if runtime is not None:
+        return runtime.get()
     return request.app.state.settings
 
 
