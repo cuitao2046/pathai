@@ -1,0 +1,4 @@
+# 该文件是打包产物（p1-crypto-bundle.js），仓库内以 LF 保存。
+# Windows 下 core.autocrlf=true 会把它反复标记为 modified（内容其实一致），
+# 这里显式固定为 LF：检出不转 CRLF，add 时也不改写内容。
+client/core/discovery/p1-crypto-bundle.js text eol=lf
