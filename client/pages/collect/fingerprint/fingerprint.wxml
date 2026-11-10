@@ -73,12 +73,17 @@
       aria-role="button"
       aria-label="切换到{{item.displayName}}"
     >{{item.level}}F</view>
-    <view class="op-btn" bindtap="onExport" aria-role="button" aria-label="导出指纹记录">导出</view>
     <view
-      class="op-btn {{unexportedCount > 0 || unexportedDeletionCount > 0 || ingestBusy ? 'disabled' : ''}}"
+      class="op-btn {{canExport ? '' : 'disabled'}}"
+      bindtap="onExport"
+      aria-role="button"
+      aria-label="{{canExport ? '导出指纹记录' : '当前内容已导出或已入库，无需重复导出'}}"
+    >导出</view>
+    <view
+      class="op-btn {{canIngest && !ingestBusy ? '' : 'disabled'}}"
       bindtap="onIngest"
       aria-role="button"
-      aria-label="{{unexportedCount > 0 || unexportedDeletionCount > 0 ? '入库（有未导出变更，需先导出）' : '入库到服务端指纹库'}}"
+      aria-label="{{canIngest ? '入库到服务端指纹库' : '需先导出本批改动后才能入库'}}"
     >{{ingestBusy ? '入库中' : '入库'}}</view>
     <view class="op-btn" bindtap="onVersionHistory" aria-role="button" aria-label="查看指纹库版本并回滚">版本</view>
   </view>

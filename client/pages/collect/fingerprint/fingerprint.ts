@@ -49,6 +49,13 @@ import {
   markRecordsExported,
 } from '../../../core/collection/export-ledger';
 import {
+  contentSha,
+  deriveActionState,
+  markExported,
+  markIngested,
+  seedExportedState,
+} from '../../../core/collection/export-state';
+import {
   addTombstones,
   buildTombstone,
   listTombstones,
@@ -143,6 +150,10 @@ Page({
     unexportedDeletionCount: 0,
     /** 入库进行中（防重复点击）。 */
     ingestBusy: false,
+    /** 导出按钮可用：本地内容与上次导出/入库都不同（且有内容）。 */
+    canExport: false,
+    /** 入库按钮可用：本地内容已导出、且尚未入库。 */
+    canIngest: false,
     /** 服务端当前指纹库状态（顶栏展示）：'未入库' / '已入库 fpl-…' / '不可用…'。 */
     libraryStatusText: '指纹库未入库',
     /**
@@ -419,11 +430,29 @@ Page({
     for (const r of records) {
       this.recordCounts!.set(r.fpId, (this.recordCounts!.get(r.fpId) ?? 0) + 1);
     }
+    const unexportedCount = countUnexported(records);
+    const unexportedDeletionCount = countUnexportedDeletions(tombstones);
+    const sha = contentSha(records, tombstones);
+    const hasContent = records.length > 0 || tombstones.length > 0;
+    // 旧版本只写过台账：首次进入按台账补「已导出」摘要，避免无意义地再导出一次
+    const syncState = seedExportedState({
+      sha,
+      hasContent,
+      pendingExport: unexportedCount > 0 || unexportedDeletionCount > 0,
+    });
+    const action = deriveActionState({
+      sha,
+      hasContent,
+      pendingExport: unexportedCount > 0 || unexportedDeletionCount > 0,
+      state: syncState,
+    });
     this.setData({
       stats: this.store.stats(),
-      unexportedCount: countUnexported(records),
+      unexportedCount,
       tombstoneCount: tombstones.length,
-      unexportedDeletionCount: countUnexportedDeletions(tombstones),
+      unexportedDeletionCount,
+      canExport: action.canExport,
+      canIngest: action.canIngest,
     });
     this.refreshFloorStats(this.data.currentFloor);
     this.mapView?.requestDraw();
@@ -766,11 +795,11 @@ Page({
     this.mapView?.fit();
   },
 
-  /** 构建导出/入库共用的载荷（入库上传的即「当前已全部导出」的同一份数据）。 */
-  buildExportBundle(opts?: {
-    mode?: 'merge' | 'replaceFloor';
-    replaceFloors?: string[];
-  }): { data: FpExportData; warnings: string[] } | null {
+  /**
+   * 构建导出/入库共用的载荷：一次提交就是本地全部记录（不分楼层、exportScope=all）。
+   * 入库模式固定为 merge：删除只来自显式墓碑，绝不按「本批未出现」推断。
+   */
+  buildExportBundle(): { data: FpExportData; warnings: string[] } | null {
     const store = this.store;
     if (store === null) {
       return null;
@@ -807,8 +836,6 @@ Page({
       beaconUuid: [...uuidSet][0] ?? '',
       majors,
       deletions: listTombstones(),
-      mode: opts?.mode,
-      replaceFloors: opts?.replaceFloors,
     });
   },
 
@@ -821,6 +848,10 @@ Page({
     const tombstones = listTombstones();
     if (stats.recordCount === 0 && tombstones.length === 0) {
       wx.showToast({ title: '还没有指纹记录', icon: 'none' });
+      return;
+    }
+    if (!this.data.canExport) {
+      wx.showToast({ title: '当前内容已导出或已入库，无需重复导出', icon: 'none' });
       return;
     }
     const bundle = this.buildExportBundle();
@@ -840,6 +871,11 @@ Page({
         // 写文件成功即视为「已导出」：记录与墓碑一起记账，入库才允许上传
         const ledgerStored = markRecordsExported(data.records);
         const deletionLedgerStored = markDeletionsExported(data.deletions);
+        // 只有台账真正落盘才记摘要：否则保持「可导出」，避免入库时被台账挡住又无法重导
+        const stateStored =
+          ledgerStored && deletionLedgerStored
+            ? markExported(contentSha(data.records, data.deletions))
+            : false;
         this.refreshStats();
         wx.setClipboardData({
           data: json,
@@ -854,7 +890,7 @@ Page({
               content: `记录 ${stats.recordCount} 条 · 点位 ${stats.fpCount} 个 · 删除墓碑 ${data.deletions.length} 条${
                 warnings.length > 0 ? `\n提示：${warnings.slice(0, 3).join('；')}` : ''
               }${
-                ledgerStored && deletionLedgerStored
+                ledgerStored && deletionLedgerStored && stateStored
                   ? ''
                   : '\n警告：导出台账写入本地存储失败，入库前请重新导出。'
               }\nJSON 已复制剪贴板并写入文件。`,
@@ -899,6 +935,10 @@ Page({
           }
         },
       });
+      return;
+    }
+    if (!this.data.canIngest) {
+      wx.showToast({ title: '当前内容已入库，无需重复入库', icon: 'none' });
       return;
     }
     void this.startIngestFlow();
@@ -951,7 +991,7 @@ Page({
               markDeletionsExported(items);
               this.refreshStats();
             }
-            this.showIngestModeDialog();
+            void this.doIngest();
           },
         });
         return;
@@ -959,43 +999,21 @@ Page({
     } else if (manifest === null) {
       wx.showToast({ title: '对账清单不可用，跳过比对', icon: 'none' });
     }
-    this.showIngestModeDialog();
+    void this.doIngest();
   },
 
-  /** 入库模式必须显式选择；普通入库默认合并且永不推断删除。 */
-  showIngestModeDialog(): void {
-    const floorLabel = this.data.currentFloorText;
-    wx.showActionSheet({
-      alertText: '选择入库方式',
-      itemList: ['合并入库（只增改，不删除）', `整层替换 ${floorLabel}（删除该层库中多余记录）`],
-      success: (res) => {
-        if (res.tapIndex === 1) {
-          wx.showModal({
-            title: `整层替换 ${floorLabel}`,
-            content: `将以本次导出的 ${floorLabel} 记录替换库中该层数据：该层中未出现在本次导出的记录会被删除，并生成可回滚的新版本。其他楼层只做合并。`,
-            confirmText: '确认替换',
-            confirmColor: '#b91c1c',
-            success: (r) => {
-              if (r.confirm) {
-                void this.doIngest('replaceFloor', [this.data.currentFloor]);
-              }
-            },
-          });
-          return;
-        }
-        void this.doIngest('merge');
-      },
-      fail: () => undefined,
-    });
-  },
-
-  /** 上传当前（已全部导出）的数据与墓碑，并刷新服务端指纹库状态。 */
-  async doIngest(mode: 'merge' | 'replaceFloor', replaceFloors?: string[]): Promise<void> {
-    const bundle = this.buildExportBundle({ mode, replaceFloors });
+  /**
+   * 上传当前（已全部导出）的全部记录与墓碑，并刷新服务端指纹库状态。
+   * 一次入库 = 本地全部记录整体提交（不分楼层，payload 恒为 exportScope=all + merge）。
+   */
+  async doIngest(): Promise<void> {
+    const bundle = this.buildExportBundle();
     if (bundle === null) {
       return;
     }
     const sentDeletions = bundle.data.deletions;
+    // 入库存的是「本次提交的记录集合」；墓碑只是删除指令，不进摘要
+    const ingestSha = contentSha(bundle.data.records, []);
     this.setData({ ingestBusy: true });
     wx.showLoading({ title: '入库中…', mask: true });
     try {
@@ -1018,6 +1036,7 @@ Page({
       }
       // 已应用的墓碑从本地移除，避免重复上传（导出文件已留档）
       removeTombstones(sentDeletions.map((item) => `${item.fpId}|${item.collectedAt}`));
+      markIngested(ingestSha);
       this.refreshStats();
       this.setData({
         libraryStatusText: `指纹库 ${summary.version} · ${summary.recordCount} 条/${summary.fpCount} 点 · 本版删 ${summary.deletedCount}`,
@@ -1029,11 +1048,7 @@ Page({
           : '';
       wx.showModal({
         title: summary.duplicated ? '内容已入库' : '入库成功',
-        content: `版本 ${summary.version}${
-          summary.mode === 'replaceFloor'
-            ? `（整层替换 ${summary.replaceFloors.join('、')}F）`
-            : ''
-        }\n记录 ${summary.recordCount} 条 · 点位 ${summary.fpCount} 个\n本次新增 ${summary.insertedCount} · 更新 ${summary.updatedCount} · 删除 ${summary.deletedCount} · 保留 ${summary.retainedCount}${
+        content: `版本 ${summary.version}\n记录 ${summary.recordCount} 条 · 点位 ${summary.fpCount} 个\n本次新增 ${summary.insertedCount} · 更新 ${summary.updatedCount} · 删除 ${summary.deletedCount} · 保留 ${summary.retainedCount}${
           summary.duplicated
             ? summary.noChanges
               ? '\n墓碑已全部应用过，无新增变更。'
