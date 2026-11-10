@@ -121,11 +121,14 @@ describe('删除墓碑', () => {
 
     const replace = buildFpExport(store, meta, {
       beaconUuid: 'uuid',
+      deletions: [deletion],
       mode: 'replaceFloor',
       replaceFloors: ['1'],
     });
     expect(replace.data.mode).toBe('replaceFloor');
     expect(replace.data.replaceFloors).toEqual(['1']);
+    // 整层替换已含删除语义：服务端拒绝 replaceFloor + deletions，载荷必须不带墓碑
+    expect(replace.data.deletions).toEqual([]);
     markRecordsExported(merge.data.records);
   });
 

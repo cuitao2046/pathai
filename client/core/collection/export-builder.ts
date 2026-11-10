@@ -294,7 +294,10 @@ export function buildFpExport(
   }
   const fpSet = new Set(records.map((r) => r.fpId));
   const mode = opts.mode ?? 'merge';
-  const deletions = opts.deletions ?? [];
+  // 服务端契约：replaceFloor 是整层作用域，已含删除语义，不接受同时提交 deletions
+  // （fingerprint_library._parse_content → INVALID_MODE_COMBINATION）。
+  // 墓碑仍留在本地，下次 merge 入库时再提交，不做静默丢弃。
+  const deletions = mode === 'replaceFloor' ? [] : (opts.deletions ?? []);
   return {
     data: {
       schemaVersion: '1.2.0',

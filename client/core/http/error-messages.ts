@@ -35,6 +35,7 @@ const MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   TOMBSTONE_MISMATCH: '删除墓碑与库中记录不一致，请重新对账后再入库',
   DELETION_CONFLICT: '同一记录既被删除又被提交，请检查后重试',
   NO_ACTIVE_LIBRARY: '指纹库为空，没有可应用的变更',
+  INVALID_MODE_COMBINATION: '入库方式冲突：整层替换已包含删除语义，不能同时提交删除墓碑；请改用合并入库',
   // 兜底
   FORBIDDEN: '没有权限执行该操作',
   INTERNAL_ERROR: '服务暂时不可用，请稍后再试',

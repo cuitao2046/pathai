@@ -110,7 +110,8 @@ export type ApiErrorCode =
   | 'VERSION_EXPIRED'
   | 'TOMBSTONE_MISMATCH'
   | 'DELETION_CONFLICT'
-  | 'NO_ACTIVE_LIBRARY';
+  | 'NO_ACTIVE_LIBRARY'
+  | 'INVALID_MODE_COMBINATION';
 
 // ---------------------------------------------------------------------------
 // 公共模型（schemas/common.py）
