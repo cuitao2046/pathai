@@ -294,6 +294,8 @@ Page({
       map: appContext.map,
       makeSource: () => createBeaconSource(appContext.dataSource, appContext.map),
       floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
+      // 指纹库开关（默认关闭）：每次查询时读取，设置页改动即时生效
+      useFingerprintDb: () => appContext.getFingerprintDbSetting(),
     });
     // 启动播报序列由地图事件驱动（下载开始/就绪/过旧），必须在 bootstrap 之前订阅
     this.mapUnsubscribe = appContext.map.subscribe((event) => this.onMapEvent(event));
@@ -1289,6 +1291,15 @@ Page({
     });
   },
 
+  onGoCollectLogdist(): void {
+    log.info('进入对数等距测量');
+    this.setData({ collectMenuOpen: false });
+    wx.navigateTo({
+      url: '/pages/collect/logdist/logdist',
+      fail: (err) => log.warn('navigateTo collect/logdist 失败', JSON.stringify(err)),
+    });
+  },
+
   // ------------------------------------------------------------------
   // 按住说话 → 意图（REQ-PAGE 下端居中按钮 / 居中浮层）
   // ------------------------------------------------------------------
@@ -1510,6 +1521,8 @@ Page({
       map: appContext.map,
       source,
       sequence: new SequenceCounter(),
+      // 指纹库开关（默认关闭）：每拍读取，关闭时请求体与旧版完全一致
+      useFingerprintDb: () => appContext.getFingerprintDbSetting(),
       onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
       onUnusable: (err) => {
         // 导航中信号丢失/信标不足：只报 quality 让服务端转 recovering，

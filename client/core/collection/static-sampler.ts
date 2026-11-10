@@ -67,11 +67,20 @@ export interface StaticSamplerOptions {
   truth: [number, number];
   resolve: StaticBeaconResolver;
   startedAtMs?: number;
+  /**
+   * 固定真值斜距（对数等距页）：跳过地图坐标，直接使用档位计算的 d。
+   * 未提供时按静态标定口径计算三维斜距。
+   */
+  fixedTruthDistanceM?: number;
+  /** 只统计该信标（对数等距页锁定信标）；其他信标样本丢弃。 */
+  onlyBeaconId?: string;
 }
 
 export class StaticSampler {
   private readonly byBeacon = new Map<string, { ref: StaticBeaconRef; values: number[] }>();
   private readonly resolve: StaticBeaconResolver;
+  private readonly fixedTruthDistanceM: number | null;
+  private readonly onlyBeaconId: string | null;
   readonly truth: [number, number];
   readonly startedAtMs: number;
 
@@ -79,6 +88,8 @@ export class StaticSampler {
     this.truth = opts.truth;
     this.resolve = opts.resolve;
     this.startedAtMs = opts.startedAtMs ?? Date.now();
+    this.fixedTruthDistanceM = opts.fixedTruthDistanceM ?? null;
+    this.onlyBeaconId = opts.onlyBeaconId ?? null;
   }
 
   /** 推入一条原始样本；无法解析的信标丢弃（不虚构 beaconId）。返回是否被采纳。 */
@@ -94,6 +105,9 @@ export class StaticSampler {
       const sep = key.indexOf('|');
       const ref = this.resolve(key.slice(0, sep), sample.major, sample.minor);
       if (ref === null) {
+        return false;
+      }
+      if (this.onlyBeaconId !== null && ref.beaconId !== this.onlyBeaconId) {
         return false;
       }
       entry = { ref, values: [] };
@@ -112,7 +126,10 @@ export class StaticSampler {
       rssiMin: Math.min(...values),
       rssiMax: Math.max(...values),
       rssiStd: stdDev1(values),
-      truthDistanceM: Math.round(truthDistance3D(this.truth, ref) * 100) / 100,
+      truthDistanceM:
+        Math.round(
+          (this.fixedTruthDistanceM ?? truthDistance3D(this.truth, ref)) * 100,
+        ) / 100,
     }));
     return rows.sort((a, b) => b.rssiMedian - a.rssiMedian);
   }
@@ -127,6 +144,11 @@ export class StaticSampler {
 
   get resolvedBeaconCount(): number {
     return this.byBeacon.size;
+  }
+
+  /** 已解析到的信标 ID（供对数等距页发现候选）。 */
+  get beaconIds(): string[] {
+    return [...new Set([...this.byBeacon.values()].map(({ ref }) => ref.beaconId))];
   }
 
   /** 结束本次停留：产出会话主体（startedAt 为 ISO 时刻）。 */

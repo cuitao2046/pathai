@@ -13,6 +13,7 @@ import type {
   StaticSessionRec,
 } from './types';
 import type { FpRecordsStore, StaticPointsStore } from './points-store';
+import type { LogdistBeacon, LogdistSession, LogdistStore } from './logdist-store';
 
 export interface CollectionExportMeta {
   venueId: string;
@@ -125,8 +126,131 @@ export function buildStaticExport(
   };
 }
 
+export interface LogdistExportMeta {
+  operator: string;
+  device: string | null;
+  appVersion: string;
+  /** 地图包版本未加载时为 null（导出仍可用）。 */
+  mapVersion: string | null;
+}
+
+interface LogdistExportStop {
+  stopId: string;
+  horizontalDistanceM: number;
+  slantDistanceM: number;
+  sessions: LogdistSession[];
+}
+
+export interface LogdistExportData {
+  schemaVersion: '1.0';
+  type: 'positioning_calibration_logdist';
+  /** 阶段一专用：永远不可部署。 */
+  deployable: false;
+  exportedAt: string;
+  appVersion: string;
+  operator: string;
+  device: string | null;
+  mapVersion: string | null;
+  beacon: LogdistBeacon | null;
+  installHeightM: number;
+  phoneHeightM: number;
+  model: { form: 'log_distance'; expression: string };
+  stops: LogdistExportStop[];
+  summary: { stopCount: number; sessionCount: number; observationCount: number };
+}
+
+/**
+ * 对数等距导出：与静态标定完全独立 schema，deployable 恒为 false。
+ * 斜距直接取会话观测里的 truthDistanceM（采集时按档位与安装高度快照计算）。
+ * 只导出当前选中信标的会话：切换信标后各自导出，避免一个文件混入多枚信标
+ * （fit_location_params.py 对单文件只允许一枚信标）。
+ */
+export function buildLogdistExport(
+  store: LogdistStore,
+  meta: LogdistExportMeta,
+): { data: LogdistExportData; warnings: string[] } {
+  const warnings: string[] = [];
+  const total = store.stats();
+  if (total.stopCount === 0) {
+    warnings.push('还没有任何档位会话');
+  }
+
+  const selectedId = store.beacon?.beaconId ?? null;
+  let omittedSessions = 0;
+  const views = store.views();
+  const stops: LogdistExportStop[] = store
+    .allStops()
+    .map((rec) => {
+      const sessions =
+        selectedId === null
+          ? rec.sessions
+          : rec.sessions.filter((s) => s.beaconId === selectedId);
+      omittedSessions += rec.sessions.length - sessions.length;
+      if (sessions.length === 0) {
+        return null;
+      }
+      const view = views.find((v) => v.horizontalDistanceM === rec.horizontalDistanceM);
+      return {
+        stopId: rec.stopId,
+        horizontalDistanceM: rec.horizontalDistanceM,
+        slantDistanceM: view?.slantDistanceM ?? 0,
+        sessions,
+      };
+    })
+    .filter((rec): rec is LogdistExportStop => rec !== null);
+
+  const summary = stops.reduce(
+    (acc, stop) => ({
+      stopCount: acc.stopCount + 1,
+      sessionCount: acc.sessionCount + stop.sessions.length,
+      observationCount:
+        acc.observationCount +
+        stop.sessions.reduce((n, session) => n + session.observations.length, 0),
+    }),
+    { stopCount: 0, sessionCount: 0, observationCount: 0 },
+  );
+
+  if (selectedId !== null && total.stopCount > 0 && summary.sessionCount === 0) {
+    warnings.push(`当前信标 ${selectedId} 还没有档位会话`);
+  }
+  if (summary.stopCount > 0 && summary.stopCount < 3) {
+    warnings.push('已采档位少于 3 个，A/n 拟合不稳定');
+  }
+  if (summary.stopCount > 0 && summary.sessionCount < summary.stopCount * 3) {
+    warnings.push('部分档位会话少于 3 次，建议每档 3 次以上');
+  }
+  if (omittedSessions > 0) {
+    warnings.push(
+      `另有 ${omittedSessions} 次会话属于其他信标，未包含在本次导出；请切换信标后单独导出`,
+    );
+  }
+
+  return {
+    data: {
+      schemaVersion: '1.0',
+      type: 'positioning_calibration_logdist',
+      deployable: false,
+      exportedAt: new Date().toISOString(),
+      appVersion: meta.appVersion,
+      operator: meta.operator,
+      device: meta.device,
+      mapVersion: meta.mapVersion,
+      beacon: store.beacon,
+      installHeightM: store.installHeightM,
+      phoneHeightM: store.phoneHeightM,
+      model: {
+        form: 'log_distance',
+        expression: 'RSSI = A - 10 * n * log10(d)',
+      },
+      stops,
+      summary,
+    },
+    warnings,
+  };
+}
+
 export interface FpExportData {
-  schemaVersion: '1.1.0';
+  schemaVersion: '1.2.0';
   type: 'ble_fingerprint_collection';
   venueId: string;
   venueName: string;
