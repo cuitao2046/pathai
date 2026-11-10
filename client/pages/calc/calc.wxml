@@ -1,0 +1,146 @@
+<view class="page">
+  <view class="section">
+    <view class="section-title">当前生效</view>
+    <view class="row"><text class="label">参数版本</text><text user-select>{{current.paramsVersion}}</text></view>
+    <view class="row"><text class="label">网格版本</text><text user-select>{{current.gridVersion}}</text></view>
+    <view class="row"><text class="label">A / n</text><text>{{current.aText}} / {{current.nText}}</text></view>
+    <view class="row"><text class="label">可靠 / 降级阈值</text><text>{{current.reliableText}} / {{current.degradedText}}</text></view>
+    <view class="row"><text class="label">来源</text><text>{{current.sourceText || '—'}}</text></view>
+    <view class="hint">以上为服务端运行时真值，apply / 回滚成功后自动刷新。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">服务端就绪</view>
+    <view class="row">
+      <text class="label">文件与基线</text>
+      <text class="{{readinessReady ? 'ok-text' : 'warn-text'}}">{{readinessText}}</text>
+    </view>
+    <view class="file-line" wx:for="{{readinessFiles}}" wx:key="key">
+      <text class="file-flag {{item.present ? 'ok-text' : 'warn-text'}}">{{item.present ? '✓' : '✗'}}</text>
+      <text class="file-name">{{item.label}}</text>
+      <text class="file-path" user-select>{{item.path || '缺失'}}</text>
+    </view>
+    <view class="hint" wx:if="{{latestSampleText !== ''}}">{{latestSampleText}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">1 · 样本</view>
+    <view class="row">
+      <text class="label">当前选择</text>
+      <text class="flex-text" user-select>{{fileText || '未选择'}}</text>
+    </view>
+    <view class="row" wx:if="{{fileSourceText !== ''}}">
+      <text class="label">文件来源</text>
+      <text class="flex-text">{{fileSourceText}}</text>
+    </view>
+    <view class="row" wx:if="{{sample !== null}}">
+      <text class="label">服务端样本</text>
+      <text class="flex-text" user-select>{{sample.sampleId}} · {{sample.type}}</text>
+    </view>
+    <view class="row" wx:if="{{sample !== null}}">
+      <text class="label">哈希 / 地图</text>
+      <text class="flex-text" user-select>{{sample.sha256}} · {{sample.mapVersion || '未知'}}</text>
+    </view>
+
+    <view class="sub-title">小程序沙箱导出文件（点选即选中）</view>
+    <view class="hint" wx:if="{{sandboxLoading}}">正在扫描小程序沙箱…</view>
+    <view class="hint warn-text" wx:elif="{{sandboxError !== ''}}">{{sandboxError}}</view>
+    <view class="hint" wx:elif="{{sandboxFiles.length === 0}}">沙箱里还没有可用的样本。请先到「采集 → 静态标定 / 对数等距」完成采集并点「导出」，导出的 JSON 会自动出现在这里。</view>
+    <block wx:else>
+      <view
+        class="sample-item {{item.path === selectedPath ? 'sample-item-active' : ''}}"
+        wx:for="{{sandboxFiles}}"
+        wx:key="path"
+        bindtap="onSelectSandboxFile"
+        data-path="{{item.path}}"
+        aria-role="button"
+        aria-label="{{item.name}}，{{item.kindText}}，{{item.sizeText}}，导出时间 {{item.timeText}}{{item.path === selectedPath ? '，已选中' : ''}}"
+      >
+        <view class="sample-name">{{item.name}}</view>
+        <view class="sample-meta">{{item.kindText}} · {{item.sizeText}} · 导出 {{item.timeText}}</view>
+      </view>
+    </block>
+    <button class="action secondary" bindtap="onRefreshSandboxFiles" disabled="{{sandboxLoading}}" aria-label="刷新沙箱导出文件列表">
+      刷新沙箱文件列表
+    </button>
+    <button class="action secondary" bindtap="onChooseFromChat" disabled="{{!canChoose}}" aria-label="从微信聊天导入他人发送的样本 JSON">
+      从聊天导入（他人发送的 JSON）
+    </button>
+    <view class="hint">沙箱文件来自本机采集页导出，可直接读取；聊天导入仅用于接收他人发来的样本，临时文件不长期保留。</view>
+    <button class="action" bindtap="onUploadSample" disabled="{{!canUpload}}" aria-label="上传样本到服务端">
+      {{state === 'server_invalid' && localFile !== null ? '重试上传' : '上传样本'}}
+    </button>
+    <view class="hint">样本在服务端重新做 schema、语义与基线校验；客户端预检只用于提前发现格式问题。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">2 · 计算</view>
+    <button class="action" bindtap="onStartCompute" disabled="{{!canCompute}}" aria-label="开始计算定位常量与网格预览">
+      {{state === 'compute_failed' ? '重新计算' : '开始计算'}}
+    </button>
+    <view class="hint">计算包含 A/n 拟合与指纹网格重算，耗时较长（分钟级），页面轮询进度。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">状态</view>
+    <view class="state-card tone-{{stateTone}}" aria-live="polite">
+      <view class="state-label">{{stateLabel}}</view>
+      <view class="state-hint" wx:if="{{hint !== ''}}">{{hint}}</view>
+      <view class="state-hint" wx:if="{{blockedReason !== ''}}">{{blockedReason}}</view>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{result !== null}}">
+    <view class="section-title">3 · 结果</view>
+    <view class="row"><text class="label">样本类型</text><text>{{result.typeText}}</text></view>
+    <view class="row"><text class="label">A / n</text><text class="value-strong">{{result.aText}} / {{result.nText}}</text></view>
+    <view class="row"><text class="label">R² / RMSE</text><text>{{result.r2Text}} / {{result.rmseText}}</text></view>
+    <view class="row"><text class="label">样本对 / 档位</text><text>{{result.pairsText}} / {{result.stopsText}}</text></view>
+    <view class="row"><text class="label">可靠 / 降级阈值</text><text>{{result.reliableText}} / {{result.degradedText}}</text></view>
+    <view class="row"><text class="label">originMinConfidence</text><text>{{result.originText}}</text></view>
+    <view class="file-line" wx:for="{{result.groups}}" wx:key="scope">
+      <text class="file-name">{{item.scope}}</text>
+      <text class="file-path">{{item.aText}} / n={{item.nText}}</text>
+    </view>
+    <view class="warn-line" wx:for="{{result.warnings}}" wx:key="*this">· {{item}}</view>
+  </view>
+
+  <view class="section" wx:if="{{gridPreview !== null}}">
+    <view class="section-title">4 · 网格影响</view>
+    <view class="row"><text class="label">基线 → 新版本</text><text user-select>{{gridPreview.baseGridVersion}} → {{gridPreview.gridVersion}}</text></view>
+    <view class="row"><text class="label">可采集 / 总点数</text><text class="value-strong">{{gridPreview.collectableCount}} / {{gridPreview.pointCount}}</text></view>
+    <view class="row"><text class="label">地图版本</text><text>{{gridPreview.mapVersion}}</text></view>
+    <view class="row"><text class="label">重算耗时</text><text>{{gridPreview.elapsedText}}</text></view>
+    <view class="row"><text class="label">阈值敏感性</text><text>-82 dBm — / -85 dBm {{gridPreview.collectableCount}} / -88 dBm —</text></view>
+    <view class="hint">{{sensitivityHint}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">5 · 生效与回滚</view>
+    <button class="action danger" bindtap="onApply" disabled="{{!canApply}}" aria-label="确认生效参数与网格">
+      确认生效（参数 + 网格）
+    </button>
+    <button class="action secondary" bindtap="onRollback" disabled="{{!canRollback}}" aria-label="成对回滚到历史版本">
+      {{rollbackText}}
+    </button>
+    <view class="hint">apply 使用 CAS：若线上版本已被他人更新会拒绝；回滚必须同基线，参数与网格成对回退。</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">版本历史</view>
+    <view class="hint" wx:if="{{versionsText !== ''}}">{{versionsText}}</view>
+    <view class="version-line {{item.active ? 'version-active' : ''}}" wx:for="{{versions}}" wx:key="paramVersion">
+      <view class="version-head">
+        <text class="file-name" user-select>{{item.paramVersion}}</text>
+        <text class="version-flag" wx:if="{{item.active}}">当前</text>
+      </view>
+      <view class="version-body">
+        网格 {{item.gridVersion}} · 基线 {{item.baseGridVersion || '—'}}
+      </view>
+      <view class="version-body">
+        A={{item.rssiAt1mDbm}} dBm · n={{item.pathLossN}} · {{item.source}} · {{item.createdAt}}
+      </view>
+    </view>
+    <button class="action secondary" bindtap="onRefresh" aria-label="刷新当前版本与历史">刷新</button>
+  </view>
+</view>

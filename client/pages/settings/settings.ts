@@ -15,6 +15,11 @@ import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import { remove } from '../../utils/kv';
+import {
+  cachedRuntimeParams,
+  refreshRuntimeParams,
+  type RuntimeParams,
+} from '../../core/config/runtime-config';
 import type { DataSource } from '../../config/env';
 
 const log = createLogger('settings');
@@ -59,6 +64,11 @@ Page({
     fullScreenPttSetting: true,
     /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
     navArrowSetting: true,
+    /** 定位常量计算：服务端当前生效版本（只读展示）。 */
+    runtimeParamVersion: '读取中…',
+    runtimeGridVersion: '读取中…',
+    runtimeParamsText: '',
+    runtimeParamsHint: '',
     busy: false,
   },
 
@@ -102,6 +112,7 @@ Page({
     this.refreshDownload();
     void this.refreshMapVersion();
     void this.checkAuth();
+    void this.refreshRuntimeConfig(false);
   },
 
   onUnload() {
@@ -136,6 +147,7 @@ Page({
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
       navArrowSetting: appContext.getNavArrowSetting(),
     });
+    void this.refreshRuntimeConfig(false);
   },
 
   /** 首个可视帧完成（跳转链路的最后一段：onReady）。 */
@@ -197,6 +209,49 @@ Page({
     }
   },
 
+  /**
+   * 定位常量计算：展示服务端当前生效版本（只读）。
+   * 先回显缓存再异步拉取，服务端不可达时保留缓存并提示。
+   */
+  async refreshRuntimeConfig(force: boolean) {
+    const cached = cachedRuntimeParams();
+    if (cached !== null) {
+      this.applyRuntimeParams(cached);
+    }
+    const params = await refreshRuntimeParams(appContext.http.client, {
+      maxAgeMs: force ? 0 : 30_000,
+      force,
+    });
+    if (params !== null) {
+      this.applyRuntimeParams(params);
+      return;
+    }
+    this.setData({
+      runtimeParamVersion: cached?.paramsVersion ?? '未知',
+      runtimeGridVersion: cached?.gridVersion ?? '未知',
+      runtimeParamsHint: '服务端运行时参数不可达，展示的是本地缓存（可能过期）。',
+    });
+  },
+
+  applyRuntimeParams(params: RuntimeParams) {
+    this.setData({
+      runtimeParamVersion: params.paramsVersion ?? '未激活',
+      runtimeGridVersion: params.gridVersion ?? '未激活',
+      runtimeParamsText: `A=${params.rssiAt1mDbm} dBm / n=${params.pathLossN}`,
+      runtimeParamsHint: `来源 ${params.source} · 阈值 ${params.residualReliableM}m / ${params.residualDegradedM}m · 拉取 ${new Date(
+        params.fetchedAt,
+      ).toLocaleTimeString()}`,
+    });
+  },
+
+  onOpenCalc() {
+    wx.navigateTo({
+      url: '/pages/calc/calc',
+      fail: () => wx.showToast({ title: '打开计算页失败', icon: 'none' }),
+    });
+  },
+
+  onChangeDataSource(event: WechatMiniprogram.SwitchChange) {
     const source: DataSource = event.detail.value ? 'live' : 'mock';
     appContext.setDataSourceOverride(source);
     this.setData({ dataSource: source }); // 受控回显（二次进入前保持一致）

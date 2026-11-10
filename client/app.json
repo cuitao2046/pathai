@@ -4,7 +4,8 @@
     "pages/settings/settings",
     "pages/p0-probe/p0-probe",
     "pages/collect/static/static",
-    "pages/collect/fingerprint/fingerprint"
+    "pages/collect/fingerprint/fingerprint",
+    "pages/calc/calc"
   ],
   "window": {
     "navigationBarTitleText": "PathAI 室内导航",
