@@ -4,7 +4,10 @@
  * 不含鉴权/重试/信封解析（分属 api-client 与 errors）。
  */
 import { REQUEST_TIMEOUT_MS } from '../../config/env';
+import { createLogger } from '../../utils/logger';
 import { ApiClientError } from './errors';
+
+const log = createLogger('http');
 
 export interface TransportResponse<T = unknown> {
   statusCode: number;
@@ -36,15 +39,20 @@ export function getHeader(header: Record<string, string>, name: string): string 
 
 export function request<B, T = unknown>(opts: TransportOptions<B>): Promise<TransportResponse<T>> {
   return new Promise((resolve, reject) => {
+    // 现场排障依赖这一行：完整 URL 能直接确认「发没发出去、发到哪、耗时多久」。
+    // 不记录 header（含 Bearer），避免令牌进日志。
+    const startedAt = Date.now();
+    const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
     wx.request({
       url: opts.url,
       method: opts.method,
       data: opts.data,
       header: opts.header,
-      timeout: opts.timeoutMs ?? REQUEST_TIMEOUT_MS,
+      timeout: timeoutMs,
       responseType: opts.responseType,
       dataType: opts.dataType,
       success: (res) => {
+        log.info(`${opts.method} ${opts.url} → ${res.statusCode} ${Date.now() - startedAt}ms`);
         resolve({
           statusCode: res.statusCode,
           header: res.header ?? {},
@@ -54,10 +62,22 @@ export function request<B, T = unknown>(opts: TransportOptions<B>): Promise<Tran
       },
       fail: (err) => {
         const errMsg = err?.errMsg ?? '';
+        // 连接没建立（拒绝/不可达/连接超时）与「连上了但等不到响应」要分开报：
+        // 前者是链路问题，后者才可能是服务端慢，现场不能一律按“超时”处理。
+        const connectFailed =
+          /ERR_CONNECTION_TIMED_OUT|ERR_CONNECTION_REFUSED|ERR_ADDRESS_UNREACHABLE|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED/.test(
+            errMsg,
+          );
+        const timedOut = !connectFailed && errMsg.includes('timeout');
+        log.warn(
+          `${opts.method} ${opts.url} 失败 ${Date.now() - startedAt}ms/${
+            timeoutMs
+          }ms ${connectFailed ? 'CONNECT_FAILED' : timedOut ? 'REQUEST_TIMEOUT' : 'NETWORK_ERROR'} errMsg=${errMsg}`,
+        );
         reject(
           new ApiClientError(
-            errMsg.includes('timeout')
-              ? { code: 'REQUEST_TIMEOUT', message: '请求超时', retryable: true }
+            timedOut
+              ? { code: 'REQUEST_TIMEOUT', message: `请求超时（${timeoutMs}ms）`, retryable: true }
               : { code: 'NETWORK_ERROR', message: '网络连接不可用', retryable: true },
           ),
         );
