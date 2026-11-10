@@ -5,8 +5,7 @@
  */
 import { BeaconRegistry } from '../core/ble/beacon-registry';
 import type { BeaconSourceLike } from '../core/ble/beacon-source';
-import { LiveBeaconScanner } from '../core/ble/beacon-scanner';
-import { createBeaconSource } from '../core/ble/beacon-source-factory';
+import { SharedLiveBeaconSource, createBeaconSource } from '../core/ble/beacon-source-factory';
 import { MockBeaconSource } from '../core/ble/mock-beacon-source';
 import type { BeaconSample } from '../core/ble/scan-window';
 import type { ApiClient } from '../core/http/api-client';
@@ -297,6 +296,6 @@ describe('createBeaconSource 工厂', () => {
   test('mock → 模拟轨迹源；live → 实扫源', () => {
     const map = { beacons: REAL_MAP.beacons, beaconRegistry: new BeaconRegistry(REAL_MAP.beacons) };
     expect(createBeaconSource('mock', map)).toBeInstanceOf(MockBeaconSource);
-    expect(createBeaconSource('live', map)).toBeInstanceOf(LiveBeaconScanner);
+    expect(createBeaconSource('live', map)).toBeInstanceOf(SharedLiveBeaconSource);
   });
 });

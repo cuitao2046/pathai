@@ -32,7 +32,7 @@ export class BeaconRegistry {
     return this.byTriplet.get(tripletKey(uuid, major, minor)) ?? null;
   }
 
-  /** wx.startBeaconDiscovery 的 uuids 参数（去重、小写）。 */
+  /** 地图台账登记的信标 UUID 集合（去重、小写），供扫描诊断比对。 */
   get scanUuids(): string[] {
     return [...this.uuids];
   }

@@ -69,7 +69,14 @@ export class LocationPipeline {
     }
     this.running = true;
     this.mode = mode;
-    await this.opts.source.start((sample) => this.aggregator.push(sample));
+    try {
+      await this.opts.source.start((sample) => this.aggregator.push(sample));
+    } catch (err) {
+      // 蓝牙未开/权限不足等启动失败必须可重试：否则 running 卡在 true，
+      // 后续 onShow/重试全部变成空操作，页面永远收不到样本。
+      this.running = false;
+      throw err;
+    }
     this.schedule();
   }
 
