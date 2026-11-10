@@ -21,11 +21,6 @@
   flex-wrap: wrap;
 }
 
-.floor-pills {
-  display: flex;
-  gap: 8rpx;
-}
-
 .pill {
   margin: 0;
   padding: 0 22rpx;
@@ -38,19 +33,16 @@
   border-radius: 30rpx;
 }
 
-.pill.active {
-  background: #1a56db;
-  border-color: #1a56db;
-  color: #ffffff;
-}
-
 .stats-bar {
   position: absolute;
   top: 92rpx;
   left: 24rpx;
   z-index: 3;
   display: flex;
-  gap: 16rpx;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4rpx;
+  max-width: calc(100vw - 48rpx);
   font-size: 22rpx;
   color: #475569;
   background: rgba(255, 255, 255, 0.85);
@@ -58,14 +50,66 @@
   padding: 6rpx 14rpx;
 }
 
+.stats-line {
+  display: flex;
+  gap: 16rpx;
+}
+
+/* 真实 BLE 状态行（适配器/扫描失败/扫到但被过滤都在这里可见） */
+.ble-line {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 20rpx;
+  line-height: 1.35;
+  color: #475569;
+  max-width: 100%;
+}
+
+.ble-dot {
+  flex: none;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.ble-line.ble-opening .ble-dot {
+  background: #f59e0b;
+}
+
+.ble-line.ble-scanning .ble-dot {
+  background: #16a34a;
+}
+
+.ble-line.ble-error {
+  color: #b91c1c;
+}
+
+.ble-line.ble-error .ble-dot {
+  background: #dc2626;
+}
+
+.ble-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ble-retry {
+  flex: none;
+  color: #1a56db;
+  text-decoration: underline;
+  padding-left: 8rpx;
+}
+
 .legend {
   color: #94a3b8;
 }
 
-/* 补装仿真预览提示（仅设置开关打开时渲染） */
+/* 补装仿真预览提示（仅设置开关打开时渲染；让出上方两行状态条） */
 .sim-banner {
   position: absolute;
-  top: 140rpx;
+  top: 172rpx;
   left: 24rpx;
   right: 24rpx;
   z-index: 3;
@@ -96,28 +140,92 @@
   height: 100%;
 }
 
-/* 缩放控件：共享样式见 styles/map-tools.wxss；此处只定位到提示条下方 */
+/* 缩放控件：共享样式见 styles/map-tools.wxss；此处定位到提示条下方。
+ * 状态条改为两行后整体下移，避免与 sim-banner 重叠。 */
 .map-tools {
-  top: 200rpx;
+  top: 232rpx;
 }
 
-/* 采集中面板：底部悬浮 */
-.collect-panel {
+/* 操作按键列：楼层切换 + 导出，贴屏幕右下边缘垂直一列（贴右、贴下）。
+ * 可视面随文字宽度（min 56rpx），点按热区高度 72rpx（36 CSS px）满足既有无障碍下限。
+ * 底部叠加安全区，避免按钮落在 iPhone Home 指示条区域被裁切。 */
+.op-tools {
   position: absolute;
-  left: 24rpx;
-  right: 24rpx;
-  bottom: 32rpx;
+  right: 0;
+  bottom: 24rpx;
+  bottom: calc(24rpx + constant(safe-area-inset-bottom));
+  bottom: calc(24rpx + env(safe-area-inset-bottom));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10rpx;
+}
+
+/* 极短屏：压缩列内间距，保证整列（当前 4 个按钮）完整落在可视区内，
+ * 按钮高度/字号保持不变，避免牺牲既有点按热区。 */
+@media (max-height: 640px) {
+  .op-tools {
+    gap: 6rpx;
+  }
+}
+
+.op-btn {
+  box-sizing: border-box;
+  min-width: 56rpx;
+  height: 72rpx;
+  line-height: 68rpx;
+  padding: 0 22rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2rpx solid #cbd5e1;
+  border-right: none;
+  border-radius: 14rpx 0 0 14rpx;
+}
+
+.op-btn.active {
+  background: #1a56db;
+  border-color: #1a56db;
+  color: #ffffff;
+}
+
+/* 危险操作（清理记录）：与楼层/导出同列，红字弱化，靠列顶远离拇指误触 */
+.op-btn.danger {
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+/* 采集中：倒计时——屏幕底部居中（贴下），与右下操作列留出间距 */
+.countdown-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 24rpx;
+  transform: translateX(-50%);
   z-index: 4;
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+  max-width: calc(100% - 260rpx);
+  padding: 10rpx 28rpx;
   background: rgba(255, 255, 255, 0.97);
-  border-radius: 16rpx;
-  padding: 20rpx 24rpx;
+  border-radius: 999rpx;
   box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.18);
 }
 
-.countdown-row {
-  display: flex;
-  align-items: baseline;
-  gap: 20rpx;
+/* 采集中：实时窗口表——悬在定时器上方，右侧让出右下操作列宽度避免遮挡。
+ * 与底部倒计时胶囊留足间距，兼容系统大字号下胶囊变高的情况。 */
+.obs-panel {
+  position: absolute;
+  left: 24rpx;
+  right: 130rpx;
+  bottom: 220rpx;
+  z-index: 4;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 16rpx;
+  padding: 12rpx 20rpx;
+  box-shadow: 0 8rpx 24rpx rgba(15, 23, 42, 0.18);
 }
 
 .countdown {
@@ -133,8 +241,23 @@
 
 .no-sample {
   margin-top: 8rpx;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8rpx;
   font-size: 24rpx;
   color: #b91c1c;
+}
+
+.no-sample-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.no-sample-retry {
+  flex: none;
+  color: #1a56db;
+  text-decoration: underline;
 }
 
 .obs-table {

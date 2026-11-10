@@ -128,6 +128,15 @@ export class StaticPointsStore {
     this.commit();
   }
 
+  /**
+   * 全量清理：采样会话、现场补标点、预置点隐藏状态一并归零，
+   * 页面据此回到「首次打开」的干净状态（不残留脏数据）。
+   */
+  clearAll(): void {
+    this.data = { customPoints: [], hiddenPreset: [], sessions: [] };
+    this.commit();
+  }
+
   /** 导出前统计（与独立工具 stats 口径一致）。 */
   stats(): {
     pointCount: number;
