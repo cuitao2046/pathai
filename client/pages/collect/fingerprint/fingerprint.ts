@@ -62,6 +62,10 @@ import {
   removeTombstones,
 } from '../../../core/collection/tombstones';
 import { diffManifest } from '../../../core/collection/manifest-diff';
+import {
+  versionListLabel,
+  versionRollbackConfirmText,
+} from '../../../core/collection/version-format';
 import { describeError } from '../../../core/http/error-messages';
 import { ApiClientError } from '../../../core/http/errors';
 import type { ApiResponse } from '../../../core/http/api-client';
@@ -1122,26 +1126,31 @@ Page({
           throw err;
         }
       }
-      const items = (resp.data?.items ?? []).filter((item) => !item.detailsPruned);
+      const items = resp.data?.items ?? [];
       if (items.length === 0) {
-        wx.showToast({ title: '暂无可用版本', icon: 'none' });
+        wx.showModal({
+          title: '暂无版本',
+          content: '指纹库还没有任何入库版本。完成一次入库后，可在这里查看记录数/点位数并回滚。',
+          showCancel: false,
+        });
         return;
       }
       wx.showActionSheet({
-        alertText: '最近 10 个版本（点击可回滚）',
-        itemList: items.map(
-          (item) =>
-            `${item.version.slice(4, 18)} · ${item.recordCount} 条${item.active ? ' · 当前' : ''}`,
-        ),
+        alertText: '最近 10 个版本（点击回滚）',
+        itemList: items.map((item) => versionListLabel(item)),
         success: (res) => {
           const target = items[res.tapIndex];
+          if (target.detailsPruned) {
+            wx.showToast({ title: '该版本明细已裁剪，无法回滚', icon: 'none' });
+            return;
+          }
           if (target.active) {
             wx.showToast({ title: '已是当前版本', icon: 'none' });
             return;
           }
           wx.showModal({
             title: '回滚指纹库',
-            content: `回滚到 ${target.version}（${target.recordCount} 条 / ${target.fpCount} 点）？\n当前 active 指针会切回该版本，历史版本不被改写。`,
+            content: versionRollbackConfirmText(target),
             confirmText: '回滚',
             success: (r) => {
               if (r.confirm) {
@@ -1186,7 +1195,7 @@ Page({
         content:
           summary === null
             ? `已切换到 ${version}`
-            : `当前版本 ${summary.version}\n记录 ${summary.recordCount} 条 · 点位 ${summary.fpCount} 个 · 本版删 ${summary.deletedCount}`,
+            : `当前版本 ${summary.version}\n${summary.recordCount} 条记录 / ${summary.fpCount} 个点位 · 本版删 ${summary.deletedCount}`,
         showCancel: false,
       });
     } catch (err) {
