@@ -132,7 +132,41 @@ def cal_client(cal_settings, monkeypatch):
     application = create_app(cal_settings)
     Base.metadata.create_all(get_engine())
     with TestClient(application, raise_server_exceptions=False) as client:
-        yield client
+        yield _as_ready_admin(client)
+
+
+def _as_ready_admin(client: TestClient):
+    """登录并完成首改密，返回自动携带 admin CSRF 头的写请求包装。"""
+    from pathai_backend.admin.deps import CSRF_HEADER
+
+    login = client.post(
+        "/api/v1/admin/auth/login", json={"username": "admin", "password": "admin"}
+    )
+    assert login.status_code == 200, login.text
+    changed = client.post(
+        "/api/v1/admin/auth/password",
+        json={
+            "currentPassword": "admin",
+            "newPassword": "safe-password-1",
+            "confirmPassword": "safe-password-1",
+        },
+        headers={CSRF_HEADER: login.json()["csrfToken"]},
+    )
+    assert changed.status_code == 200, changed.text
+    csrf = changed.json()["csrfToken"]
+
+    class _AdminClient:
+        """写请求自动带 X-Admin-CSRF；会话 cookie 由 TestClient 自动保留。"""
+
+        def post(self, url: str, **kw):
+            headers = dict(kw.pop("headers", None) or {})
+            headers.setdefault(CSRF_HEADER, csrf)
+            return client.post(url, headers=headers, **kw)
+
+        def get(self, url: str, **kw):
+            return client.get(url, **kw)
+
+    return _AdminClient()
 
 
 def _fake_recompute(settings, *, run_id, params_version, a, n):
@@ -353,6 +387,21 @@ def test_static_apply_versions_and_rollback(cal_client, monkeypatch):
     assert no_confirm.status_code == 400
 
 
+def test_write_requires_admin_session(cal_settings):
+    """写接口未登录（无 admin 会话）直接 401；读接口不受影响。"""
+    application = create_app(cal_settings)
+    Base.metadata.create_all(get_engine())
+    with TestClient(application, raise_server_exceptions=False) as client:
+        denied = client.post(
+            "/api/v1/calibration/samples",
+            json={"fileName": "x.json", "content": "{}", "operator": "tester"},
+        )
+        assert denied.status_code == 401
+        assert denied.json()["error"]["code"] == "ADMIN_UNAUTHORIZED"
+        ok = client.get("/api/v1/calibration/readiness")
+        assert ok.status_code == 200
+
+
 def test_write_rate_limited(cal_settings):
     """写接口进程内限流：同 key 窗口内第二次直接 429。"""
     from pathai_backend.routers import calibration as cal_router
@@ -366,9 +415,10 @@ def test_write_rate_limited(cal_settings):
         "operator": "tester",
     }
     with TestClient(application, raise_server_exceptions=False) as client:
-        first = client.post("/api/v1/calibration/samples", json=body)
+        admin = _as_ready_admin(client)
+        first = admin.post("/api/v1/calibration/samples", json=body)
         assert first.status_code == 200, first.text
-        second = client.post("/api/v1/calibration/samples", json=body)
+        second = admin.post("/api/v1/calibration/samples", json=body)
         assert second.status_code == 429
         assert second.json()["error"]["code"] == "RATE_LIMITED"
 

@@ -70,8 +70,19 @@ def _epoch_to_dt(epoch: int) -> datetime:
     return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
-def _owned_session(db: Session, session_id: str, user: auth.AuthenticatedUser) -> NavSession:
-    session = db.get(NavSession, session_id)
+def _owned_session(
+    db: Session,
+    session_id: str,
+    user: auth.AuthenticatedUser,
+    *,
+    for_update: bool = False,
+) -> NavSession:
+    """读取归属会话；for_update 时对行加锁（SELECT ... FOR UPDATE）。
+
+    写路径（nav_update）必须加行锁：两个并发更新都读到旧 last_sequence
+    时会互相覆盖状态；PostgreSQL 下锁行串行化，SQLite 由库级写锁兜底。
+    """
+    session = db.get(NavSession, session_id, with_for_update=for_update)
     if session is None:
         raise ApiError(404, "SESSION_NOT_FOUND", f"会话不存在：{session_id}")
     if session.subject_id != user.subject_id:
@@ -248,7 +259,7 @@ def nav_update(
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
 ) -> NavUpdateResponse:
-    session = _owned_session(db, session_id, user)
+    session = _owned_session(db, session_id, user, for_update=True)
     if session.status in (s.value for s in TERMINAL_SESSION_STATUSES):
         raise ApiError(409, "SESSION_NOT_ACTIVE", "会话已进入终态")
     if body.sequence < session.last_sequence:
@@ -406,7 +417,7 @@ def end_session(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
 ) -> EndSessionResponse:
-    session = _owned_session(db, session_id, user)
+    session = _owned_session(db, session_id, user, for_update=True)
     if session.status == SessionStatus.ENDED.value:
         # 结束接口幂等：重复结束返回当前终态
         return EndSessionResponse(

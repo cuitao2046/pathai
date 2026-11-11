@@ -322,10 +322,16 @@ class FingerprintLibraryVersion(Base):
     """指纹库版本：不可变快照；每次有效入库新增一行并切换 active。"""
 
     __tablename__ = "fingerprint_library_versions"
+    #: 内容幂等键按场所隔离：同内容入库到不同场所各自成版本。
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id", "content_sha256", name="uq_fpl_versions_site_content"
+        ),
+    )
 
     version: Mapped[str] = mapped_column(String(40), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     source_file_name: Mapped[str] = mapped_column(String(160), nullable=False)
     dataset: Mapped[str | None] = mapped_column(String(32), nullable=True)
     record_count: Mapped[int] = mapped_column(Integer, nullable=False)

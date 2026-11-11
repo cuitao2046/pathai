@@ -2,12 +2,15 @@
 """FastAPI 应用工厂。"""
 from __future__ import annotations
 
+import asyncio
+import logging
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from pathai_backend.admin import service as admin_service
 from pathai_backend.body_limit import BodySizeLimitMiddleware
@@ -16,6 +19,7 @@ from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
 from pathai_backend.local_discovery_v1 import LocalDiscoveryServer
 from pathai_backend.local_pairing import LocalPairingService
+from pathai_backend.maintenance import PURGE_INTERVAL_S, run_purge
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.request_context import RequestContextMiddleware
 from pathai_backend.runtime_params import RuntimeParams
@@ -43,6 +47,19 @@ _CSP = (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _purge_loop() -> None:
+    """周期清理过期行；后台任务异常只记日志，不拖垮服务。"""
+    while True:
+        await asyncio.sleep(PURGE_INTERVAL_S)
+        try:
+            await run_in_threadpool(run_purge)
+        except Exception:  # noqa: BLE001
+            logger.exception("过期行清理任务失败")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     if settings.local_discovery_port and (
@@ -57,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         discovery = None
+        purge_task: asyncio.Task | None = None
         try:
             # 管理后台固定账户初始化：数据库表须已由 Alembic/create_all 建立
             admin_service.ensure_admin_account()
@@ -66,9 +84,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     unpaired=True,
                 )
                 discovery.start()
+            purge_task = asyncio.create_task(_purge_loop())
             yield
         finally:
             app.state.local_pairing_ready = False
+            if purge_task is not None:
+                purge_task.cancel()
             if discovery is not None:
                 discovery.close()
             dispose_engine()

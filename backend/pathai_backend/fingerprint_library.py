@@ -306,11 +306,32 @@ def _version_id() -> str:
     return f"fpl-{stamp}-{secrets.token_hex(3)}"
 
 
+#: 进程内 active 指针缓存（site_id → version_id | None）：查询热点路径省掉
+#: pointer 主键查询；单进程部署，ingest/rollback 更新指针时同步刷新。
+_ACTIVE_POINTER_CACHE: dict[str, str | None] = {}
+
+#: 缓存未命中哨兵（区别于「已知无 active」的 None）。
+_MISS = object()
+
+
+def reset_active_pointer_cache() -> None:
+    """清空 active 指针缓存（测试换库/多进程部署时调用）。"""
+    _ACTIVE_POINTER_CACHE.clear()
+
+
+def _cache_pointer(site_id: str, version_id: str | None) -> None:
+    _ACTIVE_POINTER_CACHE[site_id] = version_id
+
+
 def active_version(session: Session, site_id: str) -> FingerprintLibraryVersion | None:
-    pointer = session.get(FingerprintLibraryPointer, site_id)
-    if pointer is None:
+    version_id = _ACTIVE_POINTER_CACHE.get(site_id, _MISS)
+    if version_id is _MISS:
+        pointer = session.get(FingerprintLibraryPointer, site_id)
+        version_id = pointer.version if pointer is not None else None
+        _cache_pointer(site_id, version_id)
+    if version_id is None:
         return None
-    return session.get(FingerprintLibraryVersion, pointer.version)
+    return session.get(FingerprintLibraryVersion, version_id)
 
 
 def _epoch_iso(epoch: int | None) -> str | None:
@@ -478,7 +499,11 @@ def ingest_export(
 
     duplicate = session.scalar(
         select(FingerprintLibraryVersion)
-        .where(FingerprintLibraryVersion.content_sha256 == sha)
+        .where(
+            FingerprintLibraryVersion.content_sha256 == sha,
+            # 幂等键按场所隔离：同内容入库到不同场所各自成版本
+            FingerprintLibraryVersion.site_id == site_id,
+        )
         .order_by(FingerprintLibraryVersion.created_at_epoch.desc())
     )
     if duplicate is not None:
@@ -625,6 +650,7 @@ def ingest_export(
         pointer.version = version_id
         pointer.updated_at_epoch = now
     session.flush()
+    _cache_pointer(site_id, version_id)
     pruned = _prune_versions(session, site_id, version_id, now)
     summary = _version_summary(row)
     summary["prunedVersions"] = pruned
@@ -661,6 +687,7 @@ def rollback(
         pointer.version = version
         pointer.updated_at_epoch = now
     session.flush()
+    _cache_pointer(site_id, version)
     summary = _version_summary(row, active=True)
     summary["rolledBack"] = True
     return summary

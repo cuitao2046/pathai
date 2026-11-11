@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -15,12 +15,33 @@ _session_factory: sessionmaker[Session] | None = None
 
 
 def init_engine(database_url: str) -> Engine:
-    """创建全局引擎；SQLite 需要允许同线程内多连接复用文件库。"""
+    """创建全局引擎；SQLite 需要允许同线程内多连接复用文件库。
+
+    - pool_pre_ping：取连接前探活，规避数据库重启/超时后的失效连接；
+    - SQLite 开 WAL + busy_timeout：读写不互斥、并发写等待而非立即报
+      database is locked（配合行级更新语句减少锁冲突）。
+    """
     global _engine, _session_factory
     connect_args = {}
-    if database_url.startswith("sqlite"):
+    is_sqlite = database_url.startswith("sqlite")
+    if is_sqlite:
         connect_args["check_same_thread"] = False
-    _engine = create_engine(database_url, connect_args=connect_args, future=True)
+        connect_args["timeout"] = 5.0
+    _engine = create_engine(
+        database_url,
+        connect_args=connect_args,
+        future=True,
+        pool_pre_ping=True,
+    )
+    if is_sqlite:
+
+        @event.listens_for(_engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
     _session_factory = sessionmaker(bind=_engine, expire_on_commit=False, future=True)
     return _engine
 

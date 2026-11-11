@@ -118,6 +118,7 @@ def fp_client(settings, monkeypatch):
     from pathai_backend.routers import calibration as cal_router
     from pathai_backend.routers import fingerprint_db as fp_router
     from tests.conftest import FakeWechatClient
+    from tests.test_calibration_api import _as_ready_admin
 
     cal_router._LAST_WRITE.clear()
     # 限流由校准控制台用例覆盖；功能用例不因进程内 5s 窗口互相干扰。
@@ -126,7 +127,8 @@ def fp_client(settings, monkeypatch):
     application.state.wechat_client = FakeWechatClient({"code-ok": "openid-FP"})
     Base.metadata.create_all(get_engine())
     with TestClient(application, raise_server_exceptions=False) as client:
-        yield client
+        # ingest/rollback 已收敛为 admin 会话 + CSRF；包装器自动补 CSRF 头
+        yield _as_ready_admin(client)
 
 
 @pytest.fixture()
@@ -235,6 +237,26 @@ class TestIngest:
         versions = fp_client.get("/api/v1/fingerprint-db/versions").json()
         assert len(versions["items"]) == 1
         assert versions["active"]["version"] == first["version"]
+
+    def test_idempotency_key_is_scoped_per_site(self, fp_client):
+        """同内容入库到不同场所各自成版本，不跨场所判重（评审第二批）。"""
+        from pathai_backend import fingerprint_library as svc
+        from pathai_backend.database import session_scope
+
+        content = _json_dump(_payload([_record("G1-001", (-60, -65, -70))]))
+        with session_scope() as db:
+            first = svc.ingest_export(
+                db, site_id="site-a", file_name="a.json", content=content
+            )
+            db.commit()
+        with session_scope() as db:
+            second = svc.ingest_export(
+                db, site_id="site-b", file_name="b.json", content=content
+            )
+            db.commit()
+        assert first["duplicated"] is False
+        assert second["duplicated"] is False
+        assert second["version"] != first["version"]
 
     def test_incremental_merge_keeps_old_points_and_counts_conflicts(self, fp_client):
         first = _ingest(

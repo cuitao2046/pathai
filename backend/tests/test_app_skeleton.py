@@ -262,3 +262,24 @@ class TestDatabaseUrlRules:
             {"PATHAI_LLM_BASE_URL": "https://api.example/v1", "PATHAI_LLM_MODEL": "m"}
         )
         assert not partial.llm_configured
+
+
+class TestEngineHardening:
+    """评审第二批：pool_pre_ping 探活；SQLite 开 WAL + busy_timeout。"""
+
+    def test_sqlite_engine_enables_wal_and_busy_timeout(self, tmp_path: Path):
+        from sqlalchemy import text
+
+        from pathai_backend.database import dispose_engine, get_engine, init_engine
+
+        init_engine(f"sqlite:///{(tmp_path / 'pragma.db').as_posix()}")
+        try:
+            engine = get_engine()
+            assert engine.pool._pre_ping  # 取连接前探活
+            with engine.connect() as conn:
+                journal_mode = conn.execute(text("PRAGMA journal_mode")).scalar()
+                busy_timeout = conn.execute(text("PRAGMA busy_timeout")).scalar()
+            assert str(journal_mode).lower() == "wal"
+            assert busy_timeout == 5000
+        finally:
+            dispose_engine()

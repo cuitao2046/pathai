@@ -21,6 +21,17 @@ from pathai_backend.wechat import WechatAuthError
 
 TEST_OPENID_SALT = "test-openid-salt"
 
+
+@pytest.fixture(autouse=True)
+def _reset_fingerprint_pointer_cache():
+    """指纹库 active 指针是进程级缓存：每个用例前后清空，避免跨库串版本。"""
+    from pathai_backend import fingerprint_library
+
+    fingerprint_library.reset_active_pointer_cache()
+    yield
+    fingerprint_library.reset_active_pointer_cache()
+
+
 _BACK_DIR = Path(__file__).resolve().parent.parent
 SAMPLE_MAP_FILE = _BACK_DIR / "maps_data" / "school-building-01" / "2026-10-25.1.json"
 

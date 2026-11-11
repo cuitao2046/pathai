@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """标定控制台接口（specs/calibration-console Part B）。
 
-无鉴权（用户决定），保留最小防护：私网限定、写接口限流、schema 白名单、
-apply 二次确认 + 版本 CAS、审计、成对回滚。
+写接口需 admin 会话 + CSRF（复用管理后台凭证，评审第二批）；保留最小防护：
+私网限定、写接口限流、schema 白名单、apply 二次确认 + 版本 CAS、审计、成对回滚。
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, calibration_service as svc
+from pathai_backend.admin.deps import require_admin_ready
 from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.runtime_params import RuntimeParams
@@ -49,6 +50,10 @@ def _rate_limit(key: str, interval_s: float) -> None:
     _LAST_WRITE[key] = now
 
 
+#: 写接口依赖：私网限定（纵深防御）+ admin 会话/CSRF。
+_ADMIN_WRITE = [Depends(require_private_network), Depends(require_admin_ready)]
+
+
 def _call(fn):
     try:
         return fn()
@@ -64,7 +69,7 @@ def readiness(
     return svc.readiness(db, settings)
 
 
-@router.post("/samples", dependencies=[Depends(require_private_network)])
+@router.post("/samples", dependencies=_ADMIN_WRITE)
 def upload_sample(
     body: SampleUploadRequest,
     db: Session = Depends(auth.get_db_session),
@@ -82,7 +87,7 @@ def upload_sample(
     )
 
 
-@router.post("/runs", dependencies=[Depends(require_private_network)])
+@router.post("/runs", dependencies=_ADMIN_WRITE)
 def compute_run(
     body: ComputeRunRequest,
     db: Session = Depends(auth.get_db_session),
@@ -110,7 +115,7 @@ def get_run(run_id: str, db: Session = Depends(auth.get_db_session)) -> dict:
     return svc._run_summary(run)
 
 
-@router.post("/runs/{run_id}/apply", dependencies=[Depends(require_private_network)])
+@router.post("/runs/{run_id}/apply", dependencies=_ADMIN_WRITE)
 def apply_run(
     run_id: str,
     body: ApplyRunRequest,
@@ -137,7 +142,7 @@ def versions(db: Session = Depends(auth.get_db_session)) -> dict:
     return svc.list_versions(db)
 
 
-@router.post("/rollback", dependencies=[Depends(require_private_network)])
+@router.post("/rollback", dependencies=_ADMIN_WRITE)
 def rollback(
     body: RollbackRequest,
     request: Request,
