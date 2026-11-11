@@ -106,6 +106,7 @@
                                         <GridViewColumn Header="设备名" Width="110" DisplayMemberBinding="{Binding DisplayName}" />
                                         <GridViewColumn Header="MAC" Width="130" DisplayMemberBinding="{Binding Mac}" />
                                         <GridViewColumn Header="UUID" Width="110" DisplayMemberBinding="{Binding UuidShort}" />
+                                        <GridViewColumn Header="状态" Width="75" DisplayMemberBinding="{Binding ConnectionBadge}" />
                                         <GridViewColumn Header="RSSI" Width="55" DisplayMemberBinding="{Binding Rssi}" />
                                         <GridViewColumn Header="写入时间" Width="145" DisplayMemberBinding="{Binding WriteTimeText}" />
                                     </GridView>
@@ -303,7 +304,10 @@
         </TabControl>
 
         <Border Grid.Row="2" Padding="10,6" Background="#EEF1F4" CornerRadius="4" Margin="0,10,0,0">
-            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#333" />
+            <StackPanel>
+                <TextBlock Text="{Binding ScanSummaryText}" TextWrapping="Wrap" Foreground="#1F5FA8" />
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#333" Margin="0,3,0,0" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

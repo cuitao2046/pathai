@@ -22,6 +22,8 @@ public sealed class MainViewModel : ObservableObject
     private bool _useMockBle;
     private bool _onlyUnwrittenDevices;
     private bool _onlyProjectDevices = true;
+    private bool _scanning;
+    private string _scanSummaryText = "";
 
     private string _serverUrl = "http://127.0.0.1:8000";
     private string _username = "admin";
@@ -107,6 +109,16 @@ public sealed class MainViewModel : ObservableObject
     public string ModeHintText => _ble.IsMock
         ? "Mock 模式：3 台模拟信标，写入只作用于选中的信标"
         : "实物模式（WinRT）：写入只作用于选中的信标；保存后立即生效，无需重启";
+
+    /// <summary>
+    /// 扫描计数摘要（与操作提示 StatusText 分开）：扫到多少台、当前显示多少台。
+    /// 每次设备变化或过滤条件变化都会刷新，因此实物扫描期间会随列表增长。
+    /// </summary>
+    public string ScanSummaryText
+    {
+        get => _scanSummaryText;
+        private set => Set(ref _scanSummaryText, value);
+    }
 
     /// <summary>扫描列表过滤：只显示本机尚未写入过的信标。</summary>
     public bool OnlyUnwrittenDevices
@@ -277,10 +289,24 @@ public sealed class MainViewModel : ObservableObject
         get => _isConnected;
         private set
         {
-            if (Set(ref _isConnected, value))
+            var changed = Set(ref _isConnected, value);
+            // 重连/切换时值可能一直是 true（setter 不触发），所以这里无条件刷新一次徽标。
+            RefreshConnectionBadges();
+            if (changed)
             {
                 RefreshCommands();
             }
+        }
+    }
+
+    /// <summary>把「当前连接的是哪台」映射到扫描列表的徽标上；连接/断开/切换时立即刷新，不等重扫。</summary>
+    private void RefreshConnectionBadges()
+    {
+        var mac = IsConnected ? _session?.Device.Mac : null;
+        foreach (var device in _devices)
+        {
+            device.IsConnected = mac is not null
+                && string.Equals(device.Mac, mac, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -658,13 +684,19 @@ public sealed class MainViewModel : ObservableObject
         {
             await _ble.EnsureReadyAsync();
             _ble.StartScan();
+            _scanning = true;
             SyncDevices();
+            // 计数统一走 ScanSummaryText（由 ApplyDeviceFilter 刷新）。
+            // 旧实现在 StartScan() 清空列表后立刻取 VisibleDevices.Count，实物模式下必然取到 0，
+            // 且之后从不更新，所以这里只留操作提示。
             StatusText = _ble.IsMock
-                ? $"Mock 扫描：{_devices.Count} 台（出厂三元组相同，按 MAC 区分）"
-                : $"实物扫描中（WinRT）：已发现 {VisibleDevices.Count} 台本项目信标，等待 iBeacon / FFF0 广播…";
+                ? "Mock 扫描已启动（3 台模拟信标，出厂三元组相同、按 MAC 区分）"
+                : "实物扫描已启动（WinRT），列表随广播实时更新；若长时间为 0 请检查蓝牙适配器与系统蓝牙开关";
         }
         catch (Exception ex)
         {
+            _scanning = false;
+            ScanSummaryText = "";
             StatusText = $"扫描失败：{ex.Message}（请检查蓝牙适配器与系统蓝牙开关）";
         }
     }
@@ -679,6 +711,8 @@ public sealed class MainViewModel : ObservableObject
             _devices.Add(device);
         }
 
+        // WinRT 每次广播都会重建 BleDeviceInfo，徽标要在这里按当前会话重新贴上，不能只存在实例上。
+        RefreshConnectionBadges();
         ApplyDeviceFilter();
     }
 
@@ -703,7 +737,27 @@ public sealed class MainViewModel : ObservableObject
         }
 
         SelectedDevice = VisibleDevices.FirstOrDefault(d => d.Mac == keepMac) ?? VisibleDevices.FirstOrDefault();
+        UpdateScanSummary();
         RefreshCommands();
+    }
+
+    /// <summary>
+    /// 扫描摘要：把"扫到几台"和"当前显示几台"分成两个口径，随设备到达/过滤条件变化实时刷新，
+    /// 实物扫描期间列表持续增长时数字会跟着变。
+    /// </summary>
+    private void UpdateScanSummary()
+    {
+        if (!_scanning)
+        {
+            ScanSummaryText = "";
+            return;
+        }
+
+        var filtered = _devices.Count - VisibleDevices.Count;
+        var prefix = _ble.IsMock ? "Mock 扫描" : "实物扫描（WinRT）";
+        ScanSummaryText = filtered > 0
+            ? $"{prefix}：扫到 {_devices.Count} 台，当前显示 {VisibleDevices.Count} 台（{filtered} 台被过滤）"
+            : $"{prefix}：扫到 {_devices.Count} 台，当前显示 {VisibleDevices.Count} 台";
     }
 
     /// <summary>本项目信标的 UUID 集合：系统 UUID + 台账里出现过的 UUID。</summary>

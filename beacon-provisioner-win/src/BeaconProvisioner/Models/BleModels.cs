@@ -1,8 +1,12 @@
+using System.ComponentModel;
+
 namespace BeaconProvisioner.Models;
 
 /// <summary>扫描到的信标广播信息（mock/real 共用）。</summary>
-public sealed class BleDeviceInfo
+public sealed class BleDeviceInfo : INotifyPropertyChanged
 {
+    private bool _isConnected;
+
     public string Mac { get; init; } = "";
 
     /// <summary>广播名（Scan Response 中的 LocalName）；连接后可用 FFF9 读回补全。</summary>
@@ -19,6 +23,28 @@ public sealed class BleDeviceInfo
 
     /// <summary>本机最近一次成功写入的时间（yyyy-MM-dd HH:mm:ss）；未写入过为空。</summary>
     public string WriteTimeText { get; set; } = "";
+
+    /// <summary>当前是否是本工具已连接的那台设备（扫描列表徽标驱动）。</summary>
+    public bool IsConnected
+    {
+        get => _isConnected;
+        set
+        {
+            if (_isConnected == value)
+            {
+                return;
+            }
+
+            _isConnected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsConnected)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConnectionBadge)));
+        }
+    }
+
+    /// <summary>列表展示的连接标识；未连接时为空。</summary>
+    public string ConnectionBadge => _isConnected ? "● 已连接" : "";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public string UuidShort => Uuid.Length >= 8 ? $"{Uuid}…" : Uuid;
 
