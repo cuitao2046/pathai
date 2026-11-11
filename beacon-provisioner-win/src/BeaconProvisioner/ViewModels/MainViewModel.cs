@@ -18,6 +18,8 @@ public sealed class MainViewModel : ObservableObject
     private readonly PendingUploadStore _pending = new();
     private readonly DeviceWriteHistoryStore _writeHistory = new();
     private readonly List<BleDeviceInfo> _devices = new();
+    // 本工具写入成功的设备名：广播可能在写入后仍携带旧名字，本次运行内以写入/读回值为准。
+    private readonly Dictionary<string, string> _writtenDeviceNames = new(StringComparer.OrdinalIgnoreCase);
     private IBleEnvironment _ble;
     private bool _useMockBle;
     private bool _onlyUnwrittenDevices;
@@ -193,6 +195,7 @@ public sealed class MainViewModel : ObservableObject
             _ble.DevicesChanged += OnDevicesChanged;
             _settings.SaveBleMode(value ? "mock" : "real");
             _devices.Clear();
+            _writtenDeviceNames.Clear();
             VisibleDevices.Clear();
             SelectedDevice = null;
             ResetProgress();
@@ -748,6 +751,12 @@ public sealed class MainViewModel : ObservableObject
         {
             var writtenAt = _writeHistory.GetLastWrittenAt(device.Mac);
             device.WriteTimeText = writtenAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            // 广播帧可能还没换成新名字，本工具写入过的 MAC 用写入/读回值覆盖，避免列表回退。
+            if (_writtenDeviceNames.TryGetValue(device.Mac, out var writtenName))
+            {
+                device.Name = writtenName;
+            }
+
             _devices.Add(device);
         }
 
@@ -1021,6 +1030,35 @@ public sealed class MainViewModel : ObservableObject
         CurrentSettingsText = expected + "\n\n" + readback;
     }
 
+    /// <summary>
+    /// 写入成功后按 MAC 就地更新扫描列表里的设备名（广播帧可能还是旧名），
+    /// 并立即按当前排序重排；其它设备的排序键未变，不会跟着换位。
+    /// </summary>
+    private void RememberWrittenDeviceName(string mac, string name)
+    {
+        if (string.IsNullOrWhiteSpace(mac) || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        _writtenDeviceNames[mac] = name;
+        foreach (var device in _devices)
+        {
+            if (string.Equals(device.Mac, mac, StringComparison.OrdinalIgnoreCase))
+            {
+                device.Name = name;
+            }
+        }
+
+        if (SelectedDevice is { } selected &&
+            string.Equals(selected.Mac, mac, StringComparison.OrdinalIgnoreCase))
+        {
+            selected.Name = name;
+        }
+
+        ApplyDeviceFilter();
+    }
+
     private void ResetProgress()
     {
         _verified = false;
@@ -1186,14 +1224,18 @@ public sealed class MainViewModel : ObservableObject
             _writeHistory.MarkWritten(deviceMac, DateTime.Now, target.BeaconId, source, txPowerDbm, intervalMs);
             // 改绑后旧 id 立即回到可写池；历史记录保留（本次写入已覆盖为该 MAC 的当前绑定）。
             RefreshWrittenIdPool();
+            // 列表名称来自广播帧，写入后广播可能还停留在旧名字；先用写入值就地刷新。
+            RememberWrittenDeviceName(deviceMac, target.DeviceName);
 
             // E5 保存后自动生效，无需重启；部分固件提交 FFFF 后会主动断开，读回失败时重连再读一次
             var readOk = false;
+            BeaconCurrentState? readback = null;
             try
             {
                 if (SessionAlive())
                 {
-                    ShowCurrent(await Task.Run(() => _session!.ReadCurrent()));
+                    readback = await Task.Run(() => _session!.ReadCurrent());
+                    ShowCurrent(readback);
                     readOk = true;
                 }
             }
@@ -1210,13 +1252,20 @@ public sealed class MainViewModel : ObservableObject
                     CloseSession();
                     _session = await _ble.ConnectAsync(device);
                     IsConnected = true;
-                    ShowCurrent(await Task.Run(() => _session.ReadCurrent()));
+                    readback = await Task.Run(() => _session.ReadCurrent());
+                    ShowCurrent(readback);
                     readOk = true;
                 }
                 catch (Exception ex)
                 {
                     LogBle($"{deviceMac} 保存后重连读回失败：{ex.Message}");
                 }
+            }
+
+            // 读回值是设备里的最终名称；与写入值不一致时以读回为准。
+            if (readback is { } state && !string.IsNullOrWhiteSpace(state.Name))
+            {
+                RememberWrittenDeviceName(deviceMac, state.Name);
             }
 
             // 刚写入的信标要能继续校验，确保不被「只显示未写入」过滤掉
