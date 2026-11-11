@@ -238,6 +238,26 @@ class TestIngest:
         assert len(versions["items"]) == 1
         assert versions["active"]["version"] == first["version"]
 
+    def test_idempotency_key_is_scoped_per_site(self, fp_client):
+        """同内容入库到不同场所各自成版本，不跨场所判重（评审第二批）。"""
+        from pathai_backend import fingerprint_library as svc
+        from pathai_backend.database import session_scope
+
+        content = _json_dump(_payload([_record("G1-001", (-60, -65, -70))]))
+        with session_scope() as db:
+            first = svc.ingest_export(
+                db, site_id="site-a", file_name="a.json", content=content
+            )
+            db.commit()
+        with session_scope() as db:
+            second = svc.ingest_export(
+                db, site_id="site-b", file_name="b.json", content=content
+            )
+            db.commit()
+        assert first["duplicated"] is False
+        assert second["duplicated"] is False
+        assert second["version"] != first["version"]
+
     def test_incremental_merge_keeps_old_points_and_counts_conflicts(self, fp_client):
         first = _ingest(
             fp_client,
