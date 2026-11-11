@@ -178,8 +178,9 @@ def build_route_info(
             diff = _angle_diff(prev_bearing, bearing)
             if abs(diff) >= TURN_ANGLE_DEG:
                 _emit_walk(remaining[i - 1])
+                # 坐标系为 x 东 y 北，atan2 数学角系逆时针为正：diff>0 = 左转
                 action = (
-                    InstructionAction.TURN_LEFT if diff < 0 else InstructionAction.TURN_RIGHT
+                    InstructionAction.TURN_LEFT if diff > 0 else InstructionAction.TURN_RIGHT
                 )
                 seq += 1
                 segments.append(_instruction(
