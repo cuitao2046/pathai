@@ -109,6 +109,38 @@ describe('PcmRecorder', () => {
     await expect(recorder.stop()).resolves.toBeUndefined();
   });
 
+  test('cancel 同步复位：onStop 迟到未到达前可立即重新 start（快速连按竞态）', () => {
+    recorder.start(handlers);
+    fake.autoStopEvent = false; // 模拟微信异步：cancel 后 onStop 迟迟不到
+    recorder.cancel();
+    expect(recorder.isRecording).toBe(false); // 同步复位，不等异步回调
+    fake.emitFrame([111]); // 迟到的帧丢弃
+    expect(received).toHaveLength(0);
+
+    // 立即重新 start：不被幂等守卫跳过，新会话帧正常流入
+    recorder.start(handlers);
+    expect(recorder.isRecording).toBe(true);
+    expect(fake.stopCount).toBe(1); // 未重复 stop
+    fake.emitFrame([222]);
+    expect(received).toHaveLength(1);
+    expect(received[0][0]).toBeCloseTo(222 / 32768, 4);
+  });
+
+  test('onError "recorder not start" 视为已停止：挂起的 stop 正常 resolve', async () => {
+    recorder.start(handlers);
+    fake.autoStopEvent = false;
+    const pending = recorder.stop();
+    fake.fireError('operateRecorder:fail recorder not start');
+    await expect(pending).resolves.toBeUndefined(); // 不 reject
+    expect(recorder.isRecording).toBe(false);
+  });
+
+  test('onError "recorder not start" 发生在 stop 之前：事后 stop 也正常收尾', async () => {
+    recorder.start(handlers);
+    fake.fireError('operateRecorder:fail recorder not start');
+    await expect(recorder.stop()).resolves.toBeUndefined();
+  });
+
   test('录音错误：onError 挂起的 stop reject，且事后 stop 仍补抛', async () => {
     // 场景 1：stop() 已在等待（onStop 延迟）→ onError 触发 reject
     recorder.start(handlers);
