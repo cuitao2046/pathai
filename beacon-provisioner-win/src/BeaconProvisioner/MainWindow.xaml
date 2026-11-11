@@ -130,7 +130,7 @@
 
                                 <StackPanel Grid.Row="1" Margin="0,0,0,8">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <TextBlock Text="未入库 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Text="未写入 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <ComboBox Width="180" ItemsSource="{Binding UnboundIds}"
                                                   SelectedItem="{Binding SelectedUnboundId}" />
                                     </StackPanel>

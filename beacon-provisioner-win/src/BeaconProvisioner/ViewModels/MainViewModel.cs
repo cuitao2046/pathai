@@ -638,14 +638,34 @@ public sealed class MainViewModel : ObservableObject
             Records.Add(record);
         }
 
-        foreach (var id in summary.Missing)
-        {
-            UnboundIds.Add(id);
-        }
+        // 可写 id 池改为按本机写入记录计算（台账全集 − 当前被占用的 id），
+        // 不再直接用后端的 Missing：后端记录不随本机「改绑」释放，会把旧 id 永久占住。
+        RefreshWrittenIdPool();
 
         RecordSummary =
             $"计划 {summary.Total} · 已入库 {summary.Recorded} · 已校验 {summary.Verified} · 未入库 {summary.Missing.Count} · {PendingText}";
         Raise(nameof(PendingText));
+    }
+
+    /// <summary>
+    /// 可写 beaconId 池 = 台账全集 − 当前仍被占用的 id。
+    /// 占用关系取「每台设备（MAC）最近一次写入的 beaconId」：同一 MAC 改写成新 id 后，
+    /// 旧 id 不再被任何 MAC 指向，自动回到池子里；写入历史（时间/参数/上传标记）不删除。
+    /// </summary>
+    private void RefreshWrittenIdPool()
+    {
+        var occupied = new HashSet<string>(_writeHistory.GetBoundBeaconIds(), StringComparer.OrdinalIgnoreCase);
+        var keep = SelectedUnboundId;
+        UnboundIds.Clear();
+        foreach (var beacon in Beacons)
+        {
+            if (beacon.BeaconId.Length > 0 && !occupied.Contains(beacon.BeaconId))
+            {
+                UnboundIds.Add(beacon.BeaconId);
+            }
+        }
+
+        SelectedUnboundId = keep is not null && UnboundIds.Contains(keep) ? keep : null;
     }
 
     private Task LocateAsync()
@@ -673,8 +693,8 @@ public sealed class MainViewModel : ObservableObject
         }
 
         StatusText = UnboundIds.Contains(match.BeaconId)
-            ? $"{match.BeaconId} 未入库，已选中"
-            : $"{match.BeaconId} 已在真实部署台账中";
+            ? $"{match.BeaconId} 未写入，已选中"
+            : $"{match.BeaconId} 已被某台设备写入占用，可写列表里不可选";
         return Task.CompletedTask;
     }
 
@@ -991,7 +1011,7 @@ public sealed class MainViewModel : ObservableObject
         if (_session is null || target is null || target.Uuid is null || target.Major is null ||
             target.Minor is null || target.TxPower is null || target.BroadcastInterval is null)
         {
-            StatusText = "请先连接设备并选择未入库 beaconId";
+            StatusText = "请先连接设备并选择未写入 beaconId";
             return;
         }
 
@@ -1137,6 +1157,8 @@ public sealed class MainViewModel : ObservableObject
             }
 
             _writeHistory.MarkWritten(deviceMac, DateTime.Now, target.BeaconId, source, txPowerDbm, intervalMs);
+            // 改绑后旧 id 立即回到可写池；历史记录保留（本次写入已覆盖为该 MAC 的当前绑定）。
+            RefreshWrittenIdPool();
 
             // E5 保存后自动生效，无需重启；部分固件提交 FFFF 后会主动断开，读回失败时重连再读一次
             var readOk = false;
