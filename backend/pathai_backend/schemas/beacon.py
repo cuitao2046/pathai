@@ -83,6 +83,10 @@ class DeploymentRecordView(BaseModel):
     operator: str | None = None
     configuredAt: str | None = None
     updatedAt: str
+    active: bool = True
+    supersededAt: str | None = None
+    supersededBySiteId: str | None = None
+    supersededByBeaconId: str | None = None
 
 
 class ProvisioningSummary(BaseModel):

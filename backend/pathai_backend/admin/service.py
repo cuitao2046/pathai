@@ -170,6 +170,7 @@ def record_audit(event_type: str, success: bool, details: dict | None = None) ->
                     details_json=json.dumps(details or {}, ensure_ascii=False),
                 )
             )
+            session.commit()
     except Exception:  # noqa: BLE001 - 审计写入失败不影响业务响应
         pass
 

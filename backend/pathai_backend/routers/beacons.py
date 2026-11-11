@@ -4,7 +4,9 @@
 - 全部端点要求管理员会话（复用 admin 登录）且已完成首改密；
 - 读：`GET /beacons`、`GET /deployment-records`；写：`PUT /deployment-records/{beaconId}`、`POST /commit`（需 CSRF）；
 - `GET /beacons` 的 ETag 沿用地图包 sha256，`If-None-Match` 命中返回 304；
-- 规划台账只读；真实部署台账按 `(siteId, beaconId)` 幂等 upsert。
+- 规划台账只读；真实部署台账按 `(siteId, beaconId)` 幂等 upsert；
+- 设备身份由 MAC 认定：同一 MAC 的后续写入会取代其此前的有效记录（标记失效）；
+- 三元组唯一是独立约束：同一站点内一个三元组只能被一条有效记录持有。
 """
 from __future__ import annotations
 
@@ -129,11 +131,28 @@ def _record_view(record: BeaconDeploymentRecord) -> DeploymentRecordView:
             _iso(record.configured_at_epoch) if record.configured_at_epoch is not None else None
         ),
         updatedAt=_iso(record.updated_at_epoch),
+        active=record.superseded_at_epoch is None,
+        supersededAt=(
+            _iso(record.superseded_at_epoch) if record.superseded_at_epoch is not None else None
+        ),
+        supersededBySiteId=record.superseded_by_site_id,
+        supersededByBeaconId=record.superseded_by_beacon_id,
     )
 
 
 def _triplet_key(uuid: str, major: int, minor: int) -> tuple[str, int, int]:
     return (uuid.lower(), int(major), int(minor))
+
+
+def _normalize_mac(value: str | None) -> str | None:
+    """MAC 是设备身份：统一为大写冒号分隔，`-` 与无分隔写法都归一到同一形式。"""
+    if not value:
+        return None
+    text = value.strip().upper().replace("-", ":")
+    compact = text.replace(":", "")
+    if len(compact) == 12 and all(ch in "0123456789ABCDEF" for ch in compact):
+        return ":".join(compact[i : i + 2] for i in range(0, 12, 2))
+    return text or None
 
 
 def _validate_written(planned, body: DeploymentRecordRequest, beacon_id: str) -> None:
@@ -169,14 +188,16 @@ def _validate_written(planned, body: DeploymentRecordRequest, beacon_id: str) ->
 
 
 def _summary(site_id: str, published: PublishedMap, records: list[BeaconDeploymentRecord]) -> ProvisioningSummary:
+    """只统计有效记录：被同一 MAC 设备后续写入取代的旧记录不参与任何口径。"""
     planned_ids = [b.beaconId for b in published.pkg.beacons]
-    by_id = {r.beacon_id: r for r in records}
+    active = [r for r in records if r.superseded_at_epoch is None]
+    by_id = {r.beacon_id: r for r in active}
     missing = [bid for bid in planned_ids if bid not in by_id]
-    unverified = [r.beacon_id for r in records if not json.loads(r.verify_json).get("passed", False)]
+    unverified = [r.beacon_id for r in active if not json.loads(r.verify_json).get("passed", False)]
 
     seen: dict[tuple[str, int, int], str] = {}
     duplicates: list[str] = []
-    for record in records:
+    for record in active:
         written = json.loads(record.written_json)
         key = _triplet_key(written["uuid"], written["major"], written["minor"])
         if key in seen:
@@ -242,12 +263,30 @@ def put_deployment_record(
         raise ApiError(404, "BEACON_NOT_FOUND", f"规划台账中不存在：{beacon_id}")
     _validate_written(planned, body, beacon_id)
 
+    operator = body.operator or context.account.username
+    now = int(time.time())
+    superseded: list[dict] = []
     with session_scope() as session:
+        record = (
+            session.query(BeaconDeploymentRecord)
+            .filter(
+                BeaconDeploymentRecord.site_id == site_id,
+                BeaconDeploymentRecord.beacon_id == beacon_id,
+            )
+            .one_or_none()
+        )
+        # MAC 是设备身份：本次未带 MAC 时沿用该行已记录的 MAC，避免身份被清空。
+        mac = _normalize_mac(body.deviceMac)
+        if mac is None and record is not None:
+            mac = _normalize_mac(record.device_mac)
+
+        # 1) 三元组唯一（同站点、仅有效记录）：新三元组撞上其它有效记录直接拒绝。
         for other in (
             session.query(BeaconDeploymentRecord)
             .filter(
                 BeaconDeploymentRecord.site_id == site_id,
                 BeaconDeploymentRecord.beacon_id != beacon_id,
+                BeaconDeploymentRecord.superseded_at_epoch.is_(None),
             )
             .all()
         ):
@@ -262,26 +301,42 @@ def put_deployment_record(
                     retryable=False,
                 )
 
-        record = (
-            session.query(BeaconDeploymentRecord)
-            .filter(
-                BeaconDeploymentRecord.site_id == site_id,
-                BeaconDeploymentRecord.beacon_id == beacon_id,
-            )
-            .one_or_none()
-        )
-        now = int(time.time())
+        # 2) MAC 取代（跨站点，MAC 是设备属性）：同一设备的其它有效记录标记失效。
+        if mac is not None:
+            for other in (
+                session.query(BeaconDeploymentRecord)
+                .filter(BeaconDeploymentRecord.superseded_at_epoch.is_(None))
+                .all()
+            ):
+                if other.site_id == site_id and other.beacon_id == beacon_id:
+                    continue
+                if _normalize_mac(other.device_mac) != mac:
+                    continue
+                other.superseded_at_epoch = now
+                other.superseded_by_site_id = site_id
+                other.superseded_by_beacon_id = beacon_id
+                superseded.append(
+                    {
+                        "siteId": other.site_id,
+                        "beaconId": other.beacon_id,
+                        "deviceMac": other.device_mac,
+                    }
+                )
+
         payload = {
-            "device_mac": body.deviceMac,
+            "device_mac": mac,
             "device_name": body.deviceName,
             "name_write": body.nameWrite,
             "written_json": json.dumps(body.written.model_dump(), ensure_ascii=False),
             "verify_json": json.dumps(body.verify.model_dump(), ensure_ascii=False),
             "map_version": published.map_version,
             "source": body.source,
-            "operator": body.operator or context.account.username,
+            "operator": operator,
             "configured_at_epoch": _epoch(body.configuredAt),
             "updated_at_epoch": now,
+            "superseded_at_epoch": None,
+            "superseded_by_site_id": None,
+            "superseded_by_beacon_id": None,
         }
         if record is None:
             record = BeaconDeploymentRecord(site_id=site_id, beacon_id=beacon_id, **payload)
@@ -296,8 +351,27 @@ def put_deployment_record(
     service.record_audit(
         "beacon_record",
         True,
-        {"siteId": site_id, "beaconId": beacon_id, "source": body.source},
+        {
+            "siteId": site_id,
+            "beaconId": beacon_id,
+            "source": body.source,
+            "deviceMac": mac,
+            "supersededCount": len(superseded),
+        },
     )
+    if superseded:
+        service.record_audit(
+            "beacon_record_supersede",
+            True,
+            {
+                "siteId": site_id,
+                "beaconId": beacon_id,
+                "deviceMac": mac,
+                "operator": operator,
+                "supersededAt": _iso(now),
+                "superseded": superseded,
+            },
+        )
     return view
 
 
