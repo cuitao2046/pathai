@@ -2,7 +2,8 @@
 """标定控制台接口：上传→计算→apply→版本→回滚→覆盖层（spec Part B/C）。
 
 网格重算在全楼真实数据上约 3-4 分钟，接口测试用等价 staging 替身验证状态机与
-原子性；生成器本身由 tests/test_fit_logdist.py 与 CLI 冒烟覆盖。
+原子性；grid_recompute 自身逻辑（staging/manifest/失败分支）由
+tests/test_grid_recompute.py 覆盖；生成器算法属 src/ 管线，不在后端测试范围。
 """
 from __future__ import annotations
 
@@ -370,3 +371,51 @@ def test_write_rate_limited(cal_settings):
         second = client.post("/api/v1/calibration/samples", json=body)
         assert second.status_code == 429
         assert second.json()["error"]["code"] == "RATE_LIMITED"
+
+
+class TestPrivateNetworkGuard:
+    """require_private_network 拒绝分支：运维面接口的私网门禁必须有测试。"""
+
+    @staticmethod
+    def _request(host: str):
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/calibration/readiness",
+            "headers": [],
+            "query_string": b"",
+            "client": (host, 443),
+        }
+        return Request(scope)
+
+    def test_public_ip_rejected(self):
+        from pathai_backend.errors import ApiError
+        from pathai_backend.routers.calibration import require_private_network
+
+        with pytest.raises(ApiError) as exc:
+            require_private_network(self._request("8.8.8.8"))
+        assert exc.value.status_code == 403
+        assert exc.value.code == "PRIVATE_NETWORK_ONLY"
+
+    def test_non_ip_hostname_rejected(self):
+        from pathai_backend.errors import ApiError
+        from pathai_backend.routers.calibration import require_private_network
+
+        with pytest.raises(ApiError) as exc:
+            require_private_network(self._request("evil.example.com"))
+        assert exc.value.status_code == 403
+
+    @pytest.mark.parametrize("host", ["192.168.1.10", "10.0.0.5", "172.16.0.9", "127.0.0.1"])
+    def test_private_and_loopback_allowed(self, host):
+        from pathai_backend.routers.calibration import require_private_network
+
+        require_private_network(self._request(host))  # 不抛即通过
+
+    @pytest.mark.parametrize("host", ["testclient", "localhost", ""])
+    def test_testclient_and_empty_host_allowed(self, host):
+        # TestClient 的 client.host 为 "testclient"；无 client 时放行保持向后兼容
+        from pathai_backend.routers.calibration import require_private_network
+
+        require_private_network(self._request(host))
