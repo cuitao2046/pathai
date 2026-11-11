@@ -16,6 +16,8 @@ import { MockBeaconSource, type MockWalkPoint } from './mock-beacon-source';
 export interface BeaconSourceMap {
   beacons: MapBeaconEntry[];
   beaconRegistry: BeaconRegistry;
+  /** 地图包版本（指纹用途）；换版时共享扫描器强制重建，避免沿用旧台账闭包。 */
+  mapVersion?: string | null;
 }
 
 type SampleHandler = (sample: BeaconSample) => void;
@@ -64,10 +66,13 @@ export class SharedLiveBeaconSource implements BeaconSourceLike {
 
 let sharedLive: { key: string; core: LiveBeaconScanner } | null = null;
 
-/** 同一份台账 UUID 集合复用同一个扫描器；地图包换版时重建。 */
+/**
+ * 同一份台账复用同一个扫描器：缓存键 = 地图版本 + UUID 集合。
+ * 地图换版（即使 UUID 集合不变）也重建，杜绝 resolve 闭包沿用旧地图。
+ */
 function getSharedLiveScanner(map: BeaconSourceMap): LiveBeaconScanner {
   const uuids = map.beaconRegistry.scanUuids;
-  const key = [...uuids].sort().join(',');
+  const key = `${map.mapVersion ?? '-'}|${[...uuids].sort().join(',')}`;
   if (sharedLive === null || sharedLive.key !== key) {
     sharedLive?.core.stop();
     sharedLive = {

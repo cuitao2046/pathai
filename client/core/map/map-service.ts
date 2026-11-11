@@ -107,6 +107,11 @@ export class MapService {
     return this.summary !== null && this.pkg !== null;
   }
 
+  /** 当前地图包版本；未加载返回 null（供扫描器缓存键等指纹用途）。 */
+  get mapVersion(): string | null {
+    return this.summary?.mapVersion ?? null;
+  }
+
   /** 场所 ID（构造时固定）。 */
   get siteId(): string {
     return this.opts.siteId;
