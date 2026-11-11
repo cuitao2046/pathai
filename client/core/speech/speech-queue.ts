@@ -4,9 +4,11 @@
  *   正在播 safety 时新 safety 仍排队，不打断。
  * - turn（导航转向）：丢弃待播 normal，正在播 normal 时打断；不打断 safety/turn。
  * - normal（提示类）：FIFO；出队时已过期（expiresAtMs 不晚于当前时间）则丢弃。
- * 引擎失败（speak reject）：视为语音通道永久不可用——清空队列、长震动、
+ * 引擎失败（speak reject）：视为语音通道不可用——清空队列、长震动、
  * onUnavailable 恰一次回调；待播文本与后续 enqueue 均走 onTextFallback
- * （屏幕可访问文本）。第一阶段不做本地语音兜底，安全暂停由上层导航逻辑负责。
+ * （屏幕可访问文本）。resetForRetry() 提供恢复路径（新导航会话等时机
+ * 重新尝试引擎），避免单次网络抖动导致整段使用期永久哑音。
+ * 第一阶段不做本地语音兜底，安全暂停由上层导航逻辑负责。
  */
 import { nowMs } from '../../utils/clock';
 import { vibrateLong, vibrateShort } from '../../utils/haptic';
@@ -78,6 +80,17 @@ export class SpeechQueue {
   /** 清空全部待播项；不打断正在播的项。 */
   clearAll(): void {
     this.items = [];
+  }
+
+  /**
+   * 语音通道重试窗口：解除失效状态，后续 enqueue 重新尝试引擎。
+   * 供新导航会话创建等时机调用；若引擎仍不可用会再次走失败流程。
+   * @returns 重置前是否处于失效状态（供调用方提示「语音已恢复」）。
+   */
+  resetForRetry(): boolean {
+    const wasBroken = this.engineBroken;
+    this.engineBroken = false;
+    return wasBroken;
   }
 
   private pump(): void {

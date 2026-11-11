@@ -379,6 +379,42 @@ describe('NavSessionController 会话编排', () => {
     expect(key1).not.toBe(key3);
   });
 
+  it('创建收到永久 4xx：清空幂等暂存，重试携带新参数而非旧目的地', async () => {
+    const h = makeHarness();
+    let attempts = 0;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      if (options.url.endsWith('/api/v1/nav/sessions')) {
+        attempts += 1;
+        if (attempts === 1) {
+          replyError(options, 422, 'ROUTE_NOT_FOUND');
+          return;
+        }
+        options.success({ statusCode: 201, header: {}, data: CREATE_RESPONSE });
+        return;
+      }
+      options.fail({ errMsg: 'request:fail unexpected url' });
+    };
+
+    const firstFailure = await h.controller
+      .createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN)
+      .then(
+        () => null,
+        (err: unknown) => err,
+      );
+    expect(firstFailure).toBeInstanceOf(ApiClientError);
+
+    // 用户改选目的地后重试：必须使用新 body（p2）与新幂等键，不得复用旧目的地
+    await h.controller.createSession({ placeId: 'p2', name: '食堂', floorId: '2' }, ORIGIN);
+
+    const [firstReq, secondReq] = createRequests();
+    expect(firstReq.header?.['Idempotency-Key']).not.toBe(secondReq.header?.['Idempotency-Key']);
+    expect((secondReq.data as Record<string, unknown>).destinationId).toBe('p2');
+  });
+
   // ------------------------------------------------------------------
   // API-07 更新编排
   // ------------------------------------------------------------------
