@@ -68,12 +68,15 @@ export interface WxStub {
   __loginCount: number;
   /** wx.login 返回的 code（测试可改写）。 */
   __loginCode: string;
+  /** 小程序运行版本（getAccountInfoSync 桩），测试可改写。 */
+  __envVersion: 'develop' | 'trial' | 'release';
   /** 可编程应答器；为 null 时默认成功返回空对象。 */
   __requestResponder: ((options: WxRequestOptionsStub) => void) | null;
   readonly env: { USER_DATA_PATH: string };
   setStorageSync(key: string, value: string): void;
   getStorageSync(key: string): string;
   removeStorageSync(key: string): void;
+  getAccountInfoSync(): { miniProgram: { envVersion: string } };
   vibrateShort(option?: { type?: string }): void;
   vibrateLong(option?: Record<string, never>): void;
   login(option?: { success(res: { code: string }): void; fail(err: { errMsg: string }): void }): void;
@@ -113,8 +116,13 @@ export const wxStub: WxStub = {
   __requestLog: requestLog,
   __loginCount: 0,
   __loginCode: 'mock-wx-code',
+  __envVersion: 'develop',
   __requestResponder: null,
   env: { USER_DATA_PATH: '/mock-user-data' },
+
+  getAccountInfoSync() {
+    return { miniProgram: { envVersion: this.__envVersion } };
+  },
 
   __fileText(path: string): string | undefined {
     const bytes = files.get(path);

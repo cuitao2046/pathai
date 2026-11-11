@@ -92,14 +92,18 @@ export class NavSessionController {
   }
 
   /**
-   * 创建会话（API-06）。上一次创建失败后再次调用会复用同一
-   * Idempotency-Key 与冻结 body（忽略新的参数差异），2xx 后清除。
+   * 创建会话（API-06）。网络/服务端 5xx 失败后再次调用会复用同一
+   * Idempotency-Key 与冻结 body（忽略新的参数差异），2xx 后清除；
+   * 收到 4xx（ROUTE_NOT_FOUND 等）说明请求已确定失败，清空暂存——
+   * 用户改选目的地后再次创建必须使用新参数，不得静默复用旧目的地。
    */
   async createSession(
     destination: PlaceCandidate,
     origin: OriginPosition,
     userMode: UserMode = 'blind',
   ): Promise<CreateSessionResponse> {
+    // 新会话是语音通道的重试窗口：上次 TTS 失败后这里给引擎第二次机会
+    this.opts.speech.resetForRetry();
     if (this.pendingIdempotencyKey === null || this.frozenCreateBody === null) {
       this.pendingIdempotencyKey = uuidV4();
       this.frozenCreateBody = {
@@ -111,12 +115,26 @@ export class NavSessionController {
         locale: 'zh-CN',
       };
     }
-    const resp = await this.opts.client.request<CreateSessionResponse>({
-      method: 'POST',
-      path: '/api/v1/nav/sessions',
-      body: this.frozenCreateBody,
-      idempotencyKey: this.pendingIdempotencyKey,
-    });
+    let resp;
+    try {
+      resp = await this.opts.client.request<CreateSessionResponse>({
+        method: 'POST',
+        path: '/api/v1/nav/sessions',
+        body: this.frozenCreateBody,
+        idempotencyKey: this.pendingIdempotencyKey,
+      });
+    } catch (err) {
+      if (
+        err instanceof ApiClientError &&
+        err.statusCode !== null &&
+        err.statusCode >= 400 &&
+        err.statusCode < 500
+      ) {
+        this.pendingIdempotencyKey = null;
+        this.frozenCreateBody = null;
+      }
+      throw err;
+    }
     const data = resp.data;
     if (data === null || typeof data.sessionId !== 'string') {
       throw new ApiClientError({

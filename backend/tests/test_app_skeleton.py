@@ -6,12 +6,14 @@
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from pathai_backend.app import create_app
 from pathai_backend.config import DEMO_ENV, Settings, resolve_database_url
 from pathai_backend.errors import ApiError
 
@@ -101,6 +103,92 @@ class TestErrorEnvelope:
         _assert_error_shape(resp.json(), "INTERNAL_ERROR")
         # 内部细节不得外泄
         assert "secret-password" not in resp.text
+
+    def test_unhandled_exception_is_logged_with_request_id(self, app, client, caplog):
+        @app.get("/api/v1/_test/boom-logged")
+        def _route() -> dict:
+            raise RuntimeError("boom-for-log")
+
+        with caplog.at_level(logging.ERROR, logger="pathai.errors"):
+            resp = client.get("/api/v1/_test/boom-logged")
+        assert resp.status_code == 500
+        records = [r for r in caplog.records if r.name == "pathai.errors"]
+        assert records, "未处理异常必须留下 ERROR 日志"
+        record = records[-1]
+        assert "boom-logged" in record.getMessage()
+        assert getattr(record, "request_id", "").startswith("req_")
+
+
+class TestAccessLog:
+    def test_api_request_logged_with_structured_fields(self, client, caplog):
+        with caplog.at_level(logging.INFO, logger="pathai.access"):
+            resp = client.get("/api/v1/does-not-exist")
+        assert resp.status_code == 404
+        records = [r for r in caplog.records if r.name == "pathai.access"]
+        assert records, "API 请求必须留访问日志"
+        record = records[-1]
+        assert getattr(record, "method") == "GET"
+        assert getattr(record, "path") == "/api/v1/does-not-exist"
+        assert getattr(record, "status") == 404
+        assert isinstance(getattr(record, "duration_ms"), float)
+        assert getattr(record, "request_id") == resp.headers["X-Request-Id"]
+
+    def test_healthz_not_logged(self, client, caplog):
+        with caplog.at_level(logging.INFO, logger="pathai.access"):
+            client.get("/healthz")
+        assert not [r for r in caplog.records if r.name == "pathai.access"]
+
+
+class TestBodySizeLimit:
+    """直连部署无反代兜底，服务端自行拒绝超大 body（413 PAYLOAD_TOO_LARGE）。"""
+
+    @pytest.fixture()
+    def small_limit_app(self):
+        return create_app(Settings.from_env({
+            "PATHAI_MAX_BODY_BYTES": "1024",
+            "PATHAI_DATABASE_URL": "sqlite:///:memory:",
+        }))
+
+    def _register_echo(self, app) -> None:
+        @app.post("/api/v1/_test/echo")
+        def _route(body: dict) -> dict:
+            return body
+
+    def test_oversized_content_length_rejected_without_reading(self, small_limit_app):
+        self._register_echo(small_limit_app)
+        client = TestClient(small_limit_app)
+        resp = client.post("/api/v1/_test/echo", content=b"x" * 2048,
+                           headers={"Content-Type": "application/json"})
+        assert resp.status_code == 413
+        body = resp.json()
+        assert body["error"]["code"] == "PAYLOAD_TOO_LARGE"
+        assert body["error"]["details"]["maxBodyBytes"] == 1024
+        assert body["requestId"].startswith("req_")
+        assert resp.headers["X-Request-Id"] == body["requestId"]
+
+    def test_oversized_chunked_body_rejected(self, small_limit_app):
+        self._register_echo(small_limit_app)
+        client = TestClient(small_limit_app)
+
+        def _gen():
+            yield b"x" * 800
+            yield b"x" * 800  # 累计 1600 > 1024，无 Content-Length
+
+        resp = client.post("/api/v1/_test/echo", content=_gen())
+        assert resp.status_code == 413
+        assert resp.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
+
+    def test_body_within_limit_passes_through(self, small_limit_app):
+        self._register_echo(small_limit_app)
+        client = TestClient(small_limit_app)
+        payload = {"data": "y" * 500}
+        resp = client.post("/api/v1/_test/echo", json=payload)
+        assert resp.status_code == 200
+        assert resp.json() == payload
+
+    def test_get_requests_unaffected(self, client):
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
 
 
 class TestDatabaseUrlRules:

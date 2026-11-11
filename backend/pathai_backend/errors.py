@@ -7,12 +7,15 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger("pathai.errors")
 
 
 class ApiError(Exception):
@@ -71,6 +74,11 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
         # 不向客户端泄露内部细节；服务端记录结构化日志（脱敏在日志层保证）
+        logger.exception(
+            "unhandled exception: %s %s",
+            request.method, request.url.path,
+            extra={"request_id": request.state.request_id},
+        )
         return JSONResponse(
             status_code=500,
             content=error_envelope(request, "INTERNAL_ERROR", "服务内部错误", True, {}),
