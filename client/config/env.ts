@@ -69,3 +69,34 @@ export const DEBUG_REWRITE_DATA_URL = true;
  * 真机部署/上线前必须关闭。
  */
 export const WECHAT_FAKE_LOGIN = true;
+
+/**
+ * 发布护栏：正式版（envVersion=release）禁止携带联调配置上线。
+ * app.ts onLaunch 最先调用；命中任一违规即抛错阻断启动。
+ * 开发者工具（develop）与体验版（trial）不受限，现场联调照常。
+ */
+export function assertReleaseSafety(): void {
+  let envVersion: string;
+  try {
+    envVersion = wx.getAccountInfoSync().miniProgram.envVersion ?? '';
+  } catch {
+    // 环境无法判定（单测/旧基础库）时不阻断
+    return;
+  }
+  if (envVersion !== 'release') {
+    return;
+  }
+  const violations: string[] = [];
+  if (WECHAT_FAKE_LOGIN) {
+    violations.push('WECHAT_FAKE_LOGIN=true（正式版禁止假登录）');
+  }
+  if (DEBUG_REWRITE_DATA_URL) {
+    violations.push('DEBUG_REWRITE_DATA_URL=true（正式版禁止本地数据改写）');
+  }
+  if (API_BASE_URL.startsWith('http://')) {
+    violations.push('API_BASE_URL 为明文 HTTP');
+  }
+  if (violations.length > 0) {
+    throw new Error(`发布检查失败：${violations.join('；')}`);
+  }
+}
