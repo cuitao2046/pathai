@@ -91,14 +91,18 @@
                         </Grid.ColumnDefinitions>
 
                         <DockPanel Grid.Column="0">
-                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
-                                <TextBlock Text="扫描到的信标（按 RSSI 排序）" Foreground="#555"
-                                           VerticalAlignment="Center" />
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock Text="扫描到的信标" Foreground="#555" VerticalAlignment="Center" />
+                                <TextBlock Text="排序" Foreground="#555" Margin="12,0,0,0" VerticalAlignment="Center" />
+                                <ComboBox Width="110" Margin="4,0,0,0" VerticalAlignment="Center"
+                                          ItemsSource="{Binding ScanSortOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedItem="{Binding SelectedScanSortOption}" />
                                 <CheckBox Content="只显示未写入" IsChecked="{Binding OnlyUnwrittenDevices}"
                                           Margin="12,0,0,0" VerticalAlignment="Center" />
                                 <CheckBox Content="只显示本项目信标" IsChecked="{Binding OnlyProjectDevices}"
                                           Margin="12,0,0,0" VerticalAlignment="Center" />
-                            </StackPanel>
+                            </WrapPanel>
                             <ListView ItemsSource="{Binding VisibleDevices}"
                                       SelectedItem="{Binding SelectedDevice}">
                                 <ListView.View>

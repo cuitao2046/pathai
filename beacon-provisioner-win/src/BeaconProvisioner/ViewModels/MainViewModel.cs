@@ -24,6 +24,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _onlyProjectDevices = true;
     private bool _scanning;
     private string _scanSummaryText = "";
+    private ScanSortOption _selectedScanSortOption = ScanDeviceSorter.Options[0];
 
     private string _serverUrl = "http://127.0.0.1:8000";
     private string _username = "admin";
@@ -118,6 +119,25 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _scanSummaryText;
         private set => Set(ref _scanSummaryText, value);
+    }
+
+    /// <summary>扫描列表可选的排序方式；排序选择在本次运行内保留，重扫不会回到默认值。</summary>
+    public IReadOnlyList<ScanSortOption> ScanSortOptions => ScanDeviceSorter.Options;
+
+    public ScanSortOption SelectedScanSortOption
+    {
+        get => _selectedScanSortOption;
+        set
+        {
+            if (value is null || ReferenceEquals(_selectedScanSortOption, value))
+            {
+                return;
+            }
+
+            _selectedScanSortOption = value;
+            Raise();
+            ApplyDeviceFilter();
+        }
     }
 
     /// <summary>扫描列表过滤：只显示本机尚未写入过的信标。</summary>
@@ -740,7 +760,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var keepMac = SelectedDevice?.Mac;
         var projectUuids = ProjectUuids();
-        VisibleDevices.Clear();
+        var matched = new List<BleDeviceInfo>();
         foreach (var device in _devices)
         {
             if (OnlyProjectDevices && !IsProjectDevice(device, projectUuids))
@@ -753,6 +773,13 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
+            matched.Add(device);
+        }
+
+        var ordered = ScanDeviceSorter.Sort(matched, _selectedScanSortOption.Mode);
+        VisibleDevices.Clear();
+        foreach (var device in ordered)
+        {
             VisibleDevices.Add(device);
         }
 
