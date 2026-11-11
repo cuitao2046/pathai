@@ -7,7 +7,7 @@
 import { LiveBeaconScanner } from '../core/ble/beacon-scanner';
 import { SharedLiveBeaconSource } from '../core/ble/beacon-source-factory';
 import type { BeaconSample } from '../core/ble/scan-window';
-import { wxStub, type WxStub } from './setup-wx';
+import { wxStub } from './setup-wx';
 
 interface BeaconFrame {
   uuid: string;
