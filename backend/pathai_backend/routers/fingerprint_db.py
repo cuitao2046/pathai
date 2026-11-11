@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""指纹库接口：入库（版本化）、active/versions、诊断查询。无鉴权。
+"""指纹库接口：入库（版本化）、active/versions、诊断查询。
 
-最小防护与校准控制台一致：私网限定、写接口进程内限流、体积/字段白名单。
+写接口需 admin 会话 + CSRF（复用管理后台凭证，评审第二批）；最小防护与
+标定控制台一致：私网限定、写接口进程内限流、体积/字段白名单。
 """
 from __future__ import annotations
 
@@ -11,9 +12,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, fingerprint_library as svc
+from pathai_backend.admin.deps import require_admin_ready
 from pathai_backend.errors import ApiError
 from pathai_backend.map_repository import MapRepository
-from pathai_backend.routers.calibration import _rate_limit, require_private_network
+from pathai_backend.routers.calibration import (
+    _ADMIN_WRITE,
+    _rate_limit,
+    require_private_network,
+)
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.fingerprint_db import (
     FingerprintIngestRequest,
@@ -36,7 +42,7 @@ def _call(fn):
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
-@router.post("/ingest", dependencies=[Depends(require_private_network)])
+@router.post("/ingest", dependencies=_ADMIN_WRITE)
 def ingest(
     body: FingerprintIngestRequest,
     db: Session = Depends(auth.get_db_session),
@@ -79,7 +85,7 @@ def manifest(
     return _call(lambda: svc.manifest(db, version=version, floor=floor))
 
 
-@router.post("/rollback", dependencies=[Depends(require_private_network)])
+@router.post("/rollback", dependencies=_ADMIN_WRITE)
 def rollback(
     body: FingerprintRollbackRequest,
     db: Session = Depends(auth.get_db_session),

@@ -118,6 +118,7 @@ def fp_client(settings, monkeypatch):
     from pathai_backend.routers import calibration as cal_router
     from pathai_backend.routers import fingerprint_db as fp_router
     from tests.conftest import FakeWechatClient
+    from tests.test_calibration_api import _as_ready_admin
 
     cal_router._LAST_WRITE.clear()
     # 限流由校准控制台用例覆盖；功能用例不因进程内 5s 窗口互相干扰。
@@ -126,7 +127,8 @@ def fp_client(settings, monkeypatch):
     application.state.wechat_client = FakeWechatClient({"code-ok": "openid-FP"})
     Base.metadata.create_all(get_engine())
     with TestClient(application, raise_server_exceptions=False) as client:
-        yield client
+        # ingest/rollback 已收敛为 admin 会话 + CSRF；包装器自动补 CSRF 头
+        yield _as_ready_admin(client)
 
 
 @pytest.fixture()
