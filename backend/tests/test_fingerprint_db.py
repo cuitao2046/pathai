@@ -197,6 +197,28 @@ def _estimate(client, headers, beacons, sequence: int, *, use_fp: bool | None = 
     assert resp.status_code == 200, resp.text
     return resp.json()
 
+def test_normalize_beacon_keeps_optional_n():
+    """L1 字段 n 可选：有则保留，缺失保持缺失（旧导出不得被补 0）。"""
+    from pathai_backend.fingerprint_library import _normalize_record
+
+    record = _record("G1-001", (-60, -65, -70))
+    record["beacons"][0]["n"] = 4
+    cleaned = _normalize_record(record)
+    assert cleaned["beacons"][0]["n"] == 4
+    assert "n" not in cleaned["beacons"][1]
+
+
+def test_normalize_beacon_drops_invalid_n():
+    from pathai_backend.fingerprint_library import _normalize_record
+
+    record = _record("G1-001", (-60, -65, -70))
+    record["beacons"][0]["n"] = 0
+    record["beacons"][1]["n"] = "3"
+    record["beacons"][2]["n"] = True
+    cleaned = _normalize_record(record)
+    assert all("n" not in beacon for beacon in cleaned["beacons"])
+
+
 
 class TestIngest:
     def test_creates_traceable_version(self, fp_client):
@@ -237,6 +259,21 @@ class TestIngest:
         versions = fp_client.get("/api/v1/fingerprint-db/versions").json()
         assert len(versions["items"]) == 1
         assert versions["active"]["version"] == first["version"]
+    def test_beacon_sample_count_n_is_normalized_and_part_of_sha(self, fp_client):
+        """schema 1.3.0：n 必须留在归一化记录里。
+
+        若在被 `_normalize_beacon` 白名单丢弃，`_canonical_sha` 不会变化，
+        新数据会被判为重复入库（duplicated=True）并静默丢掉 n。
+        """
+        base = [_record("G1-001", (-60, -65, -70))]
+        first = _ingest(fp_client, base)
+        enriched = [_record("G1-001", (-60, -65, -70))]
+        for beacon in enriched[0]["beacons"]:
+            beacon["n"] = 3
+        second = _ingest(fp_client, enriched, file_name="with-n.json")
+        assert second["duplicated"] is False
+        assert second["version"] != first["version"]
+
 
     def test_idempotency_key_is_scoped_per_site(self, fp_client):
         """同内容入库到不同场所各自成版本，不跨场所判重（评审第二批）。"""

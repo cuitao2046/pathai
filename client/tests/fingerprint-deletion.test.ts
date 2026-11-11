@@ -114,7 +114,7 @@ describe('删除墓碑', () => {
       deletions: [deletion],
       mode: 'merge',
     });
-    expect(merge.data.schemaVersion).toBe('1.2.0');
+    expect(merge.data.schemaVersion).toBe('1.3.0');
     expect(merge.data.deletions).toEqual([deletion]);
     expect(merge.data.mode).toBe('merge');
     expect(merge.data.replaceFloors).toBeUndefined();

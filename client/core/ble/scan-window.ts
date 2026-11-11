@@ -23,6 +23,11 @@ export interface ResolvedObservation {
   rssi: number;
   /** 该信标窗口内最新样本时间（毫秒）。 */
   observedAtMs: number;
+  /**
+   * 窗口内该信标的样本条数（L1 采集质量标记）。
+   * 中位数抗抖动的效力取决于它：iOS 1Hz 时常见 n=1~2，此时「中位数」≈单点。
+   */
+  n: number;
 }
 
 function clampRssi(rssi: number): number | null {
@@ -96,6 +101,7 @@ export class ScanWindowAggregator {
         beaconId,
         rssi: median(kept.map((e) => e.rssi)),
         observedAtMs: Math.max(...kept.map((e) => e.atMs)),
+        n: kept.length,
       });
     }
     return observations.length >= MIN_RESOLVED_BEACONS ? observations : null;

@@ -1,6 +1,6 @@
 /**
  * 点位存储与导出构造：断言与两个独立工具的导出 envelope 完全一致
- * （positioning_calibration_static 1.0 / ble_fingerprint_collection 1.2.0）。
+ * （positioning_calibration_static 1.0 / ble_fingerprint_collection 1.3.0）。
  */
 import { StaticPointsStore, FpRecordsStore, type StaticPointsPersist } from '../core/collection/points-store';
 import { buildStaticExport, buildFpExport } from '../core/collection/export-builder';
@@ -126,7 +126,7 @@ describe('buildStaticExport（positioning_calibration_static 1.0 契约）', () 
   });
 });
 
-describe('buildFpExport（ble_fingerprint_collection 1.2.0 契约）', () => {
+describe('buildFpExport（ble_fingerprint_collection 1.3.0 契约）', () => {
   it('envelope 字段与 fpstore.js buildExport 一致', () => {
     let saved: ReturnType<FpRecordsStore['allRecords']> | null = null;
     const store = new FpRecordsStore(
@@ -155,7 +155,7 @@ describe('buildFpExport（ble_fingerprint_collection 1.2.0 契约）', () => {
       },
       { dataset: 'routes', beaconUuid: 'B9407F30-F5F8-466E-AFF9-25556B57FE6D' },
     );
-    expect(data.schemaVersion).toBe('1.2.0');
+    expect(data.schemaVersion).toBe('1.3.0');
     expect(data.type).toBe('ble_fingerprint_collection');
     expect(data.dataset).toBe('routes');
     expect(data.exportScope).toBe('all');

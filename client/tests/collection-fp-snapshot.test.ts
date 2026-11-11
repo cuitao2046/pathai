@@ -20,9 +20,9 @@ const lookup: FpBeaconLookup = (beaconId) => {
 
 function window(): ResolvedObservation[] {
   return [
-    { beaconId: 'BK-A', rssi: -59, observedAtMs: 2_000 },
-    { beaconId: 'BK-B', rssi: -71, observedAtMs: 2_000 },
-    { beaconId: 'BK-UNKNOWN', rssi: -60, observedAtMs: 2_000 },
+    { beaconId: 'BK-A', rssi: -59, observedAtMs: 2_000, n: 3 },
+    { beaconId: 'BK-B', rssi: -71, observedAtMs: 2_000, n: 1 },
+    { beaconId: 'BK-UNKNOWN', rssi: -60, observedAtMs: 2_000, n: 2 },
   ];
 }
 
@@ -58,6 +58,9 @@ describe('buildFpRecord', () => {
     expect(a.rssi).toBe(-59);
     expect(a.txPower).toBe(RSSI_AT_1M);
     expect(a.accuracy).toBeCloseTo(Math.pow(10, (-71 - -59) / 20), 2);
+    // schema 1.3.0：窗口样本条数随观测透传
+    expect(a.n).toBe(3);
+    expect(rec.beacons[1].n).toBe(1);
   });
 
   it('captureIndex 由 FpRecordsStore 落库时按点位递增', () => {

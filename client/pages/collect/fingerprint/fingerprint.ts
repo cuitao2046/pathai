@@ -685,7 +685,14 @@ Page({
       });
       return;
     }
-    log.info('指纹已记录', full.fpId, `#${full.captureIndex}`, `${full.beaconCount} 信标`);
+    const ns = window.map((o) => o.n).sort((a, b) => a - b);
+    log.info(
+      '指纹已记录',
+      full.fpId,
+      `#${full.captureIndex}`,
+      `${full.beaconCount} 信标`,
+      `n=${ns[0]}~${ns[ns.length - 1]} 中位${ns[ns.length >> 1]}`,
+    );
     this.collectPoint = null;
     this.setData({ collecting: false, countdownText: '' });
     this.refreshStats();

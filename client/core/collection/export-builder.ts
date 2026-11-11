@@ -1,7 +1,8 @@
 /**
  * 导出构造：schema 与独立工具严格一致（PC 侧工具链零改动）。
  * - 静态标定 = positioning_calibration_static schemaVersion 1.0（cstore.js 契约）
- * - 网格指纹 = ble_fingerprint_collection schemaVersion 1.2.0（fpstore.js 契约；含 deletions/mode）
+ * - 网格指纹 = ble_fingerprint_collection schemaVersion 1.3.0（fpstore.js 契约；含 deletions/mode，
+ *   1.3.0 起信标观测带可选 n=窗口样本条数）
  * 新增可选字段（estimateAtStart/estimateAtEnd 等）仅为超集，PC 侧忽略未知字段。
  * 纯逻辑、不依赖 wx。
  */
@@ -250,7 +251,7 @@ export function buildLogdistExport(
 }
 
 export interface FpExportData {
-  schemaVersion: '1.2.0';
+  schemaVersion: '1.3.0';
   type: 'ble_fingerprint_collection';
   venueId: string;
   venueName: string;
@@ -300,7 +301,7 @@ export function buildFpExport(
   const deletions = mode === 'replaceFloor' ? [] : (opts.deletions ?? []);
   return {
     data: {
-      schemaVersion: '1.2.0',
+      schemaVersion: '1.3.0',
       type: 'ble_fingerprint_collection',
       venueId: meta.venueId,
       venueName: meta.venueName,

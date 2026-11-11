@@ -4,9 +4,9 @@ import { buildFpExport } from '../core/collection/export-builder';
 import type { FpRecord } from '../core/collection/types';
 
 const window = [
-  { beaconId: 'BK-01-001', rssi: -60, observedAtMs: 1 },
-  { beaconId: 'BK-01-002', rssi: -66, observedAtMs: 1 },
-  { beaconId: 'BK-01-003', rssi: -72, observedAtMs: 1 },
+  { beaconId: 'BK-01-001', rssi: -60, observedAtMs: 1, n: 2 },
+  { beaconId: 'BK-01-002', rssi: -66, observedAtMs: 1, n: 2 },
+  { beaconId: 'BK-01-003', rssi: -72, observedAtMs: 1, n: 2 },
 ];
 
 const lookup = (beaconId: string) => ({
