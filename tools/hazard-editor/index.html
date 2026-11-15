@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathAI 视障危险区标注</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">PathAI 危险区标注<span class="meta" id="map-meta"></span></div>
+  <div class="floors" id="floor-tabs"></div>
+  <div class="actions">
+    <button id="btn-undo" title="撤销上一步（Ctrl+Z）">撤销</button>
+    <button id="btn-import">导入危险层</button>
+    <input type="file" id="file-import" accept=".json,application/json" hidden>
+    <button id="btn-export" class="primary">导出危险层</button>
+  </div>
+</header>
+
+<main>
+  <div class="canvas-wrap" id="canvas-wrap">
+    <canvas id="map"></canvas>
+    <div class="mode-bar">
+      <button id="mode-pan" class="active" title="拖拽平移、滚轮缩放、点击选边">浏览/平移</button>
+      <button id="mode-box" title="拖拽框选多条边">框选</button>
+      <span class="sep"></span>
+      <button id="btn-zoom-in" title="放大">＋</button>
+      <button id="btn-zoom-out" title="缩小">－</button>
+      <button id="btn-fit" title="回到整层视图">适应窗口</button>
+      <span class="sep"></span>
+      <label class="chk"><input type="checkbox" id="toggle-walk"> 可通行区</label>
+      <label class="chk"><input type="checkbox" id="toggle-labels" checked> 房间名</label>
+      <label class="chk"><input type="checkbox" id="toggle-risk" checked> 结构风险点</label>
+    </div>
+    <div class="legend">
+      <div><i class="block"></i>block 禁行（blindAccessible=false）</div>
+      <div><i class="avoid"></i>avoid 尽量避开</div>
+      <div><i class="notice"></i>notice 仅提示</div>
+      <div><i class="sel"></i>当前选中</div>
+      <div class="hint">点击边选中 · Shift 多选 · 拖拽平移 · 滚轮缩放</div>
+    </div>
+    <div id="tooltip" class="tooltip" hidden></div>
+    <div id="status" class="status"></div>
+  </div>
+
+  <aside class="sidebar">
+    <section class="panel">
+      <h2>选中边 <span class="badge" id="sel-count">0</span></h2>
+      <div id="sel-summary" class="sel-summary muted">
+        点击图上的拓扑边开始标注；框选模式可一次选中多条。
+      </div>
+      <div class="form">
+        <label class="row">
+          <input type="checkbox" id="f-blind" checked>
+          <span style="width:auto">盲人可通行（blindAccessible）</span>
+        </label>
+        <div class="row">
+          <span>危险档位</span>
+          <select id="f-level">
+            <option value="">— 不标注（清除）—</option>
+            <option value="block">block · 禁止通行</option>
+            <option value="avoid">avoid · 尽量避开</option>
+            <option value="notice">notice · 仅提示</option>
+          </select>
+        </div>
+        <div class="row">
+          <span>危险类型</span>
+          <select id="f-type">
+            <option value="construction">施工/围挡</option>
+            <option value="wet_floor">地面湿滑</option>
+            <option value="crowd">人流密集</option>
+            <option value="obstacle">临时障碍</option>
+            <option value="glass_door">玻璃门</option>
+            <option value="revolving_door">旋转门</option>
+            <option value="stairs">楼梯/台阶</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="row">
+          <span>理由文案</span>
+          <input type="text" id="f-reason" maxlength="120" placeholder="如：走廊施工，围挡占道">
+        </div>
+        <details class="adv">
+          <summary>更多选项（人群 / 惩罚 / 生效时间 / 播报）</summary>
+          <div class="row">
+            <span>语音播报</span>
+            <input type="text" id="f-spoken" maxlength="200" placeholder="可选，缺省按类型生成">
+          </div>
+          <div class="row">
+            <span>适用人群</span>
+            <div class="check-group">
+              <label><input type="checkbox" class="f-apply" value="blind" checked> 盲人</label>
+              <label><input type="checkbox" class="f-apply" value="wheelchair"> 轮椅</label>
+              <label><input type="checkbox" class="f-apply" value="normal"> 普通</label>
+            </div>
+          </div>
+          <div class="row">
+            <span>避让惩罚</span>
+            <input type="number" id="f-penalty" min="1" max="500" step="10" value="60">
+            <span class="muted">米（avoid 生效）</span>
+          </div>
+          <div class="row">
+            <span>生效时间</span>
+            <input type="datetime-local" id="f-from">
+          </div>
+          <div class="row">
+            <span>失效时间</span>
+            <input type="datetime-local" id="f-until">
+          </div>
+        </details>
+        <div class="btns">
+          <button id="btn-apply" class="primary">应用到选中</button>
+          <button id="btn-clear-sel">清除选中标注</button>
+        </div>
+        <p class="hint-line">block 会自动把 blindAccessible 置为“否”；avoid/notice 置为“是”。删除标注即恢复地图包原值。</p>
+      </div>
+    </section>
+
+    <section class="panel list-panel">
+      <div class="list-head">
+        <h2 style="margin:0">已标注 <span class="badge" id="haz-count">0</span></h2>
+        <span class="grow"></span>
+        <button id="btn-clear-all" class="danger" title="清空当前危险层（可撤销）">清空</button>
+      </div>
+      <div id="haz-list" class="haz-list"></div>
+    </section>
+
+    <details class="panel">
+      <summary>导出预览</summary>
+      <pre id="export-preview">尚未导出。</pre>
+    </details>
+  </aside>
+</main>
+
+<script src="data/map-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
