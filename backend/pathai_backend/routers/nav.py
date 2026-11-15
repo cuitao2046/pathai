@@ -248,15 +248,35 @@ def _polyline_suffix(route: RouteInfo) -> list[float]:
 
 def _nearest_on_route(
     route: RouteInfo, floor_id: str | None, x: float, y: float
-) -> tuple[int, float] | None:
-    best_i, best_d = None, float("inf")
-    for i, p in enumerate(route.polyline):
-        if p.floorId != floor_id:
+) -> tuple[int, float, float] | None:
+    """Return endpoint index, lateral distance and remaining along-route distance.
+
+    Project only onto same-floor segments; never connect unrelated floors.
+    Endpoints cover isolated floor landings and zero-length segments.
+    """
+    if floor_id is None:
+        return None
+    suffix = _polyline_suffix(route)
+    best = None
+    for i, point in enumerate(route.polyline):
+        if point.floorId == floor_id:
+            distance = hypot(point.x - x, point.y - y)
+            if best is None or distance < best[1]:
+                best = (i, distance, distance + suffix[i])
+    for i in range(len(route.polyline) - 1):
+        a, b = route.polyline[i], route.polyline[i + 1]
+        if a.floorId != floor_id or b.floorId != floor_id:
             continue
-        d = hypot(p.x - x, p.y - y)
-        if d < best_d:
-            best_i, best_d = i, d
-    return None if best_i is None else (best_i, best_d)
+        dx, dy = b.x - a.x, b.y - a.y
+        length_sq = dx * dx + dy * dy
+        if length_sq == 0:
+            continue
+        fraction = max(0.0, min(1.0, ((x - a.x) * dx + (y - a.y) * dy) / length_sq))
+        distance = hypot(x - (a.x + fraction * dx), y - (a.y + fraction * dy))
+        remaining = distance + (1.0 - fraction) * hypot(dx, dy) + suffix[i + 1]
+        if best is None or distance < best[1]:
+            best = (i + 1, distance, remaining)
+    return best
 
 
 @router.post("/sessions/{session_id}/updates", response_model=NavUpdateResponse)
@@ -343,9 +363,9 @@ def nav_update(
             )
         else:
             cur = session.current_index
-            suffix = _polyline_suffix(route)
-            i, d_near = near
-            remaining = d_near + suffix[i]
+
+            _, _, remaining = near
+
             # 推进当前指令：immediate/决策点进入半径/剩余距离达标
             while cur < len(route.segments) - 1:
                 seg = route.segments[cur]
