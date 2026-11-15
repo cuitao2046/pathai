@@ -13,6 +13,7 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, fingerprint_library
@@ -70,26 +71,39 @@ def _check_sequence(
             409,
             "STALE_LOCATION_BATCH",
             f"定位批次已过期：sequence={sequence} < {row.last_sequence}",
+            details={"lastSequence": row.last_sequence},
         )
 
 
 def _advance_sequence(
     db: Session, subject_id: int, site_id: str, sequence: int
 ) -> None:
-    row = db.get(LocationSequence, {"subject_id": subject_id, "site_id": site_id})
-    if row is None:
-        db.add(
-            LocationSequence(
-                subject_id=subject_id,
-                site_id=site_id,
-                last_sequence=sequence,
-                updated_at_epoch=int(time.time()),
-            )
-        )
-    elif sequence > row.last_sequence:
-        row.last_sequence = sequence
-        row.updated_at_epoch = int(time.time())
+    # A single database statement owns both initial insertion and monotonic advance.
+    # Reading a row before writing cannot guarantee this under concurrent requests.
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    elif dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        raise RuntimeError(f"Unsupported location sequence dialect: {dialect}")
+    table = LocationSequence.__table__
+    statement = insert(table).values(
+        subject_id=subject_id, site_id=site_id, last_sequence=sequence,
+        updated_at_epoch=int(time.time()),
+    )
+    newer = statement.excluded.last_sequence > table.c.last_sequence
+    statement = statement.on_conflict_do_update(
+        index_elements=[table.c.subject_id, table.c.site_id],
+        set_={
+            "last_sequence": case((newer, statement.excluded.last_sequence), else_=table.c.last_sequence),
+            "updated_at_epoch": case((newer, statement.excluded.updated_at_epoch), else_=table.c.updated_at_epoch),
+        },
+    )
+    db.execute(statement)
     db.commit()
+    # Authentication/check_sequence may already have loaded this row into the identity map.
+    db.expire_all()
 
 
 @router.post("/estimate", response_model=PositionEstimateResponse)
