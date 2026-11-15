@@ -238,7 +238,7 @@ class TestIngest:
         assert summary["fpCount"] == 1
         assert summary["insertedCount"] == 1
         assert summary["conflictCount"] == 0
-        assert summary["operator"] == "tester"
+        assert summary["operator"] == "admin:admin"
         assert summary["device"] == {"model": "test", "system": "test", "platform": "devtools"}
         assert summary["mapVersion"] is None
         # 导出载荷没有顶层版本字段时从记录中取（参数/网格版本可追溯）

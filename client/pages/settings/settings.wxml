@@ -1,5 +1,12 @@
 <view class="page">
   <view class="section">
+    <view class="section-title">用户身份</view>
+    <view class="row"><text>用户编号</text><text user-select>{{authUserId || '尚未连接'}}</text></view>
+    <view class="row"><text>权限</text><text>{{authAccessText}}</text></view>
+    <button bindtap="onCopyUserId" disabled="{{!authUserId}}">复制用户编号</button>
+    <button bindtap="onRefreshIdentity">刷新身份权限</button>
+  </view>
+  <view class="section">
     <view class="section-title">联调配置</view>
     <view class="row"><text class="label">API 地址</text><text user-select>{{apiUrl}}</text></view>
     <view class="row"><text class="label">站点</text><text>{{siteId}}</text></view>

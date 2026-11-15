@@ -31,6 +31,8 @@ function apiUrlText(): string {
 
 Page({
   data: {
+    authUserId: '',
+    authAccessText: '尚未读取',
     screenReaderVoice: false,
     apiUrl: apiUrlText(),
     siteId: DEFAULT_SITE_ID,
@@ -141,7 +143,17 @@ Page({
     this.setData({ localProbeResult: P0_PROBE_RESULT_LABELS[diagnostic.result] });
   },
 
+  async onRefreshIdentity() {
+    try {
+      const response = await appContext.http.client.request<{ userId: string; isTester: boolean; canApplyConfig: boolean }>({ method: 'GET', path: '/api/v1/auth/me' });
+      if (response.data) this.setData({ authUserId: response.data.userId, authAccessText: response.data.canApplyConfig ? '测试人员，可应用配置' : response.data.isTester ? '测试人员，可上传和计算' : '普通用户' });
+    } catch { this.setData({ authAccessText: '暂时无法连接，请重试' }); }
+  },
+  onCopyUserId() {
+    if (this.data.authUserId) wx.setClipboardData({ data: this.data.authUserId });
+  },
   onShow() {
+    void this.onRefreshIdentity();
     // 从其它页面返回后刷新：地图/登录状态 + 开关与 mock 文本回读
     //（页面 data 字面量仅在模块首次加载时求值，靠 onShow 兜住任意进入时序）
     void this.refreshMapVersion();

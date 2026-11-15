@@ -2,9 +2,10 @@
  * API 客户端：错误信封→ApiClientError、requestId 透出。
  * 客户端按 code 分支不按 message（docs/24 §7.2）。
  *
- * 2026-11-11 决策：私网阶段小程序接口不鉴权，不再注入 Authorization，
- * 也不做 401 重登重放；公网阶段恢复鉴权时在此统一补回。
+ * 生产装配启用微信静默登录；令牌过期只在明确认证拒绝时单次重放。
  */
+import { WechatSession } from './wechat-session';
+import { ApiClientError } from './errors';
 import { REQUEST_TIMEOUT_MS } from '../../config/env';
 import { parseErrorEnvelope } from './errors';
 import { getHeader, request as transportRequest, type TransportResponse } from './transport';
@@ -42,8 +43,9 @@ export interface HttpStack {
   client: ApiClient;
 }
 
-export function createHttpStack(baseUrl: BaseUrlProvider): HttpStack {
-  return { client: new ApiClient(baseUrl) };
+/** Raw by default for diagnostics; production explicitly enables silent login. */
+export function createHttpStack(baseUrl: BaseUrlProvider, options: { wechatLogin?: boolean } = {}): HttpStack {
+  return { client: new ApiClient(baseUrl, options.wechatLogin === true) };
 }
 
 interface SendResult {
@@ -53,10 +55,34 @@ interface SendResult {
 }
 
 export class ApiClient {
-  constructor(private readonly baseUrl: BaseUrlProvider) {}
+  private readonly sessions = new Map<string, WechatSession>();
+  constructor(private readonly baseUrl: BaseUrlProvider, private readonly wechatLogin = false) {}
 
   async request<T>(opts: ApiRequestOptions): Promise<ApiResponse<T>> {
-    return this.finish<T>(await this.send(opts));
+    if (!this.wechatLogin) return this.finish<T>(await this.send(opts));
+    const base = resolveBaseUrl(this.baseUrl).replace(/\/$/, '');
+    const url = opts.url ?? base + (opts.path ?? '');
+    const origin = (value: string) => /^https?:\/\/[^/?#]+/i.exec(value)?.[0].toLowerCase();
+    // Never disclose a backend token to a foreign download URL or caller header.
+    if (!origin(base) || origin(url) !== origin(base) ||
+        Object.keys(opts.headers ?? {}).some(key => key.toLowerCase() === 'authorization')) {
+      throw new ApiClientError({ code: 'HTTP_ERROR', message: '身份请求地址或请求头不合法' });
+    }
+    let session = this.sessions.get(base);
+    if (!session) { session = new WechatSession(base); this.sessions.set(base, session); }
+    const token = await session.ensure();
+    const authenticated = (value: string) => ({ ...opts, url, headers: { ...opts.headers, Authorization: `Bearer ${value}` } });
+    const first = await this.send(authenticated(token));
+    if (first.resp.statusCode === 401) {
+      const error = parseErrorEnvelope({ statusCode: 401, data: first.resp.data, requestId: first.requestId });
+      if (error.code === 'TOKEN_EXPIRED' || error.code === 'UNAUTHENTICATED') {
+        // Only authentication-dependency rejection is replayed, once, with the same body/key.
+        session.invalidate(token);
+        const fresh = await session.ensure();
+        return this.finish<T>(await this.send(authenticated(fresh)));
+      }
+    }
+    return this.finish<T>(first);
   }
 
   private async send(opts: ApiRequestOptions): Promise<SendResult> {

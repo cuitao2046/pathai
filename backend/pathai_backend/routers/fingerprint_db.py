@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, fingerprint_library as svc
@@ -17,6 +17,7 @@ from pathai_backend.errors import ApiError
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.routers.calibration import (
     _ADMIN_WRITE,
+    _CONFIG_WRITE,
     _rate_limit,
     require_private_network,
 )
@@ -42,9 +43,10 @@ def _call(fn):
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
-@router.post("/ingest", dependencies=_ADMIN_WRITE)
+@router.post("/ingest", dependencies=_CONFIG_WRITE)
 def ingest(
     body: FingerprintIngestRequest,
+    request: Request,
     db: Session = Depends(auth.get_db_session),
 ) -> dict:
     _rate_limit("fp_ingest", 5.0)
@@ -55,7 +57,7 @@ def ingest(
             db,
             file_name=body.fileName,
             content=body.content,
-            operator=body.operator,
+            operator=request.state.operator,
         )
     )
     db.commit()
@@ -85,7 +87,7 @@ def manifest(
     return _call(lambda: svc.manifest(db, version=version, floor=floor))
 
 
-@router.post("/rollback", dependencies=_ADMIN_WRITE)
+@router.post("/rollback", dependencies=_CONFIG_WRITE)
 def rollback(
     body: FingerprintRollbackRequest,
     db: Session = Depends(auth.get_db_session),
