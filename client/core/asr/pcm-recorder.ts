@@ -34,6 +34,9 @@ export interface RecorderManagerLike {
 /** 单次录音上限（毫秒）。 */
 export const MAX_RECORD_MS = 30000;
 
+/** 微信对未启动录音机操作的 errMsg（时序竞态产物，语义等同"已停止"，非故障）。 */
+const RECORDER_NOT_START_PATTERN = /recorder not start/i;
+
 /** 引擎依赖的录音器结构面（PcmRecorder 实现；单测可注入假件）。 */
 export interface RecorderLike {
   start(handlers: PcmFrameHandlers): void;
@@ -90,9 +93,17 @@ export class PcmRecorder implements RecorderLike {
       }
     });
     this.manager.onError((err) => {
-      if (gen === this.generation) {
-        this.finish(new Error(err.errMsg ?? '录音失败'));
+      if (gen !== this.generation) {
+        return;
       }
+      const raw = err.errMsg ?? '';
+      // 竞态窗口内微信可能报 "recorder not start"：录音机实际已停，
+      // 按正常收尾处理，避免把会话误判成录音失败
+      if (RECORDER_NOT_START_PATTERN.test(raw)) {
+        this.finish(null);
+        return;
+      }
+      this.finish(new Error(raw.length > 0 ? raw : '录音失败'));
     });
     // 「麦克风已就绪」的唯一可信信号：onStart 之后才会真正产生音频帧
     this.manager.onStart?.(() => {
@@ -129,8 +140,19 @@ export class PcmRecorder implements RecorderLike {
   /** 取消：停止录音并丢弃其后帧回调。 */
   cancel(): void {
     this.cancelled = true;
-    if (this.recording) {
-      this.manager.stop();
+    if (!this.recording) {
+      return;
+    }
+    // 同步复位状态：微信 onStop 异步到达前用户可能再次按下（快速连按），
+    // 若等异步回调复位，start() 会被幂等守卫跳过，新会话将收不到任何音频
+    this.recording = false;
+    this.handlers = null;
+    this.manager.stop();
+    const settle = this.settle;
+    this.settle = null;
+    this.stopped = null;
+    if (settle !== null) {
+      settle.resolve(); // cancel 语义：不 reject 等待者，静默收尾
     }
   }
 

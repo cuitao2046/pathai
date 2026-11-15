@@ -62,3 +62,32 @@ export const LOCAL_VOICE_DIR = '/assets/voice';
  * sha256 摘要校验不因此关闭。
  */
 export const DEBUG_REWRITE_DATA_URL = true;
+
+/**
+ * 发布护栏：正式版（envVersion=release）禁止携带联调配置上线。
+ * app.ts onLaunch 最先调用；命中任一违规即抛错阻断启动。
+ * 开发者工具（develop）与体验版（trial）不受限，现场联调照常。
+ * 私网阶段小程序接口不鉴权，已无假登录开关；这里只保留数据源与明文 HTTP 检查。
+ */
+export function assertReleaseSafety(): void {
+  let envVersion: string;
+  try {
+    envVersion = wx.getAccountInfoSync().miniProgram.envVersion ?? '';
+  } catch {
+    // 环境无法判定（单测/旧基础库）时不阻断
+    return;
+  }
+  if (envVersion !== 'release') {
+    return;
+  }
+  const violations: string[] = [];
+  if (DEBUG_REWRITE_DATA_URL) {
+    violations.push('DEBUG_REWRITE_DATA_URL=true（正式版禁止本地数据改写）');
+  }
+  if (API_BASE_URL.startsWith('http://')) {
+    violations.push('API_BASE_URL 为明文 HTTP');
+  }
+  if (violations.length > 0) {
+    throw new Error(`发布检查失败：${violations.join('；')}`);
+  }
+}

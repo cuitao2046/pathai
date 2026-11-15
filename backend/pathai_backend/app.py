@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from pathai_backend.admin import service as admin_service
+from pathai_backend.body_limit import BodySizeLimitMiddleware
 from pathai_backend.config import LOCAL_ENV, Settings
 from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
@@ -114,6 +115,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # 危险层独立加载：文件缺失/损坏/版本不匹配只降级为「无危险层」，不阻塞启动
     app.state.hazard_repository = HazardRepository.load(settings.hazard_data_dir)
+    # 顺序：add_middleware 后加的在外层。BodySizeLimit 须在 RequestContext 内层，
+    # 拒绝 413 时才能读到 scope.state.request_id 写入错误信封。
+    app.add_middleware(BodySizeLimitMiddleware, max_body_bytes=settings.max_body_bytes)
     app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
 

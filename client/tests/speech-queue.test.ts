@@ -19,8 +19,14 @@ class ControlledTts implements TtsEngine {
   pending: PendingSpeak[] = [];
   completed: string[] = [];
   stopCount = 0;
+  /** 置 true 后下一次 speak 立即 reject（模拟引擎仍不可用）。 */
+  shouldFailNext = false;
 
   speak(text: string): Promise<void> {
+    if (this.shouldFailNext) {
+      this.shouldFailNext = false;
+      return Promise.reject(new Error('tts failure'));
+    }
     return new Promise((resolve, reject) => {
       this.pending.push({ text, resolve, reject });
     });
@@ -472,5 +478,34 @@ describe('SpeechQueue 播报队列', () => {
     // 重播自身也走 enqueue：连续重播仍指向同一条
     queue.enqueue(queue.lastSpokenText ?? '');
     expect(queue.lastSpokenText).toBe('前方左转');
+  });
+
+  it('resetForRetry 解除失效：后续 enqueue 重新尝试引擎', async () => {
+    const onUnavailable = jest.fn();
+    const onTextFallback = jest.fn();
+    const queue = makeQueue({ onUnavailable, onTextFallback });
+    queue.enqueue('提示一');
+    await tick();
+    engine.failCurrent();
+    await tick();
+    expect(onUnavailable).toHaveBeenCalledTimes(1);
+
+    expect(queue.resetForRetry()).toBe(true); // 返回重置前处于失效状态
+    expect(queue.resetForRetry()).toBe(false); // 未失效时重置为幂等
+
+    engine.shouldFailNext = true;
+    queue.enqueue('提示二'); // 重试窗口内引擎再次失败 → 再走完整失败流程
+    await tick();
+    expect(engine.pending).toHaveLength(0);
+    expect(onUnavailable).toHaveBeenCalledTimes(2);
+    expect(onUnavailable).toHaveBeenLastCalledWith('提示二');
+
+    queue.resetForRetry();
+    queue.enqueue('提示三'); // 引擎正常后恢复语音播报
+    await tick();
+    expect(engine.pending).toHaveLength(1);
+    engine.completeCurrent();
+    expect(engine.completed).toContain('提示三');
+    expect(onTextFallback).not.toHaveBeenCalledWith('提示三');
   });
 });
