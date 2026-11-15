@@ -16,6 +16,7 @@ import { ApiClientError } from '../http/errors';
 import type { ApiClient } from '../http/api-client';
 import type { SpeechIdleReason, SpeechQueue } from '../speech/speech-queue';
 import { InstructionTracker } from './instruction-tracker';
+import type { NavCreateJournal } from './create-journal';
 import {
   NavStateMachine,
   type NavEffects,
@@ -76,6 +77,7 @@ export interface NavSessionControllerOptions {
   onEnded?: (info: { reason: EndReason | null; byArrival: boolean }) => void;
   /** 概要窗口最长等待（毫秒），默认 30s；超时跳过概要直接进入引导。 */
   overviewMaxWaitMs?: number;
+  createJournal?: NavCreateJournal;
 }
 
 export class NavSessionController {
@@ -107,6 +109,12 @@ export class NavSessionController {
   private createInFlight: Promise<CreateSessionResponse> | null = null;
 
   constructor(private readonly opts: NavSessionControllerOptions) {}
+
+  private clearPendingCreate(): void {
+    this.opts.createJournal?.clear();
+    this.pendingIdempotencyKey = null;
+    this.frozenCreateBody = null;
+  }
 
   get state(): NavState {
     return this.machine.state;
@@ -157,6 +165,11 @@ export class NavSessionController {
   ): Promise<CreateSessionResponse> {
     // 新会话是语音通道的重试窗口：上次 TTS 失败后这里给引擎第二次机会
     this.opts.speech.resetForRetry();
+    const unresolved = this.opts.createJournal?.load();
+    if (unresolved) {
+      this.pendingIdempotencyKey = unresolved.key;
+      this.frozenCreateBody = unresolved.body;
+    }
     if (this.pendingIdempotencyKey === null || this.frozenCreateBody === null) {
       this.pendingIdempotencyKey = uuidV4();
       this.frozenCreateBody = {
@@ -168,6 +181,7 @@ export class NavSessionController {
         locale: 'zh-CN',
       };
     }
+    this.opts.createJournal?.save({ key: this.pendingIdempotencyKey, body: this.frozenCreateBody });
     let resp;
     try {
       resp = await this.opts.client.request<CreateSessionResponse>({
@@ -184,8 +198,7 @@ export class NavSessionController {
         err.statusCode >= 400 &&
         err.statusCode < 500
       ) {
-        this.pendingIdempotencyKey = null;
-        this.frozenCreateBody = null;
+        this.clearPendingCreate();
       }
       throw err;
     }
@@ -198,9 +211,18 @@ export class NavSessionController {
         requestId: resp.requestId,
       });
     }
-    // 2xx：幂等暂存清除
-    this.pendingIdempotencyKey = null;
-    this.frozenCreateBody = null;
+    if (unresolved) {
+      // Replay confirms the old transaction, but its saved route/origin may now be stale.
+      // Close that session before allowing a fresh create for the user's current intent.
+      try {
+        await this.opts.client.request({ method: 'POST', path: `/api/v1/nav/sessions/${data.sessionId}/end`, body: { reason: 'system_error' } });
+      } catch (error) {
+        if (!(error instanceof ApiClientError && error.code === 'SESSION_NOT_ACTIVE')) throw error;
+      }
+      this.clearPendingCreate();
+      return this.doCreateSession(destination, origin, userMode, opts);
+    }
+    this.clearPendingCreate();
 
     this.session = data;
     this.sessionSeq = 0;
