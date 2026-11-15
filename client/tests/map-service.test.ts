@@ -78,6 +78,7 @@ function newService(overrides?: Partial<{ rewrite: boolean }>): MapService {
   return new MapService({
     client,
     siteId: SITE,
+    baseUrl: BASE,
     rewriteDataUrlToLocalApi: overrides?.rewrite ?? false,
   });
 }
@@ -194,7 +195,13 @@ test('服务端新版本：本会话沿用缓存版，后台异步覆盖本地�
   expect(second.places.length).toBe(REAL_MAP.places.length);
 
   // 后台下载完成后：文件被新版本覆盖，摘要/ETag 同步刷新（下次启动配对生效）
-  for (let i = 0; i < 50 && wxStub.__fileText(CACHE_FILE) !== NEW_RAW; i += 1) {
+  for (
+    let i = 0;
+    i < 50 &&
+    (wxStub.__fileText(CACHE_FILE) !== NEW_RAW ||
+      getJson<{ mapVersion: string }>(`map:summary:${SITE}`)?.mapVersion !== '2026-10-26.1');
+    i += 1
+  ) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   expect(wxStub.__fileText(CACHE_FILE)).toBe(NEW_RAW);

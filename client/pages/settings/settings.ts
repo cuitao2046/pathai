@@ -1,9 +1,10 @@
+import { getScreenReaderVoice, setScreenReaderVoice } from '../../core/a11y/voice-mode';
 /**
  * 设置页（C8）：联调配置与引擎自检。
- * - 展示：API 地址、站点、数据源、地图版本、登录状态、引擎类型；
+ * - 展示：API 地址、站点、数据源、地图版本、引擎类型；
  * - 数据源开关：写 kv 覆盖（重启小程序生效）；
- * - 自检：TTS 播一句、登录态探测、地图重载；
- * - 清缓存：地图摘要/数据与本地令牌（联调用）。
+ * - 自检：TTS 播一句、地图重载；
+ * - 清缓存：地图摘要/数据（私网阶段小程序接口不鉴权，无令牌）。
  */
 import { DEFAULT_SITE_ID } from '../../config/env';
 import { describeError } from '../../core/http/error-messages';
@@ -14,7 +15,6 @@ import { runP0LocalProbe } from '../../services/p0-local-probe';
 import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
-import { remove } from '../../utils/kv';
 import {
   cachedRuntimeParams,
   refreshRuntimeParams,
@@ -24,9 +24,15 @@ import type { DataSource } from '../../config/env';
 
 const log = createLogger('settings');
 
+/** 设置页展示用：未解析成功时明确显示“未连接”，不展示任何编译期地址。 */
+function apiUrlText(): string {
+  return currentServiceBaseUrl() ?? '未连接（服务地址未解析）';
+}
+
 Page({
   data: {
-    apiUrl: currentServiceBaseUrl(),
+    screenReaderVoice: false,
+    apiUrl: apiUrlText(),
     siteId: DEFAULT_SITE_ID,
     dataSource: 'mock' as DataSource,
     voiceMock: true,
@@ -36,7 +42,6 @@ Page({
     downloadText: '',
     /** 地图摘要/进度写 storage 失败的告警（空=正常；不静默）。 */
     storageWarning: '',
-    tokenStatus: '检查中…',
     ttsEngine: '',
     asrEngine: '',
     selfTestResult: '',
@@ -102,6 +107,7 @@ Page({
         simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
         fingerprintDbSetting: appContext.getFingerprintDbSetting(),
         a11yMode: appContext.getA11yMode(),
+        screenReaderVoice: getScreenReaderVoice(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
         navArrowSetting: appContext.getNavArrowSetting(),
       },
@@ -111,8 +117,17 @@ Page({
     this.mapUnsubscribe = appContext.map.subscribe(() => this.refreshDownload());
     this.refreshDownload();
     void this.refreshMapVersion();
-    void this.checkAuth();
     void this.refreshRuntimeConfig(false);
+  },
+
+  onChangeScreenReaderVoice(e: WechatMiniprogram.SwitchChange): void {
+    try {
+      setScreenReaderVoice(e.detail.value);
+      this.setData({ screenReaderVoice: e.detail.value });
+    } catch (_) {
+      wx.showToast({ title: '设置保存失败，请重试', icon: 'none' });
+      this.setData({ screenReaderVoice: getScreenReaderVoice() });
+    }
   },
 
   onUnload() {
@@ -133,7 +148,7 @@ Page({
     this.refreshDownload();
     this.setData({
       dataSource: appContext.dataSource,
-      apiUrl: currentServiceBaseUrl(),
+      apiUrl: apiUrlText(),
       voiceMock: appContext.getVoiceMockSetting(),
       mockText: appContext.getMockAsrText() || '带我去图书馆',
       calibrationMode: appContext.calibrationMode,
@@ -144,6 +159,7 @@ Page({
       simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
       fingerprintDbSetting: appContext.getFingerprintDbSetting(),
       a11yMode: appContext.getA11yMode(),
+        screenReaderVoice: getScreenReaderVoice(),
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
       navArrowSetting: appContext.getNavArrowSetting(),
     });
@@ -194,18 +210,6 @@ Page({
       const message = err instanceof ApiClientError ? describeError(err.code) : '加载失败';
       log.warn('设置页地图加载失败', err);
       this.setData({ mapVersion: `加载失败：${message}` });
-    }
-  },
-
-  async checkAuth() {
-    this.setData({ tokenStatus: '检查中…' });
-    try {
-      const token = await appContext.http.tokens.getAccessToken();
-      const userId = appContext.http.tokens.currentUserId();
-      this.setData({ tokenStatus: `已登录 ${userId ?? ''}（token …${token.slice(-6)}）` });
-    } catch (err) {
-      const message = err instanceof ApiClientError ? describeError(err.code) : '网络异常';
-      this.setData({ tokenStatus: `登录失败：${message}` });
     }
   },
 
@@ -469,13 +473,11 @@ Page({
   onClearCache() {
     wx.showModal({
       title: '清除本地缓存',
-      content: '将删除地图缓存与登录令牌，需要重新联网加载。确定？',
+      content: '将删除地图缓存，需要重新联网加载。确定？',
       success: (res) => {
         if (!res.confirm) {
           return;
         }
-        remove('auth:token');
-        appContext.http.tokens.invalidate();
         const info = wx.getStorageInfoSync();
         for (const key of info.keys) {
           if (key.startsWith('pathai:map:')) {
@@ -486,7 +488,7 @@ Page({
             }
           }
         }
-        this.setData({ mapVersion: '未加载', tokenStatus: '已清除' });
+        this.setData({ mapVersion: '未加载' });
         wx.showToast({ title: '已清除', icon: 'success' });
       },
     });

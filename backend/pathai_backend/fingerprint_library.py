@@ -35,9 +35,9 @@ from pathai_backend.models import (
 )
 
 FP_EXPORT_TYPE = "ble_fingerprint_collection"
-#: 当前导出 schema；同时兼容 1.1.0（无 deletions/mode 字段）。
-FP_EXPORT_SCHEMA = "1.2.0"
-FP_EXPORT_SCHEMA_ACCEPTED = ("1.1.0", "1.2.0")
+#: 当前导出 schema；同时兼容 1.1.0（无 deletions/mode）与 1.2.0（无信标样本数 n）。
+FP_EXPORT_SCHEMA = "1.3.0"
+FP_EXPORT_SCHEMA_ACCEPTED = ("1.1.0", "1.2.0", "1.3.0")
 DEFAULT_SITE_ID = "school-building-01"
 
 #: 单条记录信标上限（导出器每 2s 窗口最多解析出的信标数远小于此值）。
@@ -222,19 +222,22 @@ def _normalize_record(raw: Any) -> dict[str, Any]:
             raise FingerprintLibraryError(400, "INVALID_BEACON_ID", f"{fp_id} major/minor 非法")
         if not isinstance(rssi, (int, float)) or not (-120 <= rssi <= -10):
             raise FingerprintLibraryError(400, "INVALID_RSSI", f"{fp_id} RSSI 越界")
-        clean.append(
-            {
-                "major": major,
-                "minor": minor,
-                "rssi": float(rssi),
-                # 保留原始字段供审计；查询只用 major/minor/rssi
-                **{
-                    k: v
-                    for k, v in b.items()
-                    if k in ("uuid", "txPower", "accuracy")
-                },
-            }
-        )
+        item: dict[str, Any] = {
+            "major": major,
+            "minor": minor,
+            "rssi": float(rssi),
+        }
+        # 保留原始字段供审计；查询只用 major/minor/rssi
+        for k in ("uuid", "txPower", "accuracy"):
+            if k in b:
+                item[k] = b[k]
+        # L1（schema 1.3.0）：聚合窗口内该信标的样本条数。
+        # 旧导出的记录没有该字段 → 保持缺失（未知），不得补 0；
+        # 该字段参与 _canonical_sha，若在此丢弃会导致新数据被判重复入库。
+        n = b.get("n")
+        if isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= 10_000:
+            item["n"] = n
+        clean.append(item)
     normalized: dict[str, Any] = {
         "fpId": fp_id,
         "floor": str(int(floor)),

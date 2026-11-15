@@ -269,7 +269,16 @@ export class XfyunAsrEngine implements AsrEngine {
   private async beginSession(session: PendingSession): Promise<void> {
     try {
       // 先开录：音频进本地队列，取凭据/握手期间的开口不丢
-      this.recorder.start({ onFrame: (samples) => this.feed(session, samples) });
+      this.recorder.start({
+        onFrame: (samples) => this.feed(session, samples),
+        // onStart 之后麦克风才真正出声：页面的「可以开口」震动挂这里，
+        // 不能挂在 PTT 状态切换上（首次开麦较慢，会丢掉开头的话）
+        onReady: () => {
+          if (this.pending === session) {
+            session.handlers.onReady?.();
+          }
+        },
+      });
       const cred = await this.credential();
       if (this.pending !== session) {
         return; // 会话已被 cancel
@@ -474,7 +483,11 @@ export class XfyunAsrEngine implements AsrEngine {
     if (this.pending !== session || !session.gotFinal || !session.stopped) {
       return;
     }
-    log.info('识别完成:', session.finalText || '(空文本)');
+    log.info(
+      '识别完成:',
+      session.finalText || '(空文本)',
+      `音频帧=${session.audioFrames}`,
+    );
     this.pending = null;
     this.teardownSession(session);
     session.resolve(session.finalText);

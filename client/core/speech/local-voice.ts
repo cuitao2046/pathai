@@ -18,7 +18,8 @@ export type LocalVoiceName =
   | 'map-loading'
   | 'map-loaded'
   | 'map-load-failed'
-  | 'map-stale';
+  | 'map-stale'
+  | 'nav-start';
 
 /** 音频句柄（InnerAudioContext 的最小契约）。 */
 export interface LocalVoiceClipHandle {

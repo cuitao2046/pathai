@@ -54,4 +54,27 @@ describe('SequenceCounter 定位批次序号', () => {
     const second = new SequenceCounter();
     expect(second.next()).toBeGreaterThan(firstSeq);
   });
+
+  it('持久值是毫秒级脏数据：丢弃并回到 epoch 秒基线', () => {
+    setJson(SEQ_KEY, 1_794_473_097_904);
+    const counter = new SequenceCounter();
+    expect(counter.current).toBe(EPOCH_SEC);
+    expect(counter.next()).toBe(EPOCH_SEC + 1);
+  });
+
+  it('advanceTo 追平服务端水位并持久化，且不回退', () => {
+    const counter = new SequenceCounter();
+    counter.advanceTo(EPOCH_SEC + 50);
+    expect(counter.current).toBe(EPOCH_SEC + 50);
+    expect(counter.next()).toBe(EPOCH_SEC + 51);
+    expect(getJson<number>(SEQ_KEY)).toBe(EPOCH_SEC + 51);
+    counter.advanceTo(EPOCH_SEC + 10); // 低于当前值：忽略
+    expect(counter.current).toBe(EPOCH_SEC + 51);
+  });
+
+  it('advanceTo 不跟随毫秒级脏水位（等服务端自愈）', () => {
+    const counter = new SequenceCounter();
+    counter.advanceTo(1_794_473_097_904);
+    expect(counter.current).toBe(EPOCH_SEC);
+  });
 });

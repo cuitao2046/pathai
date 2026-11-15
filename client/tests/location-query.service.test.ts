@@ -4,6 +4,7 @@
  * 断言 FE-01 质量策略：reliable 报区域、degraded 只报楼层、失败/超时播安全文案。
  */
 import { BeaconRegistry } from '../core/ble/beacon-registry';
+import { LiveBeaconScanner } from '../core/ble/beacon-scanner';
 import type { BeaconSourceLike } from '../core/ble/beacon-source';
 import { SharedLiveBeaconSource, createBeaconSource } from '../core/ble/beacon-source-factory';
 import { MockBeaconSource } from '../core/ble/mock-beacon-source';
@@ -13,10 +14,16 @@ import { ApiClientError } from '../core/http/errors';
 import type { LocationMapProvider } from '../core/position/location-pipeline';
 import {
   LocationQueryService,
+  SURROUNDINGS_EMPTY_TEXT,
+  SURROUNDINGS_UNAVAILABLE_TEXT,
+  SURROUNDINGS_UNCERTAIN_TEXT,
+  SURROUNDINGS_UNRESOLVED_TEXT,
   UNRESOLVED_TEXT,
   describePositionText,
+  describeSurroundingsText,
+  mergeSurroundings,
 } from '../services/location-query.service';
-import type { PositionEstimateResponse } from '../typings/api';
+import type { PositionEstimateResponse, SurroundingElement } from '../typings/api';
 import { REAL_F1_TRIO, REAL_MAP } from './fixtures/real-map';
 
 jest.useFakeTimers({ doNotFake: ['setImmediate'] });
@@ -119,6 +126,7 @@ function makeService(opts: {
   client: ApiClient;
   source: FakeSource;
   timeoutMs?: number;
+  headingDeg?: () => number | null;
 }): LocationQueryService {
   return new LocationQueryService({
     client: opts.client,
@@ -128,6 +136,7 @@ function makeService(opts: {
     tickIntervalMs: 20,
     timeoutMs: opts.timeoutMs ?? 60_000,
     windowMs: 50,
+    headingDeg: opts.headingDeg,
   });
 }
 
@@ -237,6 +246,73 @@ describe('LocationQueryService.query', () => {
     expect(source.stopCount).toBe(1);
   });
 
+  test('查周边：请求带 includeSurroundings 与朝向，播报周边要素而非当前位置', async () => {
+    const source = new FakeSource();
+    const { client, request } = fakeClient(() =>
+      estimateOf({
+        quality: 'reliable',
+        surroundings: [
+          {
+            name: '档案室门',
+            elementType: 'doorway',
+            clockDirection: 11,
+            distanceMeters: 3,
+            accessibilityNote: '常闭防火门，可能需要推开',
+          },
+          {
+            name: '楼梯口',
+            elementType: 'stairs',
+            clockDirection: 1,
+            distanceMeters: 5,
+            accessibilityNote: null,
+          },
+        ],
+      }),
+    );
+    const svc = makeService({ client, source, headingDeg: () => 90 });
+
+    const text = await drive(svc.query('surroundings'));
+
+    expect(text).toBe('左前方3米有档案室门（常闭防火门，可能需要推开）；右前方5米有楼梯口。');
+    expect(text).not.toContain('您当前在'); // 查周边不得播成"当前位置附近"
+    const req = request.mock.calls[0][0] as {
+      body: { includeSurroundings?: boolean; imu?: { headingDeg?: number } };
+    };
+    expect(req.body.includeSurroundings).toBe(true);
+    expect(req.body.imu?.headingDeg).toBe(90); // 朝向随同一次请求上报
+    expect(request).toHaveBeenCalledTimes(1); // 不串第二次请求
+  });
+
+  test('查周边：观测一直不足 → 定位失败降级话术（不静默）', async () => {
+    const source = new FakeSource();
+    source.emitOnStart = false;
+    const { client, request } = fakeClient(() => estimateOf({}));
+    const svc = makeService({ client, source, timeoutMs: 100 });
+
+    const text = await drive(svc.query('surroundings'));
+
+    expect(text).toBe(SURROUNDINGS_UNRESOLVED_TEXT);
+    expect(request).not.toHaveBeenCalled();
+    expect(source.stopCount).toBe(1);
+  });
+
+  test('查周边：定位接口报错 → 定位失败降级话术', async () => {
+    const source = new FakeSource();
+    const { client } = fakeClient(() => {
+      throw new ApiClientError({
+        code: 'LOCATION_UNRELIABLE',
+        message: '暂时无法可靠确定当前位置',
+        retryable: true,
+      });
+    });
+    const svc = makeService({ client, source });
+
+    const text = await drive(svc.query('surroundings'));
+
+    expect(text).toBe(SURROUNDINGS_UNRESOLVED_TEXT);
+    expect(source.stopCount).toBe(1);
+  });
+
   test('查询进行中再次查询 → 返回 null（并发被忽略）', async () => {
     const source = new FakeSource();
     source.emitOnStart = false;
@@ -292,10 +368,178 @@ describe('describePositionText（FE-01 质量策略纯函数）', () => {
   });
 });
 
+describe('describeSurroundingsText（查周边话术）', () => {
+  const surrounding = (over: Partial<SurroundingElement>) => ({
+    name: '档案室门',
+    elementType: 'doorway',
+    clockDirection: 11,
+    distanceMeters: 3,
+    accessibilityNote: null,
+    ...over,
+  });
+
+  test('reliable：按 8 扇区左右方位列周边，最多 3 条，不出现时钟方位', () => {
+    const text = describeSurroundingsText(
+      estimateOf({
+        surroundings: [
+          surrounding({}),
+          surrounding({ name: '楼梯口', clockDirection: 1, distanceMeters: 5 }),
+          surrounding({ name: '饮水机', clockDirection: 12, distanceMeters: 2 }),
+          surrounding({ name: '柱子', clockDirection: 7, distanceMeters: 6 }),
+        ],
+      }),
+    );
+    expect(text).toBe('左前方3米有档案室门；右前方5米有楼梯口；前方2米有饮水机。');
+    expect(text).not.toContain('点钟');
+    expect(
+      describeSurroundingsText(
+        estimateOf({ surroundings: [surrounding({ clockDirection: 7 })] }),
+      ),
+    ).toBe('左后方3米有档案室门。');
+  });
+
+  test('12 个时钟方位统一映射到 8 个左右扇区', () => {
+    const label = (clockDirection: number) =>
+      describeSurroundingsText(
+        estimateOf({ surroundings: [surrounding({ clockDirection })] }),
+      );
+    expect(label(12)).toBe('前方3米有档案室门。');
+    expect(label(1)).toBe('右前方3米有档案室门。');
+    expect(label(2)).toBe('右前方3米有档案室门。');
+    expect(label(3)).toBe('右方3米有档案室门。');
+    expect(label(4)).toBe('右后方3米有档案室门。');
+    expect(label(5)).toBe('右后方3米有档案室门。');
+    expect(label(6)).toBe('后方3米有档案室门。');
+    expect(label(7)).toBe('左后方3米有档案室门。');
+    expect(label(8)).toBe('左后方3米有档案室门。');
+    expect(label(9)).toBe('左方3米有档案室门。');
+    expect(label(10)).toBe('左前方3米有档案室门。');
+    expect(label(11)).toBe('左前方3米有档案室门。');
+  });
+
+  test('朝向不可用：明确提示无法判断方向，只给距离不猜左右', () => {
+    const text = describeSurroundingsText(
+      estimateOf({
+        surroundings: [
+          surrounding({}),
+          surrounding({ name: '楼梯口', clockDirection: 1, distanceMeters: 5 }),
+        ],
+      }),
+      { headingAvailable: false },
+    );
+    expect(text).toBe('暂时无法判断方向，3米有档案室门；5米有楼梯口。');
+    expect(text).not.toMatch(/左|右|前方|后方/);
+    expect(text).not.toContain('点钟');
+  });
+
+  test('reliable 但附近无要素 / 服务端未返回清单 → 分别明确提示', () => {
+    expect(describeSurroundingsText(estimateOf({ surroundings: [] }))).toBe(
+      SURROUNDINGS_EMPTY_TEXT,
+    );
+    expect(describeSurroundingsText(estimateOf({ surroundings: null }))).toBe(
+      SURROUNDINGS_UNAVAILABLE_TEXT,
+    );
+    expect(describeSurroundingsText(estimateOf({}))).toBe(SURROUNDINGS_UNAVAILABLE_TEXT);
+  });
+
+  test('degraded → 精度不足话术；unreliable/lost → 定位失败话术', () => {
+    expect(
+      describeSurroundingsText(
+        estimateOf({ quality: 'degraded', surroundings: [surrounding({})] }),
+      ),
+    ).toBe(SURROUNDINGS_UNCERTAIN_TEXT);
+    expect(
+      describeSurroundingsText(estimateOf({ quality: 'unreliable', position: null })),
+    ).toBe(SURROUNDINGS_UNRESOLVED_TEXT);
+    expect(
+      describeSurroundingsText(estimateOf({ quality: 'lost', position: null })),
+    ).toBe(SURROUNDINGS_UNRESOLVED_TEXT);
+  });
+
+  test('同名要素同位置合并：保留设施名与风险提示，合并先于截断', () => {
+    const text = describeSurroundingsText(
+      estimateOf({
+        surroundings: [
+          surrounding({ name: '电梯', elementType: 'elevator', clockDirection: 4, distanceMeters: 4.0 }),
+          surrounding({
+            name: '电梯口风险点',
+            elementType: 'hazard',
+            clockDirection: 4,
+            distanceMeters: 4.2,
+            accessibilityNote: '电梯口，注意轿厢位置',
+          }),
+          surrounding({ name: '打印', clockDirection: 10, distanceMeters: 4.8 }),
+          surrounding({
+            name: '独立柱子',
+            elementType: 'pillar',
+            clockDirection: 3,
+            distanceMeters: 6.0,
+            accessibilityNote: '注意绕行',
+          }),
+        ],
+      }),
+    );
+    expect(text).toBe(
+      '右后方4米有电梯（电梯口，注意轿厢位置）；左前方5米有打印；右方6米有独立柱子（注意绕行）。',
+    );
+    // 未合并时 4 条会截断丢掉“独立柱子”；合并后 3 条名额都能用于不同位置
+    expect(text).toContain('独立柱子');
+  });
+
+  test('同房间门与门口风险点：同位置同前缀合并，保留门名与风险提示', () => {
+    expect(
+      describeSurroundingsText(
+        estimateOf({
+          surroundings: [
+            surrounding({ name: '档案室门', clockDirection: 11, distanceMeters: 4.0 }),
+            surrounding({
+              name: '档案室门口风险点',
+              elementType: 'hazard',
+              clockDirection: 11,
+              distanceMeters: 4.2,
+              accessibilityNote: '门口地面湿滑',
+            }),
+          ],
+        }),
+      ),
+    ).toBe('左前方4米有档案室门（门口地面湿滑）。');
+  });
+
+  test('同名但不同扇区或距离差 >1m 不合并（不同实体）', () => {
+    const items = [
+      surrounding({ name: '电梯', clockDirection: 3, distanceMeters: 4.0 }),
+      surrounding({ name: '电梯', clockDirection: 9, distanceMeters: 4.2 }),
+      surrounding({ name: '电梯', clockDirection: 3, distanceMeters: 7.0 }),
+    ];
+    expect(mergeSurroundings(items)).toHaveLength(3);
+  });
+});
+
 describe('createBeaconSource 工厂', () => {
   test('mock → 模拟轨迹源；live → 实扫源', () => {
     const map = { beacons: REAL_MAP.beacons, beaconRegistry: new BeaconRegistry(REAL_MAP.beacons) };
     expect(createBeaconSource('mock', map)).toBeInstanceOf(MockBeaconSource);
     expect(createBeaconSource('live', map)).toBeInstanceOf(SharedLiveBeaconSource);
+  });
+
+  test('共享扫描器缓存键含地图版本：换版即使 UUID 相同也重建', () => {
+    const registry = new BeaconRegistry(REAL_MAP.beacons);
+    const makeMap = (mapVersion: string) => ({
+      beacons: REAL_MAP.beacons,
+      beaconRegistry: registry,
+      mapVersion,
+    });
+    // 预热：清掉其他用例在模块级共享槽里留下的扫描器，槽内即为 v-1
+    createBeaconSource('live', makeMap('v-1'));
+    const stopSpy = jest.spyOn(LiveBeaconScanner.prototype, 'stop');
+    try {
+      createBeaconSource('live', makeMap('v-1'));
+      createBeaconSource('live', makeMap('v-1'));
+      expect(stopSpy).not.toHaveBeenCalled(); // 同版本复用同一扫描器
+      createBeaconSource('live', makeMap('v-2'));
+      expect(stopSpy).toHaveBeenCalledTimes(1); // 换版重建，旧扫描器硬停止
+    } finally {
+      stopSpy.mockRestore();
+    }
   });
 });

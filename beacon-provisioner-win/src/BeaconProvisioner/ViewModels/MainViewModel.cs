@@ -18,10 +18,15 @@ public sealed class MainViewModel : ObservableObject
     private readonly PendingUploadStore _pending = new();
     private readonly DeviceWriteHistoryStore _writeHistory = new();
     private readonly List<BleDeviceInfo> _devices = new();
+    // 本工具写入成功的设备名：广播可能在写入后仍携带旧名字，本次运行内以写入/读回值为准。
+    private readonly Dictionary<string, string> _writtenDeviceNames = new(StringComparer.OrdinalIgnoreCase);
     private IBleEnvironment _ble;
     private bool _useMockBle;
     private bool _onlyUnwrittenDevices;
     private bool _onlyProjectDevices = true;
+    private bool _scanning;
+    private string _scanSummaryText = "";
+    private ScanSortOption _selectedScanSortOption = ScanDeviceSorter.Options[0];
 
     private string _serverUrl = "http://127.0.0.1:8000";
     private string _username = "admin";
@@ -108,6 +113,35 @@ public sealed class MainViewModel : ObservableObject
         ? "Mock 模式：3 台模拟信标，写入只作用于选中的信标"
         : "实物模式（WinRT）：写入只作用于选中的信标；保存后立即生效，无需重启";
 
+    /// <summary>
+    /// 扫描计数摘要（与操作提示 StatusText 分开）：扫到多少台、当前显示多少台。
+    /// 每次设备变化或过滤条件变化都会刷新，因此实物扫描期间会随列表增长。
+    /// </summary>
+    public string ScanSummaryText
+    {
+        get => _scanSummaryText;
+        private set => Set(ref _scanSummaryText, value);
+    }
+
+    /// <summary>扫描列表可选的排序方式；排序选择在本次运行内保留，重扫不会回到默认值。</summary>
+    public IReadOnlyList<ScanSortOption> ScanSortOptions => ScanDeviceSorter.Options;
+
+    public ScanSortOption SelectedScanSortOption
+    {
+        get => _selectedScanSortOption;
+        set
+        {
+            if (value is null || ReferenceEquals(_selectedScanSortOption, value))
+            {
+                return;
+            }
+
+            _selectedScanSortOption = value;
+            Raise();
+            ApplyDeviceFilter();
+        }
+    }
+
     /// <summary>扫描列表过滤：只显示本机尚未写入过的信标。</summary>
     public bool OnlyUnwrittenDevices
     {
@@ -161,6 +195,7 @@ public sealed class MainViewModel : ObservableObject
             _ble.DevicesChanged += OnDevicesChanged;
             _settings.SaveBleMode(value ? "mock" : "real");
             _devices.Clear();
+            _writtenDeviceNames.Clear();
             VisibleDevices.Clear();
             SelectedDevice = null;
             ResetProgress();
@@ -277,10 +312,24 @@ public sealed class MainViewModel : ObservableObject
         get => _isConnected;
         private set
         {
-            if (Set(ref _isConnected, value))
+            var changed = Set(ref _isConnected, value);
+            // 重连/切换时值可能一直是 true（setter 不触发），所以这里无条件刷新一次徽标。
+            RefreshConnectionBadges();
+            if (changed)
             {
                 RefreshCommands();
             }
+        }
+    }
+
+    /// <summary>把「当前连接的是哪台」映射到扫描列表的徽标上；连接/断开/切换时立即刷新，不等重扫。</summary>
+    private void RefreshConnectionBadges()
+    {
+        var mac = IsConnected ? _session?.Device.Mac : null;
+        foreach (var device in _devices)
+        {
+            device.IsConnected = mac is not null
+                && string.Equals(device.Mac, mac, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -612,14 +661,34 @@ public sealed class MainViewModel : ObservableObject
             Records.Add(record);
         }
 
-        foreach (var id in summary.Missing)
-        {
-            UnboundIds.Add(id);
-        }
+        // 可写 id 池改为按本机写入记录计算（台账全集 − 当前被占用的 id），
+        // 不再直接用后端的 Missing：后端记录不随本机「改绑」释放，会把旧 id 永久占住。
+        RefreshWrittenIdPool();
 
         RecordSummary =
             $"计划 {summary.Total} · 已入库 {summary.Recorded} · 已校验 {summary.Verified} · 未入库 {summary.Missing.Count} · {PendingText}";
         Raise(nameof(PendingText));
+    }
+
+    /// <summary>
+    /// 可写 beaconId 池 = 台账全集 − 当前仍被占用的 id。
+    /// 占用关系取「每台设备（MAC）最近一次写入的 beaconId」：同一 MAC 改写成新 id 后，
+    /// 旧 id 不再被任何 MAC 指向，自动回到池子里；写入历史（时间/参数/上传标记）不删除。
+    /// </summary>
+    private void RefreshWrittenIdPool()
+    {
+        var occupied = new HashSet<string>(_writeHistory.GetBoundBeaconIds(), StringComparer.OrdinalIgnoreCase);
+        var keep = SelectedUnboundId;
+        UnboundIds.Clear();
+        foreach (var beacon in Beacons)
+        {
+            if (beacon.BeaconId.Length > 0 && !occupied.Contains(beacon.BeaconId))
+            {
+                UnboundIds.Add(beacon.BeaconId);
+            }
+        }
+
+        SelectedUnboundId = keep is not null && UnboundIds.Contains(keep) ? keep : null;
     }
 
     private Task LocateAsync()
@@ -647,8 +716,8 @@ public sealed class MainViewModel : ObservableObject
         }
 
         StatusText = UnboundIds.Contains(match.BeaconId)
-            ? $"{match.BeaconId} 未入库，已选中"
-            : $"{match.BeaconId} 已在真实部署台账中";
+            ? $"{match.BeaconId} 未写入，已选中"
+            : $"{match.BeaconId} 已被某台设备写入占用，可写列表里不可选";
         return Task.CompletedTask;
     }
 
@@ -658,13 +727,19 @@ public sealed class MainViewModel : ObservableObject
         {
             await _ble.EnsureReadyAsync();
             _ble.StartScan();
+            _scanning = true;
             SyncDevices();
+            // 计数统一走 ScanSummaryText（由 ApplyDeviceFilter 刷新）。
+            // 旧实现在 StartScan() 清空列表后立刻取 VisibleDevices.Count，实物模式下必然取到 0，
+            // 且之后从不更新，所以这里只留操作提示。
             StatusText = _ble.IsMock
-                ? $"Mock 扫描：{_devices.Count} 台（出厂三元组相同，按 MAC 区分）"
-                : $"实物扫描中（WinRT）：已发现 {VisibleDevices.Count} 台本项目信标，等待 iBeacon / FFF0 广播…";
+                ? "Mock 扫描已启动（3 台模拟信标，出厂三元组相同、按 MAC 区分）"
+                : "实物扫描已启动（WinRT），列表随广播实时更新；若长时间为 0 请检查蓝牙适配器与系统蓝牙开关";
         }
         catch (Exception ex)
         {
+            _scanning = false;
+            ScanSummaryText = "";
             StatusText = $"扫描失败：{ex.Message}（请检查蓝牙适配器与系统蓝牙开关）";
         }
     }
@@ -676,9 +751,17 @@ public sealed class MainViewModel : ObservableObject
         {
             var writtenAt = _writeHistory.GetLastWrittenAt(device.Mac);
             device.WriteTimeText = writtenAt?.ToString("yyyy-MM-dd HH:mm:ss") ?? "";
+            // 广播帧可能还没换成新名字，本工具写入过的 MAC 用写入/读回值覆盖，避免列表回退。
+            if (_writtenDeviceNames.TryGetValue(device.Mac, out var writtenName))
+            {
+                device.Name = writtenName;
+            }
+
             _devices.Add(device);
         }
 
+        // WinRT 每次广播都会重建 BleDeviceInfo，徽标要在这里按当前会话重新贴上，不能只存在实例上。
+        RefreshConnectionBadges();
         ApplyDeviceFilter();
     }
 
@@ -686,7 +769,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var keepMac = SelectedDevice?.Mac;
         var projectUuids = ProjectUuids();
-        VisibleDevices.Clear();
+        var matched = new List<BleDeviceInfo>();
         foreach (var device in _devices)
         {
             if (OnlyProjectDevices && !IsProjectDevice(device, projectUuids))
@@ -699,11 +782,38 @@ public sealed class MainViewModel : ObservableObject
                 continue;
             }
 
+            matched.Add(device);
+        }
+
+        var ordered = ScanDeviceSorter.Sort(matched, _selectedScanSortOption.Mode);
+        VisibleDevices.Clear();
+        foreach (var device in ordered)
+        {
             VisibleDevices.Add(device);
         }
 
         SelectedDevice = VisibleDevices.FirstOrDefault(d => d.Mac == keepMac) ?? VisibleDevices.FirstOrDefault();
+        UpdateScanSummary();
         RefreshCommands();
+    }
+
+    /// <summary>
+    /// 扫描摘要：把"扫到几台"和"当前显示几台"分成两个口径，随设备到达/过滤条件变化实时刷新，
+    /// 实物扫描期间列表持续增长时数字会跟着变。
+    /// </summary>
+    private void UpdateScanSummary()
+    {
+        if (!_scanning)
+        {
+            ScanSummaryText = "";
+            return;
+        }
+
+        var filtered = _devices.Count - VisibleDevices.Count;
+        var prefix = _ble.IsMock ? "Mock 扫描" : "实物扫描（WinRT）";
+        ScanSummaryText = filtered > 0
+            ? $"{prefix}：扫到 {_devices.Count} 台，当前显示 {VisibleDevices.Count} 台（{filtered} 台被过滤）"
+            : $"{prefix}：扫到 {_devices.Count} 台，当前显示 {VisibleDevices.Count} 台";
     }
 
     /// <summary>本项目信标的 UUID 集合：系统 UUID + 台账里出现过的 UUID。</summary>
@@ -920,6 +1030,35 @@ public sealed class MainViewModel : ObservableObject
         CurrentSettingsText = expected + "\n\n" + readback;
     }
 
+    /// <summary>
+    /// 写入成功后按 MAC 就地更新扫描列表里的设备名（广播帧可能还是旧名），
+    /// 并立即按当前排序重排；其它设备的排序键未变，不会跟着换位。
+    /// </summary>
+    private void RememberWrittenDeviceName(string mac, string name)
+    {
+        if (string.IsNullOrWhiteSpace(mac) || string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        _writtenDeviceNames[mac] = name;
+        foreach (var device in _devices)
+        {
+            if (string.Equals(device.Mac, mac, StringComparison.OrdinalIgnoreCase))
+            {
+                device.Name = name;
+            }
+        }
+
+        if (SelectedDevice is { } selected &&
+            string.Equals(selected.Mac, mac, StringComparison.OrdinalIgnoreCase))
+        {
+            selected.Name = name;
+        }
+
+        ApplyDeviceFilter();
+    }
+
     private void ResetProgress()
     {
         _verified = false;
@@ -937,7 +1076,7 @@ public sealed class MainViewModel : ObservableObject
         if (_session is null || target is null || target.Uuid is null || target.Major is null ||
             target.Minor is null || target.TxPower is null || target.BroadcastInterval is null)
         {
-            StatusText = "请先连接设备并选择未入库 beaconId";
+            StatusText = "请先连接设备并选择未写入 beaconId";
             return;
         }
 
@@ -1083,14 +1222,20 @@ public sealed class MainViewModel : ObservableObject
             }
 
             _writeHistory.MarkWritten(deviceMac, DateTime.Now, target.BeaconId, source, txPowerDbm, intervalMs);
+            // 改绑后旧 id 立即回到可写池；历史记录保留（本次写入已覆盖为该 MAC 的当前绑定）。
+            RefreshWrittenIdPool();
+            // 列表名称来自广播帧，写入后广播可能还停留在旧名字；先用写入值就地刷新。
+            RememberWrittenDeviceName(deviceMac, target.DeviceName);
 
             // E5 保存后自动生效，无需重启；部分固件提交 FFFF 后会主动断开，读回失败时重连再读一次
             var readOk = false;
+            BeaconCurrentState? readback = null;
             try
             {
                 if (SessionAlive())
                 {
-                    ShowCurrent(await Task.Run(() => _session!.ReadCurrent()));
+                    readback = await Task.Run(() => _session!.ReadCurrent());
+                    ShowCurrent(readback);
                     readOk = true;
                 }
             }
@@ -1107,13 +1252,20 @@ public sealed class MainViewModel : ObservableObject
                     CloseSession();
                     _session = await _ble.ConnectAsync(device);
                     IsConnected = true;
-                    ShowCurrent(await Task.Run(() => _session.ReadCurrent()));
+                    readback = await Task.Run(() => _session.ReadCurrent());
+                    ShowCurrent(readback);
                     readOk = true;
                 }
                 catch (Exception ex)
                 {
                     LogBle($"{deviceMac} 保存后重连读回失败：{ex.Message}");
                 }
+            }
+
+            // 读回值是设备里的最终名称；与写入值不一致时以读回为准。
+            if (readback is { } state && !string.IsNullOrWhiteSpace(state.Name))
+            {
+                RememberWrittenDeviceName(deviceMac, state.Name);
             }
 
             // 刚写入的信标要能继续校验，确保不被「只显示未写入」过滤掉

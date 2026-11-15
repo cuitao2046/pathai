@@ -2,7 +2,7 @@
  * 现场采集（静态标定 + 网格指纹）共享类型。
  * 导出契约与独立工具严格一致：
  * - 静态标定 = positioning-calibrator utils/cstore.js 的 static_samples.json（schemaVersion 1.0）
- * - 网格指纹 = fingerprint-collector utils/fpstore.js 的 ble_fingerprint_collection（schemaVersion 1.2.0）
+ * - 网格指纹 = fingerprint-collector utils/fpstore.js 的 ble_fingerprint_collection（schemaVersion 1.3.0）
  * 新增字段必须为可选（PC 侧工具链忽略未知字段），禁止改名/改语义。
  */
 import type { ResolvedObservation } from '../ble/scan-window';
@@ -68,6 +68,11 @@ export interface FpBeaconObs {
   txPower: number;
   /** 由路径损耗模型反推的距离（米），保留 2 位小数。 */
   accuracy: number;
+  /**
+   * 聚合窗口内该信标的样本条数（schema 1.3.0 新增，可选）。
+   * 旧记录没有该字段 = **未知**，下游不得当 0 参与门控/加权。
+   */
+  n?: number;
 }
 
 /** 指纹快照记录（同一点可多条，captureIndex 递增）。 */

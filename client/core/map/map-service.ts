@@ -15,7 +15,6 @@
  * - 未加载时 require* 一律抛 MAP_UNAVAILABLE（禁止开始导航 FE-01）。
  */
 import {
-  API_BASE_URL,
   DEBUG_REWRITE_DATA_URL,
   MAP_DOWNLOAD_CHUNK_BYTES,
   MAP_STALE_DAYS,
@@ -54,10 +53,10 @@ export interface MapServiceOptions {
   client: ApiClient;
   siteId: string;
   /**
-   * 业务根地址来源（默认编译期配置）。联调重写下载源时必须与
+   * 业务根地址来源（必填：启动解析结果）。联调重写下载源时必须与
    * 登录/业务请求使用同一地址，避免分片下载打到旧 IP。
    */
-  baseUrl?: BaseUrlProvider;
+  baseUrl: BaseUrlProvider;
   /** 联调开关：重写下载源为 API 同源（默认读环境配置）。 */
   rewriteDataUrlToLocalApi?: boolean;
 }
@@ -560,10 +559,12 @@ export class MapService {
 
   private dataUrlFor(summary: MapVersionResponse): string {
     const useRewrite = this.opts.rewriteDataUrlToLocalApi ?? DEBUG_REWRITE_DATA_URL;
-    const base = resolveBaseUrl(this.opts.baseUrl ?? API_BASE_URL);
-    return useRewrite
-      ? `${base}/api/v1/sites/${this.opts.siteId}/map/data?version=${encodeURIComponent(summary.mapVersion)}`
-      : summary.dataUrl;
+    if (!useRewrite) {
+      return summary.dataUrl;
+    }
+    // 重写下载源必须复用启动解析出的地址；未解析时 resolveBaseUrl 抛 ENDPOINT_UNRESOLVED。
+    const base = resolveBaseUrl(this.opts.baseUrl);
+    return `${base}/api/v1/sites/${this.opts.siteId}/map/data?version=${encodeURIComponent(summary.mapVersion)}`;
   }
 
   private async resetPartial(version: string): Promise<void> {

@@ -7,6 +7,12 @@
 export interface AsrHandlers {
   /** 中间识别结果（边说边出）。 */
   onPartial?(text: string): void;
+  /**
+   * 麦克风真正开始工作（RecorderManager.onStart）。
+   * 页面「可以开口了」的震动/提示必须挂这个回调，不能挂在 PTT 状态切换上：
+   * 首次录音时音频会话初始化较慢，状态切换瞬间麦克风尚未打开，此时开口会丢音。
+   */
+  onReady?(): void;
 }
 
 /** 用户/系统取消导致的会话终止（区别于引擎故障）。 */

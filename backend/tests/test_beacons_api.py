@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from pathai_backend.admin.deps import CSRF_HEADER
 from pathai_backend.app import create_app
 from pathai_backend.config import Settings
-from pathai_backend.database import get_engine
-from pathai_backend.models import Base
+from pathai_backend.database import get_engine, session_scope
+from pathai_backend.models import AdminAuditEvent, Base
 
 BACKEND = Path(__file__).resolve().parent.parent
 SAMPLE_MAP = BACKEND / "maps_data" / "school-building-01" / "2026-10-25.1.json"
@@ -107,10 +107,17 @@ def _written(item: dict, **overrides) -> dict:
     return data
 
 
+def _mac_for(item: dict) -> str:
+    """每枚规划信标对应一台独立设备，MAC 按三元组派生，避免测试里互相取代。"""
+    major = int(item["major"])
+    minor = int(item["minor"])
+    return f"8A:E5:84:{major & 0xFF:02X}:{(minor >> 8) & 0xFF:02X}:{minor & 0xFF:02X}"
+
+
 def _body(item: dict, **overrides) -> dict:
     body = {
         "mapVersion": VERSION,
-        "deviceMac": "8A:E5:84:7A:E7:C9",
+        "deviceMac": _mac_for(item),
         "deviceName": item["deviceName"],
         "nameWrite": "written",
         "written": _written(item),
@@ -244,6 +251,111 @@ class TestDeploymentRecords:
         resp = _put(client, admin, first["beaconId"], _body(first))
         assert resp.status_code == 409
         assert resp.json()["error"]["code"] == "BEACON_TRIPLET_CONFLICT"
+
+    def test_rebind_by_mac_supersedes_old_record(self, client, admin):
+        items = _beacons(client)
+        old, new = items[0], items[1]
+        mac = "8A:E5:84:7A:E7:C9"
+        assert _put(client, admin, old["beaconId"], _body(old, deviceMac=mac)).status_code == 200
+
+        # 同一设备（MAC 大小写/分隔符不同）改绑到另一个 beaconId
+        resp = _put(client, admin, new["beaconId"], _body(new, deviceMac="8a-e5-84-7a-e7-c9"))
+        assert resp.status_code == 200, resp.text
+
+        listing = client.get(f"/api/v1/sites/{SITE}/deployment-records?version={VERSION}").json()
+        by_id = {item["beaconId"]: item for item in listing["items"]}
+        assert by_id[old["beaconId"]]["active"] is False
+        assert by_id[old["beaconId"]]["supersededAt"]
+        assert by_id[old["beaconId"]]["supersededBySiteId"] == SITE
+        assert by_id[old["beaconId"]]["supersededByBeaconId"] == new["beaconId"]
+        assert by_id[new["beaconId"]]["active"] is True
+
+        # 统计口径排除已失效记录：旧 beaconId 回到缺失列表
+        summary = listing["summary"]
+        assert summary["recorded"] == 1
+        assert old["beaconId"] in summary["missing"]
+        assert new["beaconId"] not in summary["missing"]
+
+        # commit 不能把“还缺一台”判成已完成
+        commit = client.post(
+            f"/api/v1/sites/{SITE}/deployment-records/commit",
+            json={"mapVersion": VERSION},
+            headers={CSRF_HEADER: admin},
+        )
+        assert commit.status_code == 200
+        assert commit.json()["status"] == "incomplete"
+
+        # 取代可审计：谁、何时、被哪条记录取代
+        with session_scope() as session:
+            all_events = session.query(AdminAuditEvent).all()
+            events = [e for e in all_events if e.event_type == "beacon_record_supersede"]
+            details_json = events[0].details_json if events else None
+            all_types = [(e.event_type, e.details_json) for e in all_events]
+        assert len(events) == 1, all_types
+        details = json.loads(details_json)
+        assert details["beaconId"] == new["beaconId"]
+        assert details["operator"]
+        assert details["supersededAt"]
+        assert details["superseded"] == [
+            {
+                "siteId": SITE,
+                "beaconId": old["beaconId"],
+                "deviceMac": mac,
+            }
+        ]
+
+    def test_triplet_held_only_by_superseded_record_is_available(self, client, admin):
+        items = _beacons(client)
+        old, new = items[0], items[1]
+        mac = "8A:E5:84:7A:E7:C9"
+        assert _put(client, admin, old["beaconId"], _body(old, deviceMac=mac)).status_code == 200
+        assert _put(client, admin, new["beaconId"], _body(new, deviceMac=mac)).status_code == 200
+
+        # 换一台设备重新占用旧 beaconId：三元组只被已失效记录持有 → 允许，并复活该行
+        resp = _put(
+            client, admin, old["beaconId"], _body(old, deviceMac="AA:BB:CC:00:00:01")
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["active"] is True
+        assert resp.json()["supersededAt"] is None
+
+        listing = client.get(f"/api/v1/sites/{SITE}/deployment-records?version={VERSION}").json()
+        assert listing["summary"]["recorded"] == 2
+
+    def test_different_mac_does_not_supersede(self, client, admin):
+        items = _beacons(client)
+        first, second = items[0], items[1]
+        assert (
+            _put(client, admin, first["beaconId"], _body(first, deviceMac="AA:BB:CC:00:00:01"))
+            .status_code
+            == 200
+        )
+        assert (
+            _put(client, admin, second["beaconId"], _body(second, deviceMac="AA:BB:CC:00:00:02"))
+            .status_code
+            == 200
+        )
+        listing = client.get(f"/api/v1/sites/{SITE}/deployment-records?version={VERSION}").json()
+        assert listing["summary"]["recorded"] == 2
+        assert all(item["active"] for item in listing["items"])
+
+    def test_same_triplet_edit_does_not_supersede(self, client, admin):
+        item = next(i for i in _beacons(client) if i["beaconId"] == BEACON_ID)
+        mac = "8A:E5:84:7A:E7:C9"
+        assert _put(client, admin, BEACON_ID, _body(item, deviceMac=mac)).status_code == 200
+        resp = _put(
+            client,
+            admin,
+            BEACON_ID,
+            _body(item, deviceMac=mac, written=_written(item, interval=500), source="field_edit"),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["active"] is True
+
+        listing = client.get(f"/api/v1/sites/{SITE}/deployment-records?version={VERSION}").json()
+        assert listing["summary"]["recorded"] == 1
+        assert listing["summary"]["duplicates"] == []
+        assert len(listing["items"]) == 1
 
     def test_commit_incomplete_then_complete(self, client, admin):
         items = _beacons(client)

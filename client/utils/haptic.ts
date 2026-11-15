@@ -17,3 +17,12 @@ export function vibrateShort(): void {
 export function vibrateLong(): void {
   safeVibrate(() => wx.vibrateLong({}));
 }
+
+/**
+ * 双短振（间隔 120ms）：读屏双击切换录音时表示「已停止」。
+ * 单短振用于「麦克风就绪，可以说话」，两者节奏可区分。
+ */
+export function vibrateDoubleShort(): void {
+  vibrateShort();
+  setTimeout(() => vibrateShort(), 120);
+}

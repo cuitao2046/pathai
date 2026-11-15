@@ -105,6 +105,7 @@ export type ApiErrorCode =
   | 'NETWORK_ERROR'
   | 'REQUEST_TIMEOUT'
   | 'MAP_UNAVAILABLE'
+  | 'ENDPOINT_UNRESOLVED'
   // 指纹库（版本保留 / 删除语义）
   | 'VERSION_NOT_FOUND'
   | 'VERSION_EXPIRED'
@@ -163,7 +164,7 @@ export interface PlaceCandidate {
 }
 
 // ---------------------------------------------------------------------------
-// API-01 微信登录（schemas/auth.py）
+// API-01 微信登录（私网阶段小程序不调用；保留契约供公网阶段恢复鉴权）
 // ---------------------------------------------------------------------------
 
 export interface WechatLoginRequest {
@@ -319,6 +320,23 @@ export interface IntentParseRequest {
   text: string;
   sessionId?: string | null;
   locale?: string;
+  /** 可选定位；未导航/无新鲜定位时不传（spec REQ-VOICE-12）。 */
+  location?: IntentLocationPayload | null;
+}
+
+export interface IntentLocationPayload {
+  x: number;
+  y: number;
+  floorId?: string | null;
+  confidence: number;
+  headingDeg?: number | null;
+}
+
+/** 受控动作；未提供时旧客户端按 intent/destination 执行（spec REQ-VOICE-09/12）。 */
+export interface IntentAction {
+  name: string;
+  params: Record<string, unknown>;
+  confirmationRequired: boolean;
 }
 
 export interface IntentParseResponse {
@@ -329,6 +347,8 @@ export interface IntentParseResponse {
   destination?: PlaceCandidate | null;
   candidates: PlaceCandidate[];
   responseText: string;
+  action?: IntentAction | null;
+  actionVersion?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +384,18 @@ export interface LocationEstimateRequest {
   imu?: ImuPayload | null;
   /** 启用指纹库优先匹配；未开启时请求体与旧版完全一致（字段不发送）。 */
   useFingerprintDb?: boolean;
+  /** 同一次响应内返回周边要素清单（查周边动作）；默认不发送，旧行为不变。 */
+  includeSurroundings?: boolean;
+}
+
+/** 周边要素（服务端 schemas/location.py SurroundingElement，8m 内按距离升序）。 */
+export interface SurroundingElement {
+  name: string;
+  elementType: string;
+  /** 时钟方向：12 正前、3 正右、6 正后、9 正左。 */
+  clockDirection: number;
+  distanceMeters: number;
+  accessibilityNote?: string | null;
 }
 
 export interface MatchedArea {
@@ -400,6 +432,8 @@ export interface PositionEstimateResponse {
   fingerprint?: FingerprintMatchInfo | null;
   /** 启用指纹库但降级到三点定位的原因（未启用时为空）。 */
   fallbackReason?: string | null;
+  /** 周边要素：仅请求 includeSurroundings=true 时返回（可能为空数组）。 */
+  surroundings?: SurroundingElement[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +575,27 @@ export interface CreateSessionResponse {
   paramsVersion: string;
   destination: PlaceCandidate;
   route: RouteInfo;
+  /** 兼容字段：概要已前移到 API-10 预览阶段，建会话恒为 null。 */
+  overviewText?: string | null;
   createdAt: IsoDateTime;
+}
+
+/** API-10 路线预览请求：只读规划，不创建会话（body 与 API-06 同构）。 */
+export interface PreviewRouteRequest {
+  siteId: string;
+  mapVersion: string;
+  origin: OriginPosition;
+  destinationId: string;
+  userMode?: UserMode;
+  locale?: string;
+}
+
+export interface PreviewRouteResponse {
+  mapVersion: string;
+  destination: PlaceCandidate;
+  route: RouteInfo;
+  /** 大模型生成的概要；失败/超时为 null（客户端用模板兜底，概要必播）。 */
+  overviewText?: string | null;
 }
 
 /** 导航更新中的位置；不可信质量允许缺坐标，可信质量必须携带。 */

@@ -35,6 +35,21 @@ const NO_SIGNAL_HINT_MS = 8000;
 const REPORT_INTERVAL_MS = 1000;
 /** 信标明细日志最多打印多少个，避免现场信标多时刷屏。 */
 const MAX_BEACON_LOGS = 20;
+/** 回调节拍统计的上报周期（仅日志）：用于真机坐实 iOS/Android 的实际回调频率。 */
+const BEAT_REPORT_MS = 10_000;
+/** 每个三元组最多保留的间隔样本数（10s 周期内足够算 p50/p95，且不涨内存）。 */
+const BEAT_MAX_INTERVALS = 300;
+/** 间隔超过此值视为断连/离场，不计入节拍统计（避免一次长时间无信号污染 p95）。 */
+const BEAT_MAX_GAP_MS = 5000;
+
+/** 升序数组的分位数（最近秩法），空数组返回 0。 */
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) {
+    return 0;
+  }
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1));
+  return sorted[idx];
+}
 
 interface AdapterState {
   available: boolean;
@@ -123,6 +138,15 @@ export class LiveBeaconScanner implements BeaconSourceLike {
   private rawSamples = 0;
   private lastStatusEmitMs = 0;
   private noSignalTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 同一三元组的相邻回调间隔（毫秒）：只为日志统计回调节拍，
+   * 不参与样本转发/去重，不影响 handler 收到每一帧。
+   */
+  private readonly beatIntervals = new Map<
+    string,
+    { lastMs: number | null; intervals: number[] }
+  >();
+  private beatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(uuids: string[], resolveBeacon?: BeaconResolver) {
     this.uuids = uuids.map((u) => u.trim().toLowerCase());
@@ -229,6 +253,7 @@ export class LiveBeaconScanner implements BeaconSourceLike {
       );
       this.emit('scanning', 'iBeacon 扫描中');
       this.armNoSignalHint();
+      this.armBeatReport();
     } catch (err) {
       if (token !== this.token) {
         return;
@@ -248,6 +273,7 @@ export class LiveBeaconScanner implements BeaconSourceLike {
     this.matchedRssi.clear();
     this.matchedTriplets.clear();
     this.lastStatusEmitMs = 0;
+    this.beatIntervals.clear();
   }
 
   private bindAdapterStateChange(): void {
@@ -302,9 +328,63 @@ export class LiveBeaconScanner implements BeaconSourceLike {
     }
   }
 
+  /** 记录一个三元组的相邻回调间隔；只写内存，不改变样本转发路径。 */
+  private recordBeat(key: string, atMs: number): void {
+    const entry = this.beatIntervals.get(key);
+    if (entry === undefined) {
+      this.beatIntervals.set(key, { lastMs: atMs, intervals: [] });
+      return;
+    }
+    if (entry.lastMs !== null) {
+      const gap = atMs - entry.lastMs;
+      if (gap > 0 && gap <= BEAT_MAX_GAP_MS) {
+        entry.intervals.push(gap);
+        if (entry.intervals.length > BEAT_MAX_INTERVALS) {
+          entry.intervals.shift();
+        }
+      }
+    }
+    entry.lastMs = atMs;
+  }
+
+  /**
+   * 每 10s 打一条回调节拍日志（p50/p95），用于坐实 iOS 实际是否为 ~1Hz。
+   * 只读统计，不发状态、不动 handler。
+   */
+  private armBeatReport(): void {
+    this.clearBeatReport();
+    this.beatTimer = setInterval(() => {
+      if (!this.running) {
+        return;
+      }
+      const lines: string[] = [];
+      for (const [key, entry] of this.beatIntervals) {
+        if (entry.intervals.length < 2 || lines.length >= MAX_BEACON_LOGS) {
+          continue;
+        }
+        const sorted = [...entry.intervals].sort((a, b) => a - b);
+        const tag = this.matchedTriplets.has(key) ? '台账' : '未命中';
+        lines.push(
+          `${key}(${tag}) n=${sorted.length} p50=${percentile(sorted, 0.5)}ms p95=${percentile(sorted, 0.95)}ms`,
+        );
+      }
+      if (lines.length > 0) {
+        log.info('iBeacon 回调节拍', ...lines);
+      }
+    }, BEAT_REPORT_MS);
+  }
+
+  private clearBeatReport(): void {
+    if (this.beatTimer !== null) {
+      clearInterval(this.beatTimer);
+      this.beatTimer = null;
+    }
+  }
+
   /** 移除监听并停搜索（不关适配器，关闭动作由 stop 统一做）。 */
   private cleanupRuntime(): void {
     this.clearNoSignalHint();
+    this.clearBeatReport();
     try {
       wx.offBeaconUpdate();
     } catch {
@@ -371,6 +451,7 @@ export class LiveBeaconScanner implements BeaconSourceLike {
       }
       const uuid = beacon.uuid.trim();
       const key = `${uuid.toLowerCase()}|${beacon.major}|${beacon.minor}`;
+      this.recordBeat(key, at);
       frames += 1;
       this.rawSamples += 1;
       const isNewTriplet = !this.seenTriplets.has(key);

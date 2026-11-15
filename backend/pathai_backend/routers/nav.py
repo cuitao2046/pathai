@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from pathai_backend import auth
 from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
+from pathai_backend.hazard_layer import HazardRepository
 from pathai_backend.map_repository import MapRepository, PublishedMap
 from pathai_backend.models import NavIdempotency, NavSession
 from pathai_backend.nav_text import rewrite_route_texts
@@ -64,6 +65,11 @@ router = APIRouter(prefix="/api/v1/nav", tags=["nav"])
 
 def _now_epoch() -> int:
     return int(time.time())
+
+
+def get_hazard_repository(request: Request) -> HazardRepository:
+    """危险层仓库（启动时加载；缺失/损坏已在仓库内降级为空层）。"""
+    return request.app.state.hazard_repository
 
 
 def _epoch_to_dt(epoch: int) -> datetime:
@@ -115,6 +121,7 @@ def create_session(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
+    hazard_repo: HazardRepository = Depends(get_hazard_repository),
     settings: Settings = Depends(auth.get_settings),
 ) -> CreateSessionResponse:
     idem_key = (request.headers.get("Idempotency-Key") or "").strip()
@@ -136,7 +143,8 @@ def create_session(
     index = PackageIndex(published.pkg)
     origin_node = snap_to_node(index, body.origin.floorId, body.origin.x, body.origin.y)
     route_info, _dest = plan_route(
-        published.data, published.pkg, index, origin_node, body.destinationId, body.userMode
+        published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
+        hazard_layer=hazard_repo.get(published.site_id, published.map_version),
     )
     place = index.places[body.destinationId]
     # 第一阶段：创建会话时一次性改写播报文案（docs/29 §3）；失败自动回退原文，
@@ -258,6 +266,7 @@ def nav_update(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
+    hazard_repo: HazardRepository = Depends(get_hazard_repository),
 ) -> NavUpdateResponse:
     session = _owned_session(db, session_id, user, for_update=True)
     if session.status in (s.value for s in TERMINAL_SESSION_STATUSES):
@@ -318,6 +327,7 @@ def nav_update(
             new_route, _ = plan_route(
                 published.data, published.pkg, index, origin2,
                 session.destination_place_id, UserMode(session.user_mode),
+                hazard_layer=hazard_repo.get(session.site_id, published.map_version),
             )
             session.route_json = new_route.model_dump_json()
             session.current_index = 0

@@ -13,9 +13,9 @@ function allowedCandidate(url: string): boolean {
 export function getP0Candidate(): string | null {
   const stored = getString(CACHE_KEY);
   if (stored !== null && allowedCandidate(stored)) return stored;
-  if (!allowedCandidate(API_BASE_URL)) return null;
-  setString(CACHE_KEY, API_BASE_URL);
-  return API_BASE_URL;
+  // 无缓存就是无缓存：不再把编译期地址当作“已缓存候选”写回，
+  // 否则换网后旧 IP 会被优先探活并伪装成有效缓存。
+  return null;
 }
 
 export function saveP0Candidate(url: string): boolean {
@@ -24,8 +24,8 @@ export function saveP0Candidate(url: string): boolean {
   return getString(CACHE_KEY) === url;
 }
 
-export function checkP0Candidate(url: string): Promise<boolean> {
-  if (!allowedCandidate(url)) return Promise.resolve(false);
+/** 无凭据 `/healthz` 可达性探活（候选缓存与模拟器回环地址共用）。 */
+export function checkEndpointHealth(url: string, timeoutMs = TIMEOUT_MS): Promise<boolean> {
   return new Promise((resolve) => {
     let finished = false;
     let request: WechatMiniprogram.RequestTask | undefined;
@@ -36,12 +36,12 @@ export function checkP0Candidate(url: string): Promise<boolean> {
       if (!reachable) request?.abort();
       resolve(reachable);
     };
-    const timer = setTimeout(() => finish(false), TIMEOUT_MS + 100);
+    const timer = setTimeout(() => finish(false), timeoutMs + 100);
     try {
       request = wx.request({
         url: `${url}/healthz`,
         method: 'GET',
-        timeout: TIMEOUT_MS,
+        timeout: timeoutMs,
         success: ({ statusCode, data }) => {
           const body = data as { status?: unknown };
           finish(statusCode === 200 && body?.status === 'ok');
@@ -52,4 +52,9 @@ export function checkP0Candidate(url: string): Promise<boolean> {
       finish(false);
     }
   });
+}
+
+export function checkP0Candidate(url: string): Promise<boolean> {
+  if (!allowedCandidate(url)) return Promise.resolve(false);
+  return checkEndpointHealth(url);
 }

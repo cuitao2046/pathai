@@ -14,7 +14,7 @@
 import { NAV_UPDATE_TIMEOUT_MS } from '../../config/env';
 import { ApiClientError } from '../http/errors';
 import type { ApiClient } from '../http/api-client';
-import type { SpeechQueue } from '../speech/speech-queue';
+import type { SpeechIdleReason, SpeechQueue } from '../speech/speech-queue';
 import { InstructionTracker } from './instruction-tracker';
 import {
   NavStateMachine,
@@ -22,6 +22,7 @@ import {
   type NavState,
 } from './nav-state-machine';
 import { uuidV4 } from '../../utils/ids';
+import { createLogger } from '../../utils/logger';
 import type {
   CreateSessionRequest,
   CreateSessionResponse,
@@ -39,8 +40,19 @@ import type {
   UserMode,
 } from '../../typings/api';
 
+const log = createLogger('nav');
+
 /** 到达置信度低于该值播「已到达附近」。 */
 const ARRIVAL_NEAR_CONFIDENCE = 0.75;
+/** 概要窗口最长等待：引擎/队列异常时不再等，直接进入引导（宁可少播一句概要）。 */
+const OVERVIEW_MAX_WAIT_MS = 30_000;
+
+/**
+ * 建会话专用超时（其余接口仍走默认 10s 快失败）。
+ * 后端建会话内含两次大模型调用（指令改写 + 概要），已改并行，最坏约等于单次
+ * LLM 读超时（15s）+ 规划开销；30s 覆盖该最坏值并留出网络余量。
+ */
+const CREATE_SESSION_TIMEOUT_MS = 30_000;
 
 export type { NavState };
 
@@ -56,10 +68,14 @@ export interface NavSessionControllerOptions {
   speech: SpeechQueue;
   pipeline: NavPipelineControl;
   onStateChange: (state: NavState) => void;
-  /** 路线更新（创建/reroute）。 */
-  onRoute?: (route: RouteInfo) => void;
+  /** 路线更新（创建/reroute）；overviewText 为后端生成、客户端模板为 null。 */
+  onRoute?: (route: RouteInfo, overviewText: string | null) => void;
+  /** 当前指令（每次更新都会回调，含重复指令）：页面用它刷新 HUD 文案。 */
+  onInstruction?: (instruction: NavigationInstruction | null) => void;
   /** 会话收尾（arrived/end/resume 失效）。 */
   onEnded?: (info: { reason: EndReason | null; byArrival: boolean }) => void;
+  /** 概要窗口最长等待（毫秒），默认 30s；超时跳过概要直接进入引导。 */
+  overviewMaxWaitMs?: number;
 }
 
 export class NavSessionController {
@@ -75,6 +91,20 @@ export class NavSessionController {
   private frozenCreateBody: CreateSessionRequest | null = null;
   /** 最近一次 relocalizing 安全提示：recovering 态回前台时重播用。 */
   private lastRelocalizeText: string | null = null;
+  /**
+   * 概要播报窗口：为 true 时冻结定位上报。
+   * 仅延迟 startNavigating 不够——standby 拍仍会经 handleEstimate 上报，
+   * 服务端返回的 turn/safety 会导致 SpeechQueue 对 normal 概要调 engine.stop
+   * （表现为概要没念完就断），且打断后的空队列会被误判成「播完」。
+   */
+  private overviewPending = false;
+  /** 概要窗口代际：新会话/结束会话使其失效，旧窗口回调不再生效。 */
+  private overviewToken = 0;
+  private overviewTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 在途创建（防并发重入：确认连点/异常重入会各发一次 API-06，产生双会话）。
+   */
+  private createInFlight: Promise<CreateSessionResponse> | null = null;
 
   constructor(private readonly opts: NavSessionControllerOptions) {}
 
@@ -96,11 +126,34 @@ export class NavSessionController {
    * Idempotency-Key 与冻结 body（忽略新的参数差异），2xx 后清除；
    * 收到 4xx（ROUTE_NOT_FOUND 等）说明请求已确定失败，清空暂存——
    * 用户改选目的地后再次创建必须使用新参数，不得静默复用旧目的地。
+   * 在途创建复用同一请求：确认连点不能各发一次（会产生双会话）。
    */
   async createSession(
     destination: PlaceCandidate,
     origin: OriginPosition,
     userMode: UserMode = 'blind',
+    opts: { overviewPlayed?: boolean; transitionClip?: string | null } = {},
+  ): Promise<CreateSessionResponse> {
+    if (this.createInFlight !== null) {
+      log.info('会话创建在途：复用同一请求', destination.placeId);
+      return this.createInFlight;
+    }
+    const task = this.doCreateSession(destination, origin, userMode, opts);
+    this.createInFlight = task;
+    try {
+      return await task;
+    } finally {
+      if (this.createInFlight === task) {
+        this.createInFlight = null;
+      }
+    }
+  }
+
+  private async doCreateSession(
+    destination: PlaceCandidate,
+    origin: OriginPosition,
+    userMode: UserMode,
+    opts: { overviewPlayed?: boolean; transitionClip?: string | null },
   ): Promise<CreateSessionResponse> {
     // 新会话是语音通道的重试窗口：上次 TTS 失败后这里给引擎第二次机会
     this.opts.speech.resetForRetry();
@@ -122,6 +175,7 @@ export class NavSessionController {
         path: '/api/v1/nav/sessions',
         body: this.frozenCreateBody,
         idempotencyKey: this.pendingIdempotencyKey,
+        timeoutMs: CREATE_SESSION_TIMEOUT_MS,
       });
     } catch (err) {
       if (
@@ -154,10 +208,89 @@ export class NavSessionController {
     this.lastRelocalizeText = null;
     this.tracker.reset();
     this.transition({ type: 'SESSION_CREATED', status: data.status });
-    this.opts.onRoute?.(data.route);
-    this.announce(data.route.segments[0] ?? null);
-    void this.opts.pipeline.startNavigating();
+    if (opts.overviewPlayed === true) {
+      // 概要在 API-10 预览阶段已播完：直接进入逐步引导，不重播概要。
+      this.beginGuidedNavigation(data, opts.transitionClip ?? null);
+    } else {
+      this.beginOverviewWindow(data);
+    }
     return data;
+  }
+
+  /**
+   * 概要在预览阶段已播完（确认后才建会话）：先给路线与首条指令，立即开始上报定位。
+   * 不创建概要窗口，避免「确认 → 又播一遍概要」的重复体验。
+   *
+   * transitionClip：进入逐步引导前的短过渡（本地音频 `nav-start.mp3`）。与首条指令
+   * 同用 normal 优先级 FIFO 排队，播完音频才继续，天然串行不重叠；safety 首条仍可依法抢占。
+   */
+  private beginGuidedNavigation(
+    data: CreateSessionResponse,
+    transitionClip: string | null,
+  ): void {
+    this.clearOverviewTimer();
+    this.overviewPending = false;
+    this.overviewToken += 1; // 作废旧窗口：迟到的队列回调不得再推进
+    log.info('概要已在预览阶段播完：直接进入逐步引导');
+    this.opts.onRoute?.(data.route, null);
+    const clip = transitionClip?.trim() ?? '';
+    if (clip !== '') {
+      this.opts.speech.enqueueClip(clip, 'normal', 'nav:start-transition');
+    }
+    const first = data.route.segments[0] ?? null;
+    this.opts.onInstruction?.(first);
+    this.announce(first);
+    void this.opts.pipeline.startNavigating();
+  }
+
+  /**
+   * 概要先行（REQ-NAV）：整个概要窗口内冻结定位上报（见 overviewPending 注释），
+   * 队列彻底播完后首条指令的语音与 HUD 文案同时出现，再开始上报定位。
+   *
+   * 兜底不卡死：队列可能因引擎无响应（play 既不 resolve 也不 reject）永远不安静，
+   * 因此设最长等待；超时后照常切到首条指令、恢复上报，宁可少播一句概要。
+   */
+  private beginOverviewWindow(data: CreateSessionResponse): void {
+    this.clearOverviewTimer();
+    this.overviewPending = true;
+    const token = (this.overviewToken += 1);
+    log.info('概要先行：暂停定位上报', data.overviewText === null ? '(模板兜底)' : '(LLM)');
+    this.opts.onRoute?.(data.route, data.overviewText ?? null);
+
+    const finish = (reason: SpeechIdleReason | 'timeout'): void => {
+      if (token !== this.overviewToken || !this.overviewPending) {
+        return; // 旧会话窗口 / 已放行
+      }
+      this.clearOverviewTimer();
+      this.overviewPending = false;
+      log.info('概要窗口结束', reason);
+      if (this.machine.isTerminal || this.session?.sessionId !== data.sessionId) {
+        return;
+      }
+      if (reason !== 'interrupted') {
+        // finished：正常播完补播首条；timeout/stalled：概要没播成（引擎无响应），
+        // 也必须把首条指令写到 HUD（宁可少播一句概要，不能让导航卡住）。
+        // interrupted：有更高优先级播报接管，不能再叠一遍。
+        this.opts.onInstruction?.(data.route.segments[0] ?? null);
+        this.announce(data.route.segments[0] ?? null);
+      }
+      void this.opts.pipeline.startNavigating();
+    };
+
+    this.opts.speech.notifyWhenIdle(finish);
+    const waitMs = this.opts.overviewMaxWaitMs ?? OVERVIEW_MAX_WAIT_MS;
+    this.overviewTimer = setTimeout(() => {
+      this.overviewTimer = null;
+      log.warn('概要窗口超时：队列未安静（引擎可能无响应），跳过概要进入引导', `${waitMs}ms`);
+      finish('timeout');
+    }, waitMs);
+  }
+
+  private clearOverviewTimer(): void {
+    if (this.overviewTimer !== null) {
+      clearTimeout(this.overviewTimer);
+      this.overviewTimer = null;
+    }
   }
 
   /** 定位估计入口（LocationPipeline.onEstimate）；不可信质量只报 quality。 */
@@ -187,7 +320,8 @@ export class NavSessionController {
    * 不伪造坐标。
    */
   reportUnavailable(): void {
-    if (this.session === null || this.machine.isTerminal) {
+    if (this.session === null || this.machine.isTerminal || this.overviewPending) {
+      // 概要窗口内不报 unavailable：否则服务端转 recovering 会下发 safety 打断概要。
       return;
     }
     void this.sendUpdate({
@@ -229,20 +363,22 @@ export class NavSessionController {
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'SESSION_NOT_FOUND') {
         this.transition({ type: 'RESUME_FAILED' });
-        this.opts.speech.enqueue('导航会话已失效，请重新发起导航。', 'safety');
+        this.opts.speech.enqueue('导航会话已失效，请重新发起导航。', 'safety', null, 'nav:foreground');
         this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
         return;
       }
-      // 网络/服务暂不可用：保持现状，恢复采集后继续
-      this.opts.speech.enqueue('网络恢复中，正在重新连接导航。', 'normal');
-      await this.opts.pipeline.startNavigating();
+      // 网络/服务暂不可用：保持现状，恢复采集后继续（概要窗口内交给排队事件放行）
+      this.opts.speech.enqueue('网络恢复中，正在重新连接导航。', 'normal', null, 'nav:foreground');
+      if (!this.overviewPending) {
+        await this.opts.pipeline.startNavigating();
+      }
       return;
     }
 
     // 校验地图版本：不一致则结束当前引导
     if (query.mapVersion !== this.opts.map.requireVersion()) {
       this.transition({ type: 'RESUME_FAILED' });
-      this.opts.speech.enqueue('地图已更新，请重新发起导航。', 'safety');
+      this.opts.speech.enqueue('地图已更新，请重新发起导航。', 'safety', null, 'nav:foreground');
       this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
       return;
     }
@@ -256,7 +392,10 @@ export class NavSessionController {
     }
 
     // 重启采集：active/recovering 都继续扫（recovering 需新可信位置才能回 active）
-    if (this.machine.state === 'active' || this.machine.state === 'recovering') {
+    if (
+      (this.machine.state === 'active' || this.machine.state === 'recovering') &&
+      !this.overviewPending
+    ) {
       await this.opts.pipeline.startNavigating();
     }
 
@@ -265,14 +404,18 @@ export class NavSessionController {
       this.opts.onEnded?.({ reason: query.endReason ?? null, byArrival: query.status === 'arrived' });
       return;
     }
+    if (this.overviewPending) {
+      // 概要还没播完：不重播旧指令、不提前上报，统一由排队事件放行
+      return;
+    }
     // 重播：active 重播当前转向指令；recovering 重播安全提示（不播旧方向）
     if (this.machine.state === 'active') {
       const replay = this.tracker.replayText();
       if (replay !== null) {
-        this.opts.speech.enqueue(replay, 'normal');
+        this.opts.speech.enqueue(replay, 'normal', null, 'nav:foreground-replay');
       }
     } else if (this.machine.state === 'recovering' && this.lastRelocalizeText !== null) {
-      this.opts.speech.enqueue(this.lastRelocalizeText, 'safety');
+      this.opts.speech.enqueue(this.lastRelocalizeText, 'safety', null, 'nav:foreground-relocalize');
     }
   }
 
@@ -294,7 +437,10 @@ export class NavSessionController {
       // 已终态：视为结束成功
     }
     this.transition({ type: 'END_ACK' });
-    this.opts.speech.clearAll();
+    this.overviewToken += 1; // 概要窗口作废：迟到的队列回调/超时不得再推进
+    this.overviewPending = false;
+    this.clearOverviewTimer();
+    this.opts.speech.clearAll('nav:end-session');
     this.opts.onEnded?.({ reason, byArrival: false });
   }
 
@@ -315,16 +461,22 @@ export class NavSessionController {
     if (effects.stopPipeline) {
       this.opts.pipeline.stop();
     }
-    if (effects.startPipeline) {
+    if (effects.startPipeline && !this.overviewPending) {
       void this.opts.pipeline.startNavigating();
     }
     if (effects.clearNormal) {
-      this.opts.speech.clearNormal();
+      this.opts.speech.clearNormal('nav:state-recovering');
     }
   }
 
   private async sendUpdate(location: LocationUpdate): Promise<void> {
     if (this.session === null || this.machine.isTerminal) {
+      return;
+    }
+    if (this.overviewPending) {
+      // 概要播报窗口：一律不上报。否则 standby 拍也会推进服务端状态并下发
+      // turn/safety 指令，SpeechQueue 会 stop 正在播的 normal 概要（截断）。
+      // 放行后由下一拍估计带最新位置上报。
       return;
     }
     if (this.updateInFlight) {
@@ -368,10 +520,11 @@ export class NavSessionController {
     this.transition({ type: 'UPDATE_RESULT', status: data.status, event: data.event });
 
     if (data.event === 'reroute') {
-      this.opts.speech.clearNormal(); // 旧路线提示作废
+      this.opts.speech.clearNormal('nav:reroute'); // 旧路线提示作废
       if (data.route !== undefined && data.route !== null) {
-        this.opts.onRoute?.(data.route);
+        this.opts.onRoute?.(data.route, null); // 重规划不重播概要
       }
+      this.opts.onInstruction?.(data.instruction);
       this.announce(data.instruction); // 新首条
       return;
     }
@@ -380,6 +533,8 @@ export class NavSessionController {
       this.opts.speech.enqueue(
         near ? '已到达目的地附近，请留意周围环境。' : '已到达目的地。',
         'turn',
+        null,
+        'nav:arrived',
       );
       this.opts.onEnded?.({ reason: 'arrived', byArrival: true });
       return;
@@ -389,10 +544,12 @@ export class NavSessionController {
       if (prevState !== 'recovering' && this.machine.state === 'recovering') {
         const text = data.instruction?.text ?? '正在重新定位，请原地稍候。';
         this.lastRelocalizeText = text;
-        this.opts.speech.enqueue(text, 'safety');
+        this.opts.onInstruction?.(data.instruction);
+        this.opts.speech.enqueue(text, 'safety', null, 'nav:relocalizing');
       }
       return;
     }
+    this.opts.onInstruction?.(data.instruction);
     this.announce(data.instruction);
   }
 
@@ -403,7 +560,7 @@ export class NavSessionController {
     if (!this.tracker.observe(instruction)) {
       return; // 重复指令：不重复播报
     }
-    this.opts.speech.enqueue(instruction.text, instruction.priority);
+    this.opts.speech.enqueue(instruction.text, instruction.priority, null, 'nav:instruction');
   }
 
   /** 409 STALE_NAV_UPDATE 恢复：从 API-08 取 lastProcessedSequence 对齐。 */

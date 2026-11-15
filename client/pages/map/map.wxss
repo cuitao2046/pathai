@@ -280,7 +280,8 @@
  * REQ-PAGE 单页化：顶端工具条 / 下端居中按住说话按钮 / 居中浮层
  * ------------------------------------------------------------------ */
 
-/* 按住说话按钮：屏幕下端居中（胶囊按钮视觉，padding 扩大按压命中区） */
+/* 按住说话按钮：屏幕下端居中（胶囊按钮视觉，padding 扩大按压命中区）
+   原生 button 自带边框/背景/hover，需重置为透明外层，只保留内部 .ptt-hint 胶囊 */
 .ptt-zone {
   position: absolute;
   z-index: 5;
@@ -290,7 +291,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: auto;
+  margin: 0;
   padding: 32rpx 64rpx;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: normal;
+  color: inherit;
+  overflow: visible;
+}
+
+.ptt-zone::after {
+  border: none;
 }
 
 .ptt-hint {
@@ -493,3 +508,6 @@
   background: #2563eb;
   color: #ffffff;
 }
+
+.voice-status { position: fixed; bottom: 210rpx; left: 24rpx; right: 24rpx; background: #fff; color: #111; padding: 16rpx; z-index: 30; }
+.voice-cancel { position: fixed; bottom: 320rpx; right: 24rpx; z-index: 31; }

@@ -175,6 +175,8 @@ class RecordTts implements TtsEngine {
   readonly spoken: string[] = [];
   private resolvers: Array<() => void> = [];
   hold = false;
+  /** 引擎无响应：stop 也不让挂起的 speak 结束（模拟播放器不回调）。 */
+  ignoreStop = false;
   stopCount = 0;
 
   speak(text: string): Promise<void> {
@@ -188,6 +190,9 @@ class RecordTts implements TtsEngine {
   /** 引擎契约：stop 使当前 speak 以 resolve 结束。 */
   stop(): void {
     this.stopCount += 1;
+    if (this.ignoreStop) {
+      return;
+    }
     for (const resolve of this.resolvers.splice(0)) {
       resolve();
     }
@@ -196,7 +201,30 @@ class RecordTts implements TtsEngine {
   /** 释放全部挂起播报并恢复立即完成模式。 */
   settleAll(): void {
     this.hold = false;
+    this.ignoreStop = false;
     this.stop();
+  }
+}
+
+/** 记录型本地音频播放器：play 登记名称；hold=true 时挂起（观察串行语义）。 */
+class RecordClipPlayer {
+  readonly played: string[] = [];
+  private resolvers: Array<() => void> = [];
+  hold = false;
+
+  play(name: string): Promise<void> {
+    this.played.push(name);
+    if (!this.hold) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.resolvers.push(resolve));
+  }
+
+  /** 模拟片段播完/被 stop 打断。 */
+  stop(): void {
+    for (const resolve of this.resolvers.splice(0)) {
+      resolve();
+    }
   }
 }
 
@@ -234,9 +262,11 @@ interface Harness {
   controller: NavSessionController;
   speech: SpeechQueue;
   tts: RecordTts;
+  clips: RecordClipPlayer;
   pipeline: FakePipeline;
   states: NavState[];
   routes: RouteInfo[];
+  instructions: Array<NavigationInstruction | null>;
   ended: Array<{ reason: EndReason | null; byArrival: boolean }>;
 }
 
@@ -245,6 +275,7 @@ describe('NavSessionController 会话编排', () => {
   let pipeline: FakePipeline;
   let states: NavState[];
   let routes: RouteInfo[];
+  let instructions: Array<NavigationInstruction | null>;
   let ended: Array<{ reason: EndReason | null; byArrival: boolean }>;
 
   const createRequests = () =>
@@ -254,22 +285,33 @@ describe('NavSessionController 会话编排', () => {
   const updateRequests = () =>
     wxStub.__requestLog.filter((r) => r.url.endsWith('/sessions/sess-1/updates'));
 
-  function makeHarness(): Harness {
+  function makeHarness(options: { overview?: string; overviewMaxWaitMs?: number } = {}): Harness {
+    const clips = new RecordClipPlayer();
     const speech = new SpeechQueue({
       engine: tts,
       onUnavailable: () => undefined,
       onTextFallback: () => undefined,
+      stallTimeoutMs: () => 30, // 测试用短看门狗：引擎无响应时快速放手
+      playClip: (clip) => clips.play(clip),
+      stopClip: () => clips.stop(),
     });
     const controller = new NavSessionController({
       client: createHttpStack('http://localhost:8000').client,
       map: { siteId: 's1', requireVersion: () => 'v1' },
       speech,
       pipeline,
+      overviewMaxWaitMs: options.overviewMaxWaitMs,
       onStateChange: (state) => states.push(state),
-      onRoute: (route) => routes.push(route),
+      onRoute: (route) => {
+        routes.push(route);
+        if (options.overview !== undefined) {
+          speech.enqueue(options.overview, 'normal'); // 模拟 map 页把概要点播入队
+        }
+      },
+      onInstruction: (instruction) => instructions.push(instruction),
       onEnded: (info) => ended.push(info),
     });
-    return { controller, speech, tts, pipeline, states, routes, ended };
+    return { controller, speech, tts, clips, pipeline, states, routes, instructions, ended };
   }
 
   beforeEach(() => {
@@ -277,6 +319,7 @@ describe('NavSessionController 会话编排', () => {
     pipeline = new FakePipeline();
     states = [];
     routes = [];
+    instructions = [];
     ended = [];
     wxStub.__requestLog.length = 0;
     wxStub.__requestResponder = (options) => {
@@ -309,6 +352,12 @@ describe('NavSessionController 会话编排', () => {
     remove('auth:token');
   });
 
+  afterEach(async () => {
+    // 收尾：释放挂起播报，避免语音队列的看门狗定时器在测试结束后触发
+    tts.settleAll();
+    await flush();
+  });
+
   // ------------------------------------------------------------------
   // API-06 创建
   // ------------------------------------------------------------------
@@ -333,6 +382,151 @@ describe('NavSessionController 会话编排', () => {
     expect(h.pipeline.calls).toEqual(['startNavigating']);
     expect(h.controller.state).toBe('active');
     expect(h.controller.sessionId).toBe('sess-1');
+  });
+
+  it('overviewPlayed：概要已在预览阶段播完，建会话后直接播首条，不再等概要窗口', async () => {
+    tts.hold = true; // 若仍走概要窗口，首条会被挂起不播
+    const h = makeHarness();
+    await h.controller.createSession(
+      { placeId: 'p1', name: '图书馆', floorId: '1' },
+      ORIGIN,
+      'blind',
+      { overviewPlayed: true },
+    );
+
+    expect(h.routes).toEqual([ROUTE1]);
+    expect(h.tts.spoken).toEqual(['沿走廊直行 5 米。']); // 不重播概要
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']);
+    expect(h.pipeline.calls).toEqual(['startNavigating']);
+
+    // 没有概要窗口：定位立即可上报
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    expect(updateRequests()).toHaveLength(1);
+  });
+
+  it('overviewPlayed + transitionClip：本地音频播完才播首条指令（串行不重叠）', async () => {
+    const h = makeHarness();
+    h.clips.hold = true;
+    await h.controller.createSession(
+      { placeId: 'p1', name: '图书馆', floorId: '1' },
+      ORIGIN,
+      'blind',
+      { overviewPlayed: true, transitionClip: 'nav-start' },
+    );
+
+    // 本地音频先播；首条指令排在它后面，等音频结束才播
+    expect(h.clips.played).toEqual(['nav-start']);
+    expect(h.tts.spoken).toEqual([]);
+    h.clips.stop(); // 模拟 nav-start.mp3 播完
+    await flush();
+    expect(h.tts.spoken).toEqual(['沿走廊直行 5 米。']);
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']);
+    expect(h.pipeline.calls).toEqual(['startNavigating']);
+  });
+
+  it('概要点播未结束：首条指令不播、HUD 不写、定位不上报；队列排空后同时开始', async () => {
+    tts.hold = true; // 概要挂起，模拟正在播报
+    const h = makeHarness({ overview: '全程约 5 米，直行后左转。' });
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+
+    expect(h.tts.spoken).toEqual(['全程约 5 米，直行后左转。']);
+    expect(h.instructions).toEqual([]); // 屏幕上仍是「正在播报路线概要」占位
+    expect(h.pipeline.calls).toEqual([]); // 概要未播完不开始逐步引导
+
+    h.tts.stop(); // 语音队列排空
+    await flush();
+
+    expect(h.tts.spoken).toEqual(['全程约 5 米，直行后左转。', '沿走廊直行 5 米。']);
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']); // 与语音同时出现
+    expect(h.pipeline.calls).toEqual(['startNavigating']);
+  });
+
+  it('概要播报期间冻结定位上报；放行后才恢复上报', async () => {
+    tts.hold = true; // 概要挂起，模拟正在播报
+    const h = makeHarness({ overview: '全程约 5 米，直行后左转。' });
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+
+    // 概要窗口内：standby 拍的估计不得上报（否则服务端 turn/safety 会打断概要）
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    h.controller.reportUnavailable();
+    await flush();
+    expect(updateRequests()).toHaveLength(0);
+
+    h.tts.stop(); // 概要播完
+    await flush();
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    expect(updateRequests()).toHaveLength(1);
+  });
+
+  it('概要被打断不计作播完：不重播首条，但仍开始逐步引导', async () => {
+    tts.hold = true;
+    const h = makeHarness({ overview: '全程约 5 米，直行后左转。' });
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+
+    h.speech.enqueue('前方路口请左转。', 'turn', null, 'test:turn'); // 抢占概要
+    await flush();
+    tts.settleAll(); // 抢占后的转向播完，队列安静
+    await flush();
+
+    expect(h.instructions).toEqual([]); // 打断不能当作「概要播完」→ 不写/不播首条
+    expect(h.pipeline.calls).toEqual(['startNavigating']); // 但引导要继续
+  });
+
+  it('并发创建合并为一次 API-06（standby 多拍不产生双会话/双概要）', async () => {
+    const h = makeHarness();
+    const [a, b] = await Promise.all([
+      h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN),
+      h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN),
+    ]);
+
+    expect(createRequests()).toHaveLength(1);
+    expect(a.sessionId).toBe(b.sessionId);
+    expect(a).toBe(b);
+  });
+
+  it('引擎无响应：队列看门狗先放手，仍切首条指令并恢复上报（stalled）', async () => {
+    tts.hold = true;
+    tts.ignoreStop = true; // 播放器/引擎都不回应
+    const h = makeHarness({ overview: '全程约 5 米，直行后左转。' });
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+
+    await new Promise((resolve) => setTimeout(resolve, 80)); // 队列看门狗 30ms 先放手
+
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']);
+    expect(h.pipeline.calls).toEqual(['startNavigating']);
+
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    expect(updateRequests()).toHaveLength(1);
+
+    h.tts.settleAll();
+    await flush();
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']); // 不重复补播
+  });
+
+  it('概要窗口超时兜底：引擎无响应也切首条指令并恢复上报', async () => {
+    tts.hold = true;
+    tts.ignoreStop = true; // 引擎既不结束也不响应 stop
+    const h = makeHarness({ overview: '全程约 5 米，直行后左转。', overviewMaxWaitMs: 10 });
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+
+    expect(h.instructions).toEqual([]);
+    expect(h.pipeline.calls).toEqual([]);
+
+    await new Promise((resolve) => setTimeout(resolve, 30)); // 等概要窗口超时
+
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']); // HUD 不再停占位
+    expect(h.pipeline.calls).toEqual(['startNavigating']);
+
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    expect(updateRequests()).toHaveLength(1); // 上报恢复
+
+    h.tts.settleAll(); // 收尾：队列排空后不得再重复补播（窗口只放行一次）
+    await flush();
+    expect(h.instructions.map((i) => i?.text)).toEqual(['沿走廊直行 5 米。']);
   });
 
   it('创建失败后重试：复用同一幂等键与冻结 body；成功后再次创建换新键', async () => {

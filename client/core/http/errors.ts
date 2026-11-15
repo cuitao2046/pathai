@@ -4,12 +4,6 @@
  */
 import type { ApiErrorCode, ApiErrorEnvelope } from '../../typings/api';
 
-/** 401 时需要作废令牌、重登并重放一次的错误码（docs/24 §8 认证规则）。 */
-export const AUTH_RETRYABLE_CODES: ReadonlySet<string> = new Set([
-  'UNAUTHENTICATED',
-  'TOKEN_EXPIRED',
-]);
-
 export interface ApiClientErrorInit {
   code: ApiErrorCode;
   message: string;

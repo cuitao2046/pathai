@@ -34,6 +34,25 @@ from pathai_backend.schemas.common import (
 _SESSION_ID_PATTERN = r"^nav_[A-Za-z0-9]+$"
 
 
+class RouteHazard(StrictModel):
+    """路线相关的危险条目（供客户端播报；本轮仅返回结构化数据）。
+
+    - onRoute=true：路线实际经过该危险的边（notice，或 avoid 无路可绕）；
+    - avoided=true：不考虑危险时的选路会经过该边，本次已绕开；
+    - 两者必有一个为 true（无关危险不会出现在响应里）。
+    """
+
+    hazardId: str = Field(min_length=1)
+    level: Literal["block", "avoid", "notice"]
+    type: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    spokenText: str | None = None
+    edgeIds: list[str] = Field(min_length=1)
+    onRoute: bool
+    avoided: bool
+    penaltyM: float | None = Field(default=None, ge=0)
+
+
 class RouteInfo(StrictModel):
     """路线及按决策点组织的指令序列；首条指令即 segments[0]。"""
 
@@ -47,6 +66,15 @@ class RouteInfo(StrictModel):
     fallbackType: RouteFallbackType = RouteFallbackType.NONE
     safeForBlind: bool = True
     riskNotices: list[str] = Field(default_factory=list)
+    #: 与本路线相关的危险（命中/已绕开），按档位从严格到宽松排序
+    hazards: list[RouteHazard] = Field(default_factory=list)
+    #: 危险层加载状态：ok / missing / invalid / version_mismatch（unknown=旧会话快照）
+    hazardLayerStatus: Literal[
+        "ok", "missing", "invalid", "version_mismatch", "unknown"
+    ] = "unknown"
+    hazardLayerVersion: str | None = None
+    #: 降级原因（缺失/损坏/版本不匹配时给运维与值班看，不面向用户播报）
+    hazardLayerNotice: str | None = None
 
     @model_validator(mode="after")
     def _check_fallback_safety(self) -> "RouteInfo":

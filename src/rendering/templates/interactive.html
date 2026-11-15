@@ -189,6 +189,47 @@ body.show-sim-beacons .layer_sim_beacon { display: block; }
 #detail .edit-row label { font-size: 12px; color: #555; margin-bottom: 2px; }
 #detail .edit-row input[type=text], #detail .edit-row input[type=number], #detail .edit-row textarea { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px; }
 #detail .edit-row textarea { font-family: monospace; }
+/* ---------- 危险层（hazards_data 叠加）：block / avoid / notice ---------- */
+#hazard-layer .hz-vis { fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+#hazard-layer .hz-hit { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: pointer; }
+#hazard-layer .hz-area, #hazard-layer .hz-point, #hazard-layer .hz-point-dot { cursor: pointer; }
+#hazard-layer .hz-cross-vis { pointer-events: none; }
+#hazard-layer .hz-cross-hit { fill: rgba(0,0,0,0); pointer-events: all; cursor: pointer; }
+#hazard-layer .hazard-item:hover .hz-vis,
+#hazard-layer .hazard-item:hover .hz-cross-vis { stroke-width: 6; }
+#hazard-layer .hazard-item.hz-selected .hz-vis { stroke: #0284C7 !important; stroke-width: 6; filter: drop-shadow(0 0 2px rgba(2,132,199,0.9)); }
+#hazard-layer .hazard-item.hz-selected .hz-cross-vis { stroke: #0284C7; stroke-width: 3; }
+#hazard-layer .hazard-item.hz-selected .hz-area { stroke: #0284C7; stroke-width: 2.6; }
+#hazard-layer .hazard-item.hz-selected .hz-point { stroke: #0284C7; stroke-width: 3; }
+#hazard-layer .hazard-item.hz-selected .hz-point-dot { fill: #0284C7; }
+#detail .hz-block { margin: 8px 0 2px; padding: 6px 8px; border: 1px solid #eee; border-radius: 5px; background: #fafafa; }
+#detail .hz-block-title { font-weight: bold; color: #555; margin-bottom: 4px; }
+#detail .hz-badge { display: inline-block; padding: 0 7px; border-radius: 3px; font-size: 11px; font-weight: bold; color: #fff; line-height: 18px; }
+#detail .hz-badge.block { background: #DC2626; }
+#detail .hz-badge.avoid { background: #EA580C; }
+#detail .hz-badge.notice { background: #7C3AED; }
+#tooltip { white-space: pre-line; }
+/* ---------- 路径面板：危险关系分区（已避开 / 途经 / 仅提示 / 必须经过） ---------- */
+#route-hazards { font-size: 12px; margin-bottom: 8px; }
+#route-hazards .rp-hz-note { color: #777; background: #FAFAFA; border: 1px solid #EEE; border-radius: 4px; padding: 4px 7px; line-height: 1.5; }
+#route-hazards .rp-hz-sec { border-radius: 5px; padding: 5px 7px; margin-bottom: 6px; border: 1px solid; }
+#route-hazards .rp-hz-title { font-weight: bold; margin-bottom: 3px; }
+#route-hazards .rp-hz-item { padding: 3px 0; border-top: 1px dashed rgba(0,0,0,0.08); line-height: 1.5; }
+#route-hazards .rp-hz-item:first-of-type { border-top: none; }
+#route-hazards .rp-hz-badge { display: inline-block; color: #fff; border-radius: 3px; padding: 0 5px; font-size: 10px; font-weight: bold; margin-right: 4px; }
+#route-hazards .rp-hz-badge.block { background: #DC2626; }
+#route-hazards .rp-hz-badge.avoid { background: #EA580C; }
+#route-hazards .rp-hz-badge.notice { background: #7C3AED; }
+#route-hazards .rp-hz-meta { color: #888; font-size: 11px; }
+#route-hazards .rp-hz-avoided { background: #F1F8E9; border-color: #AED581; }
+#route-hazards .rp-hz-avoided .rp-hz-title { color: #2E7D32; }
+#route-hazards .rp-hz-on { background: #FFF8E1; border-color: #FFD54F; }
+#route-hazards .rp-hz-on .rp-hz-title { color: #E65100; }
+#route-hazards .rp-hz-notice { background: #F3E5F5; border-color: #CE93D8; }
+#route-hazards .rp-hz-notice .rp-hz-title { color: #6A1B9A; }
+#route-hazards .rp-hz-blocked { background: #FFEBEE; border-color: #EF9A9A; }
+#route-hazards .rp-hz-blocked .rp-hz-title { color: #C62828; }
+#route-hazards .rp-hz-tip { color: #777; margin-top: 3px; }
 </style></head><body>
 <div class="header">
   <h2>初中学部1#教学楼 · 交互式楼层图 <span class="tag">v9</span></h2>
@@ -238,6 +279,7 @@ body.show-sim-beacons .layer_sim_beacon { display: block; }
   <label><input type="checkbox" onchange="toggleLayer('fingerprint', this.checked)"> 指纹网格</label>
   <label><input type="checkbox" onchange="toggleLayer('beacon', this.checked)"> 信标部署点</label>
   <label><input type="checkbox" onchange="toggleLayer('coverage', this.checked)"> 三点定位覆盖</label>
+  <label title="叠加 hazards_data 运营危险层：block 禁行（红实线）/ avoid 尽量避开（橙虚线）/ notice 仅提示（紫点线）；与覆盖、信标等图层相互独立，仅视障模式参与选路"><input type="checkbox" checked onchange="toggleLayer('hazard', this.checked)"> 危险层</label>
   <button class="bulk-btn primary" onclick="setAll(true)" title="一键全选所有图层">全选</button>
   <button class="bulk-btn" onclick="setAll(false)" title="一键取消所有图层">全不选</button>
   <button class="bulk-btn" onclick="exportSelectedSVG()" title="将当前勾选（所选）的图层导出为独立的 SVG 图片文件">导出所选图层 SVG</button>
@@ -588,12 +630,21 @@ function srLocate(el) {
     <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>1 信标</div>
     <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>0（无覆盖）</div>
   </div>
+  <div class="lg-sec"><div class="lg-title">危险层（运营危险 / hazards_data）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:none;border-top:4px solid #dc2626;height:0;margin-top:7px"></div>block 禁行（实线）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:none;border-top:4px dashed #ea580c;height:0;margin-top:7px"></div>avoid 尽量避开（虚线）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:transparent;border:none;border-top:4px dotted #7c3aed;height:0;margin-top:7px"></div>notice 仅提示（点线）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:rgba(220,38,38,0.18);border:1px dashed #dc2626"></div>area 危险区域（半透明）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#dc2626;border-radius:50%;border:1px solid #fff;box-shadow:0 0 0 1px #dc2626;width:11px;height:11px"></div>point 危险点位</div>
+    <div class="lg-item" id="hazard-stat" style="display:block;color:#777;margin-top:4px">危险层加载中…</div>
+  </div>
   </div><!-- /lg-grid -->
 </div><!-- /legend-panel -->
 </div><!-- /left -->
 <div id="route-panel">
   <h4><span>路径规划 · 完整路径</span><span class="rp-mode" id="rp-mode">普通</span></h4>
   <div id="route-summary" class="rp-empty">尚未规划路径。<br>点上方「选点导航」后依次点击起点、终点拓扑节点，这里会列出完整途经节点清单（可点击定位）。</div>
+  <div id="route-hazards"></div>
   <ol id="route-steps"></ol>
 </div><!-- /route-panel -->
 </div><!-- /app -->

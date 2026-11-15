@@ -1,10 +1,30 @@
 <view class="map-stage">
+  <!-- 语音入口置于节点顺序首位，作为读屏进入页面后的首个业务控件。 -->
+  <!-- 按住说话按钮：屏幕下端居中（视觉为按钮，命中区同尺寸放大）。
+       用原生 button 而非 view：旁白的双击是系统级「激活当前焦点」，
+       只有被识别为控件的节点才会收到激活（view + aria-role 只会被重读，不会触发 tap）。
+       读屏开启时由 bindtap 双击切换录音；开录前后名称保持一致，避免焦点重读污染录音 -->
+  <button
+    class="ptt-zone {{pttState}}"
+    hover-class="none"
+    bindtouchstart="onPttStart"
+    bindtouchend="onPttEnd"
+    bindtouchcancel="onPttCancel"
+    bindtap="onPttToggle"
+    aria-label="{{pttA11yLabel}}"
+    disabled="{{(!screenReaderVoice && (!mapReady || loading || loadError !== '')) || pttState === 'recognizing' || voiceParsing}}"
+    aria-disabled="{{(!screenReaderVoice && (!mapReady || loading || loadError !== '')) || pttState === 'recognizing' || voiceParsing}}"
+  >
+    <text aria-hidden="true" class="ptt-hint {{pttState}}">{{pttStateText}}</text>
+  </button>
   <!-- 手势绑在 canvas 自身：覆盖控件是 canvas 的兄弟节点，其 touch 序列
        不会进入手势流，规避 catchtouch 容器吞掉子元素 tap 的问题 -->
+  <!-- 地图画布不参与读屏焦点遍历；工具按钮是兄弟节点，仍可左右滑动选中。 -->
   <canvas
     type="2d"
     id="mapCanvas"
     class="map-canvas"
+    aria-hidden="true"
     catchtouchstart="onTouchStart"
     catchtouchmove="onTouchMove"
     catchtouchend="onTouchEnd"
@@ -54,7 +74,7 @@
       <view class="zoom-face" style="width:{{toolBtnWidth}}rpx">设置</view>
     </view>
 
-    <view class="floor-menu {{floorMenuOpen ? 'floor-menu--open' : ''}}" aria-label="楼层选择">
+    <view class="floor-menu {{floorMenuOpen ? 'floor-menu--open' : ''}}" aria-hidden="true">
       <view
         class="zoom-hit"
         aria-role="button"
@@ -134,27 +154,28 @@
       bindtap="onDismissIntent"
       aria-label="关闭提示"
     >✕</button>
-    <view class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
-    <view class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
-    <view class="row" wx:if="{{reply !== ''}}"><text class="label">助手</text><text user-select>{{reply}}</text></view>
-    <view class="row fallback" wx:if="{{fallbackText !== ''}}">
+    <view aria-hidden="true" class="row" wx:if="{{partial !== ''}}"><text class="label">识别中</text><text>{{partial}}</text></view>
+    <view aria-hidden="true" class="row" wx:if="{{recognized !== ''}}"><text class="label">你说</text><text>{{recognized}}</text></view>
+    <view aria-hidden="true" class="row" wx:if="{{reply !== ''}}"><text class="label">助手</text><text user-select>{{reply}}</text></view>
+    <view aria-hidden="true" class="row fallback" wx:if="{{fallbackText !== ''}}">
       <text class="label">文字提示</text><text user-select>{{fallbackText}}</text>
     </view>
 
     <view class="candidates" wx:if="{{candidates.length > 0}}">
-      <view class="hint">你想去哪一个？</view>
+      <view class="hint" aria-hidden="true">你想去哪一个？</view>
       <button
         wx:for="{{candidates}}"
         wx:key="placeId"
         class="candidate"
         bindtap="onPickCandidate"
         data-name="{{item.name}}"
-        aria-label="选择{{item.name}}"
+        data-placeid="{{item.placeId}}"
+        aria-label="选择{{item.name}}，{{item.floorId}}楼"
       >{{item.name}}（{{item.floorId}}）</button>
     </view>
 
     <button
-      wx:if="{{destination !== null}}"
+      wx:if="{{destination !== null && navConfirmReady}}"
       class="primary"
       bindtap="onStartNav"
       aria-label="开始导航到{{destination.name}}"
@@ -163,19 +184,19 @@
 
   <!-- 导航 HUD（REQ-PAGE：导航态融合进地图页；原独立导航页退役） -->
   <view class="nav-hud" wx:if="{{navActive}}">
-    <view class="nav-top">
+    <view class="nav-top" aria-hidden="true">
       <view class="destination">目的地：{{destinationName}}</view>
-      <view class="state" aria-live="polite">{{stateText}}</view>
+      <view class="state">{{stateText}}</view>
     </view>
 
-    <view class="nav-instruction" aria-live="assertive" wx:if="{{instruction !== ''}}">{{instruction}}</view>
+    <view class="nav-instruction" aria-hidden="true" wx:if="{{instruction !== ''}}">{{instruction}}</view>
 
-    <view class="nav-fallback" wx:if="{{fallbackText !== ''}}">
+    <view class="nav-fallback" aria-hidden="true" wx:if="{{fallbackText !== ''}}">
       <text class="label">文字提示</text>
       <text user-select>{{fallbackText}}</text>
     </view>
 
-    <view class="mock-hint" wx:if="{{isMockSource && !ended}}">mock 模式：使用模拟信标轨迹定位</view>
+    <view class="mock-hint" aria-hidden="true" wx:if="{{isMockSource && !ended}}">mock 模式：使用模拟信标轨迹定位</view>
 
     <button
       wx:if="{{!ended}}"
@@ -183,23 +204,16 @@
       bindtap="onEndTap"
       aria-label="结束导航，双击确认"
     >结束导航</button>
-    <button wx:else class="dismiss-button" bindtap="onDismissNav" aria-label="关闭导航结果">关闭</button>
+
   </view>
 
-  <!-- 按住说话按钮：屏幕下端居中（视觉为按钮，命中区同尺寸放大） -->
-  <view
-    class="ptt-zone {{pttState}}"
-    bindtouchstart="onPttStart"
-    bindtouchend="onPttEnd"
-    bindtouchcancel="onPttCancel"
-    aria-label="按住说话，松开结束"
-    aria-disabled="{{!mapReady}}"
-  >
-    <text class="ptt-hint {{pttState}}">{{pttStateText}}</text>
-  </view>
+  <!-- 状态文字仅作视觉展示；提示走应用语音队列，开麦就绪仅用振动提示。 -->
+  <view wx:if="{{screenReaderVoice}}" class="voice-status" aria-hidden="true">{{voiceStatus}}</view>
+  <button wx:if="{{screenReaderVoice && (pttState === 'recording' || pttState === 'recognizing' || voiceParsing)}}" class="voice-cancel" bindtap="onVoiceCancel" aria-label="取消本次语音输入">取消语音输入</button>
+
 
   <view class="overlay" wx:if="{{loading}}">
-    <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
+    <text class="overlay-text" aria-hidden="true">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
     <button class="retry-btn" wx:if="{{loadError !== ''}}" bindtap="onRetry">重试</button>
   </view>
 </view>

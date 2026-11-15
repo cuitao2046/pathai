@@ -64,16 +64,10 @@ export const LOCAL_VOICE_DIR = '/assets/voice';
 export const DEBUG_REWRITE_DATA_URL = true;
 
 /**
- * 本地联调假登录开关：wx.login 的 code 加 `fake-` 前缀后直发后端，
- * 配合后端 PATHAI_ENV=local + PATHAI_WECHAT_FAKE=1（真实 code2session）。
- * 真机部署/上线前必须关闭。
- */
-export const WECHAT_FAKE_LOGIN = true;
-
-/**
  * 发布护栏：正式版（envVersion=release）禁止携带联调配置上线。
  * app.ts onLaunch 最先调用；命中任一违规即抛错阻断启动。
  * 开发者工具（develop）与体验版（trial）不受限，现场联调照常。
+ * 私网阶段小程序接口不鉴权，已无假登录开关；这里只保留数据源与明文 HTTP 检查。
  */
 export function assertReleaseSafety(): void {
   let envVersion: string;
@@ -87,9 +81,6 @@ export function assertReleaseSafety(): void {
     return;
   }
   const violations: string[] = [];
-  if (WECHAT_FAKE_LOGIN) {
-    violations.push('WECHAT_FAKE_LOGIN=true（正式版禁止假登录）');
-  }
   if (DEBUG_REWRITE_DATA_URL) {
     violations.push('DEBUG_REWRITE_DATA_URL=true（正式版禁止本地数据改写）');
   }

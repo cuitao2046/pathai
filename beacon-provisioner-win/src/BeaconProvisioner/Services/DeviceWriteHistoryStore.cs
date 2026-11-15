@@ -64,6 +64,25 @@ public sealed class DeviceWriteHistoryStore
 
     public DeviceWriteRecord? GetRecord(string mac) => _items.GetValueOrDefault(mac.ToUpperInvariant());
 
+    /// <summary>
+    /// 当前仍被占用的 beaconId 集合。口径是「每台设备（MAC）最近一次绑定」：
+    /// 同一 MAC 改写成新 id 后，旧 id 自然不再出现在这里，即视为已释放；
+    /// 历史记录本身不删除（写入时间、参数、上传标记都保留）。
+    /// </summary>
+    public IReadOnlyCollection<string> GetBoundBeaconIds()
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in _items.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(record.BeaconId))
+            {
+                ids.Add(record.BeaconId);
+            }
+        }
+
+        return ids;
+    }
+
     public DateTime? GetLastWrittenAt(string mac)
     {
         var raw = GetRecord(mac)?.WrittenAt;

@@ -39,13 +39,17 @@
     <view class="row" wx:if="{{storageWarning !== ''}}">
       <text class="label">本地存储</text><text user-select>{{storageWarning}}</text>
     </view>
-    <view class="row"><text class="label">登录状态</text><text user-select>{{tokenStatus}}</text></view>
     <view class="row"><text class="label">TTS 引擎</text><text>{{ttsEngine}}</text></view>
     <view class="row"><text class="label">ASR 引擎</text><text>{{asrEngine}}</text></view>
   </view>
 
   <view class="section">
     <view class="section-title">无障碍模式</view>
+    <view class="row">
+      <text class="label">旁白语音交互</text>
+      <switch checked="{{screenReaderVoice}}" bindchange="onChangeScreenReaderVoice" aria-label="旁白语音交互，开启后双击开始和结束录音" />
+    </view>
+    <view class="hint">使用 VoiceOver 或 TalkBack 时请开启：双击语音按钮开始，再双击结束；停用长按录音。状态及导航反馈由可访问文本呈现，应用语音停止，避免与系统读屏重叠。关闭后恢复原有按住说话。此开关不会开启手机系统旁白。</view>
     <view class="row">
       <text class="label">视障模式（默认）</text>
       <switch checked="{{a11yMode === 'a11y'}}" bindchange="onChangeA11yMode" aria-label="切换普通模式或视障模式" />

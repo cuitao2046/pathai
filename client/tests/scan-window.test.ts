@@ -35,6 +35,9 @@ describe('ScanWindowAggregator 窗口聚合', () => {
     expect(byId.get(BK1.beaconId)?.rssi).toBe(-65);
     expect(byId.get(BK2.beaconId)?.rssi).toBe(-80);
     expect(byId.get(BK3.beaconId)?.rssi).toBe(-90);
+    // 样本条数随中位数一起带出（L1 采集质量标记）
+    expect(byId.get(BK1.beaconId)?.n).toBe(3);
+    expect(byId.get(BK2.beaconId)?.n).toBe(1);
   });
 
   it('偶数样本取中间两值平均并取整（strict int 契约，防 400 int_from_float）', () => {

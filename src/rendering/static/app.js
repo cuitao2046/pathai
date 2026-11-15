@@ -97,6 +97,7 @@ var DETAIL_PLACEHOLDER = '<h4>点击任意要素查看详情</h4><div style="col
 function clearHighlight() {
   document.querySelectorAll('.selected').forEach(function(el){ el.classList.remove('selected'); });
   document.querySelectorAll('.neighbor').forEach(function(el){ el.classList.remove('neighbor'); });
+  document.querySelectorAll('.hz-selected').forEach(function(el){ el.classList.remove('hz-selected'); });
   var ring = document.getElementById('path-flash-ring');
   if (ring) ring.innerHTML = '';
   clearBeaconContrib();
@@ -354,6 +355,13 @@ wrapper.addEventListener('click', function(e) {
   if (!t) return;
   var info = t.getAttribute('data-info');
   var d; try { d = JSON.parse(info); } catch (err) { return; }
+  // 危险层图元：选中/取消 + 危险详情（档位/类型/理由/影响边）
+  if ((d.kind === 'hazardEdge' || d.kind === 'hazardZone') && window.showHazardDetail) {
+    if (t.classList.contains('hz-selected')) { clearHighlight(); resetDetail(); return; }
+    clearHighlight(); t.classList.add('hz-selected');
+    window.showHazardDetail(d);
+    return;
+  }
   injectCentroid(t, d);   // 选中即注入质心坐标（无需其它分支单独处理）
   // 拓扑边：即时选中/取消 + 详情 + 记录选中（启用删除按钮）
   if (d.kind === 'edge' && d.id) {
@@ -411,7 +419,7 @@ wrapper.addEventListener('click', function(e) {
 // ---- 图层开关 ----
 var allLayers = ['room','infrastructure','corridor','lobby','activity','atrium','lobby_elevator','lobby_stair','walkable','skeleton','skeleton_node','wall','window','stairs','elevator','elevator_door','column','building_outline',
   'door_swing','door_opening','door_fire',
-  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon','coverage'];
+  'topo_node','topo_edge','topo_edge_titi','crossfloor','risk','ramp','tactile','material','fingerprint','beacon','coverage','hazard'];
 // ---- 方案模式开关（全局 / 测试路线）：切换信标部署/指纹采集/三点覆盖三套数据 ----
 var CUR_MODE = 'route';
 function setMode(m) {
@@ -537,6 +545,80 @@ var MAP_CENTERS = {};
   if (el) { try { MAP_CENTERS = JSON.parse(el.textContent); } catch(e) { console.warn(e); } }
 })();
 
+// ---- 危险层数据（hazards_data，内联于 #hazard-data）----
+// 选路语义对齐后端 backend/pathai_backend/hazard_layer.py + nav_service.plan_route：
+//   block  → 进 edge_allowed 硬禁行（四层回退都不放行）
+//   avoid  → 边权加 penaltyM（同边多条取最大；缺省/非正数按 60m）
+//   notice → 不参与选路，只随路线提示
+// 普通模式完全不读危险层；非普通模式按 appliesTo 命中当前人群才生效。
+var HAZARD_DATA = null;
+(function(){
+  var el = document.getElementById('hazard-data');
+  if (el) { try { HAZARD_DATA = JSON.parse(el.textContent); } catch(e) { console.warn('[hazard] 内联数据解析失败', e); } }
+})();
+var HAZARD_TYPE_CN = {
+  construction: '施工', stairs: '楼梯/台阶', revolving_door: '旋转门',
+  wet_floor: '地面湿滑', crowd: '人流拥挤', glass_door: '玻璃门',
+  obstacle: '临时障碍', other: '其他'
+};
+var HAZARD_PEOPLE_CN = { blind: '视障', wheelchair: '轮椅', normal: '普通' };
+var HAZARD_LEVEL_LABEL = { block: '禁行', avoid: '避开', notice: '提示' };
+// 与 backend hazard_layer.DEFAULT_PENALTY_M 保持一致
+var HAZARD_DEFAULT_PENALTY_M = 60.0;
+
+function hazardParseTime(v) {
+  if (!v) return null;
+  var t = Date.parse(v);
+  return isNaN(t) ? null : t;
+}
+// 生效判定：status=active 且 activeFrom ≤ now ≤ activeUntil（缺省视为不限）
+function hazardActive(h, nowMs) {
+  if (!h || h.status !== 'active') return false;
+  var from = hazardParseTime(h.activeFrom), until = hazardParseTime(h.activeUntil);
+  if (from != null && nowMs < from) return false;
+  if (until != null && nowMs > until) return false;
+  return true;
+}
+// appliesTo 缺省视为视障（与 backend hazard_layer._parse_zone 一致）
+function hazardAppliesTo(h, mode) {
+  var list = h && h.appliesTo;
+  if (!list || !list.length) return mode === 'blind';
+  return list.indexOf(mode) >= 0;
+}
+// 指定模式「当前时刻」生效的危险（含 notice，供路线面板展示）
+function activeHazards(mode) {
+  if (mode === 'normal') return [];
+  var now = Date.now();
+  return ((HAZARD_DATA && HAZARD_DATA.hazards) || []).filter(function(h){
+    return hazardActive(h, now) && hazardAppliesTo(h, mode);
+  });
+}
+var _HAZ_INDEX = {};
+function hazardIndex(mode) {
+  if (_HAZ_INDEX[mode]) return _HAZ_INDEX[mode];
+  var idx = { block: {}, avoid: {}, notice: {} };
+  activeHazards(mode).forEach(function(h){
+    var lvl = (h.level === 'block' || h.level === 'avoid' || h.level === 'notice') ? h.level : 'notice';
+    (h.edgeIds || []).forEach(function(eid){
+      (idx[lvl][eid] || (idx[lvl][eid] = [])).push(h);
+    });
+  });
+  _HAZ_INDEX[mode] = idx;
+  return idx;
+}
+// 同边多条 avoid 取最大 penaltyM；缺省/非正数按 60m
+function hazardAvoidPenalty(eid, mode) {
+  var list = hazardIndex(mode).avoid[eid];
+  if (!list || !list.length) return 0;
+  var mx = 0;
+  list.forEach(function(h){
+    var p = Number(h.penaltyM);
+    if (!isFinite(p) || p <= 0) p = HAZARD_DEFAULT_PENALTY_M;
+    if (p > mx) mx = p;
+  });
+  return mx;
+}
+
 function togglePathMode() {
   pathMode = !pathMode;
   var btn = document.getElementById('btn-path-mode');
@@ -638,14 +720,19 @@ function doorPassThroughBlocked(u, prev, nb, nodes) {
 }
 
 // 构造受限邻接表（对齐 route_rules._build_adjacency）
-function buildPathAdj(mode, doorFilter, allowWall) {
+// hazMode：'off' = 不带危险约束（基线）；其它 = 按当前模式执行危险层规则
+function buildPathAdj(mode, doorFilter, allowWall, hazMode) {
   var nodes = PATH_GRAPH.nodes;
   var infraTds = PATH_GRAPH.infraDoorwayIds || [];
   var infraTdSet = {};
   infraTds.forEach(function(id){ infraTdSet[id] = 1; });
+  // 危险层只在非普通模式生效；block 在构造邻接表时硬剔除（所有回退层共享此过滤）
+  var hz = (hazMode === 'off') ? null : hazardIndex(mode);
   var adj = {};
   (PATH_GRAPH.edges || []).forEach(function(e) {
     if (!edgeAllowed(e, mode)) return;
+    // 危险层 block：硬禁行
+    if (hz && hz.block[e.id]) return;
     // 规则 5：剔除连接「纯管井门」的边（导航路径不经过风井/水井门）
     if (infraTdSet[e.from] || infraTdSet[e.to]) return;
     // 常闭防火门不可通行
@@ -674,6 +761,8 @@ function buildPathAdj(mode, doorFilter, allowWall) {
       }
     }
     var w = edgeWeight(e, nodes);
+    // 危险层 avoid：边权加 penaltyM（同边多条取最大）；notice 不影响边权
+    if (hz) w += hazardAvoidPenalty(e.id, mode);
     if (!adj[a]) adj[a] = [];
     if (!adj[b]) adj[b] = [];
     adj[a].push({ to: b, w: w, id: e.id });
@@ -740,7 +829,7 @@ function dijkstraCore(startId, endId, mode, adj, midTypesOverride) {
   return { nodes: path, edges: edgeIds, distance: Math.round(dist[endId] * 100) / 100 };
 }
 
-function dijkstra(startId, endId, mode) {
+function dijkstra(startId, endId, mode, hazMode) {
   if (!PATH_GRAPH) return null;
   // 四层回退（对齐 route_rules.shortest_path）：
   // 1) 仅用最佳门 + 不穿墙 TI<->TI 边；
@@ -748,19 +837,22 @@ function dijkstra(startId, endId, mode) {
   // 3) 仍不可达（穿墙边是桥边）回退纳入穿墙边保连通；
   // 4) 仍不可达（同层两翼被盲不可达走廊隔断）回退放宽中间节点白名单为
   //    midTypesCrossFloor，允许经电梯跨层绕行（如 F2 东翼→F1→F2 西翼）。
+  // hazMode='off'：计算「无危险约束」的基线路线（用于判定已避开/必须经过），
+  // 普通模式始终按 off（不读危险层）。
+  var _hz = (mode === 'normal') ? 'off' : (hazMode || 'enforce');
   var _rules = (PATH_GRAPH && PATH_GRAPH.rules) || {};
-  var sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false));
+  var sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false, _hz));
   var note = null;
   if (!sp) {
-    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, false, false));
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, false, false, _hz));
     if (sp) note = 'door_fallback';
   }
   if (!sp) {
-    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, true));
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, true, _hz));
     if (sp) note = 'wall_fallback';
   }
   if (!sp) {
-    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false),
+    sp = dijkstraCore(startId, endId, mode, buildPathAdj(mode, true, false, _hz),
                       _rules.midTypesCrossFloor || []);
     if (sp) note = 'cross_roundtrip';
   }
@@ -887,11 +979,102 @@ function rpSetMode(mode) {
 function resetRoutePanel() {
   var listEl = document.getElementById('route-steps');
   if (listEl) listEl.innerHTML = '';
+  var hzEl = document.getElementById('route-hazards');
+  if (hzEl) hzEl.innerHTML = '';
   var sumEl = document.getElementById('route-summary');
   if (sumEl) {
     sumEl.className = 'rp-empty';
     sumEl.innerHTML = RP_EMPTY_HTML;
   }
+}
+
+// ---- 路径结果中的危险关系：onRoute（真正途经）/ avoided（已避开）/ notice（仅提示）/ blocking（必须经过） ----
+// 对齐后端 nav_service._route_hazards / _blocking_hazards：
+// 基线 = 同一模式、不带危险约束的路线；只判「基线会经过但最终路线不经过」为已避开。
+function routeHazardInfo(result, mode, startId, endId) {
+  var out = { enabled: mode !== 'normal', active: 0, onRoute: [], avoided: [], notice: [], blocking: [], baseline: null };
+  if (mode === 'normal') return out;
+  var active = activeHazards(mode);
+  out.active = active.length;
+  if (!active.length) return out;
+  var baseline = dijkstra(startId, endId, mode, 'off');
+  out.baseline = baseline;
+  var baseEdges = {};
+  if (baseline) (baseline.edges || []).forEach(function(id){ baseEdges[id] = 1; });
+  if (!result) {
+    // 不可达：基线路线上被 block 拦住的危险即为「必须经过」
+    out.blocking = active.filter(function(h){
+      return h.level === 'block' && (h.edgeIds || []).some(function(e){ return baseEdges[e]; });
+    });
+    return out;
+  }
+  var routeEdges = {};
+  (result.edges || []).forEach(function(id){ routeEdges[id] = 1; });
+  active.forEach(function(h){
+    var edges = h.edgeIds || [];
+    var on = edges.some(function(e){ return routeEdges[e]; });
+    if (on) {
+      // notice 只作提示；block/avoid 属于「真正途经、已计入选路」
+      (h.level === 'notice' ? out.notice : out.onRoute).push(h);
+      return;
+    }
+    // 已避开：基线路线上有、最终路线没有；notice 不参与选路，不列为避开
+    if (h.level !== 'notice' && edges.some(function(e){ return baseEdges[e]; })) out.avoided.push(h);
+  });
+  return out;
+}
+
+function hazardItemHtml(h) {
+  var lvl = (h.level === 'block' || h.level === 'avoid' || h.level === 'notice') ? h.level : 'notice';
+  var typeTxt = HAZARD_TYPE_CN[h.type] || h.type || '其他';
+  var meta = (h.edgeIds || []).join('、');
+  if (h.penaltyM != null) meta += ' · 绕行惩罚 ' + h.penaltyM + ' m';
+  return '<div class="rp-hz-item"><span class="rp-hz-badge ' + lvl + '">' +
+    rpEsc(HAZARD_LEVEL_LABEL[lvl]) + '</span>' + rpEsc(typeTxt) + '：' + rpEsc(h.reason || '') +
+    '<div class="rp-hz-meta">' + rpEsc(meta) + '</div></div>';
+}
+function hazardSectionHtml(cls, title, list, tip) {
+  if (!list || !list.length) return '';
+  return '<div class="rp-hz-sec ' + cls + '"><div class="rp-hz-title">' + rpEsc(title) + '</div>' +
+    list.map(hazardItemHtml).join('') +
+    (tip ? '<div class="rp-hz-tip">' + rpEsc(tip) + '</div>' : '') + '</div>';
+}
+function renderRouteHazards(hz, mode, startId, endId) {
+  var box = document.getElementById('route-hazards');
+  if (!box) return;
+  box.innerHTML = '';
+  if (mode === 'normal') {
+    box.innerHTML = '<div class="rp-hz-note">普通模式不启用危险层避让（与后端一致）。切到「视障」可查看危险层选路结果。</div>';
+    return;
+  }
+  if (!hz || !hz.active) {
+    box.innerHTML = '<div class="rp-hz-note">当前时间窗内无适用于「' + rpEsc(RP_MODE_NAME[mode] || mode) + '」的生效危险。</div>';
+    return;
+  }
+  var html = '';
+  if (hz.blocking && hz.blocking.length) {
+    var reasons = [];
+    hz.blocking.forEach(function(h){
+      var t = h.reason || HAZARD_TYPE_CN[h.type] || '危险';
+      if (reasons.indexOf(t) < 0) reasons.push(t);
+    });
+    var dest = (PATH_GRAPH.nodes[endId] || {}).label || endId;
+    html += '<div class="rp-hz-sec rp-hz-blocked"><div class="rp-hz-title">前往「' +
+      rpEsc(dest) + '」必须经过危险区域：' + rpEsc(reasons.join('、')) + '</div>' +
+      '<div class="rp-hz-tip">这些 block 边是基线路线的必经边，无法绕开；未给出穿过危险区域的路线。</div>' +
+      hz.blocking.map(hazardItemHtml).join('') + '</div>';
+  }
+  html += hazardSectionHtml('rp-hz-avoided', '已为您避开（不在当前路线中）', hz.avoided,
+    '以下危险边已通过绕行排除，不会出现在路线上。');
+  html += hazardSectionHtml('rp-hz-on', '途经危险（已计入选路）', hz.onRoute,
+    '当前路线确实经过这些边：block 为绕不开的必经危险，avoid 为加权后仍最优的选择。');
+  html += hazardSectionHtml('rp-hz-notice', '沿途提示（不影响选路）', hz.notice,
+    'notice 档只做提示，不参与选路。');
+  if (!html) {
+    box.innerHTML = '<div class="rp-hz-note">本次路线未命中生效危险。</div>';
+    return;
+  }
+  box.innerHTML = html;
 }
 
 // 把视图平移到某个节点（保持当前缩放），用于在右栏点击列表项时定位
@@ -1140,18 +1323,34 @@ function recomputePathIfReady() {
 function runPath(startId, endId) {
   var mode = (document.getElementById('path-mode-select') || {}).value || 'normal';
   var result = dijkstra(startId, endId, mode);
+  // 危险关系（视障/轮椅等非普通模式）：onRoute / avoided / notice / blocking
+  var hz = routeHazardInfo(result, mode, startId, endId);
+  // 供自动化/排查读取：当前路线与危险关系
+  window.LAST_ROUTE = result;
+  window.LAST_ROUTE_HAZARDS = hz;
   var out = document.getElementById('path-result');
   var hint = document.getElementById('path-hint');
   if (!result) {
-    if (out) out.textContent = '不可达（当前模式下无连通路径）';
+    var blockedTxt = '';
+    if (hz.blocking && hz.blocking.length) {
+      var reasons = [];
+      hz.blocking.forEach(function(h){
+        var t = h.reason || HAZARD_TYPE_CN[h.type] || '危险';
+        if (reasons.indexOf(t) < 0) reasons.push(t);
+      });
+      blockedTxt = '：必须经过危险区域（' + reasons.join('、') + '）';
+    }
+    if (out) out.textContent = '不可达' + (blockedTxt || '（当前模式下无连通路径）');
     clearPathVisual();
     markNodeClass(startId, 'path-start');
     markNodeClass(endId, 'path-end');
     renderRouteList(null, mode, startId, endId);
+    renderRouteHazards(hz, mode, startId, endId);
     return;
   }
   drawPath(result);
   renderRouteList(result, mode, startId, endId);
+  renderRouteHazards(hz, mode, startId, endId);
   var sn = PATH_GRAPH.nodes[startId] || {};
   var en = PATH_GRAPH.nodes[endId] || {};
   if (out) {
@@ -1362,4 +1561,375 @@ updateDeleteBtn();
 
 buildFloorJump(__NFLOORS__, __PERFLOOR__);
 applyTransform(); setZoomInfo();
+
+// ===== 危险层（hazards_data）：在现有渲染图上叠加 block / avoid / notice =====
+// 数据来源：backend/hazards_data/school-building-01.json，由 render_interactive.py
+// 内联为 #hazard-data。页面通过 file:// 打开，禁止 fetch，运行时只读内联 JSON。
+// 与地图包的关系：地图包只给几何/拓扑；本层只覆盖运营危险（施工/湿滑/人流等）。
+(function () {
+  'use strict';
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var LEVEL_STYLE = {
+    block:  { color: '#dc2626', width: 4.5, dash: null,  label: 'block 禁行' },
+    avoid:  { color: '#ea580c', width: 3.5, dash: '7 5', label: 'avoid 尽量避开' },
+    notice: { color: '#7c3aed', width: 3,   dash: '3 4', label: 'notice 仅提示' }
+  };
+  var RANK = { block: 3, avoid: 2, notice: 1 };
+  var FLOOR_CN = { '1': '1F', '2': '2F' };
+
+  var HAZ_BY_ID = {};   // hazardId -> hazard
+  var EDGE_LEN = {};    // edgeId -> 米
+
+  function floorLabel(f) { return FLOOR_CN[String(f)] || (String(f) + 'F'); }
+  function edgeFloorText(info) {
+    if (info.kind === 'crossfloor') return '1F ↔ 2F（跨层边）';
+    return info.floor ? floorLabel(info.floor) : '—';
+  }
+  function fmtTime(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+      + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function windowText(h) {
+    if (!h.activeFrom && !h.activeUntil) return '长期有效（未设时间窗）';
+    return (h.activeFrom ? fmtTime(h.activeFrom) : '立即') + ' 至 '
+      + (h.activeUntil ? fmtTime(h.activeUntil) : '长期');
+  }
+  function appliesText(list) {
+    if (!list || !list.length) return '视障';
+    return list.map(function (x) { return HAZARD_PEOPLE_CN[x] || x; }).join('、');
+  }
+  function lengthText(h) {
+    var total = 0, n = 0, missing = 0;
+    (h.edgeIds || []).forEach(function (eid) {
+      var m = EDGE_LEN[eid];
+      if (m == null) { missing++; } else { total += m; n++; }
+    });
+    if (!n) return '未定位' + (missing ? '（' + missing + ' 条边）' : '');
+    return '合计 ' + total.toFixed(2) + ' m（' + n + ' 条边'
+      + (missing ? '，' + missing + ' 条未定位' : '') + '）';
+  }
+  function pathEndpoints(d) {
+    var re = /[ML]\s*([-\d.]+)[ ,]+([-\d.]+)/g, m, pts = [];
+    while ((m = re.exec(d))) pts.push([parseFloat(m[1]), parseFloat(m[2])]);
+    return pts;
+  }
+  // 跨层连接在当前页是一根横跨 1F/2F 的示意线；按危险所在楼层取该端端点画标记
+  function crossEndpoint(d, floorId) {
+    var pts = pathEndpoints(d);
+    if (!pts.length) return null;
+    var g = window.GEOX;
+    var fi = g ? g.floorKeys.indexOf(String(floorId)) : -1;
+    if (!g || fi < 0) return pts[0];
+    for (var i = 0; i < pts.length; i++) {
+      if (Math.floor(pts[i][1] / g.perFloor) === fi) return pts[i];
+    }
+    return pts[0];
+  }
+
+  function strictest(list) {
+    return list.reduce(function (a, h) {
+      return (RANK[h.level] || 0) > (RANK[a.level] || 0) ? h : a;
+    }, list[0]);
+  }
+
+  // 复用页面 GEOX（米制 → SVG 用户坐标），仅 area/point 使用
+  function geoToSvg(x, y, floorId) {
+    var g = window.GEOX;
+    if (!g) return [x, y];
+    var fi = g.floorKeys.indexOf(String(floorId));
+    if (fi < 0) fi = 0;
+    return [
+      g.marginX + (x - g.ox) * g.scale,
+      fi * g.perFloor + g.titleH + g.marginY + (g.oy - y) * g.scale
+    ];
+  }
+
+  // 建立 edgeId -> 已有拓扑边几何 的索引（只扫边类图层，避免全量遍历）
+  function buildEdgeIndex() {
+    var idx = {};
+    var sel = '#main-svg .layer_topo_edge, #main-svg .layer_topo_edge_titi, #main-svg .layer_crossfloor';
+    document.querySelectorAll(sel).forEach(function (g) {
+      var raw;
+      try { raw = JSON.parse(g.getAttribute('data-info')); } catch (e) { return; }
+      if (!raw) return;
+      var meta = raw.detail || {};
+      // 拓扑边 id 在顶层；跨层边（crossfloor）的 id 与楼层元数据在 detail 里
+      var id = raw.id || raw._edit_pid || meta._edit_pid;
+      if (!id) return;
+      var floorNum = raw._edit_floor != null ? raw._edit_floor : meta._edit_floor;
+      var p = g.querySelector('path');
+      if (!p) return;
+      var d = p.getAttribute('d');
+      if (!d) return;
+      var len = null;
+      var rows = (raw.detail && raw.detail.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r && (r[0] === '距离' || r[0] === '长度')) {
+          var m = parseFloat(r[1]);
+          if (isFinite(m)) len = m;
+          break;
+        }
+      }
+      idx[id] = {
+        id: id, d: d, len: len, kind: raw.kind,
+        floor: floorNum != null ? String(floorNum) : '',
+        el: g
+      };
+    });
+    return idx;
+  }
+
+  function buildEdgeInfo(eid, info, list) {
+    var top = strictest(list);
+    var st = LEVEL_STYLE[top.level] || LEVEL_STYLE.notice;
+    var lenTxt = info.len != null ? info.len.toFixed(2) + ' m' : '长度未知';
+    var lines = ['危险边 ' + eid + ' · '
+      + (list.length > 1 ? list.length + ' 条危险（最严 ' + st.label + '）' : st.label)];
+    list.forEach(function (h) {
+      lines.push('· ' + (HAZARD_TYPE_CN[h.type] || h.type) + '：' + (h.reason || ''));
+    });
+    lines.push('影响边长度 ' + lenTxt + ' · ' + edgeFloorText(info));
+    if (info.kind === 'crossfloor') {
+      lines.push('跨层边：图上在 ' + floorLabel(top.floorId) + ' 端以菱形标注');
+    }
+    var rows = [
+      ['楼层', edgeFloorText(info)],
+      ['本边长度', lenTxt],
+      ['危险条数', list.length + ' 条']
+    ];
+    if (info.kind === 'crossfloor') {
+      rows.push(['标注端', floorLabel(top.floorId) + '（跨层示意图仅标该端）']);
+    }
+    return {
+      tip: lines.join('\\n'),
+      detail: {
+        title: '危险边 ' + eid,
+        rows: rows
+      },
+      kind: 'hazardEdge',
+      id: 'HZ-EDGE:' + eid,
+      edgeId: eid,
+      hazardIds: list.map(function (h) { return h.hazardId; })
+    };
+  }
+
+  function buildZoneInfo(h) {
+    var st = LEVEL_STYLE[h.level] || LEVEL_STYLE.notice;
+    var label = h.targetType === 'area' ? '危险区域' : '危险点位';
+    return {
+      tip: [label + ' ' + h.hazardId + ' · ' + st.label,
+        '· ' + (HAZARD_TYPE_CN[h.type] || h.type) + '：' + (h.reason || ''),
+        '影响边 ' + (h.edgeIds || []).length + ' 条 · ' + lengthText(h)].join('\\n'),
+      detail: { title: label + ' ' + h.hazardId, rows: [] },
+      kind: 'hazardZone',
+      id: 'HZ-ZONE:' + h.hazardId,
+      hazardIds: [h.hazardId]
+    };
+  }
+
+  function showHazardDetail(d) {
+    var box = document.getElementById('detail');
+    if (!box) return;
+    function row(label, value) {
+      return '<div class="row"><span>' + rpEsc(label) + '</span><span>' + rpEsc(value) + '</span></div>';
+    }
+    var h = '<h4>' + rpEsc((d.detail && d.detail.title) || '危险详情') + '</h4>';
+    ((d.detail && d.detail.rows) || []).forEach(function (r) { h += row(r[0], r[1]); });
+    var ids = d.hazardIds || [];
+    ids.forEach(function (hid, i) {
+      var hz = HAZ_BY_ID[hid];
+      if (!hz) return;
+      var st = LEVEL_STYLE[hz.level] || LEVEL_STYLE.notice;
+      h += '<div class="hz-block">';
+      if (ids.length > 1) h += '<div class="hz-block-title">危险 ' + (i + 1) + ' / ' + ids.length + '</div>';
+      h += '<div class="row"><span>档位</span><span><span class="hz-badge ' + rpEsc(hz.level) + '">'
+        + rpEsc(st.label) + '</span></span></div>';
+      h += row('类型', HAZARD_TYPE_CN[hz.type] || hz.type || '其他');
+      h += row('理由', hz.reason || '');
+      h += row('目标形态', hz.targetType === 'area' ? '区域 area'
+        : hz.targetType === 'point' ? '点位 point' : '边 edge');
+      h += row('影响边', (hz.edgeIds || []).join('、'));
+      h += row('影响长度', lengthText(hz));
+      h += row('生效时间', windowText(hz));
+      h += row('适用人群', appliesText(hz.appliesTo));
+      h += row('视障可通行', hz.blindAccessible ? '是' : '否');
+      if (hz.penaltyM != null) h += row('绕行惩罚', hz.penaltyM + ' m');
+      h += row('状态/来源', (hz.status || '—') + ' / ' + (hz.source || '—'));
+      h += row('危险 ID', hz.hazardId + (hz.note ? '（' + hz.note + '）' : ''));
+      h += '</div>';
+    });
+    box.innerHTML = h;
+    currentDetail = d;
+  }
+
+  function build() {
+    var dataEl = document.getElementById('hazard-data');
+    var svg = document.getElementById('main-svg');
+    if (!dataEl || !svg) return;
+
+    var DATA = HAZARD_DATA;
+    if (!DATA) {
+      try { DATA = JSON.parse(dataEl.textContent); }
+      catch (e) { console.warn('[hazard] 内联数据解析失败', e); return; }
+    }
+
+    var all = DATA.hazards || [];
+    all.forEach(function (h) { if (h && h.hazardId) HAZ_BY_ID[h.hazardId] = h; });
+    // 只有 active 参与展示；pending/resolved/rejected 不当作现行危险
+    var hazards = all.filter(function (h) { return h && h.status === 'active'; });
+
+    var edgeIdx = buildEdgeIndex();
+    Object.keys(edgeIdx).forEach(function (id) {
+      if (edgeIdx[id].len != null) EDGE_LEN[id] = edgeIdx[id].len;
+    });
+
+    var byEdge = {};
+    hazards.forEach(function (h) {
+      (h.edgeIds || []).forEach(function (eid) {
+        (byEdge[eid] || (byEdge[eid] = [])).push(h);
+      });
+    });
+    var edgeIds = Object.keys(byEdge);
+    // 轻微危险先画，严重危险后画，重叠时最严档位在最上层
+    edgeIds.sort(function (a, b) {
+      return (RANK[strictest(byEdge[a]).level] || 0) - (RANK[strictest(byEdge[b]).level] || 0);
+    });
+
+    var layer = document.createElementNS(NS, 'g');
+    layer.setAttribute('id', 'hazard-layer');
+    layer.setAttribute('class', 'layer_hazard');
+
+    var missing = [];
+    edgeIds.forEach(function (eid) {
+      var info = edgeIdx[eid];
+      if (!info) { missing.push(eid); return; }
+      var list = byEdge[eid];
+      var top = strictest(list);
+      var st = LEVEL_STYLE[top.level] || LEVEL_STYLE.notice;
+
+      var item = document.createElementNS(NS, 'g');
+      item.setAttribute('class', 'hazard-item hz-edge');
+      if (info.floor) item.setAttribute('data-floor', info.floor);
+      item.setAttribute('data-info', JSON.stringify(buildEdgeInfo(eid, info, list)));
+
+      if (info.kind === 'crossfloor') {
+        var ep = crossEndpoint(info.d, top.floorId);
+        if (!ep) { return; }
+        var x = ep[0], y = ep[1];
+        var dia = document.createElementNS(NS, 'path');
+        dia.setAttribute('class', 'hz-cross-vis');
+        dia.setAttribute('d', 'M ' + x + ' ' + (y - 8) + ' L ' + (x + 8) + ' ' + y
+          + ' L ' + x + ' ' + (y + 8) + ' L ' + (x - 8) + ' ' + y + ' Z');
+        dia.setAttribute('fill', st.color);
+        dia.setAttribute('fill-opacity', '0.85');
+        dia.setAttribute('stroke', st.color);
+        dia.setAttribute('stroke-width', '1.5');
+        var chit = document.createElementNS(NS, 'circle');
+        chit.setAttribute('class', 'hz-cross-hit');
+        chit.setAttribute('cx', x);
+        chit.setAttribute('cy', y);
+        chit.setAttribute('r', '12');
+        item.appendChild(dia);
+        item.appendChild(chit);
+        layer.appendChild(item);
+        return;
+      }
+
+      var vis = document.createElementNS(NS, 'path');
+      vis.setAttribute('class', 'hz-vis');
+      vis.setAttribute('d', info.d);
+      vis.setAttribute('stroke', st.color);
+      vis.setAttribute('stroke-width', st.width);
+      if (st.dash) vis.setAttribute('stroke-dasharray', st.dash);
+
+      var hit = document.createElementNS(NS, 'path');
+      hit.setAttribute('class', 'hz-hit');
+      hit.setAttribute('d', info.d);
+
+      item.appendChild(vis);
+      item.appendChild(hit);
+      layer.appendChild(item);
+    });
+
+    // area / point 展示形态：数据里有就按区域/点画；边线仍由上面的 edgeIds 叠加
+    hazards.forEach(function (h) {
+      if (h.targetType !== 'area' && h.targetType !== 'point') return;
+      if (!h.geometry || !h.geometry.coordinates) return;
+      var st = LEVEL_STYLE[h.level] || LEVEL_STYLE.notice;
+      var item = document.createElementNS(NS, 'g');
+      item.setAttribute('class', 'hazard-item hz-zone');
+      item.setAttribute('data-floor', String(h.floorId || ''));
+      item.setAttribute('data-info', JSON.stringify(buildZoneInfo(h)));
+
+      if (h.targetType === 'area' && h.geometry.type === 'Polygon') {
+        var ring = h.geometry.coordinates[0] || [];
+        var pts = ring.map(function (p) {
+          var s = geoToSvg(p[0], p[1], h.floorId);
+          return s[0].toFixed(2) + ',' + s[1].toFixed(2);
+        }).join(' ');
+        var poly = document.createElementNS(NS, 'polygon');
+        poly.setAttribute('class', 'hz-area');
+        poly.setAttribute('points', pts);
+        poly.setAttribute('fill', st.color);
+        poly.setAttribute('fill-opacity', '0.18');
+        poly.setAttribute('stroke', st.color);
+        poly.setAttribute('stroke-width', '1.6');
+        if (st.dash) poly.setAttribute('stroke-dasharray', st.dash);
+        item.appendChild(poly);
+      } else if (h.targetType === 'point') {
+        var pt = h.geometry.type === 'LineString' ? h.geometry.coordinates[0]
+          : (h.geometry.type === 'Point' ? h.geometry.coordinates : h.geometry.coordinates[0]);
+        var sp = geoToSvg(pt[0], pt[1], h.floorId);
+        var c = document.createElementNS(NS, 'circle');
+        c.setAttribute('class', 'hz-point');
+        c.setAttribute('cx', sp[0].toFixed(2));
+        c.setAttribute('cy', sp[1].toFixed(2));
+        c.setAttribute('r', '7');
+        c.setAttribute('fill', st.color);
+        c.setAttribute('fill-opacity', '0.22');
+        c.setAttribute('stroke', st.color);
+        c.setAttribute('stroke-width', '2');
+        item.appendChild(c);
+        var dot = document.createElementNS(NS, 'circle');
+        dot.setAttribute('class', 'hz-point-dot');
+        dot.setAttribute('cx', sp[0].toFixed(2));
+        dot.setAttribute('cy', sp[1].toFixed(2));
+        dot.setAttribute('r', '2.5');
+        dot.setAttribute('fill', st.color);
+        item.appendChild(dot);
+      }
+      layer.appendChild(item);
+    });
+
+    svg.appendChild(layer);
+
+    // 与图层勾选框同步初始状态（默认勾选=显示）
+    var cb = document.querySelector('#layerControls input[onchange*="hazard"]');
+    layer.style.display = (cb && !cb.checked) ? 'none' : '';
+
+    var stat = document.getElementById('hazard-stat');
+    if (stat) {
+      stat.textContent = '已加载 ' + hazards.length + ' 条生效危险 · 覆盖 '
+        + edgeIds.length + ' 条边 · '
+        + (missing.length ? missing.length + ' 条边未定位' : '边全部定位')
+        + ' · 数据版本 ' + (DATA.hazardVersion || '—');
+    }
+    if (missing.length) console.warn('[hazard] 以下 edgeId 在本页 SVG 中未定位：', missing);
+    window.HAZARD_DEBUG = {
+      data: DATA, byEdge: byEdge, edgeIdx: edgeIdx, missing: missing,
+      hazards: hazards, layer: layer
+    };
+    window.showHazardDetail = showHazardDetail;
+  }
+
+  // GEOX 由页面尾部的区域标注脚本定义；等 DOM 解析完成后再构建危险层
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', build);
+  else build();
+})();
 

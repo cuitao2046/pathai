@@ -1,3 +1,5 @@
+import { VoiceInteraction } from '../../core/asr/voice-interaction';
+import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
 /**
  * 楼层地图启动首屏：墙体平面图 + 1F/2F 切换 + 单指拖动/双指缩放 + mock 位置点。
  *
@@ -6,7 +8,7 @@
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
 import { appContext } from '../../services/app-context';
-import { ensureServiceEndpoint } from '../../services/service-endpoint';
+import { ensureServiceEndpoint, lastEndpointFailure } from '../../services/service-endpoint';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
@@ -21,15 +23,24 @@ import {
   type RoomFillGroup,
 } from '../../core/map/floor-geometry';
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
-import { PushToTalk, type PttState } from '../../core/asr/push-to-talk';
+import {
+  ASR_EMPTY_TEXT,
+  type PttState,
+} from '../../core/asr/push-to-talk';
 import { createBeaconSource } from '../../core/ble/beacon-source-factory';
 import type { BeaconSourceLike } from '../../core/ble/beacon-source';
 import { MockBeaconSource } from '../../core/ble/mock-beacon-source';
 import { MOCK_POSITION, MOCK_WALK_SPEED_MPS } from '../../core/map/mock-position';
 import { SpeechQueue } from '../../core/speech/speech-queue';
+import type { LocalVoiceName } from '../../core/speech/local-voice';
 import type { MapServiceEvent } from '../../core/map/map-service';
-import { IntentService } from '../../services/intent.service';
-import { LocationQueryService, UNRESOLVED_TEXT } from '../../services/location-query.service';
+import { IntentService, resolveIntentTarget } from '../../services/intent.service';
+import {
+  LocationQueryService,
+  SURROUNDINGS_UNRESOLVED_TEXT,
+  UNRESOLVED_TEXT,
+  type LocationQueryKind,
+} from '../../services/location-query.service';
 import {
   NavSessionController,
   type NavPipelineControl,
@@ -38,7 +49,8 @@ import {
 import { LocationPipeline } from '../../core/position/location-pipeline';
 import { SequenceCounter } from '../../core/position/sequence-counter';
 import { buildRouteOverview } from '../../core/nav/route-overview';
-import { vibrateLong, vibrateShort } from '../../utils/haptic';
+import { TurnHaptics, resolveTurnNode, turnDistanceM } from '../../core/nav/turn-haptics';
+import { vibrateDoubleShort, vibrateLong, vibrateShort } from '../../utils/haptic';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import {
   HoldToTalkGesture,
@@ -57,9 +69,13 @@ import { HeadingSource, type HeadingApi, type HeadingMode } from '../../core/a11
 import { arrowClipPath } from '../../core/a11y/nav-arrow-shape';
 import type { A11yMode } from '../../services/app-context';
 import type {
+  IntentLocationPayload,
   IntentParseResponse,
+  NavigationInstruction,
+  OriginPosition,
   PlaceCandidate,
   PositionEstimateResponse,
+  PreviewRouteResponse,
   RouteInfo,
 } from '../../typings/api';
 
@@ -73,6 +89,9 @@ const PTT_TEXT: Record<PttState, string> = {
   error: '识别失败，请重试',
 };
 
+/** 已请求开录、麦克风尚未就绪时的文案（就绪后才切到 PTT_TEXT.recording）。 */
+const PTT_TEXT_PREPARING = '正在打开麦克风…';
+
 /** 导航态文案（自原导航页平移）。 */
 const NAV_TEXT: Record<NavState, string> = {
   idle: '正在定位…',
@@ -83,6 +102,26 @@ const NAV_TEXT: Record<NavState, string> = {
 };
 
 const DOUBLE_TAP_WINDOW_MS = 500;
+
+/** 进入逐步引导前的短过渡（本地音频，离线可播）：场景一/场景二共用，位于概要与首条指令之间。 */
+const NAV_START_TRANSITION_CLIP = 'nav-start';
+
+/** 预览起点等待上限：取不到可信位置就不规划（绝不建会话）。 */
+const PREVIEW_ORIGIN_TIMEOUT_MS = 12_000;
+/** 预览接口超时：内部含一次大模型概要调用，与建会话同级放宽。 */
+const PREVIEW_TIMEOUT_MS = 30_000;
+/** 概要播完后等待用户确认的时长；超时视为拒绝（不建会话）。 */
+const PREVIEW_CONFIRM_TIMEOUT_MS = 30_000;
+/**
+ * 「开始导航」复用近期预览的窗口：自「应用说完最后一句话」（previewFreshAt）起算。
+ * 概要与「是否开始导航」询问播完各刷新一次——应用自身的播报不得消耗用户的反应时间。
+ */
+const PREVIEW_REUSE_WINDOW_MS = 10_000;
+/** 场景二：语音说「开始导航」后等待用户说出目的地的上限。 */
+const AWAIT_DESTINATION_TIMEOUT_MS = 30_000;
+
+/** 语音静默失败提示的最小间隔：连续误触只播一次，避免叠音。 */
+const VOICE_HINT_DEBOUNCE_MS = 3000;
 
 /**
  * 进入导航时的视野收窄倍数（相对全图适配 scale；工程默认值，按真机观感调）。
@@ -177,12 +216,16 @@ Page({
     // 意图/语音（REQ-PAGE：下端居中按住说话按钮 + 居中浮层）
     pttState: 'idle' as PttState,
     pttStateText: PTT_TEXT.idle,
+    /** 语音入口的无障碍名称：读屏开启时切换为「双击」语义（随状态变化）。 */
+    pttA11yLabel: '按住说话，松开结束',
     partial: '',
     recognized: '',
     reply: '',
     fallbackText: '',
     candidates: [] as PlaceCandidate[],
     destination: null as PlaceCandidate | null,
+    /** 概要播完后才出现「开始导航」：避免与概要播报叠音、避免提前确认。 */
+    navConfirmReady: false,
     isMockSource: appContext.dataSource === 'mock',
     // 现场采集工具（设置页开关控制入口可见性，即时生效；导航中隐藏）
     collectEntry: false,
@@ -201,6 +244,9 @@ Page({
     a11yMode: 'a11y' as A11yMode,
     /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
     fullScreenPtt: true,
+    screenReaderVoice: false,
+    voiceStatus: '',
+    voiceParsing: false,
     /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
     navArrow: true,
     /** 箭头覆盖层是否显示。 */
@@ -219,7 +265,7 @@ Page({
   speech: null as SpeechQueue | null,
   /** 地图下载/就绪事件订阅（启动播报序列用）。 */
   mapUnsubscribe: null as (() => void) | null,
-  ptt: null as PushToTalk | null,
+  ptt: null as VoiceInteraction | null,
   intents: null as IntentService | null,
   locationQuery: null as LocationQueryService | null,
   controller: null as NavSessionController | null,
@@ -228,17 +274,64 @@ Page({
   navSource: null as BeaconSourceLike | null,
   navDestination: null as PlaceCandidate | null,
   routeForDisplay: null as RouteInfo | null,
+  /**
+   * 转弯逼近震动（REQ-A11Y-TURN-HAPTIC，仅视障模式）：
+   * 语音负责距拐点 8~10m 的提前播报，震动只负责最后几米的逼近节拍，两者分工。
+   */
+  turnHaptics: null as TurnHaptics | null,
+  /** 当前导航指令（每次 update 刷新，转弯震动按它取拐点）。 */
+  currentInstruction: null as NavigationInstruction | null,
+  /** 正在震动的转弯 instructionId；变化即视为新转弯，复位“已到达”。 */
+  turnHapticInstructionId: null as string | null,
   /** 导航态最近一次可信位置（unreliable/lost 不更新 → 恢复态不推进显示）。 */
   navPosition: null as { floorId: string; x: number; y: number } | null,
+  /** 与 navPosition 同时更新的定位置信度（意图请求随带 location 用）。 */
+  navConfidence: 0,
   overviewAnnounced: false,
+  /**
+   * 导航阶段：idle 待命 / awaiting-destination 等待用户说目的地 /
+   * previewing 规划+播概要 / awaiting-confirm 等待确认 / navigating 逐步引导。
+   * 创建会话只允许发生在确认之后（场景二由「开始导航」语音意图视为已确认）。
+   */
+  navPhase: 'idle' as
+    | 'idle'
+    | 'awaiting-destination'
+    | 'previewing'
+    | 'awaiting-confirm'
+    | 'navigating',
+  /** 预览代际：取消/重来使在途回调失效。 */
+  previewToken: 0,
+  previewOrigin: null as OriginPosition | null,
+  /** 等待首个可信估计作为规划起点。 */
+  previewOriginResolve: null as ((origin: OriginPosition | null) => void) | null,
+  previewOriginTimer: null as ReturnType<typeof setTimeout> | null,
+  /** 概要播完后等待用户确认的超时。 */
+  previewConfirmTimer: null as ReturnType<typeof setTimeout> | null,
+  /**
+   * 预览新鲜度起点（毫秒）：由语音队列排空事件写入（概要播完、确认询问播完各一次），
+   * 是「开始导航」复用预览的 10 秒窗口的唯一起算点（不从预览返回或开始播报起算）。
+   */
+  previewFreshAt: null as number | null,
+  /** true：概要播完后直接开始导航（用户已用语音表达「开始导航」，不再二次确认）。 */
+  previewAutoStart: false,
+  /** 场景二：等待用户说出目的地的超时计时器。 */
+  awaitDestinationTimer: null as ReturnType<typeof setTimeout> | null,
   lastTapAt: 0,
   /** 工具条按钮按下时间：bindtouchstart 先于 bindtap，测「手指按下→界面响应」的真实间隔。 */
   toolTouchAt: 0,
   /** 全屏按住说话的交互追踪（touchstart 起点，录音态渲染回调收尾）。 */
   pttTrace: null as PerfTrace | null,
+  /**
+   * 读屏（iOS 旁白 / Android TalkBack）是否开启：开启时旁白会接管单指触摸，
+   * 全屏长按不可用，语音入口改为「双击切换录音」。
+   */
+  screenReaderOn: false,
   sessionEnded: false,
   parseInFlight: false,
+  voiceEpoch: 0,
   locationInFlight: false,
+  /** 上次语音失败提示时刻（空识别/录音失败），用于防连续误触叠音。 */
+  voiceHintAt: 0,
   /** 定位不可用日志去噪：只在连续不可用的第一拍打日志（恢复后重置）。 */
   locationWarned: false,
   ctx: null as Canvas2d | null,
@@ -285,8 +378,9 @@ Page({
     this.gesture = { mode: null, lastX: 0, lastY: 0, baseDist: 0, lastMidX: 0, lastMidY: 0 };
     this.holdGesture = new HoldToTalkGesture(HOLD_TO_TALK_DEFAULTS);
     this.headingSmoother = new HeadingSmoother();
-    this.initSpeech();
-    this.initPtt();
+    // 语音初始化是启动门禁的一部分：必须等 bootstrap 解析出服务端地址后再建，
+    // 避免解析完成前按住说话把 ASR/TTS 凭据请求发到未解析地址。
+    this.refreshScreenReaderState();
     this.applyA11ySettings(); // 模式与全屏语音开关（设置页改动通过 onShow 回读）
     this.intents = new IntentService(appContext.http.client, appContext.map);
     this.locationQuery = new LocationQueryService({
@@ -296,6 +390,8 @@ Page({
       floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
       // 指纹库开关（默认关闭）：每次查询时读取，设置页改动即时生效
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
+      // 查周边时上报当前朝向，服务端据此计算"左前方/右前方"等时钟方位
+      headingDeg: () => this.headingDeg,
     });
     // 启动播报序列由地图事件驱动（下载开始/就绪/过旧），必须在 bootstrap 之前订阅
     this.mapUnsubscribe = appContext.map.subscribe((event) => this.onMapEvent(event));
@@ -303,28 +399,52 @@ Page({
   },
 
   onHide(): void {
+    ++this.voiceEpoch;
+    this.parseInFlight = false;
+    this.setData({ voiceParsing: false });
+    this.speech?.interrupt();
     this.ptt?.handleAppHide(); // 切后台：取消识别，不提交
     this.clearHoldTimers();
     this.holdGesture!.reset();
     this.stopHeading(); // 传感器不进后台（省电 + 避免系统限流）
+    this.stopTurnHaptics(); // 转弯逼近节拍不进后台，定时器一并清理
     this.controller?.handleBackground(); // 导航中：停采集，恢复交给 onShow
+    if (this.navPhase === 'previewing' || this.navPhase === 'awaiting-confirm') {
+      this.pipeline?.stop(); // 预览/等待确认：后台停采集，确认时按需重启
+    }
   },
 
   onShow(): void {
     // 从设置页返回后刷新采集入口可见性与无障碍模式（开关即时生效）
     this.setData({ collectEntry: appContext.getFieldCollectionToolSetting() });
     this.applyA11ySettings();
+    // 读屏可能在本页停留期间被开关（设置页/快捷手势），每次回前台重查一次
+    this.refreshScreenReaderState();
     const controller = this.controller;
     if (controller !== null && controller.sessionId !== null && !this.sessionEnded) {
       void controller.handleForeground();
+      this.syncTurnHaptics(); // 回前台：按最近位置/指令恢复转弯逼近节拍
     }
   },
 
   onUnload(): void {
+    ++this.voiceEpoch;
+    this.parseInFlight = false;
+    this.setData({ voiceParsing: false });
+    this.ptt?.cancel();
+    this.speech?.interrupt();
     this.mapUnsubscribe?.();
     this.mapUnsubscribe = null;
     this.clearHoldTimers();
     this.stopHeading();
+    this.stopTurnHaptics();
+    this.navPhase = 'idle';
+    this.previewToken += 1;
+    this.clearPreviewTimers();
+    this.clearAwaitDestinationTimer();
+    this.previewOrigin = null;
+    this.previewFreshAt = null;
+    this.previewAutoStart = false;
     const controller = this.controller;
     if (controller !== null && !this.sessionEnded && controller.sessionId !== null) {
       controller.endSession('user_cancelled').catch(() => undefined);
@@ -342,7 +462,7 @@ Page({
   onMapEvent(event: MapServiceEvent): void {
     if (event.type === 'download-start') {
       if (event.foreground) {
-        void appContext.voicePrompts.play('map-loading');
+        if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-loading');
       }
       return;
     }
@@ -350,12 +470,12 @@ Page({
       return;
     }
     if (event.source === 'download') {
-      void appContext.voicePrompts.play('map-loaded');
+      if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-loaded');
       vibrateShort(); // 加载成功短震动
     }
-    void appContext.voicePrompts.play('app-started');
+    if (!getScreenReaderVoice()) void appContext.voicePrompts.play('app-started');
     if (event.stale) {
-      void appContext.voicePrompts.play('map-stale');
+      if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-stale');
     }
   },
 
@@ -370,20 +490,27 @@ Page({
   async bootstrap(): Promise<void> {
     this.setData({ loading: true, loadError: '' });
     try {
-      // 先解析业务地址：缓存优先，失败则 UDP 广播发现。
+      // 先解析业务地址：真机走缓存 + UDP 发现；模拟器走本机回环直连。
       const endpoint = await ensureServiceEndpoint();
       if (endpoint === null) {
-        log.warn('未发现局域网服务，停止加载地图');
+        const failure = lastEndpointFailure();
+        log.warn('未解析业务地址，停止加载地图', failure ?? 'unknown');
         this.setData({
           loading: false,
           mapReady: false,
-          loadError: '未发现局域网服务：请确认后端已启动，且手机与电脑在同一网络后重试',
+          // 模拟器专用文案：明确是“本机后端连不上 + 模拟器不能用 UDP 广播”，
+          // 不把模拟器限制误导成“局域网里没有服务”。
+          loadError: failure === 'devtools-backend-unreachable' || failure === 'devtools-port-missing'
+            ? '模拟器未连上本机后端：请确认后端已在本机启动（模拟器内无法使用局域网 UDP 广播发现）'
+            : describeError('ENDPOINT_UNRESOLVED'),
         });
-        void appContext.voicePrompts.play('map-load-failed');
+        if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-load-failed');
         vibrateLong();
         return;
       }
       log.info('业务地址已就绪', endpoint);
+      // 门禁通过：此后才初始化语音（ASR/TTS 凭据请求只可能打到已解析地址）。
+      this.initVoiceOnce();
       await appContext.map.ensureLoaded();
       const floorsData = appContext.map.floors;
       const floors = floorsSortedByLevel(floorsData);
@@ -422,7 +549,7 @@ Page({
       log.warn('地图加载失败', err);
       this.setData({ loading: false, loadError: message, mapReady: false });
       // 无可用地图 → 本地提示音 + 长震动（不播「程序已启动」）
-      void appContext.voicePrompts.play('map-load-failed');
+      if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-load-failed');
       vibrateLong();
     }
   },
@@ -602,9 +729,9 @@ Page({
       }
     }
 
-    // 导航态：当前楼层路线全貌 + 标记（REQ-NAV 展示层；route 由 onRoute 存入）
+    // 路线展示：预览（只读规划）与导航态都画（route 由预览/onRoute 存入）
     const route = this.routeForDisplay;
-    if (route !== null && this.data.navActive && route.polyline.length >= 2) {
+    if (route !== null && route.polyline.length >= 2) {
       // polyline 按楼层切段（floorId null 沿用前一点楼层，桥接跨层内的空洞）
       const routeSegs: Array<{ floorId: string; pts: Array<{ x: number; y: number }> }> = [];
       let lastFloor: string | null = null;
@@ -749,6 +876,7 @@ Page({
   },
 
   onTouchStart(e: WechatMiniprogram.TouchEvent): void {
+    if (this.screenReaderOn) return;
     const ts = e.touches;
     // 普通模式：回归既有地图手势（按下即可拖拽，无长按判定、无死区）
     if (this.data.a11yMode !== 'a11y') {
@@ -785,6 +913,7 @@ Page({
   },
 
   onTouchMove(e: WechatMiniprogram.TouchEvent): void {
+    if (this.screenReaderOn) return;
     const vp = this.viewport;
     if (vp === null) {
       return;
@@ -840,6 +969,7 @@ Page({
   },
 
   onTouchEnd(e: WechatMiniprogram.TouchEvent): void {
+    if (this.screenReaderOn) return;
     const ts = e.touches;
     if (this.data.a11yMode === 'a11y') {
       const action = this.holdGesture!.onEnd(ts.length);
@@ -862,6 +992,7 @@ Page({
   },
 
   onTouchCancel(e: WechatMiniprogram.TouchEvent): void {
+    if (this.screenReaderOn) return;
     if (this.data.a11yMode === 'a11y') {
       const action = this.holdGesture!.onCancel();
       this.clearHoldTimers();
@@ -902,11 +1033,13 @@ Page({
   // 全屏按住说话（仅视障模式）
   // ------------------------------------------------------------------
 
-  /** 生效条件：视障模式 + 全屏开关打开 + 地图已就绪。 */
+  /** 生效条件：视障模式 + 全屏开关打开 + 读屏未开启 + 地图已就绪。 */
   isFullScreenPttEnabled(): boolean {
     return (
       this.data.a11yMode === 'a11y' &&
       this.data.fullScreenPtt &&
+      // 读屏接管单指触摸后长按收不到事件，入口改由底部按钮的双击切换承担
+      !this.screenReaderOn &&
       !this.data.loading &&
       this.data.loadError === '' &&
       this.data.mapReady
@@ -1025,6 +1158,57 @@ Page({
     this.updateArrow();
   },
 
+  /**
+   * 转弯逼近震动（REQ-A11Y-TURN-HAPTIC）。
+   *
+   * 只在「视障模式 + 导航中(active) + 当前指令是转弯 + 未录音 + 有可信位置 + 有路线」
+   * 时喂距离；其余情况（直行/到达/恢复/偏航/结束/页面隐藏/录音）一律停表，
+   * 不叠加既有的直行、到达、偏航震动语义。
+   */
+  syncTurnHaptics(): void {
+    const haptics = this.turnHaptics;
+    if (haptics === null) {
+      return;
+    }
+    const instruction = this.currentInstruction;
+    const route = this.routeForDisplay;
+    const pos = this.navPosition;
+    const isTurn =
+      instruction !== null &&
+      (instruction.action === 'turn_left' || instruction.action === 'turn_right');
+    if (
+      this.data.a11yMode !== 'a11y' ||
+      this.navPhase !== 'navigating' ||
+      this.sessionEnded ||
+      this.data.state !== 'active' ||
+      this.data.pttState !== 'idle' ||
+      !isTurn ||
+      route === null ||
+      pos === null
+    ) {
+      this.stopTurnHaptics();
+      return;
+    }
+    const turn = resolveTurnNode(appContext.map.floors, instruction.trigger.nodeId ?? null);
+    const distance = turnDistanceM(route.polyline, pos, turn);
+    if (distance === null) {
+      this.stopTurnHaptics();
+      return;
+    }
+    if (this.turnHapticInstructionId !== instruction.instructionId) {
+      this.turnHapticInstructionId = instruction.instructionId;
+      haptics.beginTurn(distance);
+    } else {
+      haptics.update(distance);
+    }
+  },
+
+  /** 中断转弯逼近节拍（结束/到达/偏航/切后台/录音），定时器在这里统一清理。 */
+  stopTurnHaptics(): void {
+    this.turnHaptics?.stop();
+    this.turnHapticInstructionId = null;
+  },
+
   startHeading(): void {
     if (this.headingSource !== null) {
       return;
@@ -1101,7 +1285,7 @@ Page({
     this.headingUnavailableAnnounced = true;
     log.warn('方向传感器不可用，隐藏导航箭头');
     this.setData({ arrowVisible: false, arrowAlert: false });
-    this.speech?.enqueue(HEADING_UNAVAILABLE_TEXT, 'normal');
+    this.speech?.enqueue(HEADING_UNAVAILABLE_TEXT, 'normal', null, 'map:heading-unavailable');
   },
 
   /** 同层路线顶点（floorId 为空的桥接点沿用前一点楼层，与绘制逻辑一致）。 */
@@ -1159,14 +1343,19 @@ Page({
     if (deviation <= 15 && !this.alignedAnnounced) {
       this.alignedAnnounced = true;
       vibrateShort();
-      this.speech?.enqueue(ALIGNED_TEXT, 'normal');
+      this.speech?.enqueue(ALIGNED_TEXT, 'normal', null, 'map:arrow-aligned');
     }
 
     // 播报：偏离持续、节流 ≥5 s，普通优先级（安全提示可打断）
     if (alert && now - this.deviationSpokenAt >= ARROW_SPEAK_THROTTLE_MS) {
       this.deviationSpokenAt = now;
       const side = deg <= 180 ? '右' : '左';
-      this.speech?.enqueue(`方向偏离约 ${deviationStep(deviation)} 度，请向${side}转`, 'normal');
+      this.speech?.enqueue(
+        `方向偏离约 ${deviationStep(deviation)} 度，请向${side}转`,
+        'normal',
+        null,
+        'map:arrow-deviation',
+      );
     }
 
     const alertChanged = alert !== this.data.arrowAlert;
@@ -1304,6 +1493,18 @@ Page({
   // 按住说话 → 意图（REQ-PAGE 下端居中按钮 / 居中浮层）
   // ------------------------------------------------------------------
 
+  /**
+   * 语音只初始化一次：bootstrap 解析成功后调用；重试时复用已有实例，
+   * 避免重复建 SpeechQueue/PushToTalk 造成叠音与监听泄漏。
+   */
+  initVoiceOnce(): void {
+    if (this.speech !== null) {
+      return;
+    }
+    this.initSpeech();
+    this.initPtt();
+  },
+
   initSpeech(): void {
     const appendFallback = (text: string) => {
       const next =
@@ -1311,64 +1512,209 @@ Page({
       this.setData({ fallbackText: next });
     };
     this.speech = new SpeechQueue({
-      engine: appContext.tts,
+      engine: {
+        speak: (text) => {
+          if (this.data.pttState === 'recording') return Promise.resolve();
+          // 文本展示不交给系统旁白朗读；导航提示走同一 TTS 队列，避免 HUD 抢焦点。
+          return appContext.tts.speak(text);
+        },
+        stop: () => appContext.tts.stop(),
+      },
       onUnavailable: (lastText) => {
         log.warn('TTS 不可用，降级文本展示', lastText);
         this.setData({ reply: lastText });
         appendFallback('语音播报不可用，已切换为文字提示');
       },
       onTextFallback: appendFallback,
+      // 本地提示音（如 nav-start）与 TTS 共用同一队列/优先级，串行不重叠；
+      // 文件缺失或解码失败时 LocalVoice 也会 resolve，不会卡住后续首条指令。
+      playClip: (clip) => this.screenReaderOn || this.data.pttState === 'recording' ? Promise.resolve() : appContext.voicePrompts.play(clip as LocalVoiceName),
+      stopClip: () => appContext.voicePrompts.stop(),
     });
   },
 
   initPtt(): void {
-    this.ptt = new PushToTalk({
+    this.ptt = new VoiceInteraction({
       engine: appContext.asr,
       onStateChange: (state) => {
-        // 按住瞬间短震动：视障用户据此确认「已开始录音、可以开口」，
-        // 无需依赖视觉状态文案（REQ-VOICE 非视觉反馈）
-        if (state === 'recording') {
-          vibrateShort();
+        const texts = this.pttTextsFor(state, false);
+        this.setData(
+          {
+            voiceStatus: state === 'recognizing' ? '正在识别，请稍候' : state === 'recording' ? '正在打开麦克风，请稍候' : this.data.voiceStatus,
+            pttState: state,
+            // 请求开录 ≠ 可以说话：麦克风就绪（onRecordingReady）前不给「松开结束」，
+            // 否则首次开麦较慢时用户按提示开口会丢掉开头
+            pttStateText: texts.text,
+            pttA11yLabel: texts.label,
+          },
+          () => {
+            if (state === 'recording') {
+              this.pttTrace?.mark('recording-ui', 600);
+              this.pttTrace = null;
+            } else if (state === 'idle' || state === 'error') {
+              this.pttTrace = null;
+            }
+            // 录音会抢占音频与震动通道：开录立即停转弯逼近节拍，回到 idle 再恢复
+            this.syncTurnHaptics();
+          },
+        );
+      },
+      // 震动必须等麦克风真正打开（RecorderManager.onStart）再给：
+      // 首次录音音频会话初始化较慢，若在状态切换时就震，用户按提示开口的头几百毫秒
+      // 麦克风还没开，会整句丢音（首次按住说话失败的成因，REQ-VOICE 非视觉反馈）
+      onRecordingReady: () => {
+        vibrateShort();
+        if (this.data.pttState === 'recording') {
+          const texts = this.pttTextsFor('recording', true);
+          this.setData({ pttStateText: texts.text, pttA11yLabel: texts.label, voiceStatus: '开始录音，请说出目的地，说完激活结束语音输入' });
         }
-        this.setData({ pttState: state, pttStateText: PTT_TEXT[state] }, () => {
-          if (state === 'recording') {
-            this.pttTrace?.mark('recording-ui', 600);
-            this.pttTrace = null;
-          } else if (state === 'idle' || state === 'error') {
-            this.pttTrace = null;
-          }
-        });
       },
       onPartial: (text) => this.setData({ partial: text }),
       onFinal: (text) => void this.handleFinal(text),
+      onEmpty: () => this.announceVoiceHint(ASR_EMPTY_TEXT),
       onError: (message) => {
         // 显示反馈的同时进行语音播报（REQ：助手反馈与播报同步）
-        this.setData({ reply: message });
-        this.speech?.enqueue(message, 'normal');
+        this.announceVoiceHint(message);
       },
     });
+    this.ptt.setScreenReaderMode(this.screenReaderOn);
+  },
+
+  /**
+   * 语音静默失败提示（空识别 / 录音失败 / 权限被拒）：
+   * 同步显示 + 播报，并做时间窗防抖——连续快速误触只提示一次，避免叠音。
+   * 正常识别/意图播报不经过这里，顺序与文案不变。
+   */
+  announceVoiceHint(message: string): void {
+    const now = Date.now();
+    if (now - this.voiceHintAt < VOICE_HINT_DEBOUNCE_MS) {
+      return;
+    }
+    this.voiceHintAt = now;
+    this.setData({ reply: message });
+    this.speech?.enqueue(message, 'normal', null, 'map:voice-hint');
   },
 
   onPttStart(): void {
-    // 底部「按住说话」按钮直接 touchstart：无全屏手势起点时在此补一条追踪
-    if (this.pttTrace === null) {
-      this.pttTrace = startPerfTrace('map', 'hold-to-talk');
+    // 读屏开启时触摸被旁白接管，语音入口只走 onPttToggle（避免双击时触摸与 tap 双触发）
+    if (this.screenReaderOn) {
+      return;
     }
-    // 按住说话优先：立即打断启动/提示音，避免与录音抢麦
-    appContext.voicePrompts.stop();
-    if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {
-      return; // 地图未就绪不受理语音（原首页 mapReady 门）
-    }
-    this.onDismissIntent(); // 新一轮对话先收起旧卡，避免上一轮提示残留
-    this.ptt?.begin();
+    this.beginVoiceInput();
   },
 
   onPttEnd(): void {
+    if (this.screenReaderOn) {
+      return;
+    }
     this.ptt?.end();
   },
 
-  onPttCancel(): void {
+  onVoiceCancel(): void {
     this.ptt?.cancel();
+    ++this.voiceEpoch;
+    this.parseInFlight = false;
+    this.setData({ voiceParsing: false, partial: '', voiceStatus: '已取消语音输入' });
+  },
+
+  onPttCancel(): void {
+    if (this.screenReaderOn) {
+      return;
+    }
+    this.ptt?.cancel();
+  },
+
+  /** 开始一次语音输入：全屏长按与读屏双击共用（收卡/抢麦/追踪逻辑只此一份）。 */
+  beginVoiceInput(): void {
+    // 底部「按住说话」按钮直接 touchstart：无全屏手势起点时在此补一条追踪
+    if (this.pttTrace === null) {
+      this.pttTrace = startPerfTrace('map', this.screenReaderOn ? 'voice-toggle' : 'hold-to-talk');
+    }
+    // 按住说话优先：立即打断启动/提示音，避免与录音抢麦
+    if (this.parseInFlight || this.data.pttState === 'recognizing') return;
+    this.speech?.interrupt();
+    appContext.voicePrompts.stop();
+    if (this.data.loading || this.data.loadError !== '' || !this.data.mapReady) {
+      // 读屏下保持语音入口可聚焦，开录仍受就绪门禁保护。
+      if (this.screenReaderOn) {
+        this.setData({ voiceStatus: this.data.loadError !== '' ? '地图加载失败，请重试' : '地图正在加载，请稍候再开始语音输入' });
+      }
+      return; // 地图未就绪不受理语音（原首页 mapReady 门）
+    }
+    // 新一轮对话收起旧卡；预览/等待确认阶段的确认卡保留，避免用户失去点选入口
+    if (this.navPhase === 'idle') {
+      this.clearIntentPanels();
+    }
+    this.ptt?.begin();
+  },
+
+  /**
+   * 读屏双击切换：第一次双击开始录音，再双击结束（等同松手提交）。
+   * 没有 touchend 可依赖，必须由 15 秒计时器兜底，收尾调用同一个 end()。
+   */
+  onPttToggle(): void {
+    if (!this.screenReaderOn) {
+      return; // 普通模式的快速点按保持原行为，不抢「按住说话」手势
+    }
+    const state = this.ptt?.currentState ?? 'idle';
+    if (state === 'recording') {
+      this.ptt?.end();
+      vibrateDoubleShort(); // 双短振＝已停止（单短振是麦克风就绪）
+      return;
+    }
+    if (state === 'idle' || state === 'error') {
+      log.info('读屏双击开始语音');
+      this.beginVoiceInput();
+    }
+  },
+
+  /**
+   * 语音入口的状态文案与无障碍名称：
+   * - 读屏：双击语义（开始/结束/识别/失败），让用户不依赖视觉也知道下一步动作；
+   * - 非读屏：保持原有「按住说话 / 松开结束」。
+   */
+  pttTextsFor(state: PttState, micReady: boolean): { text: string; label: string } {
+    if (!this.screenReaderOn) {
+      return {
+        text: state === 'recording' ? (micReady ? PTT_TEXT.recording : PTT_TEXT_PREPARING) : PTT_TEXT[state],
+        label: '按住说话，松开结束',
+      };
+    }
+    if (state === 'recording') {
+      return micReady
+        ? { text: '结束语音输入', label: '语音输入，双击开始或结束，振动后说话' }
+        : { text: PTT_TEXT_PREPARING, label: '语音输入，双击开始或结束，振动后说话' };
+    }
+    if (state === 'recognizing') {
+      return { text: PTT_TEXT.recognizing, label: '正在识别' };
+    }
+    if (state === 'error') {
+      return { text: '识别失败，双击重试', label: '语音识别失败，双击重试' };
+    }
+    return { text: '开始语音输入', label: '语音输入，双击开始或结束，振动后说话' };
+  },
+
+  /** 用户设置为唯一真源，不依赖系统检测或事件形态推测。 */
+  refreshScreenReaderState(): void {
+    this.applyScreenReaderState(getScreenReaderVoice());
+  },
+
+  /** 应用读屏检测结果：状态变化时同步入口文案与无障碍名称。 */
+  applyScreenReaderState(open: boolean): void {
+    if (this.screenReaderOn === open) {
+      return;
+    }
+    this.clearHoldTimers();
+    this.holdGesture?.reset();
+    this.ptt?.setScreenReaderMode(open);
+    this.speech?.interrupt();
+    appContext.voicePrompts.stop();
+    this.screenReaderOn = open;
+    this.setData({ screenReaderVoice: open });
+    const state = this.ptt?.currentState ?? 'idle';
+    const micReady = state === 'recording' && this.data.pttStateText !== PTT_TEXT_PREPARING;
+    const texts = this.pttTextsFor(state, micReady);
+    this.setData({ pttStateText: texts.text, pttA11yLabel: texts.label });
   },
 
   async handleFinal(text: string): Promise<void> {
@@ -1376,76 +1722,590 @@ Page({
       return;
     }
     this.parseInFlight = true;
+    const epoch = ++this.voiceEpoch;
+    this.setData({ voiceParsing: true, voiceStatus: '正在理解，请稍候' });
     this.setData({ recognized: text, partial: '', reply: '正在理解…' });
     try {
-      const result = await this.intents.parse(text);
+      const result = await this.intents.parse(text, undefined, this.intentLocation());
+      if (epoch !== this.voiceEpoch) return;
       this.applyIntent(result);
     } catch (err) {
+      if (epoch !== this.voiceEpoch) return;
       const message = err instanceof ApiClientError ? describeError(err.code) : '网络异常，请重试';
       log.warn('意图解析失败', err);
       this.setData({ reply: message });
-      this.speech?.enqueue(message, 'normal');
+      this.speech?.enqueue(message, 'normal', null, 'map:intent-error');
     } finally {
-      this.parseInFlight = false;
+      if (epoch === this.voiceEpoch) {
+        this.parseInFlight = false;
+        this.setData({ voiceParsing: false });
+      }
     }
   },
 
+  /** 意图请求随带的定位：仅导航中有可信位置时提供（spec REQ-VOICE-12）。 */
+  intentLocation(): IntentLocationPayload | null {
+    const pos = this.navPosition;
+    if (pos === null) {
+      return null;
+    }
+    return {
+      x: pos.x,
+      y: pos.y,
+      floorId: pos.floorId,
+      confidence: this.navConfidence > 0 ? this.navConfidence : 0.5,
+      headingDeg: this.headingDeg ?? null,
+    };
+  },
+
   applyIntent(result: IntentParseResponse): void {
+    // 先取上一条播报：responseText 入队后会覆盖重播源（「再说一遍」用）
+    const previousSpeech = this.speech?.lastSpokenText ?? null;
+    const target = resolveIntentTarget(result);
+    const destination = result.destination ?? null;
+    // 「开始导航」语音命令：是否复用预览由客户端状态决定，不走通用答复播报
+    if (target === 'start') {
+      this.setData(
+        {
+          reply: result.responseText,
+          candidates: [],
+          destination: null,
+          navConfirmReady: false,
+        },
+        () => this.refreshTapExclusions(),
+      );
+      this.handleStartNavigationIntent();
+      return;
+    }
+    // 目的地唯一命中：先只读规划 + 播概要，概要先于「是否开始导航」的确认询问
+    const previewNavigate =
+      target === null &&
+      destination !== null &&
+      !result.needsClarification &&
+      !this.data.navActive;
+    const inPreview = this.navPhase === 'previewing' || this.navPhase === 'awaiting-confirm';
+    // 场景二等待目的地期间：用户改问其他事情（且不是在澄清候选）时放弃等待，
+    // 让本轮答复正常播报；取消/结束仍交给 endNavByVoice 播报。
+    if (
+      this.navPhase === 'awaiting-destination' &&
+      !result.needsClarification &&
+      destination === null &&
+      target !== 'repeat' &&
+      target !== 'cancel' &&
+      target !== 'end'
+    ) {
+      this.clearAwaitDestinationTimer();
+      this.navPhase = 'idle';
+    }
+    // 「再说一遍」保留预览（重播当前概要/询问）；取消/结束交给 endNavByVoice 播报；
+    // 其余意图接管本次预览：静默清理，避免确认按钮悬空且在超时后才消失。
+    const keepPreview = inPreview && target === 'repeat';
+    let handoff = false;
+    if (inPreview && !previewNavigate && !keepPreview && target !== 'cancel' && target !== 'end') {
+      this.cancelPreviewSilently();
+      handoff = true;
+    }
     this.setData(
       {
         reply: result.responseText,
         candidates: result.needsClarification ? result.candidates : [],
-        destination: result.destination ?? null,
+        // 预览阶段不展示「开始导航」按钮（navConfirmReady 控制），避免提前确认
+        destination: previewNavigate ? null : keepPreview ? this.data.destination : destination,
+        navConfirmReady: keepPreview ? this.data.navConfirmReady : false,
       },
       () => this.refreshTapExclusions(), // 居中卡出现 → 整体作为排除区
     );
-    this.speech?.enqueue(result.responseText, 'normal');
-    if (result.intent === 'query_location') {
+    if (previewNavigate && destination !== null) {
+      // 不再播「请确认」：由预览流程接管（规划提示 → 概要 → 确认询问）
+      void this.beginRoutePreview(destination);
+      return;
+    }
+    // 接管预览时用 turn 抢占正在播的概要，保证新意图的答复立即播报
+    this.speech?.enqueue(result.responseText, handoff ? 'turn' : 'normal', null, 'map:intent-reply');
+    if (target === 'location') {
       // responseText 是过渡话术（"请稍等，正在查询…"），随后补播真实位置
       void this.answerLocation();
+    } else if (target === 'surroundings') {
+      // 查周边：现场定位后补播"左前方3米有…"，与查位置是两条不同话术
+      void this.answerSurroundings();
+    } else if (target === 'cancel') {
+      this.endNavByVoice('user_cancelled');
+    } else if (target === 'end') {
+      this.endNavByVoice('user_finished');
+    } else if (target === 'repeat') {
+      this.repeatSpeech(previousSpeech);
     }
+  },
+
+  /**
+   * 语音结束导航：取消/结束共用一条执行路径。
+   * 预览/等待确认阶段尚未建会话：直接清理预览（不创建、不上报）。
+   * 无进行中会话时明确告知，避免"回了话却没动作"的悬空反馈。
+   */
+  endNavByVoice(reason: 'user_cancelled' | 'user_finished'): void {
+    if (
+      this.navPhase === 'awaiting-destination' ||
+      this.navPhase === 'previewing' ||
+      this.navPhase === 'awaiting-confirm'
+    ) {
+      this.finishPreview('已取消导航。如需导航，请重新说出目的地。');
+      return;
+    }
+    const controller = this.controller;
+    if (controller === null || this.sessionEnded || controller.sessionId === null) {
+      this.announceVoiceHint('当前没有进行中的导航');
+      return;
+    }
+    this.setData({
+      stateText: reason === 'user_cancelled' ? '正在取消导航…' : '正在结束导航…',
+    });
+    controller.endSession(reason).catch((err) => {
+      log.warn('语音结束导航失败', err);
+      this.setData({ stateText: NAV_TEXT.active });
+      this.announceVoiceHint('结束导航失败，请重试');
+    });
+  },
+
+  /** 「再说一遍」：重播上一条播报（不重播本轮过渡话术本身）。 */
+  repeatSpeech(previous: string | null): void {
+    if (previous === null || previous.trim().length === 0) {
+      this.announceVoiceHint('暂时没有可重复的播报');
+      return;
+    }
+    // 直接入队：SpeechQueue 会把重播源更新为该条，连续「再说一遍」仍播同一条
+    this.speech?.enqueue(previous, 'normal', null, 'map:replay');
   },
 
   /** 「我在哪儿」：单次定位 → 按质量策略播报（FE-01，失败播安全文案）。 */
   async answerLocation(): Promise<void> {
+    return this.answerPosition('location');
+  },
+
+  /** 「周边有什么」：同一条定位链路，服务端附带 8m 内周边清单后播报。 */
+  async answerSurroundings(): Promise<void> {
+    return this.answerPosition('surroundings');
+  },
+
+  async answerPosition(kind: LocationQueryKind): Promise<void> {
     if (this.locationInFlight || this.locationQuery === null) {
       return;
     }
     this.locationInFlight = true;
+    const fallback =
+      kind === 'surroundings' ? SURROUNDINGS_UNRESOLVED_TEXT : UNRESOLVED_TEXT;
     try {
-      const text = await this.locationQuery.query();
+      const text = await this.locationQuery.query(kind);
       if (text === null || !this.data.mapReady) {
         return; // 并发被忽略 / 页面已不可用
       }
       this.setData({ reply: text });
-      this.speech?.enqueue(text, 'normal');
+      this.speech?.enqueue(text, 'normal', null, 'map:location-query');
     } catch (err) {
-      log.warn('位置查询异常', err);
-      this.setData({ reply: UNRESOLVED_TEXT });
-      this.speech?.enqueue(UNRESOLVED_TEXT, 'normal');
+      log.warn(kind === 'surroundings' ? '周边查询异常' : '位置查询异常', err);
+      this.setData({ reply: fallback });
+      this.speech?.enqueue(fallback, 'normal', null, 'map:location-query-fallback');
     } finally {
       this.locationInFlight = false;
     }
   },
 
-  /** 澄清候选点选：以候选名重新解析，取得目的地与话术。 */
+  /** 澄清候选点选：优先按 placeId 直选（同名地点如三间「教师办公室」靠名字会再次歧义）。 */
   onPickCandidate(event: WechatMiniprogram.TouchEvent): void {
+    const placeId = event.currentTarget.dataset.placeid;
     const name = event.currentTarget.dataset.name;
+    if (typeof placeId === 'string' && placeId.length > 0) {
+      const place = appContext.map.places.find((p) => p.placeId === placeId);
+      if (place !== undefined) {
+        // 点选澄清：与语音唯一命中同一条路径——先规划 + 播概要，再确认是否开始导航
+        void this.beginRoutePreview({
+          placeId: place.placeId,
+          name: place.name,
+          floorId: place.floorId,
+        });
+        return;
+      }
+    }
     if (typeof name === 'string' && name.length > 0) {
       void this.handleFinal(name);
     }
   },
 
-  /** 确认目的地 → 进入导航态（同页融合，原 navigateTo 导航页已退役）。 */
+  /**
+   * 用户确认开始导航（概要已播完、确认卡已出现）：创建会话 → 首条指令。
+   * 概要不重播（已在预览阶段播完），会话创建后由 controller 直接进入引导。
+   */
   onStartNav(): void {
-    const destination = this.data.destination;
-    if (destination === null || this.data.navActive) {
+    if (this.navPhase !== 'awaiting-confirm' || this.data.navActive) {
       return;
     }
+    const destination = this.navDestination;
+    const origin = this.previewOrigin;
+    if (destination === null || origin === null) {
+      return;
+    }
+    void this.startNavigation(destination, origin);
+  },
+
+  /**
+   * 「开始导航」语音命令（视障模式主入口，普通模式也可用）：
+   * - 场景一：存在 10 秒内的有效预览 → 直接建会话，不再询问目的地；
+   * - 场景二：没有可复用预览 → 语音询问目的地，之后「规划 → 概要 → 直接开始」。
+   * 过期预览一律作废，绝不用过期路线启动导航。
+   */
+  handleStartNavigationIntent(): void {
+    if (this.data.navActive || this.navPhase === 'navigating') {
+      this.announceVoiceHint('当前已在导航中');
+      return;
+    }
+    // 判定口径与差值留痕：真机上「为什么不复用预览」只看这一条即可定位
+    log.info('开始导航意图', {
+      phase: this.navPhase,
+      sinceLastPromptMs:
+        this.previewFreshAt === null ? null : Date.now() - this.previewFreshAt,
+      canReuse: this.canReusePreview(),
+    });
+    // 概要仍在播：不打断播报，标记「播完即开始」（用户已明确表达开始意愿）
+    if (
+      this.navPhase === 'previewing' &&
+      this.navDestination !== null &&
+      this.previewOrigin !== null
+    ) {
+      this.previewAutoStart = true;
+      this.setData({ reply: '路线概要播报完毕后将直接开始导航。' });
+      log.info('开始导航意图到达时概要仍在播报：播完直接开始');
+      return;
+    }
+    if (this.canReusePreview()) {
+      const destination = this.navDestination;
+      const origin = this.previewOrigin;
+      if (destination !== null && origin !== null) {
+        log.info('开始导航：复用近期预览', destination.name);
+        void this.startNavigation(destination, origin);
+        return;
+      }
+    }
+    // 预览已过期/未完成：作废，重新询问目的地
+    if (this.navPhase === 'previewing' || this.navPhase === 'awaiting-confirm') {
+      this.cancelPreviewSilently();
+    }
+    this.awaitNavigationDestination();
+  },
+
+  /**
+   * 预览可复用判定：10 秒窗口自「应用说完最后一句话」起算（previewFreshAt），
+   * 与预览返回、开始播报的时刻无关；同时要求起点与目的地完整。
+   */
+  canReusePreview(): boolean {
+    return (
+      this.navPhase === 'awaiting-confirm' &&
+      this.previewFreshAt !== null &&
+      this.previewOrigin !== null &&
+      this.navDestination !== null &&
+      Date.now() - this.previewFreshAt <= PREVIEW_REUSE_WINDOW_MS
+    );
+  },
+
+  /** 场景二：语音询问目的地，等待用户下一句；超时/取消走正常清理。 */
+  awaitNavigationDestination(): void {
+    this.clearAwaitDestinationTimer();
+    this.navPhase = 'awaiting-destination';
+    this.setData(
+      {
+        reply: '您要去哪里？',
+        candidates: [],
+        destination: null,
+        navConfirmReady: false,
+      },
+      () => this.refreshTapExclusions(),
+    );
+    this.speech?.enqueue('好的，您要去哪里？', 'turn', null, 'map:await-destination');
+    this.awaitDestinationTimer = setTimeout(() => {
+      this.awaitDestinationTimer = null;
+      if (this.navPhase !== 'awaiting-destination') {
+        return;
+      }
+      this.finishPreview('长时间未听到目的地，已取消。如需导航，请重新说“开始导航”。');
+    }, AWAIT_DESTINATION_TIMEOUT_MS);
+  },
+
+  clearAwaitDestinationTimer(): void {
+    if (this.awaitDestinationTimer !== null) {
+      clearTimeout(this.awaitDestinationTimer);
+      this.awaitDestinationTimer = null;
+    }
+  },
+
+  /**
+   * 目的地已确定（语音唯一命中或候选点选）：先只读规划 + 播报概要，再询问是否开始。
+   * 本阶段只读：不创建会话、不上报 updates；取不到可信起点或规划失败则清理并提示重来。
+   */
+  async beginRoutePreview(destination: PlaceCandidate): Promise<void> {
+    if (this.data.navActive || !this.data.mapReady) {
+      return;
+    }
+    // 场景二：用户先说「开始导航」再给目的地 → 概要播完直接开始，不再二次确认
+    const autoStart = this.navPhase === 'awaiting-destination';
+    this.clearAwaitDestinationTimer();
+    const token = (this.previewToken += 1);
+    this.clearPreviewTimers();
+    this.previewAutoStart = autoStart;
+    this.previewFreshAt = null;
     this.navDestination = destination;
-    this.sessionEnded = false;
-    this.overviewAnnounced = false;
+    this.previewOrigin = null;
+    this.navPhase = 'previewing';
+    this.overviewAnnounced = false; // 概要由预览流程播报
     this.routeForDisplay = null;
+    this.setData(
+      {
+        reply: `正在为您规划到${destination.name}的路线，请稍候。`,
+        recognized: '',
+        partial: '',
+        fallbackText: '',
+        candidates: [],
+        destination: null,
+        navConfirmReady: false,
+      },
+      () => this.refreshTapExclusions(),
+    );
+    // 用 turn 抢占上一目标的概要/确认询问（normal）并清掉待播项，避免叠音
+    this.speech?.enqueue(
+      `正在为您规划到${destination.name}的路线。`,
+      'turn',
+      null,
+      'map:preview-planning',
+    );
+    this.requestDraw();
+
+    const ready = await this.initNavigation();
+    if (token !== this.previewToken) {
+      return;
+    }
+    if (!ready) {
+      this.finishPreview('路线规划失败，请稍后重试。');
+      return;
+    }
+    const origin = await this.waitPreviewOrigin();
+    if (token !== this.previewToken) {
+      return;
+    }
+    if (origin === null) {
+      this.finishPreview('暂时无法确定您的位置，无法规划路线。请移动几步后重试。');
+      return;
+    }
+
+    let preview: PreviewRouteResponse | null = null;
+    try {
+      const resp = await appContext.http.client.request<PreviewRouteResponse>({
+        method: 'POST',
+        path: '/api/v1/nav/preview',
+        body: {
+          siteId: appContext.map.siteId,
+          mapVersion: appContext.map.requireVersion(),
+          origin,
+          destinationId: destination.placeId,
+          userMode: 'blind',
+          locale: 'zh-CN',
+        },
+        timeoutMs: PREVIEW_TIMEOUT_MS,
+      });
+      preview = resp.data;
+    } catch (err) {
+      if (token !== this.previewToken) {
+        return;
+      }
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '路线规划失败，请重试';
+      log.warn('路线预览失败', err);
+      this.finishPreview(message);
+      return;
+    }
+    if (token !== this.previewToken) {
+      return;
+    }
+    if (preview === null || typeof preview.route?.routeId !== 'string') {
+      this.finishPreview('路线规划响应异常，请重试。');
+      return;
+    }
+
+    this.previewOrigin = origin;
+    this.routeForDisplay = preview.route;
+    this.overviewAnnounced = true;
+    this.requestDraw();
+    this.updateArrow();
+
+    const overview =
+      preview.overviewText ??
+      buildRouteOverview(preview.route, destination.name, (floorId) =>
+        appContext.map.floors[floorId]?.displayName,
+      );
+    log.info(
+      '路线概要(预览):',
+      overview,
+      preview.overviewText == null ? '(模板兜底)' : '(LLM)',
+    );
+    this.setData({ reply: '正在播报路线概要…' });
+    this.speech?.enqueue(overview, 'normal', null, 'map:overview');
+    // 以语音队列排空事件判定「概要播完」，再询问是否开始导航（不用固定延时）。
+    // 取消/改目的地会推进 previewToken，作废本回调；不需要依赖 idle reason。
+    this.speech?.notifyWhenIdle(() => {
+      if (token !== this.previewToken || this.navPhase !== 'previewing') {
+        return;
+      }
+      // 10 秒窗口的第一个起算点：概要（含其前排队的播报）全部播完的这一刻；
+      // 确认询问播完后还会再刷新一次（见 askStartNavigation），窗口不被应用播报占用。
+      this.previewFreshAt = Date.now();
+      if (this.previewAutoStart) {
+        // 场景二：用户已用「开始导航」表达意愿 → 概要播完直接开始，不再二次确认
+        this.previewAutoStart = false;
+        log.info('概要播报结束：直接开始导航', destination.name);
+        void this.startNavigation(destination, origin);
+        return;
+      }
+      this.askStartNavigation(token);
+    });
+  },
+
+  /** 概要播完：展示确认卡并语音询问是否开始导航；超时未确认视为拒绝（不建会话）。 */
+  askStartNavigation(token: number): void {
+    const destination = this.navDestination;
+    if (destination === null) {
+      return;
+    }
+    // 视障模式不显示按钮卡，只保留语音入口；普通模式按钮 + 语音两种方式都可用
+    const a11y = this.data.a11yMode === 'a11y';
+    this.navPhase = 'awaiting-confirm';
+    this.setData(
+      {
+        reply: a11y
+          ? '路线概要已播报完毕。说“开始导航”立即开始，说“取消”放弃。'
+          : '路线概要已播报完毕，是否开始导航？',
+        destination,
+        navConfirmReady: !a11y,
+      },
+      () => this.refreshTapExclusions(),
+    );
+    this.speech?.enqueue(
+      a11y
+        ? '是否现在开始导航？说“开始导航”开始，说“取消”放弃。'
+        : '是否开始导航？说“开始导航”，或点击屏幕中的“开始导航”按钮。',
+      'normal',
+      null,
+      'map:preview-confirm',
+    );
+    // 窗口起点刷新到「这句询问播完」：询问本身要播 6-8 秒，若沿用概要结束时刻，
+    // 用户听完再开口时 10 秒预算已被应用自己的播报吃掉（真机现象：落到场景二）。
+    this.speech?.notifyWhenIdle((reason) => {
+      if (reason !== 'finished') {
+        return; // 被抢占/看门狗放手不算「问完了」，不续窗口
+      }
+      if (token !== this.previewToken || this.navPhase !== 'awaiting-confirm') {
+        return;
+      }
+      this.previewFreshAt = Date.now();
+      log.info('确认询问播报结束：开始导航窗口重新起算');
+    });
+    this.previewConfirmTimer = setTimeout(() => {
+      this.previewConfirmTimer = null;
+      if (token === this.previewToken && this.navPhase === 'awaiting-confirm') {
+        this.finishPreview('已超时未确认，导航已取消。如需导航，请重新说出目的地。');
+      }
+    }, PREVIEW_CONFIRM_TIMEOUT_MS);
+  },
+
+  /** 等待首个可信定位估计作为规划起点；超时返回 null（不规划、不建会话）。 */
+  waitPreviewOrigin(): Promise<OriginPosition | null> {
+    return new Promise((resolve) => {
+      this.previewOriginResolve = resolve;
+      this.previewOriginTimer = setTimeout(() => {
+        this.previewOriginTimer = null;
+        this.resolvePreviewOrigin(null);
+      }, PREVIEW_ORIGIN_TIMEOUT_MS);
+    });
+  },
+
+  resolvePreviewOrigin(origin: OriginPosition | null): void {
+    if (this.previewOriginTimer !== null) {
+      clearTimeout(this.previewOriginTimer);
+      this.previewOriginTimer = null;
+    }
+    const resolve = this.previewOriginResolve;
+    this.previewOriginResolve = null;
+    resolve?.(origin);
+  },
+
+  clearPreviewTimers(): void {
+    if (this.previewConfirmTimer !== null) {
+      clearTimeout(this.previewConfirmTimer);
+      this.previewConfirmTimer = null;
+    }
+    this.resolvePreviewOrigin(null);
+  },
+
+  /** 静默清理预览（被其他意图接管时用，不播取消提示）。 */
+  cancelPreviewSilently(): void {
+    this.previewToken += 1;
+    this.clearPreviewTimers();
+    this.clearAwaitDestinationTimer();
+    this.navPhase = 'idle';
+    this.previewOrigin = null;
+    this.navDestination = null;
+    this.routeForDisplay = null;
+    this.overviewAnnounced = false;
+    this.previewFreshAt = null;
+    this.previewAutoStart = false;
+    this.pipeline?.stop();
+    this.pipeline = null;
+    this.controller = null;
+    this.navSource = null;
+    this.setData({ destination: null, navConfirmReady: false }, () => this.requestDraw());
+  },
+
+  /** 取消/失败/超时：不建会话，清预览状态与采集，给出可重来的提示。 */
+  finishPreview(message: string): void {
+    this.previewToken += 1;
+    this.clearPreviewTimers();
+    this.clearAwaitDestinationTimer();
+    this.navPhase = 'idle';
+    this.previewOrigin = null;
+    this.navDestination = null;
+    this.routeForDisplay = null;
+    this.overviewAnnounced = false;
+    this.previewFreshAt = null;
+    this.previewAutoStart = false;
+    this.pipeline?.stop();
+    this.pipeline = null;
+    this.controller = null;
+    this.navSource = null;
+    this.setData(
+      {
+        reply: message,
+        candidates: [],
+        destination: null,
+        navConfirmReady: false,
+      },
+      () => {
+        this.refreshTapExclusions();
+        this.requestDraw();
+      },
+    );
+    // 用 turn 抢占正在播的概要（normal）并清掉待播的确认询问，避免叠音
+    this.speech?.enqueue(message, 'turn', null, 'map:preview-cancel');
+  },
+
+  /** 确认后：创建会话 → 首条指令（概要不重播）。 */
+  async startNavigation(destination: PlaceCandidate, origin: OriginPosition): Promise<void> {
+    const controller = this.controller;
+    if (controller === null) {
+      return;
+    }
+    this.previewToken += 1; // 确认后：迟到的预览回调不再生效
+    this.clearPreviewTimers();
+    this.clearAwaitDestinationTimer();
+    this.navPhase = 'navigating';
+    this.sessionEnded = false;
+    this.overviewAnnounced = true; // 概要已在预览阶段播完，不重播
+    this.previewFreshAt = null;
+    this.previewAutoStart = false;
     this.navPosition = null;
     this.lastTapAt = 0;
     // 箭头会话状态复位（每次导航重新计一次「已对准」）
@@ -1471,12 +2331,29 @@ Page({
         reply: '',
         partial: '',
         recognized: '',
+        navConfirmReady: false,
       },
       () => this.refreshTapExclusions(),
     );
     this.syncArrowLifecycle(); // 视障模式：导航开始即启动朝向传感器
     this.enterNavZoom(); // 视野从全路线收窄到局部（REQ-NAV 展示层）
-    void this.initNavigation();
+
+    try {
+      await controller.createSession(destination, origin, 'blind', {
+        overviewPlayed: true,
+        // 场景一（确认后启动）与场景二（概要后自动启动）共用：首条指令前先播过渡
+        transitionClip: NAV_START_TRANSITION_CLIP,
+      });
+      this.setData({ stateText: NAV_TEXT.active });
+    } catch (err) {
+      const message =
+        err instanceof ApiClientError ? describeError(err.code) : '无法开始导航，请重试';
+      log.warn('会话创建失败', err);
+      this.sessionEnded = true;
+      this.onDismissNav();
+      this.setData({ reply: message });
+      this.speech?.enqueue(message, 'turn', null, 'map:create-failed');
+    }
   },
 
   /**
@@ -1497,12 +2374,13 @@ Page({
   },
 
   /**
-   * 导航编排（自原导航页 bootstrap 平移）：定位管线 + 会话控制器。
-   * SpeechQueue 复用页面级实例（onLoad 已建）。
+   * 预览/导航共用的定位管道 + 会话控制器（幂等）。
+   * 预览阶段以 preview 档采集规划起点；确认后由 controller 切到 navigating 档。
+   * 返回 false 表示地图/采集启动失败（调用方据此清理预览并提示重试）。
    */
-  async initNavigation(): Promise<void> {
+  async initNavigation(): Promise<boolean> {
     if (this.speech === null) {
-      return;
+      return false;
     }
     try {
       await appContext.map.ensureLoaded();
@@ -1510,8 +2388,24 @@ Page({
       const message =
         err instanceof ApiClientError ? describeError(err.code) : '地图加载失败，请重试';
       log.warn('导航前地图加载失败', err);
-      this.setData({ stateText: message, instruction: message });
-      return;
+      this.setData({ reply: message });
+      return false;
+    }
+
+    // 复用已建好的管道（用户取消预览后再次说目的地时，不必重建）
+    if (this.controller !== null && this.pipeline !== null) {
+      const running = this.pipeline;
+      if (running.isRunning) {
+        running.setMode('preview');
+      } else {
+        try {
+          await running.start('preview');
+        } catch (err) {
+          log.warn('定位采集启动失败', err);
+          return false;
+        }
+      }
+      return true;
     }
 
     const source = createBeaconSource(appContext.dataSource, appContext.map);
@@ -1552,13 +2446,14 @@ Page({
         }
       },
     };
+    this.turnHaptics = new TurnHaptics({ vibrateShort, vibrateLong });
     this.controller = new NavSessionController({
       client: appContext.http.client,
       map: appContext.map,
       speech: this.speech,
       pipeline: pipelineControl,
       onStateChange: (state) => {
-        this.setData({ state, stateText: NAV_TEXT[state] });
+        this.setData({ state, stateText: NAV_TEXT[state] }, () => this.syncTurnHaptics());
         if (state === 'recovering') {
           vibrateLong(); // 震动模式：脱离路线需要引起注意
           // 位置不可信：箭头隐藏（不显示可能错误的方向）
@@ -1567,22 +2462,21 @@ Page({
           this.syncArrowLifecycle();
         }
       },
-      onRoute: (route) => {
-        // onRoute 先于 controller 播报首条指令（createSession 内顺序）：
-        // 概要先进队列，形成「概要 → 首条指令」的既定顺序（REQ-NAV）
+      onRoute: (route, overviewText) => {
+        // 新流程：概要在 API-10 预览阶段已播完（overviewAnnounced=true），此处不重播；
+        // 无预览的历史/异常路径才在此入队概要，形成「概要 → 首条指令」顺序。
         if (!this.overviewAnnounced && this.navDestination !== null) {
           this.overviewAnnounced = true;
-          const overview = buildRouteOverview(
-            route,
-            this.navDestination.name,
-            (floorId) => appContext.map.floors[floorId]?.displayName,
-          );
-          this.speech?.enqueue(overview, 'normal');
-          log.info('路径概要:', overview);
-        }
-        const text = route.segments[0]?.text;
-        if (text !== undefined) {
-          this.setData({ instruction: text });
+          // 后端大模型文案优先；未配置/超时/校验失败时回退本地模板，保证概要必播
+          const overview =
+            overviewText ??
+            buildRouteOverview(route, this.navDestination.name, (floorId) =>
+              appContext.map.floors[floorId]?.displayName,
+            );
+          this.speech?.enqueue(overview, 'normal', null, 'map:overview');
+          // 概要播放期间 HUD 显示状态占位；首条指令等队列播完再由 onInstruction 写入
+          this.setData({ instruction: '正在播报路线概要…' });
+          log.info('路径概要:', overview, overviewText === null ? '(模板兜底)' : '(LLM)');
         }
         // mock 模拟导航（类高德）：路线就绪后让 mock 用户沿规划路线
         // 以 1.5m/s 行走，沿途按所在楼层采集信标观测（reroute 同样换新路线）
@@ -1595,39 +2489,43 @@ Page({
           );
         }
         this.routeForDisplay = route;
+        this.stopTurnHaptics(); // 新路线：旧转弯的逼近节拍立即作废，等新指令重新装载
         this.requestDraw(); // 导航视觉：重绘路线（REQ-NAV 展示层）
         this.updateArrow(); // 路线就绪后按当前位置算箭头方向
       },
-      onEnded: (info) => {
-        this.sessionEnded = true;
-        pipeline.stop();
-        if (!info.byArrival && info.reason !== null) {
-          this.setData({
-            ended: true,
-            instruction: '导航已结束',
-            stateText: info.reason === 'user_cancelled' ? '已取消导航' : NAV_TEXT.ended,
-          });
-        } else {
-          this.setData({ ended: true }); // 到达/恢复失效：按钮切为「关闭」
+      // 每次更新都刷新 HUD 的当前指令（此前只在 onRoute 里写 segments[0]，
+      // 导致起步后文案一直停在第一条，后续转弯/直行指令只播不显示）
+      onInstruction: (instruction) => {
+        this.currentInstruction = instruction;
+        if (instruction !== null) {
+          this.setData({ instruction: instruction.text });
         }
-        this.syncArrowLifecycle(); // 导航结束：停传感器并隐藏箭头
+        this.syncTurnHaptics(); // 仅转弯指令会启动逼近节拍，其余指令在这里停表
+      },
+      onEnded: () => {
+        this.sessionEnded = true;
+        this.stopTurnHaptics(); // 导航结束/到达：立即停节拍并清理定时器
+        this.currentInstruction = null;
+        pipeline.stop();
+        // 到达播报由 controller 入队；此处只清理界面，不打断播报，直接回待命。
+        this.onDismissNav();
       },
     });
 
     try {
-      await pipeline.start('standby');
+      await pipeline.start('preview');
     } catch (err) {
       log.warn('定位采集启动失败', err);
-      this.setData({
-        stateText: '定位启动失败，请检查蓝牙后重试',
-        instruction: '定位启动失败，请检查蓝牙后重试',
-      });
+      this.setData({ reply: '定位启动失败，请检查蓝牙后重试' });
+      return false;
     }
+    return true;
   },
 
   /**
-   * 定位 → 会话（首个可信估计作为起点）；可信位置驱动显示跟随。
-   * 不可信估计（unreliable/lost）只上送服务端转 recovering，不推进显示与到达。
+   * 定位入口：可信位置驱动显示跟随。
+   * - 预览阶段：只把首个可信估计交给预览流程作为规划起点（不建会话、不上报）；
+   * - 导航阶段：交给 controller 上报（不可信估计只报 quality 转 recovering）。
    */
   handleEstimate(
     estimate: PositionEstimateResponse,
@@ -1645,15 +2543,36 @@ Page({
         x: position.x,
         y: position.y,
       };
+      this.navConfidence = estimate.confidence;
       this.followPosition();
       this.updateArrow(); // 可信位置更新 → 重算当前折线段方向
+      this.syncTurnHaptics(); // 1s 一拍：刷新到当前转弯的剩余沿线距离（两次上报之间由节拍器外推）
+    } else {
+      // 本拍没有可信坐标：停表，恢复/新指令再重新装载
+      this.stopTurnHaptics();
     }
     const controller = this.controller;
     if (controller === null || this.sessionEnded) {
       return;
     }
-    if (controller.sessionId === null) {
-      void this.createSession(estimate);
+    if (this.navPhase === 'previewing') {
+      // 预览只取规划起点：确认前绝不创建会话、不上报 updates
+      if (
+        (estimate.quality === 'reliable' || estimate.quality === 'degraded') &&
+        position !== undefined &&
+        position !== null
+      ) {
+        this.resolvePreviewOrigin({
+          x: position.x,
+          y: position.y,
+          floorId: position.floorId ?? null,
+          confidence: estimate.confidence,
+          observedAt: estimate.observedAt,
+        });
+      }
+      return;
+    }
+    if (this.navPhase !== 'navigating' || controller.sessionId === null) {
       return;
     }
     controller.handleEstimate(estimate);
@@ -1711,34 +2630,10 @@ Page({
       }
       return;
     }
-    // 导航态每次可信估计把视口中心对准位置（2.5s 节奏）
+    // 导航态每次可信估计把视口中心对准位置（1s 节奏）
     const { sx, sy } = vp.toScreen(pos.x, pos.y);
     vp.panBy(this.canvasSize.w / 2 - sx, this.canvasSize.h / 2 - sy);
     this.requestDraw();
-  },
-
-  async createSession(estimate: PositionEstimateResponse): Promise<void> {
-    const controller = this.controller;
-    const position = estimate.position;
-    const destination = this.navDestination;
-    if (controller === null || position === undefined || position === null || destination === null) {
-      return;
-    }
-    try {
-      await controller.createSession(destination, {
-        x: position.x,
-        y: position.y,
-        floorId: position.floorId ?? null,
-        confidence: estimate.confidence,
-        observedAt: estimate.observedAt,
-      });
-      this.setData({ stateText: NAV_TEXT.active });
-    } catch (err) {
-      const message = err instanceof ApiClientError ? describeError(err.code) : '无法开始导航，请重试';
-      log.warn('会话创建失败', err);
-      this.setData({ instruction: message });
-      this.speech?.enqueue(message, 'normal');
-    }
   },
 
   /** 双击结束导航（防误触，自原导航页平移）。 */
@@ -1760,7 +2655,7 @@ Page({
     this.lastTapAt = now;
     const hint = '再按一次结束导航';
     this.setData({ stateText: hint });
-    this.speech?.enqueue(hint, 'normal');
+    this.speech?.enqueue(hint, 'normal', null, 'map:end-hint');
     setTimeout(() => {
       if (this.lastTapAt !== 0 && !this.sessionEnded) {
         this.setData({ stateText: NAV_TEXT[this.data.state as NavState] });
@@ -1768,8 +2663,24 @@ Page({
     }, DOUBLE_TAP_WINDOW_MS);
   },
 
-  /** 收起意图/反馈居中卡：清空全部面板状态，避免关闭后残留遮挡地图（REQ-PAGE）。 */
+  /**
+   * 收起意图/反馈居中卡：清空面板状态，避免关闭后残留遮挡地图（REQ-PAGE）。
+   * 若处于路线预览/等待确认，关闭卡片等同放弃本次导航：不建会话，清理预览。
+   */
   onDismissIntent(): void {
+    if (
+      this.navPhase === 'awaiting-destination' ||
+      this.navPhase === 'previewing' ||
+      this.navPhase === 'awaiting-confirm'
+    ) {
+      this.finishPreview('已取消导航。如需导航，请重新说出目的地。');
+      return;
+    }
+    this.clearIntentPanels();
+  },
+
+  /** 仅清空意图面板文案（不触碰进行中的预览/导航）。 */
+  clearIntentPanels(): void {
     this.setData(
       {
         recognized: '',
@@ -1778,6 +2689,7 @@ Page({
         fallbackText: '',
         candidates: [],
         destination: null,
+        navConfirmReady: false,
       },
       () => this.refreshTapExclusions(),
     );
@@ -1785,10 +2697,19 @@ Page({
 
   /** 导航结束后关闭 HUD，回到待命地图。 */
   onDismissNav(): void {
+    this.navPhase = 'idle';
+    this.stopTurnHaptics();
+    this.currentInstruction = null;
+    this.previewToken += 1;
+    this.clearPreviewTimers();
+    this.clearAwaitDestinationTimer();
+    this.previewOrigin = null;
     this.navDestination = null;
     this.routeForDisplay = null;
     this.navPosition = null;
     this.navSource = null;
+    this.previewFreshAt = null;
+    this.previewAutoStart = false;
     this.pipeline?.stop();
     this.pipeline = null;
     this.controller = null;
@@ -1799,10 +2720,11 @@ Page({
       destinationName: '',
       state: 'idle' as NavState,
       stateText: NAV_TEXT.idle,
+      navConfirmReady: false,
     });
     // 关键：导航期间累积的 fallbackText/reply 若不清空，
     // navActive=false 后居中卡会因 fallbackText 非空重新弹出遮挡地图
-    this.onDismissIntent();
+    this.clearIntentPanels();
     this.syncArrowLifecycle(); // 关闭导航 HUD：停传感器并隐藏箭头
     this.requestDraw();
   },

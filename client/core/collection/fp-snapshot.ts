@@ -51,6 +51,7 @@ export function buildFpRecord(opts: BuildFpRecordOptions): FpRecord {
       rssi: obs.rssi,
       txPower: opts.rssiAt1m,
       accuracy: Math.round(Math.pow(10, (opts.rssiAt1m - obs.rssi) / (10 * n)) * 100) / 100,
+      n: obs.n,
     });
   }
   // 从强到弱（与独立工具 normalize 后的顺序一致，便于人工核对）

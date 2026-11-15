@@ -1,5 +1,5 @@
 /**
- * LocationPipeline 测试（C6）：聚合→API-05 上报、待命 8s/导航 2.5s 节流、
+ * LocationPipeline 测试（C6）：聚合→API-05 上报、待命 8s/导航 1s 节流、
  * 待命信标不足跳过、导航信标不足 vs 请求失败 → onUnusable、
  * 任意 quality → onEstimate、floorHint 续接、stop 清理。
  * fake timers（保留 setImmediate 用于微任务冲刷）+ 假时钟联动推进。
@@ -160,7 +160,7 @@ describe('LocationPipeline 定位管线', () => {
     expect(estimateRequests()).toHaveLength(1);
     const request = estimateRequests()[0];
     expect(request.method).toBe('POST');
-    expect(request.header?.Authorization).toBe('Bearer token-1');
+    expect(request.header?.Authorization).toBeUndefined();
     expect(request.data).toEqual({
       siteId: 'school-building-01',
       mapVersion: REAL_MAP.mapVersion,
@@ -200,7 +200,7 @@ describe('LocationPipeline 定位管线', () => {
     );
   });
 
-  it('setMode(navigating) 后按 2.5s 节流', async () => {
+  it('setMode(navigating) 后按 1s 节流', async () => {
     const pipeline = makePipeline();
     await pipeline.start();
     await flush();
@@ -211,10 +211,10 @@ describe('LocationPipeline 定位管线', () => {
 
     pipeline.setMode('navigating');
     source.emitAll(now);
-    await advance(2500);
+    await advance(1000);
     expect(estimateRequests()).toHaveLength(2);
     source.emitAll(now);
-    await advance(2500);
+    await advance(1000);
     expect(estimateRequests()).toHaveLength(3);
   });
 
@@ -278,7 +278,7 @@ describe('LocationPipeline 定位管线', () => {
 
     source.handler?.({ uuid: UUID, major: 1, minor: 10101, rssi: -60, observedAtMs: now });
     source.handler?.({ uuid: UUID, major: 1, minor: 10104, rssi: -60, observedAtMs: now });
-    await advance(2500);
+    await advance(1000);
 
     expect(estimateRequests()).toHaveLength(0);
     expect(unusable).toHaveLength(1);
@@ -286,7 +286,54 @@ describe('LocationPipeline 定位管线', () => {
     expect(seq).toBe(0); // 未发请求：不消费序号
   });
 
-  it('服务端 409 STALE_LOCATION_BATCH → onUnusable 透出稳定错误码', async () => {
+  it('服务端 409 带 lastSequence → 追平水位并立即重试成功', async () => {
+    const advanceTo = jest.fn();
+    let estimateCalls = 0;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      estimateCalls += 1;
+      if (estimateCalls === 1) {
+        options.success({
+          statusCode: 409,
+          header: {},
+          data: {
+            error: {
+              code: 'STALE_LOCATION_BATCH',
+              message: '批次过期',
+              retryable: false,
+              details: { sequence: 1, lastSequence: 5000 },
+            },
+            requestId: 'req-9',
+          },
+        });
+        return;
+      }
+      options.success({ statusCode: 200, header: {}, data: ESTIMATE });
+    };
+    const pipeline = new LocationPipeline({
+      client: createHttpStack('http://localhost:8000').client,
+      map,
+      source,
+      sequence: { next: () => (seq += 1), advanceTo },
+      onEstimate: (e) => estimates.push(e),
+      onUnusable: (e) => unusable.push(e),
+      windowMs: 60_000,
+    });
+    await pipeline.start();
+    await flush();
+    source.emitAll(now);
+    await advance(8000);
+
+    expect(advanceTo).toHaveBeenCalledWith(5000);
+    expect(estimateCalls).toBe(2); // 不重试就要再等 8s，用户会看到定位不可用
+    expect(estimates).toHaveLength(1);
+    expect(unusable).toHaveLength(0);
+  });
+
+  it('服务端 409 未带 lastSequence → 仅透出错误，不重试', async () => {
     wxStub.__requestResponder = (options) => {
       if (options.url.endsWith('/api/v1/auth/wechat')) {
         options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });

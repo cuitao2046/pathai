@@ -23,6 +23,11 @@ import {
   stateAfterRun,
   type CalcState,
 } from '../../core/calibration/console-state';
+import {
+  isSampleFileName,
+  parseExportTimestamp,
+  sampleKindText,
+} from '../../core/calibration/sample-file-name';
 
 const log = createLogger('calc');
 
@@ -32,8 +37,6 @@ const POLL_INTERVAL_MS = 1500;
 const POLL_MAX_MS = 10 * 60 * 1000;
 /** 与服务端 calibration_service.MAX_SAMPLE_BYTES 保持一致。 */
 const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
-const STATIC_FILE_PREFIX = 'static_samples_';
-const LOGDIST_FILE_PREFIX = 'logdist_';
 
 interface ReadinessFile {
   key: string;
@@ -216,28 +219,6 @@ function formatTimestamp(ms: number): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-/** 导出文件名末尾的 13 位毫秒时间戳；解析不到时返回 null。 */
-function parseExportTimestamp(name: string): number | null {
-  const matched = /_(\d{13})\.json$/i.exec(name);
-  if (matched === null) {
-    return null;
-  }
-  const ts = Number(matched[1]);
-  return Number.isFinite(ts) && ts > 0 ? ts : null;
-}
-
-/** 只认采集页导出的静态/对数样本，指纹等其它导出不进入计算控制台。 */
-function isSampleFileName(name: string): boolean {
-  if (!/\.json$/i.test(name)) {
-    return false;
-  }
-  return name.startsWith(STATIC_FILE_PREFIX) || name.startsWith(LOGDIST_FILE_PREFIX);
-}
-
-function sampleKindText(name: string): string {
-  return name.startsWith(STATIC_FILE_PREFIX) ? '静态标定' : '对数等距';
-}
-
 /** 静态/对数样本的指标口径差异在这里收敛，页面只读 ResultView。 */
 function buildResultView(result: RunResult): ResultView {
   const isLogdist = result.sampleType === LOGDIST_TYPE;
@@ -398,7 +379,7 @@ Page({
         ready: boolean;
         files: ReadinessFile[];
         latestSample: SampleSummary | null;
-      }>({ method: 'GET', path: '/api/v1/calibration/readiness', auth: false });
+      }>({ method: 'GET', path: '/api/v1/calibration/readiness' });
       const data = unwrapData(resp);
       this.setData({
         readinessReady: data.ready,
@@ -423,7 +404,7 @@ Page({
       const resp = await appContext.http.client.request<{
         active: { paramVersion: string | null; gridVersion: string | null };
         items: VersionItem[];
-      }>({ method: 'GET', path: '/api/v1/calibration/versions', auth: false });
+      }>({ method: 'GET', path: '/api/v1/calibration/versions' });
       const data = unwrapData(resp);
       const target = data.items.find((v) => !v.active) ?? null;
       this.setData({
@@ -532,6 +513,7 @@ Page({
 
   onSelectSandboxFile(e: WechatMiniprogram.TouchEvent): void {
     if (!this.data.canChoose) {
+      wx.showToast({ title: '当前操作进行中，暂不能更换样本', icon: 'none' });
       return;
     }
     const path = e.currentTarget.dataset.path;
@@ -548,6 +530,7 @@ Page({
   /** 次要入口：他人通过微信聊天/收藏发来的 JSON（临时文件，仅在本次页面有效）。 */
   onChooseFromChat(): void {
     if (!this.data.canChoose) {
+      wx.showToast({ title: '当前操作进行中，暂不能更换样本', icon: 'none' });
       return;
     }
     wx.chooseMessageFile({
@@ -607,10 +590,24 @@ Page({
       this.failLocal('样本 schemaVersion 必须是 1.0');
       return;
     }
-    if (typeof data.deployable !== 'boolean') {
-      this.failLocal('样本缺少 deployable 字段');
+    // 服务端契约：静态样本 deployable 必须为 true，对数样本必须为 false。
+    // 旧版静态导出没有写 deployable，这里按静态样本语义补成 true 后再上传。
+    if (type === STATIC_TYPE) {
+      if (data.deployable === undefined) {
+        data.deployable = true;
+        content = JSON.stringify(data);
+      }
+      if (data.deployable !== true) {
+        this.failLocal(
+          '静态标定样本的 deployable 必须为 true；当前文件不满足，请回采集页重新导出',
+        );
+        return;
+      }
+    } else if (data.deployable !== false) {
+      this.failLocal('对数等距样本的 deployable 必须为 false；请确认文件类型或重新导出');
       return;
     }
+    const deployable = data.deployable === true;
     this.localContent = content;
     const file: LocalFile = {
       name,
@@ -619,13 +616,13 @@ Page({
       sizeBytes,
       sizeText: formatBytes(sizeBytes),
       type,
-      deployable: data.deployable,
+      deployable,
     };
     this.setData({
       localFile: file,
       selectedPath: source === 'sandbox' ? path : '',
       fileSourceText: source === 'sandbox' ? '小程序沙箱导出文件' : '微信聊天导入文件',
-      fileText: `${file.name} · ${file.sizeText} · ${file.deployable ? '可部署' : '不可部署'}`,
+      fileText: `${file.name} · ${file.sizeText} · ${deployable ? '可部署' : '不可部署'}`,
       sample: null,
       run: null,
       result: null,
@@ -652,6 +649,12 @@ Page({
       result: null,
     });
     this.setState('server_invalid', message);
+    wx.showModal({
+      title: '样本无法使用',
+      content: message,
+      showCancel: false,
+      confirmText: '知道了',
+    });
   },
 
   async onUploadSample(): Promise<void> {
@@ -666,7 +669,6 @@ Page({
       const resp = await appContext.http.client.request<SampleSummary & { duplicated: boolean }>({
         method: 'POST',
         path: '/api/v1/calibration/samples',
-        auth: false,
         body: {
           fileName: file.name,
           content,
@@ -711,7 +713,6 @@ Page({
       const resp = await appContext.http.client.request<RunSummary>({
         method: 'POST',
         path: '/api/v1/calibration/runs',
-        auth: false,
         body: { sampleId: sample.sampleId },
       });
       const run = unwrapData(resp);
@@ -746,7 +747,6 @@ Page({
       const resp = await appContext.http.client.request<RunSummary>({
         method: 'GET',
         path: `/api/v1/calibration/runs/${runId}`,
-        auth: false,
       });
       const run = unwrapData(resp);
       this.setData({ run });
@@ -852,7 +852,6 @@ Page({
       }>({
         method: 'POST',
         path: `/api/v1/calibration/runs/${runId}/apply`,
-        auth: false,
         body: {
           confirm: true,
           expectParamVersion: cachedRuntimeParams()?.paramsVersion ?? null,
@@ -911,7 +910,6 @@ Page({
       }>({
         method: 'POST',
         path: '/api/v1/calibration/rollback',
-        auth: false,
         body: { paramVersion, confirm: true },
       });
       const data = unwrapData(resp);

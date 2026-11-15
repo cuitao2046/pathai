@@ -293,6 +293,10 @@ class BeaconDeploymentRecord(Base):
     operator: Mapped[str | None] = mapped_column(String(64), nullable=True)
     configured_at_epoch: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: 已被同一 MAC 设备的后续写入取代：非空即失效，不参与统计；取代者由下面两列指向。
+    superseded_at_epoch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    superseded_by_site_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_by_beacon_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 Index("ix_beacon_records_site", BeaconDeploymentRecord.site_id)

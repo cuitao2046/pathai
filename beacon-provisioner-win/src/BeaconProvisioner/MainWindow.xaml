@@ -91,14 +91,18 @@
                         </Grid.ColumnDefinitions>
 
                         <DockPanel Grid.Column="0">
-                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
-                                <TextBlock Text="扫描到的信标（按 RSSI 排序）" Foreground="#555"
-                                           VerticalAlignment="Center" />
+                            <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                                <TextBlock Text="扫描到的信标" Foreground="#555" VerticalAlignment="Center" />
+                                <TextBlock Text="排序" Foreground="#555" Margin="12,0,0,0" VerticalAlignment="Center" />
+                                <ComboBox Width="110" Margin="4,0,0,0" VerticalAlignment="Center"
+                                          ItemsSource="{Binding ScanSortOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedItem="{Binding SelectedScanSortOption}" />
                                 <CheckBox Content="只显示未写入" IsChecked="{Binding OnlyUnwrittenDevices}"
                                           Margin="12,0,0,0" VerticalAlignment="Center" />
                                 <CheckBox Content="只显示本项目信标" IsChecked="{Binding OnlyProjectDevices}"
                                           Margin="12,0,0,0" VerticalAlignment="Center" />
-                            </StackPanel>
+                            </WrapPanel>
                             <ListView ItemsSource="{Binding VisibleDevices}"
                                       SelectedItem="{Binding SelectedDevice}">
                                 <ListView.View>
@@ -106,6 +110,7 @@
                                         <GridViewColumn Header="设备名" Width="110" DisplayMemberBinding="{Binding DisplayName}" />
                                         <GridViewColumn Header="MAC" Width="130" DisplayMemberBinding="{Binding Mac}" />
                                         <GridViewColumn Header="UUID" Width="110" DisplayMemberBinding="{Binding UuidShort}" />
+                                        <GridViewColumn Header="状态" Width="75" DisplayMemberBinding="{Binding ConnectionBadge}" />
                                         <GridViewColumn Header="RSSI" Width="55" DisplayMemberBinding="{Binding Rssi}" />
                                         <GridViewColumn Header="写入时间" Width="145" DisplayMemberBinding="{Binding WriteTimeText}" />
                                     </GridView>
@@ -129,7 +134,7 @@
 
                                 <StackPanel Grid.Row="1" Margin="0,0,0,8">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <TextBlock Text="未入库 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Text="未写入 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <ComboBox Width="180" ItemsSource="{Binding UnboundIds}"
                                                   SelectedItem="{Binding SelectedUnboundId}" />
                                     </StackPanel>
@@ -303,7 +308,10 @@
         </TabControl>
 
         <Border Grid.Row="2" Padding="10,6" Background="#EEF1F4" CornerRadius="4" Margin="0,10,0,0">
-            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#333" />
+            <StackPanel>
+                <TextBlock Text="{Binding ScanSummaryText}" TextWrapping="Wrap" Foreground="#1F5FA8" />
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#333" Margin="0,3,0,0" />
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

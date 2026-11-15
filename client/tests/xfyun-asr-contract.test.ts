@@ -109,6 +109,11 @@ class FakeRecorder implements RecorderLike {
   emit(samples: Float32Array): void {
     this.handlers?.onFrame(samples);
   }
+
+  /** 模拟 RecorderManager.onStart：麦克风真正就绪。 */
+  emitReady(): void {
+    this.handlers?.onReady?.();
+  }
 }
 
 function samples(n: number): Float32Array {
@@ -162,6 +167,21 @@ describe('XfyunAsrEngine 契约', () => {
   beforeEach(() => {
     recorder = new FakeRecorder();
     socket = new FakeSocket();
+  });
+
+  test('麦克风就绪透传 onReady；会话取消后迟到的就绪不再通知页面', async () => {
+    const engine = makeEngine(recorder, socket);
+    const ready = jest.fn();
+    const session = engine.start({ onReady: ready });
+
+    recorder.emitReady(); // 对应 RecorderManager.onStart
+    expect(ready).toHaveBeenCalledTimes(1);
+
+    engine.cancel();
+    recorder.emitReady(); // 取消后迟到的 onStart：页面不应再震动
+    expect(ready).toHaveBeenCalledTimes(1);
+
+    await expect(session).rejects.toThrow();
   });
 
   test('全链路：开录→连上→40ms 泵帧（首帧含 parameter.iat）→partial→stop→末帧→最终 resolve', async () => {
