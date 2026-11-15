@@ -34,6 +34,46 @@ function load(): typeof ServiceEndpoint {
   return require('../services/service-endpoint') as typeof ServiceEndpoint;
 }
 
+test('运行期地址失效后重新发现，不再永久复用旧 IP', async () => {
+  const old = 'http://10.1.2.3:8000', next = 'http://10.9.9.9:8000';
+  candidate.getP0Candidate.mockReturnValue(old);
+  candidate.checkP0Candidate.mockResolvedValue(true);
+  const ep = load();
+  await ep.ensureServiceEndpoint();
+  candidate.checkP0Candidate.mockResolvedValue(false);
+  discoverBusinessCandidate.mockResolvedValue(next);
+  await ep.recoverServiceEndpoint(old);
+  expect(ep.currentServiceBaseUrl()).toBe(next);
+  await ep.recoverServiceEndpoint(old); // Late failure from the old generation.
+  expect(ep.currentServiceBaseUrl()).toBe(next);
+});
+
+test('旧发现任务迟到完成不能覆盖新一轮地址', async () => {
+  candidate.getP0Candidate.mockReturnValue('http://10.1.2.3:8000');
+  let complete!: (value: boolean) => void;
+  candidate.checkP0Candidate.mockReturnValueOnce(new Promise<boolean>(resolve => { complete = resolve; }));
+  const ep = load();
+  const old = ep.ensureServiceEndpoint();
+  ep.invalidateServiceEndpoint();
+  candidate.getP0Candidate.mockReturnValue('http://10.9.9.9:8000');
+  candidate.checkP0Candidate.mockResolvedValue(true);
+  expect(await ep.ensureServiceEndpoint()).toBe('http://10.9.9.9:8000');
+  complete(true);
+  expect(await old).toBeNull();
+  expect(ep.currentServiceBaseUrl()).toBe('http://10.9.9.9:8000');
+});
+
+test('并发连接故障共享一次恢复发现', async () => {
+  candidate.getP0Candidate.mockReturnValue('http://10.1.2.3:8000');
+  candidate.checkP0Candidate.mockResolvedValue(true);
+  const ep = load();
+  await ep.ensureServiceEndpoint();
+  candidate.checkP0Candidate.mockResolvedValue(false);
+  discoverBusinessCandidate.mockResolvedValue('http://10.9.9.9:8000');
+  await Promise.all([ep.recoverServiceEndpoint('http://10.1.2.3:8000'), ep.recoverServiceEndpoint('http://10.1.2.3:8000')]);
+  expect(discoverBusinessCandidate).toHaveBeenCalledTimes(1);
+});
+
 test('未解析时不再回退编译期地址：current 为 null，require 抛 ENDPOINT_UNRESOLVED', () => {
   const ep = load();
   expect(ep.resolvedServiceBaseUrl()).toBeNull();

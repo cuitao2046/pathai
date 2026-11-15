@@ -6,6 +6,7 @@
  * 改写/明文 HTTP）直接抛错阻断启动，防止误发布（详见 config/env.ts）。
  */
 import { assertReleaseSafety } from './config/env';
+import { invalidateServiceEndpoint } from './services/service-endpoint';
 
 App({
   onError(message: string) {
@@ -19,5 +20,8 @@ App({
 
   onLaunch() {
     assertReleaseSafety();
+    if (typeof wx.onNetworkStatusChange === 'function') {
+      wx.onNetworkStatusChange(() => invalidateServiceEndpoint());
+    }
   },
 });

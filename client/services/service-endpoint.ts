@@ -32,6 +32,20 @@ export type EndpointFailureReason =
 let current: string | null = null;
 let inflight: Promise<string | null> | null = null;
 let lastFailure: EndpointFailureReason | null = null;
+let generation = 0;
+
+/** Invalidate without allowing a late failure from an old address to erase a new one. */
+export function invalidateServiceEndpoint(expected?: string): void {
+  if (expected !== undefined && current !== expected) return;
+  ++generation;
+  current = null;
+  inflight = null;
+}
+
+export async function recoverServiceEndpoint(failedBase: string): Promise<void> {
+  invalidateServiceEndpoint(failedBase);
+  await ensureServiceEndpoint();
+}
 
 /** 当前生效的业务根地址；未解析成功返回 null（不回退编译期配置）。 */
 export function currentServiceBaseUrl(): string | null {
@@ -71,11 +85,18 @@ export function lastEndpointFailure(): EndpointFailureReason | null {
 export async function ensureServiceEndpoint(): Promise<string | null> {
   if (current !== null) return current;
   if (inflight === null) {
-    inflight = resolveEndpoint()
+    const version = generation;
+    const task = resolveEndpoint(version)
+      .then(candidate => {
+        if (version !== generation) return null;
+        current = candidate;
+        return candidate;
+      })
       .catch(() => null)
       .finally(() => {
-        inflight = null;
+        if (inflight === task) inflight = null;
       });
+    inflight = task;
   }
   return inflight;
 }
@@ -89,7 +110,7 @@ function devtoolsLoopbackBaseUrl(): string | null {
   return port === undefined ? null : `http://127.0.0.1:${port}`;
 }
 
-async function resolveEndpoint(): Promise<string | null> {
+async function resolveEndpoint(version: number): Promise<string | null> {
   lastFailure = null;
   if (isDevtoolsRuntime()) {
     const loopback = devtoolsLoopbackBaseUrl();
@@ -98,8 +119,9 @@ async function resolveEndpoint(): Promise<string | null> {
       log.warn('开发者工具模拟器：编译期配置缺少后端端口，无法直连本机回环');
       return null;
     }
-    if (await checkEndpointHealth(loopback)) {
-      current = loopback;
+    const healthy = await checkEndpointHealth(loopback);
+    if (version !== generation) return null;
+    if (healthy) {
       log.info('开发者工具模拟器：已连接本机回环后端', loopback, '（跳过局域网 UDP 广播）');
       return loopback;
     }
@@ -110,13 +132,14 @@ async function resolveEndpoint(): Promise<string | null> {
   }
 
   const cached = getP0Candidate();
-  if (cached !== null && (await checkP0Candidate(cached))) {
-    current = cached;
+  const healthy = cached !== null && await checkP0Candidate(cached);
+  if (version !== generation) return null;
+  if (healthy) {
     return cached;
   }
   const discovered = await discoverBusinessCandidate();
+  if (version !== generation) return null;
   if (discovered !== null && saveP0Candidate(discovered)) {
-    current = discovered;
     return discovered;
   }
   lastFailure = 'lan-service-not-found';
