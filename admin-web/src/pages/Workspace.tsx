@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../api';
 import Modal from '../components/Modal';
+import UserPermissionsPanel from '../components/UserPermissionsPanel';
 import VersionDrawer from '../components/VersionDrawer';
 import MapView from '../components/MapView';
 import { BeaconEditor, PlaceEditor } from '../components/EditPanel';
@@ -546,6 +547,7 @@ export default function Workspace({
           </button>
         </div>
       </header>
+      <UserPermissionsPanel />
 
       <div className="layout">
         <aside className="sidebar">

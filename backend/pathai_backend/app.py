@@ -27,6 +27,7 @@ from pathai_backend.runtime_params import RuntimeParams
 from pathai_backend.routers import auth as auth_router
 from pathai_backend.routers import admin_auth as admin_auth_router
 from pathai_backend.routers import admin_maps as admin_maps_router
+from pathai_backend.routers import admin_users as admin_users_router
 from pathai_backend.routers import beacons as beacons_router
 from pathai_backend.routers import calibration as calibration_router
 from pathai_backend.routers import config as config_router
@@ -133,6 +134,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(admin_auth_router.router)
     app.include_router(admin_maps_router.router)
+    app.include_router(admin_users_router.router)
     app.include_router(beacons_router.router)
     app.include_router(calibration_router.router)
     app.include_router(config_router.router)

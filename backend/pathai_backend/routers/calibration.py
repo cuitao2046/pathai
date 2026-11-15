@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, calibration_service as svc
-from pathai_backend.admin.deps import require_admin_ready
+from pathai_backend.client_permissions import require_tester, require_config_apply
 from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.runtime_params import RuntimeParams
@@ -51,7 +51,8 @@ def _rate_limit(key: str, interval_s: float) -> None:
 
 
 #: 写接口依赖：私网限定（纵深防御）+ admin 会话/CSRF。
-_ADMIN_WRITE = [Depends(require_private_network), Depends(require_admin_ready)]
+_ADMIN_WRITE = [Depends(require_private_network), Depends(require_tester)]
+_CONFIG_WRITE = [Depends(require_private_network), Depends(require_config_apply)]
 
 
 def _call(fn):
@@ -72,6 +73,7 @@ def readiness(
 @router.post("/samples", dependencies=_ADMIN_WRITE)
 def upload_sample(
     body: SampleUploadRequest,
+    request: Request,
     db: Session = Depends(auth.get_db_session),
     settings: Settings = Depends(auth.get_settings),
 ) -> dict:
@@ -82,7 +84,7 @@ def upload_sample(
             settings,
             file_name=body.fileName,
             content=body.content.encode("utf-8"),
-            operator=body.operator,
+            operator=request.state.operator,
         )
     )
 
@@ -115,7 +117,7 @@ def get_run(run_id: str, db: Session = Depends(auth.get_db_session)) -> dict:
     return svc._run_summary(run)
 
 
-@router.post("/runs/{run_id}/apply", dependencies=_ADMIN_WRITE)
+@router.post("/runs/{run_id}/apply", dependencies=_CONFIG_WRITE)
 def apply_run(
     run_id: str,
     body: ApplyRunRequest,
@@ -142,7 +144,7 @@ def versions(db: Session = Depends(auth.get_db_session)) -> dict:
     return svc.list_versions(db)
 
 
-@router.post("/rollback", dependencies=_ADMIN_WRITE)
+@router.post("/rollback", dependencies=_CONFIG_WRITE)
 def rollback(
     body: RollbackRequest,
     request: Request,

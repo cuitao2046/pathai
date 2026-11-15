@@ -1155,3 +1155,6 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.user-permissions { padding: 12px; background: var(--surface); max-height: 40vh; overflow: auto; }
+.user-permissions table { width: 100%; text-align: left; }

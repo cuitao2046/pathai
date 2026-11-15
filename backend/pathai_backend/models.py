@@ -21,6 +21,14 @@ class AnonymousSubject(Base):
     created_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class ClientPermission(Base):
+    """Minimal grants for a stable WeChat subject; checked on every request."""
+    __tablename__ = "client_permissions"
+    subject_id: Mapped[int] = mapped_column(Integer, ForeignKey("anonymous_subjects.id"), primary_key=True)
+    is_tester: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    can_apply_config: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class AccessToken(Base):
     """不透明访问令牌：服务端仅存 token 哈希。"""
 
