@@ -44,8 +44,12 @@ export interface HttpStack {
 }
 
 /** Raw by default for diagnostics; production explicitly enables silent login. */
-export function createHttpStack(baseUrl: BaseUrlProvider, options: { wechatLogin?: boolean } = {}): HttpStack {
-  return { client: new ApiClient(baseUrl, options.wechatLogin === true) };
+export interface ConnectionRecovery {
+  prepare(): Promise<unknown>;
+  failed(base: string): Promise<void>;
+}
+export function createHttpStack(baseUrl: BaseUrlProvider, options: { wechatLogin?: boolean; recovery?: ConnectionRecovery } = {}): HttpStack {
+  return { client: new ApiClient(baseUrl, options.wechatLogin === true, options.recovery) };
 }
 
 interface SendResult {
@@ -56,9 +60,26 @@ interface SendResult {
 
 export class ApiClient {
   private readonly sessions = new Map<string, WechatSession>();
-  constructor(private readonly baseUrl: BaseUrlProvider, private readonly wechatLogin = false) {}
+  constructor(private readonly baseUrl: BaseUrlProvider, private readonly wechatLogin = false, private readonly recovery?: ConnectionRecovery) {}
 
   async request<T>(opts: ApiRequestOptions): Promise<ApiResponse<T>> {
+    let attempted: string | null = null;
+    try {
+      if (this.recovery) {
+        await this.recovery.prepare();
+        attempted = resolveBaseUrl(this.baseUrl);
+      }
+      return await this.requestOnce<T>(opts);
+    } catch (error) {
+      if (attempted && error instanceof ApiClientError && ['NETWORK_ERROR', 'REQUEST_TIMEOUT'].includes(error.code)) {
+        try { await this.recovery!.failed(attempted); } catch { /* Preserve the original request error. */ }
+      }
+      // Never replay an uncertain write after a connection failure or address change.
+      throw error;
+    }
+  }
+
+  private async requestOnce<T>(opts: ApiRequestOptions): Promise<ApiResponse<T>> {
     if (!this.wechatLogin) return this.finish<T>(await this.send(opts));
     const base = resolveBaseUrl(this.baseUrl).replace(/\/$/, '');
     const url = opts.url ?? base + (opts.path ?? '');

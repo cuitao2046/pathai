@@ -10,7 +10,7 @@ import {
 } from '../config/env';
 import { createHttpStack } from '../core/http/api-client';
 import { MapService } from '../core/map/map-service';
-import { currentServiceBaseUrl } from './service-endpoint';
+import { currentServiceBaseUrl, ensureServiceEndpoint, recoverServiceEndpoint } from './service-endpoint';
 import type { AsrEngine } from '../core/asr/asr-engine';
 import { XfyunAsrEngine } from '../core/asr/xfyun-asr';
 import type { TtsEngine } from '../core/speech/tts-engine';
@@ -93,7 +93,9 @@ class AppContext {
   /** 语音交互（ASR+TTS）是否用 mock 引擎：独立开关，未设置过则跟随数据源。 */
   readonly voiceMock: boolean = resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
   /** HTTP 栈与地图服务共用同一运行时地址（启动时由 service-endpoint 解析）。 */
-  readonly http = createHttpStack(() => currentServiceBaseUrl(), { wechatLogin: true });
+  readonly http = createHttpStack(() => currentServiceBaseUrl(), { wechatLogin: true,
+    recovery: { prepare: ensureServiceEndpoint, failed: recoverServiceEndpoint },
+  });
   readonly map = new MapService({
     client: this.http.client,
     siteId: DEFAULT_SITE_ID,

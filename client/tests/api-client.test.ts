@@ -12,6 +12,27 @@ import { wxStub } from './setup-wx';
 
 const BASE = 'http://localhost:8000';
 
+test('连接失败触发地址恢复但不自动重放 POST，下次调用使用新地址', async () => {
+  let base = BASE;
+  const failed = jest.fn(async () => { base = 'http://localhost:8001'; });
+  const { client } = createHttpStack(() => base, { recovery: { prepare: async () => {}, failed } });
+  wxStub.__requestResponder = options => options.fail({ errMsg: 'request:fail offline' });
+  await expect(client.request({ method: 'POST', path: '/api/v1/nav/sessions', body: {}, idempotencyKey: 'original' })).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
+  expect(failed).toHaveBeenCalledWith(BASE);
+  expect(wxStub.__requestLog).toHaveLength(1);
+  wxStub.__requestResponder = options => options.success({ statusCode: 200, data: {} });
+  await client.request({ method: 'GET', path: '/read' });
+  expect(wxStub.__requestLog[1].url).toBe('http://localhost:8001/read');
+});
+
+test('业务 403 不触发地址失效或恢复', async () => {
+  const failed = jest.fn(async () => {});
+  const { client } = createHttpStack(BASE, { recovery: { prepare: async () => {}, failed } });
+  wxStub.__requestResponder = options => options.success({ statusCode: 403, data: { error: { code: 'FORBIDDEN', message: 'no' } } });
+  await expect(client.request({ method: 'GET', path: '/read' })).rejects.toMatchObject({ statusCode: 403 });
+  expect(failed).not.toHaveBeenCalled();
+});
+
 function respondWith(handler: (options: WxRequestOptionsStub) => void): void {
   wxStub.__requestResponder = handler;
 }
