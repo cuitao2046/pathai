@@ -1,16 +1,22 @@
 /**
  * PCM 录音器（wx.getRecorderManager → 16kHz 单声道裸 PCM 流）。
  *
- * - format:'PCM' + frameSize:1KB（≈64ms/帧）→ onFrameRecorded 逐帧回调；
+ * - format:'PCM' + frameSize:1KB（=512 采样 ≈32ms/帧）→ onFrameRecorded 逐帧回调；
  * - 帧字节按小端 Int16 读出并归一化为 Float32 [-1,1]，识别器 acceptWaveform
  *   直接可喂；
- * - start() 注册回调并启动；stop() 停止并等待 onStop（保证最后一帧已推送）；
+ * - start() 注册回调并启动；manager.onStart 触发时回调 onReady（麦克风已就绪）；
  *   cancel() 停止且后续帧丢弃（会话取消语义由引擎负责 reject pending）；
  * - duration 30s 自动停（单次上限，与原同声传译插件一致），到点触发 onStop；
  * - manager 构造注入：单测用假 manager，默认 wx.getRecorderManager()（单例）。
  */
+import { createLogger } from '../../utils/logger';
+
+const log = createLogger('asr-pcm');
+
 export interface PcmFrameHandlers {
   onFrame(samples: Float32Array): void;
+  /** 麦克风真正开始工作（manager.onStart）；页面据此提示「可以开口了」。 */
+  onReady?: () => void;
 }
 
 /** 录音器依赖的微信 manager 最小面（便于单测注入）。 */
@@ -21,6 +27,8 @@ export interface RecorderManagerLike {
   /** res 具体类型（OnStopListenerResult）无 index signature，用 unknown 兼容。 */
   onStop(listener: (res: unknown) => void): void;
   onError(listener: (err: { errMsg?: string }) => void): void;
+  /** 录音真正开始（麦克风已打开）；旧基础库/测试假件可能没有，按可选处理。 */
+  onStart?(listener: () => void): void;
 }
 
 /** 单次录音上限（毫秒）。 */
@@ -40,6 +48,15 @@ export class PcmRecorder implements RecorderLike {
   private handlers: PcmFrameHandlers | null = null;
   private settle: { resolve: () => void; reject: (err: Error) => void } | null = null;
   private stopped: Promise<void> | null = null;
+  /**
+   * 监听代际：manager 是单例，onXxx 每次 start 都会再注册一个监听且无法注销。
+   * 每次开始录音递增，旧监听据此失效——否则第二次录音起每帧被投递多次，
+   * 重复音频会显著劣化识别。
+   */
+  private generation = 0;
+  /** 本次 start 的时刻与首帧时刻（定位「开口过早/麦克风起得慢」用）。 */
+  private startedAt = 0;
+  private firstFrameLogged = false;
 
   constructor(private readonly manager: RecorderManagerLike = wx.getRecorderManager()) {}
 
@@ -51,23 +68,45 @@ export class PcmRecorder implements RecorderLike {
     if (this.recording) {
       return; // 幂等：录音中重复 start 忽略（引擎层已保证会话互斥）
     }
+    const gen = (this.generation += 1);
     this.cancelled = false;
     this.lastError = null;
     this.handlers = handlers;
+    this.startedAt = Date.now();
+    this.firstFrameLogged = false;
     this.stopped = new Promise<void>((resolve, reject) => {
       this.settle = { resolve, reject };
     });
     // 提前 onError 而无人取走 stop() 时避免 unhandled rejection（等待者经 stop() 仍可收到）
     this.stopped.catch(() => undefined);
-    this.manager.onFrameRecorded((res) => this.handleFrame(res.frameBuffer));
-    this.manager.onStop(() => this.finish(null));
-    this.manager.onError((err) => this.finish(new Error(err.errMsg ?? '录音失败')));
+    this.manager.onFrameRecorded((res) => {
+      if (gen === this.generation) {
+        this.handleFrame(res.frameBuffer);
+      }
+    });
+    this.manager.onStop(() => {
+      if (gen === this.generation) {
+        this.finish(null);
+      }
+    });
+    this.manager.onError((err) => {
+      if (gen === this.generation) {
+        this.finish(new Error(err.errMsg ?? '录音失败'));
+      }
+    });
+    // 「麦克风已就绪」的唯一可信信号：onStart 之后才会真正产生音频帧
+    this.manager.onStart?.(() => {
+      if (gen === this.generation) {
+        this.handleStart();
+      }
+    });
     this.recording = true;
+    log.info('请求开始录音');
     this.manager.start({
       format: 'PCM',
       sampleRate: 16000,
       numberOfChannels: 1,
-      frameSize: 1, // 1KB ≈ 64ms/帧
+      frameSize: 1, // 1KB = 512 采样 ≈ 32ms/帧
       duration: MAX_RECORD_MS,
       // Android 语音识别输入源（iOS 忽略该字段）
       audioSource: 'voice_recognition',
@@ -95,9 +134,20 @@ export class PcmRecorder implements RecorderLike {
     }
   }
 
+  /** 麦克风真正打开：通知上层「可以开口了」，并记录首次开麦耗时。 */
+  private handleStart(): void {
+    const cost = Date.now() - this.startedAt;
+    log.info(`麦克风已就绪 ${cost}ms`);
+    this.handlers?.onReady?.();
+  }
+
   private handleFrame(buffer: ArrayBuffer | undefined): void {
     if (this.cancelled || this.handlers === null || buffer === undefined || buffer.byteLength < 2) {
       return;
+    }
+    if (!this.firstFrameLogged) {
+      this.firstFrameLogged = true;
+      log.info(`首帧到达 ${Date.now() - this.startedAt}ms`);
     }
     const int16 = new Int16Array(buffer, 0, Math.floor(buffer.byteLength / 2));
     const samples = new Float32Array(int16.length);

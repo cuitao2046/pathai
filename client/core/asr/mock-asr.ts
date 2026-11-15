@@ -26,6 +26,12 @@ export class MockAsrEngine implements AsrEngine {
     this.startCount += 1;
     return new Promise<string>((resolve, reject) => {
       this.session = { resolve, reject, onPartial: handlers.onPartial };
+      // 模拟真实录音「麦克风稍后就绪」：异步通知，页面据此震动/提示
+      setTimeout(() => {
+        if (this.session !== null) {
+          handlers.onReady?.();
+        }
+      }, 0);
     });
   }
 
