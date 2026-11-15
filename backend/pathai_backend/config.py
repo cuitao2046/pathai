@@ -51,6 +51,8 @@ class Settings:
     wechat_fake: bool = False
     # 地图包目录：约定 backend/maps_data/<siteId>/<mapVersion>.json
     map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
+    # 危险层目录：约定 backend/hazards_data/<siteId>.json（独立于地图包）
+    hazard_data_dir: Path = Path(__file__).resolve().parent.parent / "hazards_data"
     # 对外可访问基地址：拼接 API-02 dataUrl；必须 HTTPS（契约校验强制）
     public_base_url: str = "https://localhost"
     local_discovery_port: int = 0
@@ -75,6 +77,7 @@ class Settings:
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
         env = environ if environ is not None else dict(os.environ)
         map_data_dir = env.get("PATHAI_MAP_DATA_DIR")
+        hazard_data_dir = env.get("PATHAI_HAZARD_DATA_DIR")
         return cls(
             env=env.get("PATHAI_ENV", LOCAL_ENV),
             database_url=env.get("PATHAI_DATABASE_URL", ""),
@@ -95,6 +98,9 @@ class Settings:
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),
             map_data_dir=Path(map_data_dir) if map_data_dir else cls._default_map_data_dir(),
+            hazard_data_dir=(
+                Path(hazard_data_dir) if hazard_data_dir else cls._default_hazard_data_dir()
+            ),
             public_base_url=env.get("PATHAI_PUBLIC_BASE_URL", "https://localhost"),
             local_discovery_port=int(env.get("PATHAI_LOCAL_DISCOVERY_PORT", "39001" if env.get("PATHAI_ENV", LOCAL_ENV) == LOCAL_ENV else "0")),
             local_business_port=int(env.get("PATHAI_LOCAL_BUSINESS_PORT", "8000" if env.get("PATHAI_ENV", LOCAL_ENV) == LOCAL_ENV else "0")),
@@ -128,6 +134,10 @@ class Settings:
     @staticmethod
     def _default_map_data_dir() -> Path:
         return Path(__file__).resolve().parent.parent / "maps_data"
+
+    @staticmethod
+    def _default_hazard_data_dir() -> Path:
+        return Path(__file__).resolve().parent.parent / "hazards_data"
 
     @staticmethod
     def _default_calibration_data_dir() -> Path:

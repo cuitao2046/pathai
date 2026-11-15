@@ -12,8 +12,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from pathai_backend.errors import ApiError
+from pathai_backend.hazard_layer import (
+    LEVEL_RANK,
+    STATUS_UNKNOWN,
+    HazardLayer,
+    HazardZone,
+)
 from pathai_backend.map_package.schema import MapPackage
 from pathai_backend.schemas.common import (
     GeoPosition,
@@ -24,7 +31,7 @@ from pathai_backend.schemas.common import (
     Trigger,
     UserMode,
 )
-from pathai_backend.schemas.nav import RouteInfo
+from pathai_backend.schemas.nav import RouteHazard, RouteInfo
 
 ROUTE_RULES_VERSION = "1.0.0"
 LOCATION_ALGORITHM_VERSION = "location-0.3"  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
@@ -114,7 +121,9 @@ def _instruction(
 
 
 def build_route_info(
-    route: dict, pkg: MapPackage, index: PackageIndex, path_points: list[NavPoint]
+    route: dict, pkg: MapPackage, index: PackageIndex, path_points: list[NavPoint],
+    hazards: list[RouteHazard] | None = None,
+    hazard_layer: HazardLayer | None = None,
 ) -> RouteInfo:
     """从引擎输出构建 RouteInfo 与 segments（首条指令=segments[0]）。"""
     node_ids: list[str] = route["path"]
@@ -222,6 +231,12 @@ def build_route_info(
         fallbackType=fallback,
         safeForBlind=safe_for_blind,
         riskNotices=risk_notices,
+        hazards=hazards or [],
+        hazardLayerStatus=hazard_layer.status if hazard_layer is not None else STATUS_UNKNOWN,
+        hazardLayerVersion=hazard_layer.hazard_version if hazard_layer is not None else None,
+        hazardLayerNotice=(
+            hazard_layer.notice if hazard_layer is not None and hazard_layer.degraded() else None
+        ),
     )
 
 
@@ -231,11 +246,84 @@ def _short_id() -> str:
     return uuid.uuid4().hex[:16]
 
 
+def _route_hazards(
+    active: tuple[HazardZone, ...], route_edges: set[str], baseline_edges: set[str] | None
+) -> list[RouteHazard]:
+    """筛选与本条路线相关的危险：路线命中（onRoute）或已绕开（avoided）。
+
+    只把「基线路线（不考虑危险）会经过、但最终路线不再经过」的条目判为已绕开，
+    避免把全楼危险都塞进响应。
+    """
+    result: list[RouteHazard] = []
+    for hazard in active:
+        edges = set(hazard.edge_ids)
+        on_route = bool(edges & route_edges)
+        if not on_route and not (baseline_edges and edges & baseline_edges):
+            continue
+        result.append(RouteHazard(
+            hazardId=hazard.hazard_id,
+            level=hazard.level,
+            type=hazard.hazard_type,
+            reason=hazard.reason or hazard.hazard_type,
+            spokenText=hazard.spoken_text,
+            edgeIds=list(hazard.edge_ids),
+            onRoute=on_route,
+            avoided=not on_route,
+            penaltyM=hazard.penalty_m,
+        ))
+    result.sort(key=lambda h: -LEVEL_RANK[h.level])
+    return result
+
+
+def _blocking_hazards(
+    active: tuple[HazardZone, ...], baseline_edges: set[str] | None
+) -> list[HazardZone]:
+    """导致本次不可达的 block 危险：基线（无危险约束）路线会经过的那些边。"""
+    if not baseline_edges:
+        return []
+    return [
+        h for h in active
+        if h.level == "block" and set(h.edge_ids) & baseline_edges
+    ]
+
+
+def _hazard_hint(hazards: list[HazardZone]) -> str:
+    reasons: list[str] = []
+    for hazard in hazards:
+        text = hazard.reason or hazard.hazard_type
+        if text not in reasons:
+            reasons.append(text)
+    return "、".join(reasons[:3])
+
+
+def _hazard_details(hazards: list[HazardZone]) -> dict:
+    return {
+        "hazards": [
+            {
+                "hazardId": h.hazard_id,
+                "level": h.level,
+                "type": h.hazard_type,
+                "reason": h.reason,
+                "edgeIds": list(h.edge_ids),
+            }
+            for h in hazards
+        ]
+    }
+
+
 def plan_route(
     raw_data: dict, pkg: MapPackage, index: PackageIndex, origin: NavPoint,
-    dest_place_id: str, user_mode: UserMode,
+    dest_place_id: str, user_mode: UserMode, hazard_layer: HazardLayer | None = None,
 ) -> tuple[RouteInfo, NavPoint]:
-    """规划路线；错误码区分 ROUTE_NOT_FOUND 与 ACCESSIBLE_ROUTE_NOT_FOUND。"""
+    """规划路线；错误码区分 ROUTE_NOT_FOUND 与 ACCESSIBLE_ROUTE_NOT_FOUND。
+
+    危险层语义：
+    - block：进入 edge_allowed 硬禁行（四层回退都不会放行）；
+    - avoid：在边权上加 penaltyM，能绕则绕；
+    - notice：不影响选路，只随路线返回；
+    - 普通模式保持现有语义（不读 blindAccessible），因此也不受危险层影响；
+    - 生效时间在每次规划时按当前时间判定，过期条目不参与。
+    """
     from src.topology.route_rules import RouteGraph
 
     place = index.places.get(dest_place_id)
@@ -245,20 +333,61 @@ def plan_route(
     if dest_node is None:
         raise ApiError(404, "PLACE_NOT_FOUND", f"地点节点不存在：{place.nodeId}")
 
-    graph = RouteGraph(raw_data)
     mode = "blind" if user_mode is UserMode.BLIND else user_mode.value
+    now = datetime.now(timezone.utc)
+    active: tuple[HazardZone, ...] = ()
+    if hazard_layer is not None and mode != "normal":
+        active = hazard_layer.active(now, mode)
+
+    graph = RouteGraph(raw_data, hazards=[h.to_rule() for h in active])
     route = graph.generate_route(origin.node_id, dest_node.node_id, mode=mode)
+
+    # 基线：不带危险约束的同一模式路线，用于判定「绕开了什么」与「被什么阻断」
+    baseline_graph = RouteGraph(raw_data) if active else None
+    baseline_edges: set[str] | None = None
+    if baseline_graph is not None:
+        baseline = baseline_graph.generate_route(origin.node_id, dest_node.node_id, mode=mode)
+        if baseline.get("reachable"):
+            baseline_edges = set(baseline.get("edges") or ())
+
     if not route.get("reachable"):
+        blocked = _blocking_hazards(active, baseline_edges)
+        hint = _hazard_hint(blocked)
         if user_mode is UserMode.BLIND:
-            fallback = graph.generate_route(origin.node_id, dest_node.node_id, mode="normal")
+            fallback_graph = baseline_graph if baseline_graph is not None else graph
+            fallback = fallback_graph.generate_route(
+                origin.node_id, dest_node.node_id, mode="normal"
+            )
             if fallback.get("reachable"):
+                if blocked:
+                    raise ApiError(
+                        422, "ACCESSIBLE_ROUTE_NOT_FOUND",
+                        f"前往「{place.name}」必须经过危险区域：{hint}；当前没有适盲绕行路线",
+                        details=_hazard_details(blocked),
+                    )
                 raise ApiError(
                     422, "ACCESSIBLE_ROUTE_NOT_FOUND",
                     "盲模式无可达电梯路线（存在普通路线）",
                 )
+        if blocked:
+            raise ApiError(
+                422, "ROUTE_NOT_FOUND",
+                f"前往「{place.name}」必须经过危险区域：{hint}；当前没有可用绕行路线",
+                details=_hazard_details(blocked),
+            )
         raise ApiError(422, "ROUTE_NOT_FOUND", "当前起终点之间没有可达路线")
     if route.get("wall_fallback") and user_mode is UserMode.BLIND:
         # 盲模式不公开贴墙兜底路线（REQ-NAV：公开路线默认不得是 wall_fallback）
+        blocked = _blocking_hazards(active, baseline_edges)
+        if blocked:
+            raise ApiError(
+                422, "ROUTE_NOT_FOUND",
+                f"前往「{place.name}」必须经过危险区域：{_hazard_hint(blocked)}；当前没有适盲路线",
+                details=_hazard_details(blocked),
+            )
         raise ApiError(422, "ROUTE_NOT_FOUND", "当前起终点之间没有适盲路线")
     path_points = [index.nodes[nid] for nid in route["path"]]
-    return build_route_info(route, pkg, index, path_points), dest_node
+    route_hazards = _route_hazards(active, set(route.get("edges") or ()), baseline_edges)
+    return build_route_info(
+        route, pkg, index, path_points, route_hazards, hazard_layer
+    ), dest_node

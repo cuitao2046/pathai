@@ -1,0 +1,688 @@
+{
+  "schemaVersion": "1.0.0",
+  "hazardVersion": "2026-11-14T12:05:07.611Z/26",
+  "siteId": "school-building-01",
+  "mapVersion": "2026-11-08.2",
+  "generatedAt": "2026-11-14T12:05:07.611Z",
+  "updatedAt": "2026-11-14T12:05:07.611Z",
+  "generator": "pathai-hazard-editor/1.0.0",
+  "notes": "地图数据：backend/maps_data/school-building-01/2026-11-08.2.json",
+  "hazards": [
+    {
+      "hazardId": "HZ-20261114-0001",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0396"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0002",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0397"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0003",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0398"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0004",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0399"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0005",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0400"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0006",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0401"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0007",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0402"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0008",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0404"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0009",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "1-TE-0405"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0010",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0264"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0011",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0265"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0012",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0266"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0013",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0267"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0014",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0268"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0015",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0269"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0016",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "2-TE-0270"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0017",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0001"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0018",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0002"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0019",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0003"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0020",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0004"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0021",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0005"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0022",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0006"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0023",
+      "siteId": "school-building-01",
+      "floorId": "1",
+      "targetType": "edge",
+      "edgeIds": [
+        "FX-XE-0007"
+      ],
+      "type": "stairs",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "楼梯口，视障不可通行（地图包基线）",
+      "spokenText": "前方为楼梯，已为您绕开。",
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "map_package",
+      "reportedBy": null,
+      "note": "由地图包跨层边 blindAccessible=false 导入；结构风险仍以地图包为准",
+      "createdAt": "2026-11-14T11:42:24Z",
+      "updatedAt": "2026-11-14T11:42:24Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0024",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "F2-TE-0076"
+      ],
+      "type": "construction",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "户外空间",
+      "spokenText": null,
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "admin",
+      "reportedBy": null,
+      "note": null,
+      "createdAt": "2026-11-14T12:03:51.004Z",
+      "updatedAt": "2026-11-14T12:03:51.004Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0025",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "F2-TE-0074"
+      ],
+      "type": "construction",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "户外空间",
+      "spokenText": null,
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "admin",
+      "reportedBy": null,
+      "note": null,
+      "createdAt": "2026-11-14T12:04:02.930Z",
+      "updatedAt": "2026-11-14T12:04:02.930Z",
+      "revision": 1
+    },
+    {
+      "hazardId": "HZ-20261114-0026",
+      "siteId": "school-building-01",
+      "floorId": "2",
+      "targetType": "edge",
+      "edgeIds": [
+        "F2-TE-0073"
+      ],
+      "type": "other",
+      "level": "block",
+      "appliesTo": [
+        "blind"
+      ],
+      "reason": "户外空间",
+      "spokenText": null,
+      "blindAccessible": false,
+      "activeFrom": null,
+      "activeUntil": null,
+      "status": "active",
+      "source": "admin",
+      "reportedBy": null,
+      "note": null,
+      "createdAt": "2026-11-14T12:04:46.885Z",
+      "updatedAt": "2026-11-14T12:04:46.885Z",
+      "revision": 1
+    }
+  ]
+}

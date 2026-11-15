@@ -16,6 +16,7 @@ from pathai_backend.admin import service as admin_service
 from pathai_backend.config import LOCAL_ENV, Settings
 from pathai_backend.database import dispose_engine, init_engine
 from pathai_backend.errors import install_error_handlers
+from pathai_backend.hazard_layer import HazardRepository
 from pathai_backend.local_discovery_v1 import LocalDiscoveryServer
 from pathai_backend.local_pairing import LocalPairingService
 from pathai_backend.maintenance import PURGE_INTERVAL_S, run_purge
@@ -111,6 +112,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.map_repository = MapRepository.load(
         map_data_dir=settings.map_data_dir, public_base_url=settings.public_base_url
     )
+    # 危险层独立加载：文件缺失/损坏/版本不匹配只降级为「无危险层」，不阻塞启动
+    app.state.hazard_repository = HazardRepository.load(settings.hazard_data_dir)
     app.add_middleware(RequestContextMiddleware)
     install_error_handlers(app)
 

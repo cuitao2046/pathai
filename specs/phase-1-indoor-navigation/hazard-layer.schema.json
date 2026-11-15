@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pathai.local/schemas/hazard-layer.schema.json",
+  "title": "PathAI 视障危险层（Hazard Layer）",
+  "description": "独立于地图包的运营危险区数据层。地图包只负责几何、拓扑与结构无障碍（blindAccessible/楼梯/电梯）；本层负责施工、湿滑、人流、临时障碍等可随时变化的危险。路由改造后按 edgeIds 做硬禁行（block）或边权惩罚（avoid），notice 只播报不改变路线。约束：1) hazardId 全层唯一；2) 一个 edgeId 可以出现在多条 hazard 中，路由取最严格等级（block > avoid > notice）；3) level=block 时 blindAccessible 必须为 false，level=avoid/notice 时必须为 true；4) 时间为 null 表示不限；activeUntil 必须晚于 activeFrom；5) 区域/点只是录入与展示形态，必须同时编译出 edgeIds 供路由使用。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "hazardVersion",
+    "siteId",
+    "mapVersion",
+    "generatedAt",
+    "hazards"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "危险层格式版本；字段变更时升版本。",
+      "const": "1.0.0"
+    },
+    "hazardVersion": {
+      "description": "危险层内容版本，格式为“最近更新时间/危险条数”，用于客户端缓存与问题追溯，例如 2026-11-14T02:00:00Z/17。",
+      "type": "string",
+      "pattern": "^[^\\s]+/[0-9]+$",
+      "examples": ["2026-11-14T02:00:00.000Z/17"]
+    },
+    "siteId": {
+      "description": "场所 ID，必须与地图包的 siteId 一致。",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "examples": ["school-building-01"]
+    },
+    "mapVersion": {
+      "description": "该危险层所针对的地图版本；跨版本复用前必须复核 edgeIds。",
+      "type": "string",
+      "minLength": 1,
+      "examples": ["2026-11-08.2"]
+    },
+    "generatedAt": {
+      "description": "本文件生成时间（ISO 8601，带时区）。",
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "description": "最后一条危险变更时间（ISO 8601）。缺省视为 generatedAt。",
+      "type": "string",
+      "format": "date-time"
+    },
+    "generator": {
+      "description": "生成工具标识，便于排查导出来源。",
+      "type": "string",
+      "maxLength": 80,
+      "examples": ["pathai-hazard-editor/1.0.0"]
+    },
+    "notes": {
+      "description": "运维备注，不参与路由。",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "hazards": {
+      "description": "危险条目列表；没有危险时允许为空数组。",
+      "type": "array",
+      "maxItems": 20000,
+      "items": { "$ref": "#/$defs/hazard" }
+    }
+  },
+  "$defs": {
+    "geometry": {
+      "description": "GeoJSON 几何（仅用于录入与展示）。坐标与地图包一致，单位米，[x, y]。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["Point", "LineString", "Polygon"]
+        },
+        "coordinates": {
+          "description": "GeoJSON 坐标数组；Polygon 首尾点必须闭合。",
+          "type": "array",
+          "minItems": 1
+        }
+      }
+    },
+    "hazard": {
+      "title": "HazardZone",
+      "description": "一条危险记录。运营标注默认使用 avoid；只有现场确认完全不可通行时才用 block。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hazardId",
+        "siteId",
+        "floorId",
+        "targetType",
+        "edgeIds",
+        "type",
+        "level",
+        "appliesTo",
+        "reason",
+        "blindAccessible",
+        "status",
+        "source",
+        "createdAt",
+        "updatedAt",
+        "revision"
+      ],
+      "properties": {
+        "hazardId": {
+          "description": "稳定 ID，格式 HZ-YYYYMMDD-NNNN；同层内唯一，跨天不复用。",
+          "type": "string",
+          "pattern": "^HZ-[0-9]{8}-[0-9]{4}$",
+          "examples": ["HZ-20261114-0001"]
+        },
+        "siteId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "floorId": {
+          "description": "危险所在楼层；跨层危险拆成多条（电梯/楼梯的两端分别标注）。",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "examples": ["1", "2"]
+        },
+        "targetType": {
+          "description": "录入形态。edge 直接选边；area/point 是展示形态，保存时必须由工具编译出 edgeIds。",
+          "type": "string",
+          "enum": ["edge", "area", "point"]
+        },
+        "edgeIds": {
+          "description": "路由真正消费的锚点，至少 1 条。格式：楼层边 F1-TE-0122 或 1-TE-0396（历史发布包两种前缀并存），跨层边 FX-XE-0001。",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?:F?[0-9]+|FX)-[A-Z]{2}-[0-9]{4}$"
+          },
+          "examples": [["F1-TE-0122", "F1-TE-0123"]]
+        },
+        "geometry": {
+          "description": "targetType=area/point 时必填；edge 可省略。",
+          "$ref": "#/$defs/geometry"
+        },
+        "type": {
+          "description": "危险类型，决定默认播报模板。stairs 用于楼梯/台阶类结构化风险（一般应留在 map package 的 blindAccessible，而不是本层）。",
+          "type": "string",
+          "enum": [
+            "construction",
+            "stairs",
+            "revolving_door",
+            "wet_floor",
+            "crowd",
+            "glass_door",
+            "obstacle",
+            "other"
+          ]
+        },
+        "level": {
+          "description": "block=硬禁行（所有回退层都不放行）；avoid=能走但加 penaltyM 距离惩罚；notice=不改路线，经过时播报。",
+          "type": "string",
+          "enum": ["block", "avoid", "notice"]
+        },
+        "appliesTo": {
+          "description": "生效人群，默认 [\"blind\"]。施工类可扩到 wheelchair/normal；首期路由实现只保证 blind 语义。",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["blind", "wheelchair", "normal"] },
+          "default": ["blind"]
+        },
+        "reason": {
+          "description": "短理由，用于列表与概要播报，建议 6~40 字。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "examples": ["走廊施工，围挡占道"]
+        },
+        "spokenText": {
+          "description": "语音专用文案；为空时由 type + reason 生成模板。",
+          "type": ["string", "null"],
+          "maxLength": 200
+        },
+        "penaltyM": {
+          "description": "avoid 档的距离惩罚（米），默认 60；block/notice 忽略。同一条边多条 avoid 时路由取最大值。",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500,
+          "default": 60
+        },
+        "blindAccessible": {
+          "description": "该危险生效时，edgeIds 对盲人是否可通行。block 必须为 false；avoid/notice 必须为 true。与地图包同名边字段含义一致，便于编辑器与后续路由直接对齐。",
+          "type": "boolean"
+        },
+        "activeFrom": {
+          "description": "生效开始时间（ISO 8601）；null 表示立即生效。",
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "activeUntil": {
+          "description": "生效结束时间；null 表示长期有效。临时危险（施工/积水）必须填写。",
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "status": {
+          "description": "pending=待确认（默认不参与路由）；active=已生效；resolved=已解除；rejected=已驳回。",
+          "type": "string",
+          "enum": ["pending", "active", "resolved", "rejected"],
+          "default": "active"
+        },
+        "source": {
+          "description": "来源。map_package 表示从地图包 blindAccessible=false 基线导入；import 表示从其他危险层文件导入。",
+          "type": "string",
+          "enum": ["admin", "field_survey", "user_report", "voice", "map_package", "import"]
+        },
+        "reportedBy": {
+          "description": "上报主体（脱敏，如 openid 哈希前缀）；source=user_report 时建议填写。",
+          "type": ["string", "null"],
+          "maxLength": 64
+        },
+        "note": {
+          "description": "补充说明，不参与路由与播报。",
+          "type": ["string", "null"],
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "description": "乐观并发/客户端缓存失效用，每次修改 +1。",
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "level": { "const": "block" } },
+            "required": ["level"]
+          },
+          "then": {
+            "properties": { "blindAccessible": { "const": false } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "level": { "enum": ["avoid", "notice"] } },
+            "required": ["level"]
+          },
+          "then": {
+            "properties": { "blindAccessible": { "const": true } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "level": { "const": "avoid" } },
+            "required": ["level"]
+          },
+          "then": {
+            "required": ["penaltyM"],
+            "properties": { "penaltyM": { "exclusiveMinimum": 0 } }
+          }
+        },
+        {
+          "if": {
+            "properties": { "targetType": { "enum": ["area", "point"] } },
+            "required": ["targetType"]
+          },
+          "then": { "required": ["geometry"] }
+        }
+      ],
+      "examples": [
+        {
+          "hazardId": "HZ-20261114-0001",
+          "siteId": "school-building-01",
+          "floorId": "1",
+          "targetType": "edge",
+          "edgeIds": ["F1-TE-0122"],
+          "type": "construction",
+          "level": "avoid",
+          "appliesTo": ["blind", "wheelchair"],
+          "reason": "走廊施工，围挡占道",
+          "spokenText": "前方走廊施工，已为您避开，路线略有绕行。",
+          "penaltyM": 80,
+          "blindAccessible": true,
+          "activeFrom": null,
+          "activeUntil": "2026-11-21T10:00:00Z",
+          "status": "active",
+          "source": "field_survey",
+          "reportedBy": null,
+          "note": null,
+          "createdAt": "2026-11-14T02:00:00Z",
+          "updatedAt": "2026-11-14T02:00:00Z",
+          "revision": 1
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": "1.0.0",
+      "hazardVersion": "2026-11-14T02:00:00.000Z/2",
+      "siteId": "school-building-01",
+      "mapVersion": "2026-11-08.2",
+      "generatedAt": "2026-11-14T02:00:00.000Z",
+      "updatedAt": "2026-11-14T02:00:00.000Z",
+      "generator": "pathai-hazard-editor/1.0.0",
+      "notes": "示例：一条 soft avoid + 一条硬禁行",
+      "hazards": [
+        {
+          "hazardId": "HZ-20261114-0001",
+          "siteId": "school-building-01",
+          "floorId": "1",
+          "targetType": "edge",
+          "edgeIds": ["F1-TE-0122"],
+          "type": "wet_floor",
+          "level": "avoid",
+          "appliesTo": ["blind"],
+          "reason": "保洁后地面湿滑",
+          "spokenText": "前方地面湿滑，已尽量避开。",
+          "penaltyM": 60,
+          "blindAccessible": true,
+          "activeFrom": "2026-11-14T02:00:00Z",
+          "activeUntil": "2026-11-14T06:00:00Z",
+          "status": "active",
+          "source": "admin",
+          "reportedBy": null,
+          "note": null,
+          "createdAt": "2026-11-14T02:00:00Z",
+          "updatedAt": "2026-11-14T02:00:00Z",
+          "revision": 1
+        },
+        {
+          "hazardId": "HZ-20261114-0002",
+          "siteId": "school-building-01",
+          "floorId": "2",
+          "targetType": "edge",
+          "edgeIds": ["F2-TE-0088", "F2-TE-0089"],
+          "type": "construction",
+          "level": "block",
+          "appliesTo": ["blind", "wheelchair", "normal"],
+          "reason": "消防管道维修，整段封闭",
+          "spokenText": "前方通道封闭，已为您重新规划路线。",
+          "blindAccessible": false,
+          "activeFrom": "2026-11-14T02:00:00Z",
+          "activeUntil": null,
+          "status": "active",
+          "source": "admin",
+          "reportedBy": null,
+          "note": null,
+          "createdAt": "2026-11-14T02:00:00Z",
+          "updatedAt": "2026-11-14T02:00:00Z",
+          "revision": 1
+        }
+      ]
+    }
+  ]
+}

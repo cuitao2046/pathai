@@ -50,9 +50,15 @@ from src.common.rounding import round_distance
 
 
 class RouteGraph:
-    """从 GeoJSON 构建带规则的导航图。"""
+    """从 GeoJSON 构建带规则的导航图。
 
-    def __init__(self, geo: dict):
+    hazards 为可选危险层规则（已按人群/时间过滤，由调用方准备）：
+    每项形如 {"hazardId", "level": block|avoid|notice, "penaltyM", "edgeIds"}。
+    block 在 edge_allowed 中硬禁行（所有回退层都不可绕过），
+    avoid 在边权上加 penaltyM，notice 不影响选路。
+    """
+
+    def __init__(self, geo: dict, hazards: list[dict] | None = None):
         self.geo = geo
         self.nodes = {}          # id -> node dict
         self.edges = []          # normalized edges
@@ -62,6 +68,11 @@ class RouteGraph:
         self.wall_floors = []    # 每根墙线所在楼层（int），穿墙判定须按楼层隔离
         self.rooms_with_doors = set()  # semantic roomId with >=1 affiliated door
         self._build()
+        # 危险层索引：edgeId -> [rule, ...]（调用方已按人群/时间过滤）
+        self.hazards_by_edge: dict[str, list[dict]] = {}
+        for hazard in hazards or ():
+            for eid in hazard.get("edgeIds") or ():
+                self.hazards_by_edge.setdefault(eid, []).append(hazard)
 
     # ------------------------------------------------------------------ #
     # 构建
@@ -221,7 +232,13 @@ class RouteGraph:
     # 规则辅助
     # ------------------------------------------------------------------ #
     def edge_allowed(self, e: dict, mode: str) -> bool:
-        """规则 2：模式约束 + 盲模式剔除楼梯跨层边。"""
+        """规则 2 + 危险层：模式约束、盲模式剔除楼梯跨层边、block 危险硬禁行。
+
+        危险规则已由调用方按用户模式与生效时间过滤；block 放在最前面，
+        使四层回退（最佳门/所有门/穿墙/跨层绕行）都无法绕过。
+        """
+        if any(h.get("level") == "block" for h in self.hazards_by_edge.get(e["id"], ())):
+            return False
         if mode == "blind":
             if e["blindAccessible"] is False:
                 return False
@@ -284,7 +301,7 @@ class RouteGraph:
                     return True
         return False
 
-    def _edge_weight(self, e: dict) -> float:
+    def _edge_weight(self, e: dict, mode: str | None = None) -> float:
         w = e["distance"]
         dt = self._edge_door_type(e)
         if dt:
@@ -295,7 +312,12 @@ class RouteGraph:
                 # E2：常开防火门与普通门平等对待，无惩罚（由 _door_penalty 统一判定）
                 # A2：未知门类型统一按 DOOR_DEFAULT_PENALTY，与前端 doorPenalty 默认一致
                 w += self._door_penalty(self._door_node_of_edge(e))
-        return w
+        # 危险层 avoid：同边多条 avoid 取最大惩罚（notice 不加权）
+        penalty = 0.0
+        for hazard in self.hazards_by_edge.get(e["id"], ()):
+            if hazard.get("level") == "avoid":
+                penalty = max(penalty, float(hazard.get("penaltyM") or 0.0))
+        return w + penalty
 
     def _mid_types(self, start_id, end_id):
         """规则 1：同层禁 facility 中转；跨层允许 facility 中转。"""
@@ -355,7 +377,7 @@ class RouteGraph:
                     edge_p = self._door_penalty(_door_node)
                     if edge_p > DOOR_PENALTY.get(best, DOOR_DEFAULT_PENALTY):
                         continue
-            w = self._edge_weight(e)
+            w = self._edge_weight(e, mode)
             adj[a].append((b, w, e["id"]))
             adj[b].append((a, w, e["id"]))
         return adj
