@@ -112,12 +112,8 @@ def estimate(
         raise ApiError(
             404, "MAP_NOT_PUBLISHED", f"地图版本未发布：{body.siteId}@{body.mapVersion}"
         )
-    if latest is not None and published.map_version != latest.map_version:
-        raise ApiError(
-            409,
-            "MAP_VERSION_CONFLICT",
-            f"地图版本不一致：客户端 {published.map_version}，最新 {latest.map_version}",
-        )
+    # Explicit retained versions remain valid; only "latest" follows publication.
+
 
     _check_sequence(db, user.subject_id, body.siteId, body.sequence)
 

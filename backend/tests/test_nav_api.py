@@ -106,6 +106,24 @@ def session(client, auth_headers) -> dict:
 
 
 class TestCreateSession:
+    def test_publishing_new_map_does_not_invalidate_pinned_session(self, client, auth_headers, app, maps_dir):
+        from pathai_backend.map_repository import MapRepository
+        first = _create(client, auth_headers).json()
+        site = maps_dir / 'school-building-01'
+        newer = json.loads((site / f'{REAL_MAP_VERSION}.json').read_text(encoding='utf-8'))
+        newer['mapVersion'] = '2099-01-01.1'
+        newer['publishedAt'] = '2099-01-01T00:00:00Z'
+        (site / '2099-01-01.1.json').write_text(json.dumps(newer), encoding='utf-8')
+        app.state.map_repository = MapRepository.load(maps_dir, 'https://api.test')
+        update = _update(client, auth_headers, first['sessionId'], 1, *SAFE_P)
+        assert update.status_code == 200, update.text
+        query = client.get(f"{CREATE_URL}/{first['sessionId']}", headers=auth_headers).json()
+        assert query['mapVersion'] == REAL_MAP_VERSION
+        # A client that deliberately retains its loaded snapshot may also start a new session.
+        second = _create(client, auth_headers, idem='retained-map')
+        assert second.status_code == 201, second.text
+        assert second.json()['mapVersion'] == REAL_MAP_VERSION
+
     def test_unauthenticated_401(self, client):
         resp = _create(client, {})
         assert resp.status_code == 401

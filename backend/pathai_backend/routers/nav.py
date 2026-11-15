@@ -105,12 +105,8 @@ def _resolve_published(
     published = latest if map_version == "latest" else repo.get(site_id, map_version)
     if published is None:
         raise ApiError(404, "MAP_NOT_PUBLISHED", f"地图版本未发布：{site_id}@{map_version}")
-    if latest is not None and published.map_version != latest.map_version:
-        raise ApiError(
-            409,
-            "MAP_VERSION_CONFLICT",
-            f"地图版本不一致：客户端 {published.map_version}，最新 {latest.map_version}",
-        )
+    # Explicit retained versions remain valid; only "latest" follows publication.
+
     return published
 
 
