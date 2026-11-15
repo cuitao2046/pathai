@@ -76,6 +76,8 @@ export interface NavSessionControllerOptions {
   onEnded?: (info: { reason: EndReason | null; byArrival: boolean }) => void;
   /** 概要窗口最长等待（毫秒），默认 30s；超时跳过概要直接进入引导。 */
   overviewMaxWaitMs?: number;
+  /** Maximum silence after a usable navigation response (default 10 seconds). */
+  responseSilenceMs?: number;
 }
 
 export class NavSessionController {
@@ -105,6 +107,61 @@ export class NavSessionController {
    * 在途创建（防并发重入：确认连点/异常重入会各发一次 API-06，产生双会话）。
    */
   private createInFlight: Promise<CreateSessionResponse> | null = null;
+  private silenceTimer: ReturnType<typeof setTimeout> | null = null;
+  private locallyPaused = false;
+  private foreground = true;
+  private lifecycle = 0;
+  private pausedAt = 0;
+
+  /** Page teardown: late results must never restore guidance. */
+  dispose(): void {
+    this.foreground = false;
+    ++this.lifecycle;
+    this.clearSilenceTimer();
+    this.clearOverviewTimer();
+    ++this.overviewToken;
+    this.pendingLocation = null;
+  }
+
+  private clearSilenceTimer(): void {
+    if (this.silenceTimer !== null) clearTimeout(this.silenceTimer);
+    this.silenceTimer = null;
+  }
+
+  private armSilenceTimer(): void {
+    this.clearSilenceTimer();
+    if (!this.foreground || this.locallyPaused || this.machine.isTerminal) return;
+    this.silenceTimer = setTimeout(() => {
+      this.silenceTimer = null;
+      this.pauseLocally();
+    }, this.opts.responseSilenceMs ?? 10_000);
+  }
+
+  private pauseLocally(): void {
+    if (this.locallyPaused || !this.foreground || this.machine.isTerminal) return;
+    this.locallyPaused = true;
+    this.pausedAt = Date.now();
+    this.clearSilenceTimer();
+    this.tracker.reset();
+    this.opts.speech.clearAll('nav:offline');
+    this.transition({ type: 'UPDATE_RESULT', status: 'recovering', event: 'relocalizing' });
+    this.opts.onInstruction?.(null);
+    this.opts.speech.enqueue('导航连接中断，导航已暂停，请停下并留意周围环境。', 'safety', null, 'nav:offline');
+  }
+
+  private async validateRecovery(lifecycle: number): Promise<boolean> {
+    const response = await this.opts.client.request<SessionQueryResponse>({ method: 'GET', path: `/api/v1/nav/sessions/${this.session!.sessionId}` });
+    const data = response.data;
+    if (!this.foreground || lifecycle !== this.lifecycle) return false;
+    if (!data || data.mapVersion !== this.opts.map.requireVersion()) return false;
+    this.sessionSeq = Math.max(this.sessionSeq, data.lastProcessedSequence ?? 0);
+    if (data.status === 'arrived' || data.status === 'ended') {
+      this.transition({ type: 'QUERY_STATUS', status: data.status });
+      this.opts.onEnded?.({ reason: data.endReason ?? null, byArrival: data.status === 'arrived' });
+      return false;
+    }
+    return data.status === 'active' || data.status === 'recovering';
+  }
 
   constructor(private readonly opts: NavSessionControllerOptions) {}
 
@@ -240,6 +297,7 @@ export class NavSessionController {
     const first = data.route.segments[0] ?? null;
     this.opts.onInstruction?.(first);
     this.announce(first);
+    this.armSilenceTimer();
     void this.opts.pipeline.startNavigating();
   }
 
@@ -275,6 +333,7 @@ export class NavSessionController {
         this.announce(data.route.segments[0] ?? null);
       }
       void this.opts.pipeline.startNavigating();
+      this.armSilenceTimer();
     };
 
     this.opts.speech.notifyWhenIdle(finish);
@@ -336,6 +395,9 @@ export class NavSessionController {
 
   /** 切后台（FE-05）：停采集；恢复流程交给 handleForeground。 */
   handleBackground(): void {
+    this.foreground = false;
+    ++this.lifecycle;
+    this.clearSilenceTimer();
     if (this.session === null) {
       return;
     }
@@ -347,6 +409,8 @@ export class NavSessionController {
    * 重启采集 → 重播有效指令。
    */
   async handleForeground(): Promise<void> {
+    this.foreground = true;
+    const lifecycle = this.lifecycle;
     if (this.session === null) {
       return;
     }
@@ -361,20 +425,21 @@ export class NavSessionController {
       }
       query = resp.data;
     } catch (err) {
+      if (!this.foreground || lifecycle !== this.lifecycle) return;
       if (err instanceof ApiClientError && err.code === 'SESSION_NOT_FOUND') {
         this.transition({ type: 'RESUME_FAILED' });
         this.opts.speech.enqueue('导航会话已失效，请重新发起导航。', 'safety', null, 'nav:foreground');
         this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
         return;
       }
-      // 网络/服务暂不可用：保持现状，恢复采集后继续（概要窗口内交给排队事件放行）
-      this.opts.speech.enqueue('网络恢复中，正在重新连接导航。', 'normal', null, 'nav:foreground');
+      this.pauseLocally();
       if (!this.overviewPending) {
         await this.opts.pipeline.startNavigating();
       }
       return;
     }
 
+    if (!this.foreground || lifecycle !== this.lifecycle) return;
     // 校验地图版本：不一致则结束当前引导
     if (query.mapVersion !== this.opts.map.requireVersion()) {
       this.transition({ type: 'RESUME_FAILED' });
@@ -384,6 +449,11 @@ export class NavSessionController {
     }
 
     const prevState = this.machine.state;
+    if (this.locallyPaused && (query.status === 'active' || query.status === 'recovering')) {
+      this.sessionSeq = Math.max(this.sessionSeq, query.lastProcessedSequence ?? 0);
+      await this.opts.pipeline.startNavigating();
+      return; // Query alone cannot restore executable guidance; require a fresh update.
+    }
     this.transition({ type: 'QUERY_STATUS', status: query.status });
     // 服务端可能已处理更多更新：序号对齐（只增不减）
     const serverSeq = query.lastProcessedSequence ?? 0;
@@ -410,6 +480,7 @@ export class NavSessionController {
     }
     // 重播：active 重播当前转向指令；recovering 重播安全提示（不播旧方向）
     if (this.machine.state === 'active') {
+      this.armSilenceTimer();
       const replay = this.tracker.replayText();
       if (replay !== null) {
         this.opts.speech.enqueue(replay, 'normal', null, 'nav:foreground-replay');
@@ -451,6 +522,7 @@ export class NavSessionController {
   private transition(input: Parameters<NavStateMachine['handle']>[0]): void {
     const prevState = this.machine.state;
     const effects = this.machine.handle(input);
+    if (this.machine.isTerminal) this.clearSilenceTimer();
     if (this.machine.state !== prevState) {
       this.opts.onStateChange(this.machine.state);
     }
@@ -470,7 +542,7 @@ export class NavSessionController {
   }
 
   private async sendUpdate(location: LocationUpdate): Promise<void> {
-    if (this.session === null || this.machine.isTerminal) {
+    if (this.session === null || this.machine.isTerminal || !this.foreground) {
       return;
     }
     if (this.overviewPending) {
@@ -484,24 +556,46 @@ export class NavSessionController {
       return;
     }
     this.updateInFlight = true;
-    const sequence = this.sessionSeq + 1;
-    const body: NavUpdateRequest = { sequence, location };
+    const lifecycle = this.lifecycle;
+    const recoveryAttempt = this.locallyPaused;
     try {
+      if (this.locallyPaused) {
+        const observed = Date.parse(location.observedAt);
+        if (!Number.isFinite(observed) || observed < this.pausedAt - 2000 || observed > Date.now() + 2000 || Date.now() - observed > 10_000) return;
+        if (!await this.validateRecovery(lifecycle)) return;
+      }
+      if (!this.foreground || lifecycle !== this.lifecycle) return;
+      const sequence = this.sessionSeq + 1;
+      const body: NavUpdateRequest = { sequence, location };
       const resp = await this.opts.client.request<NavUpdateResponse>({
         method: 'POST',
         path: `/api/v1/nav/sessions/${this.session.sessionId}/updates`,
         body,
         timeoutMs: NAV_UPDATE_TIMEOUT_MS,
       });
+      if (!this.foreground || lifecycle !== this.lifecycle || this.machine.isTerminal) return;
+      if (!resp.data || !['active', 'recovering', 'arrived', 'ended'].includes(resp.data.status)) {
+        this.pauseLocally();
+        return;
+      }
       this.sessionSeq = sequence;
+      const trusted = location.quality === 'reliable' || location.quality === 'degraded';
+      if (this.locallyPaused && (!recoveryAttempt || Date.now() - Date.parse(location.observedAt) > 10_000)) return;
+      if (this.locallyPaused && (!trusted || resp.data?.status !== 'active')) {
+        if (resp.data?.status === 'arrived' || resp.data?.status === 'ended') this.applyUpdateResponse(resp.data);
+        return;
+      }
+      this.locallyPaused = false;
       this.applyUpdateResponse(resp.data);
+      this.armSilenceTimer();
     } catch (err) {
+      if (!this.foreground || lifecycle !== this.lifecycle) return;
       if (err instanceof ApiClientError && err.code === 'STALE_NAV_UPDATE') {
         await this.resyncSequence();
       } else if (err instanceof ApiClientError && err.code === 'SESSION_NOT_ACTIVE') {
         await this.confirmTerminal();
       }
-      // 其余（网络/超时）：丢弃本拍，等下一个估计
+      else if (lifecycle === this.lifecycle) this.pauseLocally();
     } finally {
       this.updateInFlight = false;
     }

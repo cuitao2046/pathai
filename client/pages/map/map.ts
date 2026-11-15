@@ -428,6 +428,7 @@ Page({
   },
 
   onUnload(): void {
+    this.controller?.dispose();
     ++this.voiceEpoch;
     this.parseInFlight = false;
     this.setData({ voiceParsing: false });
@@ -2255,6 +2256,7 @@ Page({
     this.previewAutoStart = false;
     this.pipeline?.stop();
     this.pipeline = null;
+    this.controller?.dispose();
     this.controller = null;
     this.navSource = null;
     this.setData({ destination: null, navConfirmReady: false }, () => this.requestDraw());
@@ -2274,6 +2276,7 @@ Page({
     this.previewAutoStart = false;
     this.pipeline?.stop();
     this.pipeline = null;
+    this.controller?.dispose();
     this.controller = null;
     this.navSource = null;
     this.setData(
@@ -2712,6 +2715,7 @@ Page({
     this.previewAutoStart = false;
     this.pipeline?.stop();
     this.pipeline = null;
+    this.controller?.dispose();
     this.controller = null;
     this.setData({
       navActive: false,
