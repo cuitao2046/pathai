@@ -1,7 +1,7 @@
 /**
  * 定位管线：BeaconSource → ScanWindowAggregator → API-05 → 节流回调。
- * - 节流：待命 8s / 导航 2.5s（NAV_UPDATE_TIMEOUT_MS 快速失败）；
- * - 窗口内可解析信标不足 3 个：待命静默跳过（等样本积累）；导航档
+ * - 节流：待命 8s / 路线预览 2.5s / 导航 1s（NAV_UPDATE_TIMEOUT_MS 快速失败）；
+ * - 窗口内可解析信标不足 3 个：待命/预览静默跳过（等样本积累）；导航档
  *   视为信号丢失，走 onUnusable（上层据此上报服务端进入 recovering）；
  * - 任一 quality（含 unreliable/lost，position 可能为空）→ onEstimate，
  *   由上层决定能否驱动导航（导航中不可信位置只报 quality，不报坐标）；
@@ -23,10 +23,17 @@ import type {
   PositionEstimateResponse,
 } from '../../typings/api';
 
-export type PipelineMode = 'standby' | 'navigating';
+export type PipelineMode = 'standby' | 'preview' | 'navigating';
 
 const STANDBY_INTERVAL_MS = 8000;
-const NAVIGATING_INTERVAL_MS = 2500;
+/**
+ * 导航档 1s：步行 1.5m/s 对应 1.5m/拍。后端转弯提前量 8~10m、每拍最多推进一条，
+ * 2.5s（3.75m/拍）时相邻转弯间隔仅 5.7m 的场景会把第二个转弯拖到拐点之后才播；
+ * 1s 可让该类转弯提前约 4m 播到（仿真：3.75m 步长 -0.5m → 1.5m 步长 +4.0m）。
+ */
+const NAVIGATING_INTERVAL_MS = 1000;
+/** 路线预览 2.5s：只需尽快拿到规划起点，不随导航档提高频率。 */
+const PREVIEW_INTERVAL_MS = 2500;
 
 /** 定位管线消费的地图服务最小切片（便于测试注入）。 */
 export interface LocationMapProvider {
@@ -39,7 +46,7 @@ export interface LocationPipelineOptions {
   client: ApiClient;
   map: LocationMapProvider;
   source: BeaconSourceLike;
-  sequence: { next(): number };
+  sequence: { next(): number; advanceTo?(lastSequence: number): void };
   /** 已完成的一拍估计（任意 quality；unreliable/lost 时 position 可能为空）。 */
   onEstimate: (estimate: PositionEstimateResponse, meta: { visibleBeaconCount: number }) => void;
   /** 本拍没有可用估计（请求失败/响应异常；导航档信标不足也走这里）。 */
@@ -51,6 +58,13 @@ export interface LocationPipelineOptions {
    * useFingerprintDb=true；关闭时请求体与旧版逐字节一致。
    */
   useFingerprintDb?: () => boolean;
+  /**
+   * 查周边动作：仅在返回 true 时给请求体加 includeSurroundings=true，
+   * 服务端在同一次响应内附上周边要素清单；默认不发送。
+   */
+  includeSurroundings?: () => boolean;
+  /** 当前朝向（度）；提供时随 imu 上报，服务端据此计算时钟方位。 */
+  headingDeg?: () => number | null;
 }
 
 export class LocationPipeline {
@@ -124,13 +138,17 @@ export class LocationPipeline {
       return;
     }
     const interval =
-      this.mode === 'navigating' ? NAVIGATING_INTERVAL_MS : STANDBY_INTERVAL_MS;
+      this.mode === 'navigating'
+        ? NAVIGATING_INTERVAL_MS
+        : this.mode === 'preview'
+          ? PREVIEW_INTERVAL_MS
+          : STANDBY_INTERVAL_MS;
     this.timer = setTimeout(() => {
       void this.tick();
     }, interval);
   }
 
-  private async collectAndReport(): Promise<void> {
+  private async collectAndReport(retryOnStale = true): Promise<void> {
     const snapshot = this.aggregator.snapshot(
       this.opts.map.beaconRegistry,
       nowMs(),
@@ -160,6 +178,13 @@ export class LocationPipeline {
     if (this.opts.useFingerprintDb?.() === true) {
       body.useFingerprintDb = true;
     }
+    if (this.opts.includeSurroundings?.() === true) {
+      body.includeSurroundings = true;
+    }
+    const heading = this.opts.headingDeg?.();
+    if (heading !== null && heading !== undefined && Number.isFinite(heading)) {
+      body.imu = { samples: [], headingDeg: ((heading % 360) + 360) % 360 };
+    }
     let estimate: PositionEstimateResponse;
     try {
       const resp = await this.opts.client.request<PositionEstimateResponse>({
@@ -179,11 +204,24 @@ export class LocationPipeline {
       }
       estimate = data;
     } catch (err) {
-      this.opts.onUnusable(
+      const failure =
         err instanceof ApiClientError
           ? err
-          : new ApiClientError({ code: 'HTTP_ERROR', message: '定位请求失败' }),
-      );
+          : new ApiClientError({ code: 'HTTP_ERROR', message: '定位请求失败' });
+      // 序号水位被推进（其他客户端/历史脏数据）：追平服务端已处理水位后立刻重试一拍。
+      // 不重试就得等下一个拍点（待命 8s / 预览 2.5s），用户会看到「定位不可用」。
+      const lastSequence = failure.details.lastSequence;
+      if (
+        retryOnStale &&
+        failure.code === 'STALE_LOCATION_BATCH' &&
+        typeof lastSequence === 'number' &&
+        this.opts.sequence.advanceTo
+      ) {
+        this.opts.sequence.advanceTo(lastSequence);
+        await this.collectAndReport(false);
+        return;
+      }
+      this.opts.onUnusable(failure);
       return;
     }
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;

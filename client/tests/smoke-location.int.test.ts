@@ -30,6 +30,7 @@ describe('定位集成冒烟（PATHAI_SMOKE=1 且本地后端运行时执行）'
       const map = new MapService({
         client: stack.client,
         siteId: 'school-building-01',
+        baseUrl: API_URL,
         rewriteDataUrlToLocalApi: true,
       });
       await map.ensureLoaded();
