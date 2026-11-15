@@ -8,6 +8,7 @@
  * TTS 用记录型引擎：speak 同步登记文本、默认立即完成（hold 模式挂起）。
  */
 import { createHttpStack } from '../core/http/api-client';
+import type { NavCreateJournal } from '../core/nav/create-journal';
 import { ApiClientError } from '../core/http/errors';
 import {
   NavSessionController,
@@ -285,7 +286,7 @@ describe('NavSessionController 会话编排', () => {
   const updateRequests = () =>
     wxStub.__requestLog.filter((r) => r.url.endsWith('/sessions/sess-1/updates'));
 
-  function makeHarness(options: { overview?: string; overviewMaxWaitMs?: number } = {}): Harness {
+  function makeHarness(options: { overview?: string; overviewMaxWaitMs?: number; journal?: NavCreateJournal } = {}): Harness {
     const clips = new RecordClipPlayer();
     const speech = new SpeechQueue({
       engine: tts,
@@ -301,6 +302,7 @@ describe('NavSessionController 会话编排', () => {
       speech,
       pipeline,
       overviewMaxWaitMs: options.overviewMaxWaitMs,
+      createJournal: options.journal,
       onStateChange: (state) => states.push(state),
       onRoute: (route) => {
         routes.push(route);
@@ -361,6 +363,41 @@ describe('NavSessionController 会话编排', () => {
   // ------------------------------------------------------------------
   // API-06 创建
   // ------------------------------------------------------------------
+
+  it('页面重建后先用原键确认并结束未知会话，再按新目的地创建新会话', async () => {
+    let saved: ReturnType<NavCreateJournal['load']> = null;
+    const journal: NavCreateJournal = { load: () => saved, save: value => { saved = value; }, clear: () => { saved = null; } };
+    const first = makeHarness({ journal });
+    const normal = wxStub.__requestResponder!;
+    wxStub.__requestResponder = options => options.fail({ errMsg: 'request:fail timeout' });
+    await expect(first.controller.createSession(CREATE_RESPONSE.destination, ORIGIN)).rejects.toThrow();
+    const before = createRequests()[0];
+    const restored = makeHarness({ journal });
+    wxStub.__requestResponder = normal;
+    await restored.controller.createSession({ placeId: 'p2', name: '新目的地', floorId: '1' }, { ...ORIGIN, x: 9 });
+    const requests = createRequests();
+    expect(requests[1].header?.['Idempotency-Key']).toBe(before.header?.['Idempotency-Key']);
+    expect(requests[1].data).toEqual(before.data);
+    expect(requests[2].header?.['Idempotency-Key']).not.toBe(before.header?.['Idempotency-Key']);
+    expect(requests[2].data).toMatchObject({ destinationId: 'p2', origin: { x: 9 } });
+    const urls = wxStub.__requestLog.map(request => request.url);
+    expect(urls[2]).toMatch(/\/end$/);
+    expect(saved).toBeNull();
+  });
+
+  it('未知会话未确认结束时不得创建新会话或丢弃恢复记录', async () => {
+    let saved: ReturnType<NavCreateJournal['load']> = { key: 'original-key', body: {
+      siteId: 's1', mapVersion: 'v1', origin: ORIGIN, destinationId: 'p1', userMode: 'blind', locale: 'zh-CN',
+    } };
+    const journal: NavCreateJournal = { load: () => saved, save: value => { saved = value; }, clear: () => { saved = null; } };
+    const h = makeHarness({ journal });
+    const normal = wxStub.__requestResponder!;
+    wxStub.__requestResponder = options => options.url.endsWith('/end') ? options.fail({ errMsg: 'request:fail timeout' }) : normal(options);
+    await expect(h.controller.createSession(CREATE_RESPONSE.destination, ORIGIN)).rejects.toThrow();
+    expect(createRequests()).toHaveLength(1);
+    expect(saved?.key).toBe('original-key');
+    expect(h.controller.sessionId).toBeNull();
+  });
 
   it('创建成功：幂等键请求体正确，播首条指令，onRoute + 重启导航采集，状态 active', async () => {
     const h = makeHarness();

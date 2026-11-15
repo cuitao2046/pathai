@@ -8,7 +8,8 @@ import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
 import { appContext } from '../../services/app-context';
-import { ensureServiceEndpoint, lastEndpointFailure } from '../../services/service-endpoint';
+import { ensureServiceEndpoint, lastEndpointFailure, currentServiceBaseUrl } from '../../services/service-endpoint';
+import { createNavJournal } from '../../core/nav/create-journal';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
 import { describeError } from '../../core/http/error-messages';
@@ -2448,6 +2449,7 @@ Page({
     };
     this.turnHaptics = new TurnHaptics({ vibrateShort, vibrateLong });
     this.controller = new NavSessionController({
+      createJournal: createNavJournal(currentServiceBaseUrl(), appContext.map.siteId),
       client: appContext.http.client,
       map: appContext.map,
       speech: this.speech,
