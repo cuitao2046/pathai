@@ -272,6 +272,7 @@ interface Harness {
 }
 
 describe('NavSessionController 会话编排', () => {
+  const controllers: NavSessionController[] = [];
   let tts: RecordTts;
   let pipeline: FakePipeline;
   let states: NavState[];
@@ -313,6 +314,7 @@ describe('NavSessionController 会话编排', () => {
       onInstruction: (instruction) => instructions.push(instruction),
       onEnded: (info) => ended.push(info),
     });
+    controllers.push(controller);
     return { controller, speech, tts, clips, pipeline, states, routes, instructions, ended };
   }
 
@@ -356,6 +358,7 @@ describe('NavSessionController 会话编排', () => {
 
   afterEach(async () => {
     // 收尾：释放挂起播报，避免语音队列的看门狗定时器在测试结束后触发
+    for (const controller of controllers.splice(0)) controller.dispose();
     tts.settleAll();
     await flush();
   });
@@ -397,6 +400,80 @@ describe('NavSessionController 会话编排', () => {
     expect(createRequests()).toHaveLength(1);
     expect(saved?.key).toBe('original-key');
     expect(h.controller.sessionId).toBeNull();
+  });
+
+  it('连接长时间无有效响应时清除旧指令并暂停，销毁后释放计时器', async () => {
+    jest.useFakeTimers();
+    const h = makeHarness();
+    try {
+      await h.controller.createSession(CREATE_RESPONSE.destination, ORIGIN, 'blind', { overviewPlayed: true });
+      await flush();
+      jest.advanceTimersByTime(10_000);
+      await flush();
+      expect(h.controller.state).toBe('recovering');
+      expect(h.instructions[h.instructions.length - 1]).toBeNull();
+      expect(h.controller.currentInstructionSequence).toBeNull();
+      expect(h.tts.spoken.some(text => text.includes('导航连接中断'))).toBe(true);
+    } finally {
+      h.controller.dispose();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('断网后查询成功仍保持暂停，只有新鲜可信位置更新才能恢复', async () => {
+    const h = makeHarness();
+    await h.controller.createSession(CREATE_RESPONSE.destination, ORIGIN, 'blind', { overviewPlayed: true });
+    const healthy = wxStub.__requestResponder!;
+    wxStub.__requestResponder = options => options.fail({ errMsg: 'request:fail timeout' });
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, observedAt: new Date().toISOString() });
+    await flush();
+    expect(h.controller.state).toBe('recovering');
+    wxStub.__requestResponder = healthy;
+    await h.controller.handleForeground();
+    expect(h.controller.state).toBe('recovering');
+    const count = updateRequests().length;
+    h.controller.handleEstimate(ESTIMATE_RELIABLE); // Historical cached position cannot restore guidance.
+    await flush();
+    expect(updateRequests()).toHaveLength(count);
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, observedAt: new Date().toISOString() });
+    await flush();
+    expect(h.controller.state).toBe('active');
+  });
+
+  it('进入后台后迟到的导航响应不能恢复状态或播报', async () => {
+    const h = makeHarness();
+    await h.controller.createSession(CREATE_RESPONSE.destination, ORIGIN, 'blind', { overviewPlayed: true });
+    let pending!: WxRequestOptionsStub;
+    wxStub.__requestResponder = options => { pending = options; };
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+    h.controller.handleBackground();
+    const count = h.instructions.length;
+    pending.success({ statusCode: 200, data: updateResponse({ processedSequence: 1, instruction: INSTR_1 }) });
+    await flush();
+    expect(h.instructions).toHaveLength(count);
+  });
+
+  it('看门狗暂停后迟到的旧请求成功不能恢复引导', async () => {
+    jest.useFakeTimers();
+    const h = makeHarness();
+    try {
+      await h.controller.createSession(CREATE_RESPONSE.destination, ORIGIN, 'blind', { overviewPlayed: true });
+      let pending!: WxRequestOptionsStub;
+      wxStub.__requestResponder = options => { pending = options; };
+      h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, observedAt: new Date().toISOString() });
+      await flush();
+      jest.advanceTimersByTime(10_000);
+      pending.success({ statusCode: 200, data: updateResponse({ processedSequence: 1, instruction: INSTR_1 }) });
+      await flush();
+      expect(h.controller.state).toBe('recovering');
+      expect(h.instructions[h.instructions.length - 1]).toBeNull();
+    } finally {
+      h.controller.dispose();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 
   it('创建成功：幂等键请求体正确，播首条指令，onRoute + 重启导航采集，状态 active', async () => {
@@ -1129,7 +1206,7 @@ describe('NavSessionController 会话编排', () => {
 
     await h.controller.handleForeground();
 
-    expect(h.controller.state).toBe('active'); // 保持现状
+    expect(h.controller.state).toBe('recovering'); // 本地暂停，不继续旧方向
     expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'startNavigating']);
     expect(h.ended).toHaveLength(0);
   });
