@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import case
@@ -22,6 +23,7 @@ from pathai_backend.errors import ApiError
 from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.models import LocationSequence
+from pathai_backend.observation_time import is_fresh
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.common import GeoPosition
 from pathai_backend.schemas.location import (
@@ -114,6 +116,9 @@ def estimate(
     repo: MapRepository = Depends(get_map_repository),
     settings: Settings = Depends(auth.get_settings),
 ) -> PositionEstimateResponse:
+    now = datetime.now(timezone.utc)
+    if not is_fresh(body.collectedAt, now) or any(not is_fresh(beacon.observedAt, now) for beacon in body.beacons):
+        raise ApiError(422, 'LOCATION_UNRELIABLE', '定位观测已过期或设备时间不正确，请重新采集', details={'reason': 'observation_time_invalid'})
     if not repo.is_known_site(body.siteId):
         raise ApiError(404, "SITE_NOT_FOUND", f"场所不存在：{body.siteId}")
     latest = repo.latest(body.siteId)
