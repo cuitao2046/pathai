@@ -961,7 +961,6 @@ Page({
       const resp = await appContext.http.client.request<FingerprintManifestResponse>({
         method: 'GET',
         path: '/api/v1/fingerprint-db/manifest',
-        auth: false,
         timeoutMs: 10000,
       });
       return resp.data;
@@ -1032,8 +1031,7 @@ Page({
       const resp = await appContext.http.client.request<FingerprintIngestResponse>({
         method: 'POST',
         path: '/api/v1/fingerprint-db/ingest',
-        // 入库不做鉴权（现场私网直连后端），但仍受服务端私网限制
-        auth: false,
+        // 私网阶段不做鉴权（现场直连后端），仍受服务端私网限制
         timeoutMs: 30000,
         body: {
           fileName: `ble_fingerprint_${Date.now()}.json`,
@@ -1085,7 +1083,6 @@ Page({
       const resp = await appContext.http.client.request<FingerprintActiveResponse>({
         method: 'GET',
         path: '/api/v1/fingerprint-db/active',
-        auth: false,
         timeoutMs: 5000,
       });
       const active = resp.data?.active ?? null;
@@ -1113,7 +1110,6 @@ Page({
       appContext.http.client.request<FingerprintVersionsResponse>({
         method: 'GET',
         path,
-        auth: false,
         timeoutMs,
       });
     try {
@@ -1185,7 +1181,6 @@ Page({
       const resp = await appContext.http.client.request<FingerprintIngestResponse>({
         method: 'POST',
         path: '/api/v1/fingerprint-db/rollback',
-        auth: false,
         timeoutMs: 15000,
         body: { version },
       });

@@ -130,7 +130,7 @@ function installServer(options: ServerOptions = {}): { ranges: string[] } {
 
 function newService(): MapService {
   const { client } = createHttpStack(BASE);
-  return new MapService({ client, siteId: SITE, rewriteDataUrlToLocalApi: true });
+  return new MapService({ client, siteId: SITE, baseUrl: BASE, rewriteDataUrlToLocalApi: true });
 }
 
 function sleep(ms: number): Promise<void> {

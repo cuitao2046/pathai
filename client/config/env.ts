@@ -62,10 +62,3 @@ export const LOCAL_VOICE_DIR = '/assets/voice';
  * sha256 摘要校验不因此关闭。
  */
 export const DEBUG_REWRITE_DATA_URL = true;
-
-/**
- * 本地联调假登录开关：wx.login 的 code 加 `fake-` 前缀后直发后端，
- * 配合后端 PATHAI_ENV=local + PATHAI_WECHAT_FAKE=1（真实 code2session）。
- * 真机部署/上线前必须关闭。
- */
-export const WECHAT_FAKE_LOGIN = true;

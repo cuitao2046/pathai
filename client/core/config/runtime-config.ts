@@ -80,7 +80,6 @@ export async function refreshRuntimeParams(
     const resp = await client.request<LocationParamsResponse>({
       method: 'GET',
       path: '/api/v1/config/location-params',
-      auth: false,
     });
     const data = resp.data;
     if (data === null || typeof data.rssiAt1mDbm !== 'number') {

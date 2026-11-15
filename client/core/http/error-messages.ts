@@ -13,6 +13,7 @@ const MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   // 网络
   NETWORK_ERROR: '网络连接不可用，请检查网络',
   REQUEST_TIMEOUT: '请求超时，请重试',
+  ENDPOINT_UNRESOLVED: '未连接服务：请确认后端已启动，且手机与电脑在同一网络后重试',
   // 地图
   SITE_NOT_FOUND: '场所数据不可用，请联系管理员',
   MAP_NOT_PUBLISHED: '地图数据不可用，请联系管理员',

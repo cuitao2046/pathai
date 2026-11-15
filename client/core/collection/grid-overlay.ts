@@ -227,7 +227,6 @@ export async function fetchGridOverlay(
     path: `/api/v1/config/fingerprint-grid/overlay?baseGridVersion=${encodeURIComponent(
       baseGridVersion,
     )}`,
-    auth: false,
     headers,
   });
   if (resp.statusCode === 304) {

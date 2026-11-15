@@ -5,7 +5,7 @@
  * - url 内嵌 RFC1123 date，讯飞握手时校验与服务端偏差 ±300s，
  *   故缓存须短于 expiresIn（240s）；
  * - appId 用于讯飞请求帧 header.app_id（非机密，随签发响应下发）；
- * - 经 ApiClient 请求，自带 Bearer 注入与 401 重登后重放一次。
+ * - 经 ApiClient 请求；私网阶段免鉴权，不带 Authorization。
  */
 import type { ApiClient } from '../core/http/api-client';
 

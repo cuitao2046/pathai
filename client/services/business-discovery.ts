@@ -1,7 +1,10 @@
 import { API_BASE_URL } from '../config/env';
 import { BUSINESS_SERVICE, parseBusinessOffer } from '../core/discovery/business-protocol';
 import { P0_DISCOVERY_PROTOCOL } from '../core/discovery/p0-protocol';
+import { createLogger } from '../utils/logger';
 import { checkP0Candidate } from './p0-candidate';
+
+const log = createLogger('discovery');
 
 const RANDOM_TIMEOUT_MS = 1500;
 const OFFER_TIMEOUT_MS = 3000;
@@ -35,7 +38,14 @@ export async function discoverBusinessCandidate(): Promise<string | null> {
   if (!requestId) return null;
   return new Promise((resolve) => {
     let socket: WechatMiniprogram.UDPSocket;
-    try { socket = wx.createUDPSocket(); } catch { resolve(null); return; }
+    try {
+      socket = wx.createUDPSocket();
+    } catch (err) {
+      // 模拟器内常见：UDPSocket(socketId = 1) is already created（UDP 能力/单例限制）
+      log.warn('UDP 发现不可用：createUDPSocket 失败', err);
+      resolve(null);
+      return;
+    }
     let finished = false;
     let sent = false;
     let checking = false;
@@ -62,7 +72,12 @@ export async function discoverBusinessCandidate(): Promise<string | null> {
         }, () => { checking = false; });
       } catch { return; }
     });
-    socket.onError(() => { if (!checking) finish(null); });
+    socket.onError(() => {
+      if (!checking) {
+        log.warn('UDP 发现异步错误：广播不可用或被宿主网络拦截');
+        finish(null);
+      }
+    });
     socket.onListening(() => {
       if (finished || sent) return;
       sent = true;
@@ -72,7 +87,10 @@ export async function discoverBusinessCandidate(): Promise<string | null> {
             serviceName: BUSINESS_SERVICE, requestId }) });
       } catch { finish(null); }
     });
-    timer = setTimeout(() => finish(null), OFFER_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      log.warn(`UDP 发现超时：${DISCOVERY_PORT} 端口在 ${OFFER_TIMEOUT_MS}ms 内未收到 BUSINESS_OFFER`);
+      finish(null);
+    }, OFFER_TIMEOUT_MS);
     try { socket.bind(); } catch { finish(null); }
   });
 }

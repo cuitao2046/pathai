@@ -1,5 +1,5 @@
 import { isP0CandidateUrl, resolveBusinessCandidate, resolveP0Candidate } from '../core/discovery/p0-candidate';
-import { checkP0Candidate, getP0Candidate, saveP0Candidate } from '../services/p0-candidate';
+import { checkEndpointHealth, checkP0Candidate, getP0Candidate, saveP0Candidate } from '../services/p0-candidate';
 
 describe('P0 候选缓存与并发预检', () => {
   const storage = new Map<string, string>();
@@ -15,9 +15,9 @@ describe('P0 候选缓存与并发预检', () => {
     };
   });
 
-  test('仅首次从 hardcode 地址缓存候选，不覆盖已有私网地址', () => {
-    expect(getP0Candidate()).toBe('http://192.168.1.28:8000');
-    expect(storage.get('pathai:discovery:p0-candidate-url')).toBe('http://192.168.1.28:8000');
+  test('无缓存就是无缓存：不再写入编译期地址，也不覆盖已有私网地址', () => {
+    expect(getP0Candidate()).toBeNull();
+    expect(storage.get('pathai:discovery:p0-candidate-url')).toBeUndefined();
     storage.set('pathai:discovery:p0-candidate-url', 'http://10.1.2.3:8000');
     expect(getP0Candidate()).toBe('http://10.1.2.3:8000');
   });
@@ -39,16 +39,23 @@ describe('P0 候选缓存与并发预检', () => {
     expect(await pending).toBe(true);
   });
 
+  test('通用探活可检查模拟器回环地址（不套用私网候选白名单）', async () => {
+    const pending = checkEndpointHealth('http://127.0.0.1:8000');
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:8000/healthz' }));
+    request.mock.calls[0][0].success({ statusCode: 200, data: { status: 'ok' } });
+    expect(await pending).toBe(true);
+  });
+
   test('仅有效业务端口地址可作为未认证候选缓存', () => {
     expect(saveP0Candidate('http://192.168.1.44:39002')).toBe(false);
     expect(saveP0Candidate('http://192.168.1.44:8000')).toBe(true);
     expect(getP0Candidate()).toBe('http://192.168.1.44:8000');
   });
 
-  test('损坏的候选缓存不发请求，仅重新写入 hardcode 初始候选', () => {
+  test('损坏的候选缓存视为无缓存：不发请求，也不回写编译期地址', () => {
     storage.set('pathai:discovery:p0-candidate-url', 'http://evil.example:8000');
-    expect(getP0Candidate()).toBe('http://192.168.1.28:8000');
-    expect(storage.get('pathai:discovery:p0-candidate-url')).toBe('http://192.168.1.28:8000');
+    expect(getP0Candidate()).toBeNull();
+    expect(storage.get('pathai:discovery:p0-candidate-url')).toBe('http://evil.example:8000');
     expect(request).not.toHaveBeenCalled();
   });
 

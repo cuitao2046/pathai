@@ -1,20 +1,14 @@
 /**
- * API 客户端：Bearer 注入、401 作废重登+同 body 重放一次、
- * 错误信封→ApiClientError、requestId 透出。
+ * API 客户端：错误信封→ApiClientError、requestId 透出。
  * 客户端按 code 分支不按 message（docs/24 §7.2）。
+ *
+ * 2026-11-11 决策：私网阶段小程序接口不鉴权，不再注入 Authorization，
+ * 也不做 401 重登重放；公网阶段恢复鉴权时在此统一补回。
  */
 import { REQUEST_TIMEOUT_MS } from '../../config/env';
-import { createLogger } from '../../utils/logger';
-import {
-  AUTH_RETRYABLE_CODES,
-  extractErrorCode,
-  parseErrorEnvelope,
-} from './errors';
+import { parseErrorEnvelope } from './errors';
 import { getHeader, request as transportRequest, type TransportResponse } from './transport';
 import { resolveBaseUrl, type BaseUrlProvider } from './base-url';
-import { WechatTokenManager, type TokenManager } from './token-manager';
-
-const log = createLogger('api');
 
 export interface ApiResponse<T> {
   statusCode: number;
@@ -34,10 +28,8 @@ export interface ApiRequestOptions<B = unknown> {
   /** 完整 URL 覆盖（如服务端 dataUrl）。 */
   url?: string;
   body?: B;
-  /** 默认 true；登录端点等匿名请求传 false。 */
-  auth?: boolean;
   timeoutMs?: number;
-  /** API-06 幂等键；与冻结的 body 一起重试复用（C7）。 */
+  /** API-06 幂等键。 */
   idempotencyKey?: string;
   /** 附加请求头（如 If-None-Match）。 */
   headers?: Record<string, string>;
@@ -48,50 +40,27 @@ export interface ApiRequestOptions<B = unknown> {
 
 export interface HttpStack {
   client: ApiClient;
-  tokens: TokenManager;
 }
 
 export function createHttpStack(baseUrl: BaseUrlProvider): HttpStack {
-  const tokens = new WechatTokenManager(baseUrl);
-  return { tokens, client: new ApiClient(baseUrl, tokens) };
+  return { client: new ApiClient(baseUrl) };
 }
 
 interface SendResult {
   resp: TransportResponse;
   requestId: string | null;
   etag: string | null;
-  errorCode: string | null;
 }
 
 export class ApiClient {
-  constructor(
-    private readonly baseUrl: BaseUrlProvider,
-    private readonly tokens: TokenManager,
-  ) {}
+  constructor(private readonly baseUrl: BaseUrlProvider) {}
 
   async request<T>(opts: ApiRequestOptions): Promise<ApiResponse<T>> {
-    const useAuth = opts.auth !== false;
-    const first = await this.send(opts, useAuth);
-
-    const shouldReplay =
-      first.resp.statusCode === 401 &&
-      useAuth &&
-      // 二进制下载（地图分片）无法解析错误信封 → errorCode 为 null，同样重登重放一次
-      (first.errorCode === null || AUTH_RETRYABLE_CODES.has(first.errorCode));
-    if (shouldReplay) {
-      log.warn('令牌失效，重登后重放一次', opts.path);
-      await this.tokens.forceRefresh();
-      const second = await this.send(opts, useAuth);
-      return this.finish<T>(second);
-    }
-    return this.finish<T>(first);
+    return this.finish<T>(await this.send(opts));
   }
 
-  private async send(opts: ApiRequestOptions, auth: boolean): Promise<SendResult> {
+  private async send(opts: ApiRequestOptions): Promise<SendResult> {
     const header: Record<string, string> = { 'content-type': 'application/json' };
-    if (auth) {
-      header.Authorization = `Bearer ${await this.tokens.getAccessToken()}`;
-    }
     if (opts.idempotencyKey !== undefined) {
       header['Idempotency-Key'] = opts.idempotencyKey;
     }
@@ -112,7 +81,6 @@ export class ApiClient {
       resp,
       requestId: getHeader(resp.header, 'X-Request-Id'),
       etag: getHeader(resp.header, 'ETag'),
-      errorCode: resp.statusCode >= 400 ? extractErrorCode(resp.data) : null,
     };
   }
 

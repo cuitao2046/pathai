@@ -40,7 +40,7 @@ export function getHeader(header: Record<string, string>, name: string): string 
 export function request<B, T = unknown>(opts: TransportOptions<B>): Promise<TransportResponse<T>> {
   return new Promise((resolve, reject) => {
     // 现场排障依赖这一行：完整 URL 能直接确认「发没发出去、发到哪、耗时多久」。
-    // 不记录 header（含 Bearer），避免令牌进日志。
+    // 不记录 header，避免敏感信息进日志。
     const startedAt = Date.now();
     const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
     wx.request({
