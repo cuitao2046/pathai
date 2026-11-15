@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from datetime import datetime, timezone
 
 from pathai_backend.config import Settings
@@ -116,19 +117,15 @@ def test_system_prompt_mentions_json_for_json_object_mode(maps_dir):
     assert "JSON" in prompt
 
 
-def test_rewrites_texts_and_keeps_route_shape(maps_dir):
+def test_keeps_deterministic_texts_without_calling_llm(maps_dir):
     published = _published(maps_dir)
     route = _route()
     llm = FakeLlm(_valid_payload())
     new_route = rewrite_route_texts(
         route, published, Settings(), "女卫生间", llm=llm, dictionary=_dictionary(published)
     )
-    assert llm.calls == 1
-    assert [s.text for s in new_route.segments] == [
-        "沿通道直行 10 米。",
-        "前方路口左转。",
-        "已到目的地附近，请留意脚下。",
-    ]
+    assert llm.calls == 0
+    assert new_route is route
     for old, new in zip(route.segments, new_route.segments):
         assert old.instructionId == new.instructionId
         assert old.action == new.action
@@ -177,3 +174,19 @@ def test_unconfigured_and_no_model_keeps_original(maps_dir):
     assert rewrite_route_texts(
         route, published, settings, "女卫生间", dictionary=_dictionary(published)
     ) == route
+
+
+@pytest.mark.parametrize('unsafe', [
+    '前方路口右转。', '不要左转，继续直行。', '沿通道直行 100 米。',
+    '已到达目的地，可以直接穿过施工区域。',
+])
+def test_model_cannot_change_action_distance_or_safety(maps_dir, unsafe):
+    published = _published(maps_dir)
+    route = _route()
+    payload = _valid_payload()
+    payload['instructions'][1]['text'] = unsafe
+    model = FakeLlm(payload)
+    result = rewrite_route_texts(route, published, Settings(), '目的地', llm=model)
+    assert result is route
+    assert result.model_dump() == route.model_dump()
+    assert model.calls == 0
