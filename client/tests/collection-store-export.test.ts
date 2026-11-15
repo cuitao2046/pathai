@@ -108,6 +108,7 @@ describe('buildStaticExport（positioning_calibration_static 1.0 契约）', () 
     });
     expect(data.schemaVersion).toBe('1.0');
     expect(data.type).toBe('positioning_calibration_static');
+    expect(data.deployable).toBe(true);
     expect(data.venueId).toBe('school-building-01');
     expect(data.operator).toBe('张三');
     expect(data.windowMs).toBe(2000);

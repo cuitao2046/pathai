@@ -4,6 +4,7 @@
  * - 网格指纹 = ble_fingerprint_collection schemaVersion 1.3.0（fpstore.js 契约；含 deletions/mode，
  *   1.3.0 起信标观测带可选 n=窗口样本条数）
  * 新增可选字段（estimateAtStart/estimateAtEnd 等）仅为超集，PC 侧忽略未知字段。
+ * 静态导出额外带 deployable: true，满足服务端 /calibration/samples 的样本契约。
  * 纯逻辑、不依赖 wx。
  */
 import type {
@@ -52,6 +53,8 @@ interface StaticExportPoint {
 export interface StaticExportData {
   schemaVersion: '1.0';
   type: 'positioning_calibration_static';
+  /** 与服务端样本契约一致：静态标定产物可用于部署。 */
+  deployable: true;
   venueId: string;
   operator: string;
   device: string | null;
@@ -113,6 +116,7 @@ export function buildStaticExport(
     data: {
       schemaVersion: '1.0',
       type: 'positioning_calibration_static',
+      deployable: true,
       venueId: meta.venueId,
       operator: meta.operator,
       device: meta.device,
