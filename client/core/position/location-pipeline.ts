@@ -68,10 +68,12 @@ export interface LocationPipelineOptions {
 }
 
 export class LocationPipeline {
-  private readonly aggregator: ScanWindowAggregator;
+  private aggregator: ScanWindowAggregator;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private mode: PipelineMode = 'standby';
   private running = false;
+  private generation = 0;
+  private inFlight: { generation: number; promise: Promise<void> } | null = null;
   private lastFloorId: string | null = null;
 
   constructor(private readonly opts: LocationPipelineOptions) {
@@ -86,17 +88,27 @@ export class LocationPipeline {
     if (this.running) {
       return;
     }
+    const generation = ++this.generation;
     this.running = true;
+    this.aggregator = new ScanWindowAggregator(this.opts.windowMs);
+    this.lastFloorId = null;
     this.mode = mode;
     try {
-      await this.opts.source.start((sample) => this.aggregator.push(sample));
+      await this.opts.source.start((sample) => {
+        if (this.isCurrent(generation)) this.aggregator.push(sample);
+      });
     } catch (err) {
       // 蓝牙未开/权限不足等启动失败必须可重试：否则 running 卡在 true，
       // 后续 onShow/重试全部变成空操作，页面永远收不到样本。
+      if (!this.isCurrent(generation)) return;
       this.running = false;
       throw err;
     }
-    this.schedule();
+    if (this.isCurrent(generation)) this.schedule();
+  }
+
+  private isCurrent(generation: number): boolean {
+    return this.running && this.generation === generation;
   }
 
   /** 切换节流档位并重置下一拍计时（导航接管/解除时立即生效）。 */
@@ -114,6 +126,8 @@ export class LocationPipeline {
       return;
     }
     this.running = false;
+    ++this.generation;
+    this.inFlight = null;
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -126,17 +140,22 @@ export class LocationPipeline {
     if (!this.running) {
       return;
     }
-    try {
-      await this.collectAndReport();
-    } finally {
-      this.schedule();
-    }
+    const generation = this.generation;
+    if (this.inFlight?.generation === generation) return this.inFlight.promise;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    const operation = { generation, promise: Promise.resolve() };
+    this.inFlight = operation;
+    operation.promise = this.collectAndReport(generation).finally(() => {
+      if (this.inFlight === operation) this.inFlight = null;
+      if (this.isCurrent(generation)) this.schedule();
+    });
+    return operation.promise;
   }
 
   private schedule(): void {
-    if (!this.running) {
-      return;
-    }
+    if (!this.running || this.inFlight?.generation === this.generation) return;
+    if (this.timer !== null) clearTimeout(this.timer);
     const interval =
       this.mode === 'navigating'
         ? NAVIGATING_INTERVAL_MS
@@ -144,11 +163,13 @@ export class LocationPipeline {
           ? PREVIEW_INTERVAL_MS
           : STANDBY_INTERVAL_MS;
     this.timer = setTimeout(() => {
+      this.timer = null;
       void this.tick();
     }, interval);
   }
 
-  private async collectAndReport(retryOnStale = true): Promise<void> {
+  private async collectAndReport(generation: number, retryOnStale = true): Promise<void> {
+    if (!this.isCurrent(generation)) return;
     const snapshot = this.aggregator.snapshot(
       this.opts.map.beaconRegistry,
       nowMs(),
@@ -204,6 +225,7 @@ export class LocationPipeline {
       }
       estimate = data;
     } catch (err) {
+      if (!this.isCurrent(generation)) return;
       const failure =
         err instanceof ApiClientError
           ? err
@@ -218,12 +240,13 @@ export class LocationPipeline {
         this.opts.sequence.advanceTo
       ) {
         this.opts.sequence.advanceTo(lastSequence);
-        await this.collectAndReport(false);
+        await this.collectAndReport(generation, false);
         return;
       }
       this.opts.onUnusable(failure);
       return;
     }
+    if (!this.isCurrent(generation)) return;
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;
     // 质量交给上层：导航只用 trusted 坐标推进，unreliable/lost 仅上报 quality
     this.opts.onEstimate(estimate, { visibleBeaconCount: body.beacons.length });
