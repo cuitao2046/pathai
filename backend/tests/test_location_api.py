@@ -142,7 +142,7 @@ class TestAuthAndVersioning:
         assert resp.status_code == 404
         assert resp.json()["error"]["code"] == "MAP_NOT_PUBLISHED"
 
-    def test_stale_map_version_409_conflict(self, client, auth_headers, two_versions):
+    def test_retained_map_version_remains_usable(self, client, auth_headers, two_versions):
         resp = client.post(
             URL,
             json={"siteId": "school-building-01", "mapVersion": SAMPLE,
@@ -150,8 +150,8 @@ class TestAuthAndVersioning:
                   "beacons": [{"beaconId": "BK-01-001", "rssi": -60, "observedAt": _now()}]},
             headers=auth_headers,
         )
-        assert resp.status_code == 409
-        assert resp.json()["error"]["code"] == "MAP_VERSION_CONFLICT"
+        assert resp.status_code == 200
+        assert resp.json()["mapVersion"] == SAMPLE
 
     def test_latest_keyword_uses_newest_version(self, client, auth_headers, two_versions):
         body = _estimate(client, auth_headers, [(BK_A[0], -100), (BK_B[0], -100), (BK_C[0], -100)],
