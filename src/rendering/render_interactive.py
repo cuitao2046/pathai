@@ -2579,6 +2579,23 @@ def main():
         f'<script type="application/json" id="beacon-contrib-data">'
         f'{json.dumps(dict(beacon_contrib), ensure_ascii=False, separators=(",", ":"))}</script>\n'
     )
+    # 危险层数据（backend/hazards_data）：前端叠加危险图层 + 视障模式选路
+    hazard_file = BASE_DIR / "backend" / "hazards_data" / "school-building-01.json"
+    if hazard_file.exists():
+        try:
+            hazard_payload = json.loads(hazard_file.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001 - 坏文件不得阻塞渲染
+            print(f"  [warn] 读取危险层失败：{exc}（按无危险层渲染）")
+            hazard_payload = {"hazards": []}
+    else:
+        print(f"  [warn] 危险层文件不存在：{hazard_file}（按无危险层渲染）")
+        hazard_payload = {"hazards": []}
+    hazard_count = len(hazard_payload.get("hazards") or [])
+    parts.append(
+        f'<script type="application/json" id="hazard-data">'
+        f'{json.dumps(hazard_payload, ensure_ascii=False, separators=(",", ":"))}</script>\n'
+    )
+    print(f"  危险层：{hazard_count} 条（{hazard_file.name}）")
 
     # ---------------- 图例 + 详情面板 + JS ----------------
 
