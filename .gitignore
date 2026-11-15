@@ -53,6 +53,8 @@ result/*
 !result/fingerprint_valid_region.json
 !result/fingerprint_coverage_compare.html
 !result/fingerprint_coverage_compare.json
+# 危险区标注最新导出（编辑器下载原件；正式数据层在 backend/hazards_data/）
+!result/school-building-01.json
 
 # 现场标定：原始样本不入库，仅参数版本文件可入库（docs/28 §4.5/§5.3）
 !result/calibration/
