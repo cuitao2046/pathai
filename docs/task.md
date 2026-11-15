@@ -2,6 +2,8 @@
 
 > **历史规划文档**：本文记录早期 T1–T12 任务拆解和当时的代码路径，不是当前源码结构或任务状态的权威说明。当前目录、命令及模块职责以仓库根目录 `README.md` 和 `docs/12-工具与脚本使用手册.md` 为准。
 
+> **2026-11-15 修复任务状态**：client/backend 评审批次已完成 11 项代码修复并集成到 master；4 项实现任务和真机/PostgreSQL 验收仍待处理。详见 [当前实施任务 R-001–R-017](../specs/phase-1-indoor-navigation/tasks.md#2026-11-15-clientbackend-代码评审修复批次) 与 [执行计划](../client/review-artifacts/execution-plan.md)。
+
 ## 现有代码基础
 
 | 模块 | 文件 | 已实现功能 |
