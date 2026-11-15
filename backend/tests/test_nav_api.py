@@ -67,6 +67,12 @@ def _origin(x=None, y=None, floor="1", confidence=0.9) -> dict:
 _FROZEN_ORIGIN = _origin()
 
 
+@pytest.fixture(autouse=True)
+def refresh_idempotency_origin_time():
+    # Freeze within each test, not for the lifetime of a potentially long test run.
+    _FROZEN_ORIGIN['observedAt'] = _now()
+
+
 def _create(client, headers, destination=DEST_PLACE, idem="key-1", origin=None,
             user_mode="blind") -> dict:
     resp = client.post(
@@ -106,6 +112,19 @@ def session(client, auth_headers) -> dict:
 
 
 class TestCreateSession:
+    def test_stale_origin_cannot_create_session(self, client, auth_headers):
+        origin = _origin()
+        origin['observedAt'] = '2000-01-01T00:00:00Z'
+        assert _create(client, auth_headers, origin=origin).status_code == 422
+
+    def test_stale_destination_coordinates_cannot_trigger_arrival(self, client, auth_headers, session):
+        resp = client.post(f"{CREATE_URL}/{session['sessionId']}/updates", headers=auth_headers, json={
+            'sequence': 1, 'location': {'x': DEST_P[0], 'y': DEST_P[1], 'floorId': '1',
+            'confidence': 1.0, 'quality': 'reliable', 'observedAt': '2000-01-01T00:00:00Z'},
+        })
+        assert resp.status_code == 200
+        assert resp.json()['status'] == 'recovering'
+        assert resp.json()['event'] == 'relocalizing'
     def test_unauthenticated_401(self, client):
         resp = _create(client, {})
         assert resp.status_code == 401

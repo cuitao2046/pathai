@@ -20,6 +20,7 @@ from pathai_backend.errors import ApiError
 from pathai_backend.hazard_layer import HazardRepository
 from pathai_backend.map_repository import MapRepository, PublishedMap
 from pathai_backend.models import NavIdempotency, NavSession
+from pathai_backend.observation_time import is_fresh
 from pathai_backend.nav_text import rewrite_route_texts
 from pathai_backend.nav_service import (
     ARRIVAL_RADIUS_M,
@@ -138,6 +139,8 @@ def create_session(
         return CreateSessionResponse.model_validate_json(existing.response_json)
 
     published = _resolve_published(repo, body.siteId, body.mapVersion)
+    if not is_fresh(body.origin.observedAt):
+        raise ApiError(422, 'LOCATION_UNRELIABLE', '起点观测已过期，请重新定位')
     if body.origin.confidence < ORIGIN_MIN_CONFIDENCE or body.origin.floorId is None:
         raise ApiError(422, "LOCATION_UNRELIABLE", "起点定位不可靠，请先重新定位")
     index = PackageIndex(published.pkg)
@@ -287,7 +290,12 @@ def nav_update(
     dest_node_id = route.segments[-1].trigger.nodeId
     dest = index.nodes[dest_node_id]
 
-    trusted = loc.quality in TRUSTED_QUALITIES and loc.floorId is not None
+    trusted = (
+        loc.quality in TRUSTED_QUALITIES and loc.floorId is not None
+        and is_fresh(loc.observedAt)
+        # A recently delivered older batch must not roll guidance back across requests.
+        and loc.observedAt.timestamp() >= session.updated_at_epoch - 5
+    )
     if trusted:
         arrival = loc.floorId == dest.floor_id and hypot(loc.x - dest.x, loc.y - dest.y) <= ARRIVAL_RADIUS_M
     else:

@@ -117,6 +117,17 @@ def two_versions(maps_dir, app):
 
 
 class TestAuthAndVersioning:
+    @pytest.mark.parametrize('bad_field', ['collectedAt', 'observedAt'])
+    def test_stale_batch_or_beacon_is_rejected(self, client, auth_headers, bad_field):
+        body = {'siteId': 'school-building-01', 'mapVersion': SAMPLE, 'sequence': 1,
+                'collectedAt': _now(), 'beacons': [{'beaconId': 'BK-01-001', 'rssi': -60, 'observedAt': _now()}]}
+        if bad_field == 'collectedAt':
+            body[bad_field] = '2000-01-01T00:00:00Z'
+        else:
+            body['beacons'][0][bad_field] = '2000-01-01T00:00:00Z'
+        resp = client.post(URL, json=body, headers=auth_headers)
+        assert resp.status_code == 422
+        assert resp.json()['error']['details']['reason'] == 'observation_time_invalid'
     def test_unauthenticated_401(self, client):
         resp = client.post(URL, json={})
         assert resp.status_code == 401
