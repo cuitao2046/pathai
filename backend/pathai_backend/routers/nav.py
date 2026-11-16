@@ -38,6 +38,7 @@ from pathai_backend.nav_service import (
     NavPoint,
     plan_route,
     snap_to_node,
+    TURN_PROMPT_DISTANCE_M,
 )
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.common import (
@@ -365,25 +366,32 @@ def _node_route_progress(
     index: PackageIndex,
     node_id: str | None,
     floor_id: str | None,
-    min_progress: float,
     suffix: list[float],
     total: float,
+    current_progress: float,
 ) -> float | None:
-    """决策节点在路线折线上的沿线里程；取当前进度之后最早的同坐标顶点。"""
+    """决策节点在路线折线上的沿线里程；取离当前进度最近的同坐标顶点。
+
+    不能只找“当前进度之后”的顶点：用户一旦越过节点，节点进度就落在后面，
+    旧实现会找不到节点并退回 3m 近距判定，速度稍快就会卡在转向指令上。
+    """
     if node_id is None or floor_id is None:
         return None
     node = index.nodes.get(node_id)
     if node is None or node.floor_id != floor_id:
         return None
     best = None
+    best_delta = None
     for i, point in enumerate(route.polyline):
         if point.floorId != floor_id:
             continue
         if hypot(point.x - node.x, point.y - node.y) > 1e-6:
             continue
         progress = total - suffix[i]
-        if progress >= min_progress - 1e-6 and (best is None or progress < best):
+        delta = abs(progress - current_progress)
+        if best_delta is None or delta < best_delta:
             best = progress
+            best_delta = delta
     return best
 
 
@@ -409,12 +417,32 @@ def _advance_current_index(
     start_cur = cur
 
     def _step(index_value: int) -> tuple[int, bool]:
-        """前进一步；新到的直行指令至少保留一拍，避免短直行被转向吞掉。"""
+        """前进一步；新到的直行指令至少保留一拍，避免短直行被转向吞掉。
+
+        例外：如果这个直行段后面紧跟一个已进入提前播报窗口的转向，则不要停在
+        直行上，让同一拍继续推进到转向——短直行（2~5m）否则会被低频率位置更新
+        直接跨过，转向播报和震动都会丢。
+        """
         index_value += 1
-        stop = (
-            index_value != start_cur
-            and route.segments[index_value].action is InstructionAction.CONTINUE
-        )
+        if route.segments[index_value].action is not InstructionAction.CONTINUE:
+            return index_value, False
+        next_index = index_value + 1
+        if next_index < len(route.segments):
+            next_seg = route.segments[next_index]
+            if (
+                next_seg.action in (InstructionAction.TURN_LEFT, InstructionAction.TURN_RIGHT)
+                and next_seg.trigger.type == "decision_point"
+            ):
+                next_progress = _node_route_progress(
+                    route, index, next_seg.trigger.nodeId, floor_id,
+                    suffix, total, progress,
+                )
+                if (
+                    next_progress is not None
+                    and progress >= next_progress - TURN_PROMPT_DISTANCE_M
+                ):
+                    return index_value, False
+        stop = index_value != start_cur
         return index_value, stop
 
     while cur < len(route.segments) - 1:
@@ -444,7 +472,7 @@ def _advance_current_index(
                     continue
                 break
             node_progress = _node_route_progress(
-                route, index, seg.trigger.nodeId, floor_id, progress, suffix, total
+                route, index, seg.trigger.nodeId, floor_id, suffix, total, progress
             )
             if node_progress is not None:
                 if progress >= node_progress + DECISION_POINT_PASSED_MARGIN_M:
