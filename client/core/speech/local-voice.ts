@@ -19,7 +19,14 @@ export type LocalVoiceName =
   | 'map-loaded'
   | 'map-load-failed'
   | 'map-stale'
-  | 'nav-start';
+  | 'nav-start'
+  | 'ready2left-turn'
+  | 'ready2right-turn'
+  | 'left-turn'
+  | 'right-turn'
+  | 'little-left'
+  | 'little-right'
+  | 'u-turn';
 
 /** 音频句柄（InnerAudioContext 的最小契约）。 */
 export interface LocalVoiceClipHandle {

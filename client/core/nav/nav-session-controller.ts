@@ -15,6 +15,7 @@ import { NAV_UPDATE_TIMEOUT_MS } from '../../config/env';
 import { ApiClientError } from '../http/errors';
 import type { ApiClient } from '../http/api-client';
 import type { SpeechIdleReason, SpeechQueue } from '../speech/speech-queue';
+import { staticInstructionClip } from '../speech/static-clips';
 import { InstructionTracker } from './instruction-tracker';
 import type { NavCreateJournal } from './create-journal';
 import {
@@ -675,6 +676,12 @@ export class NavSessionController {
     }
     if (!this.tracker.observe(instruction)) {
       return; // 重复指令：不重复播报
+    }
+    // 固定文案优先走本地离线音频；动态文案（距离/楼层/地点）继续走 TTS。
+    const clip = staticInstructionClip(instruction.text);
+    if (clip !== null) {
+      this.opts.speech.enqueueClip(clip, instruction.priority, 'nav:instruction');
+      return;
     }
     this.opts.speech.enqueue(instruction.text, instruction.priority, null, 'nav:instruction');
   }

@@ -21,6 +21,35 @@ PushToTalk：ASR 生命周期、错误文案、会话代次隔离；复用现有
 地图页 handleFinal → IntentService → 原有候选选择/目的地确认 → NavSessionController。
 SpeechQueue：录音前 interrupt；旁白模式输出可访问文本，普通模式继续应用 TTS。
 
+## 固定文案与本地音频
+
+固定方向文案优先走本地离线音频（`client/assets/voice/`），动态文案继续走 TTS：
+
+| 文案 | 本地文件 |
+| --- | --- |
+| 即将左转。 | `ready2left-turn.mp3` |
+| 即将右转。 | `ready2right-turn.mp3` |
+| 左转。 | `left-turn.mp3` |
+| 右转。 | `right-turn.mp3` |
+| 稍向左转。 | `little-left.mp3` |
+| 稍向右转。 | `little-right.mp3` |
+| 掉头。 | `u-turn.mp3` |
+
+映射见 `client/core/speech/static-clips.ts`；当前后端只生成“即将左转/右转”，其余三组为后续动作预留。
+动态文案（直行 X 米、进入电梯前往 X 楼、到达 X 楼退出电梯、路线概要、规划到 X 的路线、方向偏离约 X 度等）继续走 TTS。
+
+仍缺少本地音频的静态文案（建议补文件后再接入）：
+
+- `nav-arrived.mp3`：“已到达目的地。” / “已到达目的地附近，请留意周围环境。”
+- `nav-relocalizing.mp3`：定位不足/信号不稳定时的安全暂停长文案。
+- `nav-offline.mp3`：“导航连接中断，导航已暂停，请停下并留意周围环境。”
+- `nav-session-invalid.mp3`：“导航会话已失效，请重新发起导航。”
+- `nav-map-updated.mp3`：“地图已更新，请重新发起导航。”
+- `preview-confirm.mp3`：“是否现在开始导航？说‘开始导航’开始，说‘取消’放弃。”
+- `nav-cancelled.mp3`：“已取消导航。如需导航，请重新说出目的地。”
+- `heading-aligned.mp3`：“方向已对准，请直行。”
+- `heading-unavailable.mp3`：“当前设备无法提供方向，请改用语音指令导航。”
+
 ## 完整状态及转移
 
 录音状态与导航状态正交，导航进行中也能语音查询/更改目的地。
