@@ -71,9 +71,8 @@ def test_turn_instructions_are_not_skipped_and_stay_current_at_junction():
 
     # 所有转向都必须作为当前指令出现过；这是安全优先级，不能被直行吞掉。
     assert turn_indices.issubset(set(seen))
-    # 进入 10m 提前窗口的短直行可以被转向优先覆盖，但转向文本必须带上距离。
-    assert any(
-        "米路口" in route.segments[i].text for i in turn_indices
-    ), "转向播报应包含前方距离"
+    # 转向文案按用户要求保持短句：即将左转 / 即将右转。
+    for i in turn_indices:
+        assert route.segments[i].text in ("即将左转。", "即将右转。")
     # 用户到达拐点时必须仍是该转向指令，客户端才能继续转弯震动。
     assert turn_indices.issubset(set(turn_current_at_node))

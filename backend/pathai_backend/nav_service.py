@@ -207,9 +207,6 @@ def build_route_info(
         if prev_bearing is not None:
             diff = _angle_diff(prev_bearing, bearing)
             if abs(diff) >= TURN_ANGLE_DEG:
-                # 转向播报的“前方约 X 米”取 min(本段长度, 提前播报距离)：
-                # 长段在 10m 前切换，短段在进入该段时立即切换，避免漏掉转向。
-                prompt_m = int(round(min(pending, TURN_PROMPT_DISTANCE_M)))
                 _emit_walk(remaining[i - 1])
                 # 坐标系为 x 东 y 北，atan2 数学角系逆时针为正：diff>0 = 左转
                 action = (
@@ -217,10 +214,11 @@ def build_route_info(
                 )
                 seq += 1
                 direction = "左" if action is InstructionAction.TURN_LEFT else "右"
-                prefix = f"前方约 {prompt_m} 米路口" if prompt_m >= 1 else "前方路口"
+                # 用户明确要求转向文案保持短句，避免“前方约 X 米路口请右转”过长；
+                # 提前量仍由 distance trigger 的 10m 阈值保证。
                 segments.append(_instruction(
                     seq, action,
-                    f"{prefix}请{direction}转。",
+                    f"即将{direction}转。",
                     remaining[i - 1], InstructionPriority.TURN,
                     Trigger(type="decision_point", nodeId=a.node_id),
                 ))
