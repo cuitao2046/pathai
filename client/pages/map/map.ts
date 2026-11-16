@@ -2219,26 +2219,31 @@ Page({
       },
       () => this.refreshTapExclusions(),
     );
-    this.speech?.enqueue(
-      a11y
-        ? '是否现在开始导航？说“开始导航”开始，说“取消”放弃。'
-        : '是否开始导航？说“开始导航”，或点击屏幕中的“开始导航”按钮。',
-      'normal',
-      null,
-      'map:preview-confirm',
-    );
-    // 窗口起点刷新到「这句询问播完」：询问本身要播 6-8 秒，若沿用概要结束时刻，
-    // 用户听完再开口时 10 秒预算已被应用自己的播报吃掉（真机现象：落到场景二）。
-    this.speech?.notifyWhenIdle((reason) => {
-      if (reason !== 'finished') {
-        return; // 被抢占/看门狗放手不算「问完了」，不续窗口
-      }
-      if (token !== this.previewToken || this.navPhase !== 'awaiting-confirm') {
-        return;
-      }
+    // 普通模式不做语音确认，只展示确认卡；视障模式保留语音确认。
+    if (a11y) {
+      this.speech?.enqueue(
+        '是否现在开始导航？说“开始导航”开始，说“取消”放弃。',
+        'normal',
+        null,
+        'map:preview-confirm',
+      );
+      // 窗口起点刷新到「这句询问播完」：询问本身要播 6-8 秒，若沿用概要结束时刻，
+      // 用户听完再开口时 10 秒预算已被应用自己的播报吃掉（真机现象：落到场景二）。
+      this.speech?.notifyWhenIdle((reason) => {
+        if (reason !== 'finished') {
+          return; // 被抢占/看门狗放手不算「问完了」，不续窗口
+        }
+        if (token !== this.previewToken || this.navPhase !== 'awaiting-confirm') {
+          return;
+        }
+        this.previewFreshAt = Date.now();
+        log.info('确认询问播报结束：开始导航窗口重新起算');
+      });
+    } else {
+      // 普通模式没有语音确认：窗口从确认卡展示起算。
       this.previewFreshAt = Date.now();
-      log.info('确认询问播报结束：开始导航窗口重新起算');
-    });
+      log.info('普通模式无语音确认：开始导航窗口从确认卡展示起算');
+    }
     this.previewConfirmTimer = setTimeout(() => {
       this.previewConfirmTimer = null;
       if (token === this.previewToken && this.navPhase === 'awaiting-confirm') {

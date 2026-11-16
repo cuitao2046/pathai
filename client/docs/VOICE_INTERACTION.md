@@ -47,7 +47,7 @@ SpeechQueue：录音前 interrupt；旁白模式输出可访问文本，普通�
 | 导航连接中断的安全暂停提示 | `nav-offline.mp3` |
 | 导航会话已失效 | `nav-session-invalid.mp3` |
 | 地图已更新，请重新发起导航 | `nav-map-updated.mp3` |
-| 是否现在开始导航的确认询问 | `preview-confirm.mp3` |
+| 是否现在开始导航的确认询问（仅视障模式） | `preview-confirm.mp3` |
 | 导航已取消 | `nav-cancelled.mp3` |
 | 确认超时，导航已取消 | `preview-timeout.mp3` |
 | 无法开始导航，请重试 | `nav-start-failed.mp3` |
@@ -58,8 +58,9 @@ SpeechQueue：录音前 interrupt；旁白模式输出可访问文本，普通�
 仍缺少本地音频的静态文案（建议补文件后再接入）：
 
 - `nav-arrived.mp3`：“已到达目的地。”（当前 `nav-arrived-near` 只覆盖“附近”版本）
-- `preview-confirm-alt.mp3`：“路线概要已播报完毕……”或“是否开始导航？说‘开始导航’，或点击屏幕中的‘开始导航’按钮。”
 - `nav-relocalizing-short.mp3`：“正在重新定位，请原地稍候。”（服务端未下发指令时的短兜底）
+
+> 普通模式不做语音确认，只展示确认卡；因此不需要“普通模式确认询问”音频。
 
 ## 完整状态及转移
 
