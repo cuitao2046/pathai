@@ -509,7 +509,7 @@ export class NavSessionController {
         this.opts.speech.enqueue(replay, 'normal', null, 'nav:foreground-replay');
       }
     } else if (this.machine.state === 'recovering' && this.lastRelocalizeText !== null) {
-      this.opts.speech.enqueue(this.lastRelocalizeText, 'safety', null, 'nav:foreground-relocalize');
+      this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:foreground-relocalize');
     }
   }
 
@@ -662,7 +662,12 @@ export class NavSessionController {
         const text = data.instruction?.text ?? '正在重新定位，请原地稍候。';
         this.lastRelocalizeText = text;
         this.opts.onInstruction?.(data.instruction);
-        this.opts.speech.enqueue(text, 'safety', null, 'nav:relocalizing');
+        // 定位不足/信号不稳定是固定安全文案，走本地离线音频，避免弱网时 TTS 失败。
+        if (data.instruction?.action === 'relocalize') {
+          this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:relocalizing');
+        } else {
+          this.opts.speech.enqueue(text, 'safety', null, 'nav:relocalizing');
+        }
       }
       return;
     }

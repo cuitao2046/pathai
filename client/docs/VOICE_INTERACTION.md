@@ -38,17 +38,28 @@ SpeechQueue：录音前 interrupt；旁白模式输出可访问文本，普通�
 映射见 `client/core/speech/static-clips.ts`；当前后端只生成“即将左转/右转”，其余三组为后续动作预留。
 动态文案（直行 X 米、进入电梯前往 X 楼、到达 X 楼退出电梯、路线概要、规划到 X 的路线、方向偏离约 X 度等）继续走 TTS。
 
+已补齐的固定提示音：
+
+| 文案/用途 | 本地文件 |
+| --- | --- |
+| 已到达目的地附近，请留意周围环境。 | `nav-arrived-near.mp3` |
+| 定位不足/信号不稳定的安全暂停长文案 | `nav-relocalizing.mp3` |
+| 导航连接中断的安全暂停提示 | `nav-offline.mp3` |
+| 导航会话已失效 | `nav-session-invalid.mp3` |
+| 地图已更新，请重新发起导航 | `nav-map-updated.mp3` |
+| 是否现在开始导航的确认询问 | `preview-confirm.mp3` |
+| 导航已取消 | `nav-cancelled.mp3` |
+| 确认超时，导航已取消 | `preview-timeout.mp3` |
+| 无法开始导航，请重试 | `nav-start-failed.mp3` |
+| 结束导航失败，请重试 | `nav-end-failed.mp3` |
+| 方向已对准，请直行 | `heading-aligned.mp3` |
+| 当前设备无法提供方向 | `heading-unavailable.mp3` |
+
 仍缺少本地音频的静态文案（建议补文件后再接入）：
 
-- `nav-arrived.mp3`：“已到达目的地。” / “已到达目的地附近，请留意周围环境。”
-- `nav-relocalizing.mp3`：定位不足/信号不稳定时的安全暂停长文案。
-- `nav-offline.mp3`：“导航连接中断，导航已暂停，请停下并留意周围环境。”
-- `nav-session-invalid.mp3`：“导航会话已失效，请重新发起导航。”
-- `nav-map-updated.mp3`：“地图已更新，请重新发起导航。”
-- `preview-confirm.mp3`：“是否现在开始导航？说‘开始导航’开始，说‘取消’放弃。”
-- `nav-cancelled.mp3`：“已取消导航。如需导航，请重新说出目的地。”
-- `heading-aligned.mp3`：“方向已对准，请直行。”
-- `heading-unavailable.mp3`：“当前设备无法提供方向，请改用语音指令导航。”
+- `nav-arrived.mp3`：“已到达目的地。”（当前 `nav-arrived-near` 只覆盖“附近”版本）
+- `preview-confirm-alt.mp3`：“路线概要已播报完毕……”或“是否开始导航？说‘开始导航’，或点击屏幕中的‘开始导航’按钮。”
+- `nav-relocalizing-short.mp3`：“正在重新定位，请原地稍候。”（服务端未下发指令时的短兜底）
 
 ## 完整状态及转移
 

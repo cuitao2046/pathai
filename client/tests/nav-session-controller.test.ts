@@ -413,7 +413,7 @@ describe('NavSessionController 会话编排', () => {
       expect(h.controller.state).toBe('recovering');
       expect(h.instructions[h.instructions.length - 1]).toBeNull();
       expect(h.controller.currentInstructionSequence).toBeNull();
-      expect(h.tts.spoken.some(text => text.includes('导航连接中断'))).toBe(true);
+      expect(h.clips.played).toContain('nav-offline');
     } finally {
       h.controller.dispose();
       jest.clearAllTimers();
@@ -869,12 +869,12 @@ describe('NavSessionController 会话编排', () => {
     await flush();
     expect(h.controller.state).toBe('recovering');
     expect(h.pipeline.calls).toEqual(['startNavigating']); // recovering 不停止采集
-    expect(h.tts.spoken).toContain('正在重新定位，请原地稍候。');
+    expect(h.clips.played).toContain('nav-relocalizing');
 
     // 第二拍仍 recovering：新 instructionId 但不重复播报
     h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, estimateId: 'loc-2' });
     await flush();
-    expect(h.tts.spoken.filter((t) => t === '正在重新定位，请原地稍候。')).toHaveLength(1);
+    expect(h.clips.played.filter((c) => c === 'nav-relocalizing')).toHaveLength(1);
   });
 
   it('recovering → active：状态机重启采集（startPipeline 副作用）', async () => {
@@ -1008,7 +1008,7 @@ describe('NavSessionController 会话编排', () => {
     h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, confidence: 0.4 });
     await flush();
 
-    expect(h.tts.spoken[h.tts.spoken.length - 1]).toBe('已到达目的地附近，请留意周围环境。');
+    expect(h.clips.played[h.clips.played.length - 1]).toBe('nav-arrived-near');
   });
 
   it('终态拒更新：arrived 后 handleEstimate 不再发送 updates', async () => {
@@ -1168,7 +1168,7 @@ describe('NavSessionController 会话编排', () => {
     await h.controller.handleForeground();
 
     expect(h.controller.state).toBe('ended');
-    expect(h.tts.spoken).toContain('地图已更新，请重新发起导航。');
+    expect(h.clips.played).toContain('nav-map-updated');
     expect(h.ended).toEqual([{ reason: 'system_error', byArrival: false }]);
     expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'stop']); // RESUME_FAILED 副作用再次停采集（幂等）
   });
@@ -1188,7 +1188,7 @@ describe('NavSessionController 会话编排', () => {
     await h.controller.handleForeground();
 
     expect(h.controller.state).toBe('ended');
-    expect(h.tts.spoken).toContain('导航会话已失效，请重新发起导航。');
+    expect(h.clips.played).toContain('nav-session-invalid');
     expect(h.ended).toEqual([{ reason: 'system_error', byArrival: false }]);
   });
 
@@ -1251,7 +1251,7 @@ describe('NavSessionController 会话编排', () => {
 
     expect(h.controller.state).toBe('recovering');
     expect(h.pipeline.calls).toEqual(['startNavigating', 'stop', 'startNavigating']);
-    expect(h.tts.spoken.filter((t) => t === '正在重新定位，请原地稍候。')).toHaveLength(2);
+    expect(h.clips.played.filter((c) => c === 'nav-relocalizing')).toHaveLength(2);
     expect(h.tts.spoken.filter((t) => t === '沿走廊直行 5 米。')).toHaveLength(1); // 不回放旧方向
   });
 

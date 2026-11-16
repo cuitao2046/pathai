@@ -17,6 +17,7 @@ import { nowMs } from '../../utils/clock';
 import { vibrateLong, vibrateShort } from '../../utils/haptic';
 import { createLogger } from '../../utils/logger';
 import type { TtsEngine } from './tts-engine';
+import { staticClipForText } from './static-clips';
 
 const log = createLogger('speech');
 
@@ -128,6 +129,12 @@ export class SpeechQueue {
     source = 'unknown',
   ): void {
     this.lastText = text; // 先记重播源：降级文本也算一次播报
+    // 固定文案优先本地离线音频：即使 TTS 引擎失效也仍可播报。
+    const clip = staticClipForText(text);
+    if (clip !== null) {
+      this.enqueueClip(clip, priority, source);
+      return;
+    }
     log.info('[enqueue]', source, priority, `len=${text.length}`, text, {
       playing: this.current?.text ?? null,
       pending: this.items.length,
