@@ -204,7 +204,7 @@ class TestCreateSession:
         assert body["paramsVersion"] == "unset"
         assert body["destination"]["placeId"] == DEST_PLACE
         route = body["route"]
-        assert route["routeRulesVersion"] == "1.0.0"
+        assert route["routeRulesVersion"] == "1.1.0"
         assert route["mapVersion"] == REAL_MAP_VERSION
         assert route["distanceM"] > 0
         assert len(route["polyline"]) >= 2

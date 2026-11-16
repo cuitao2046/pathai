@@ -8,7 +8,7 @@ function makeRoute(over: Partial<RouteInfo> = {}): RouteInfo {
   return {
     routeId: 'r-1',
     mapVersion: '2026-10-25.1',
-    routeRulesVersion: '1.0.0',
+    routeRulesVersion: '1.1.0',
     distanceM: 45.6,
     estimatedDurationSec: null,
     polyline: [],

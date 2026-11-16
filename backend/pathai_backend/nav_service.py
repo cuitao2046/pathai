@@ -33,7 +33,7 @@ from pathai_backend.schemas.common import (
 )
 from pathai_backend.schemas.nav import RouteHazard, RouteInfo
 
-ROUTE_RULES_VERSION = "1.0.0"
+ROUTE_RULES_VERSION = "1.1.0"
 LOCATION_ALGORITHM_VERSION = "location-0.3"  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
 #: 工程初始阈值。
 ORIGIN_MIN_CONFIDENCE = 0.5
@@ -129,11 +129,14 @@ def build_route_info(
     node_ids: list[str] = route["path"]
     segments: list[NavigationInstruction] = []
     seq = 0
-    # 剩余距离后缀和：remaining[i] = 从 path[i] 沿路线到终点的边长和
-    edge_dists: list[float] = []
-    for a_id, b_id in zip(node_ids[:-1], node_ids[1:]):
-        edge = index.edge_between(a_id, b_id)
-        edge_dists.append(edge["distance"] if edge else 0.0)
+    # 剩余距离后缀和：remaining[i] = 从 path[i] 沿路线到终点的物理边长和。
+    # 优先使用 RouteGraph 返回的逐边物理距离，避免虚拟边/重复边反查失配。
+    edge_dists: list[float] = list(route.get("edgeDistances") or [])
+    if len(edge_dists) != len(node_ids) - 1:
+        edge_dists = []
+        for a_id, b_id in zip(node_ids[:-1], node_ids[1:]):
+            edge = index.edge_between(a_id, b_id)
+            edge_dists.append(edge["distance"] if edge else 0.0)
     remaining = [0.0] * len(node_ids)
     for i in range(len(node_ids) - 2, -1, -1):
         remaining[i] = remaining[i + 1] + edge_dists[i]
@@ -223,7 +226,12 @@ def build_route_info(
         routeId=f"route_{_short_id()}",
         mapVersion=pkg.mapVersion,
         routeRulesVersion=ROUTE_RULES_VERSION,
-        distanceM=round(route["distance"], 2),
+        distanceM=round(
+            route.get("physicalDistance")
+            if route.get("physicalDistance") is not None
+            else route["distance"],
+            2,
+        ),
         estimatedDurationSec=None,
         polyline=[
             GeoPosition(x=p.x, y=p.y, floorId=p.floor_id) for p in path_points

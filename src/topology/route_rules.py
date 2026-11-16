@@ -32,6 +32,7 @@ import json
 import heapq
 import math
 from collections import defaultdict
+from dataclasses import dataclass
 
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
@@ -47,6 +48,38 @@ from src.common.constants import (
 )
 from src.geometry.segments import segments_properly_cross
 from src.common.rounding import round_distance
+
+
+@dataclass(frozen=True)
+class ModePolicy:
+    """按用户模式集中判定硬约束；搜索核心不写模式分支。
+
+    返回 True 表示该边允许进入邻接图；软惩罚仍由 ``_edge_weight`` 处理。
+    ``hazards_by_edge`` 已由调用方按人群/时间过滤，block 在此硬禁行。
+    """
+
+    mode: str
+    hazards_by_edge: dict[str, list[dict]]
+
+    def is_allowed(self, edge: dict) -> bool:
+        if any(h.get("level") == "block"
+               for h in self.hazards_by_edge.get(edge["id"], ())):
+            return False
+        if self.mode == "blind":
+            if edge["blindAccessible"] is False:
+                return False
+            # 防御性检查：数据层应保证 999 => blindAccessible=false。
+            if int(edge["accessibilityLevel"]) == 999:
+                return False
+            # 规则 2：盲模式跨层必须走电梯，禁用楼梯跨层边。
+            if edge["crossFloor"] and edge.get("type") == "staircase":
+                return False
+        elif self.mode == "wheelchair":
+            # 轮椅只由 wheelchairAccessible 决定；999 是视障结构等级，
+            # 不隐含轮椅不可用（如跨翼平台桥）。
+            if edge["wheelchairAccessible"] is False:
+                return False
+        return True
 
 
 class RouteGraph:
@@ -231,28 +264,12 @@ class RouteGraph:
     # ------------------------------------------------------------------ #
     # 规则辅助
     # ------------------------------------------------------------------ #
-    def edge_allowed(self, e: dict, mode: str) -> bool:
-        """规则 2 + 危险层：模式约束、盲模式剔除楼梯跨层边、block 危险硬禁行。
+    def _policy(self, mode: str) -> ModePolicy:
+        return ModePolicy(mode=mode, hazards_by_edge=self.hazards_by_edge)
 
-        危险规则已由调用方按用户模式与生效时间过滤；block 放在最前面，
-        使四层回退（最佳门/所有门/穿墙/跨层绕行）都无法绕过。
-        """
-        if any(h.get("level") == "block" for h in self.hazards_by_edge.get(e["id"], ())):
-            return False
-        if mode == "blind":
-            if e["blindAccessible"] is False:
-                return False
-            if int(e["accessibilityLevel"]) == 999:
-                return False
-            # 盲模式跨层必须走电梯，禁用楼梯跨层边
-            if e["crossFloor"] and e.get("type") == "staircase":
-                return False
-        elif mode == "wheelchair":
-            if e["wheelchairAccessible"] is False:
-                return False
-            if int(e["accessibilityLevel"]) == 999:
-                return False
-        return True
+    def edge_allowed(self, e: dict, mode: str) -> bool:
+        """委托给 ModePolicy；保留该方法供测试与既有调用方使用。"""
+        return self._policy(mode).is_allowed(e)
 
     def _seg_crosses_any_wall(self, p1, p2, floor):
         """p1->p2 是否真正穿墙（遍历【同楼层】bbox 内所有墙线段，与 validate_wall_crossing 同源）。
@@ -344,8 +361,9 @@ class RouteGraph:
     # ------------------------------------------------------------------ #
     def _build_adjacency(self, mode, door_filter, allow_wall=False):
         adj = defaultdict(list)
+        policy = self._policy(mode)
         for e in self.edges:
-            if not self.edge_allowed(e, mode):
+            if not policy.is_allowed(e):
                 continue
             # 规则 3：剔除穿墙走廊边（TI↔TI），避免导航路径穿墙；
             # 仅在回退（无替代连通路径的桥边）时 allow_wall=True 重新纳入。
@@ -480,6 +498,12 @@ class RouteGraph:
             self._edge_by_id(eid) and self._edge_by_id(eid).get("type") == "staircase"
             for eid in cross_edges)
 
+        # 物理距离：只累加地图边原始 distance，不含门惩罚/avoid 惩罚。
+        edge_distances = [
+            self.edge_by_id[eid]["distance"] if eid in self.edge_by_id else 0.0
+            for eid in edge_ids
+        ]
+
         return {
             # nodes: 规范字段名，与前端 JS Dijkstra（app.js 返回的 {nodes,...}）对齐，
             #        供 test_route_rules_consistency 等后端↔前端对拍使用。
@@ -487,7 +511,11 @@ class RouteGraph:
             "nodes": path,
             "path": path,
             "edges": edge_ids,
+            # distance 保持“选路成本”语义（物理距离 + 门惩罚 + avoid 惩罚），
+            # 供 Dijkstra/A* 与既有工具使用；用户展示必须用 physicalDistance。
             "distance": round_distance(dist[end_id]),
+            "physicalDistance": round_distance(sum(edge_distances)),
+            "edgeDistances": edge_distances,
             "cross_floor": bool(cross_edges),
             "used_elevator": used_elevator,
             "used_stair": used_stair,
@@ -577,6 +605,8 @@ class RouteGraph:
             "path": sp["path"],
             "edges": sp["edges"],
             "distance": sp["distance"],
+            "physicalDistance": sp.get("physicalDistance"),
+            "edgeDistances": sp.get("edgeDistances"),
             "cross_floor": sp["cross_floor"],
             "used_elevator": sp["used_elevator"],
             "used_stair": sp["used_stair"],

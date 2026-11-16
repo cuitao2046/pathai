@@ -303,8 +303,6 @@ class _BackendReplica:
         elif mode == "wheelchair":
             if e["wheelchairAccessible"] is False:
                 return False
-            if int(e["accessibilityLevel"]) == 999:
-                return False
         return True
 
     def _edge_is_closed_fire_door(self, e):
@@ -484,8 +482,6 @@ def _edge_allowed_js(e, mode):
             return False
     elif mode == "wheelchair":
         if e["wheelchairAccessible"] is False:
-            return False
-        if int(e["accessibilityLevel"]) == 999:
             return False
     return True
 
