@@ -226,6 +226,7 @@ flowchart LR
 - **图模型**：来自空间语义地图的拓扑层 `nodes/edges`；节点类型为 `intersection`（交叉口）、`doorway`（门洞）、`room`（房间）、`facility`（设施）、`facility_entrance`（设施入口）；跨层通过 `crossFloorEdges` 建模为可通行边，与同层边由同一算法统一处理。
 - **边权**：`W(e) = 几何距离 + 门惩罚 + 危险层 avoid 惩罚`；门类型 `swing` / `fire` / `opening` 分别施加不同惩罚值，常量集中配置（`src/common/constants.py`）。**不使用**距离/转向/风险/拥挤度/能耗等多目标权重向量——该加权代价函数属于未实现设想，不得在 API 或客户端文案中宣称。
 - **距离口径**：`RouteInfo.distanceM`、`NavigationInstruction.distanceM` 与“直行 X 米”均为纯物理距离（逐边 `distance` 之和），**不含**门惩罚或 `avoid` 惩罚；`W(e)` 只用于选路。
+- **路口转向提前播报**：`continue` 的 `distance` trigger `valueM` 是“剩余距离阈值”，生成器设为下一个决策点剩余距离 + 10m；到阈值先切到 `turn_left/turn_right`，转向指令保持到用户沿线越过拐点 +1m，确保语音与转弯震动覆盖路口。
 - **节点约束**：扩展路径时对中间节点施加类型白名单（同层/跨层各一组，`SAME_FLOOR_MID_TYPES` / `CROSS_FLOOR_MID_TYPES`），并应用门优先级规则。
 - **视障模式跨层**：`blind` 模式跨层必须走电梯，楼梯跨层边不参与寻路；`wheelchair` 模式只使用 `wheelchairAccessible=true` 的边，**不因 `accessibilityLevel=999` 额外禁行**（999 是视障结构等级）。
 - **无解回退**：受限寻路无解时按“最佳门 → 所有门 → 穿墙边”三层回退；穿墙回退结果须标记 `wall_fallback`，客户端提示路线可能经过非常规通道。

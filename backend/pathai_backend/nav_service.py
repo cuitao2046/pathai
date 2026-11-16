@@ -41,6 +41,9 @@ ARRIVAL_RADIUS_M = 5.0
 OFF_ROUTE_M = 8.0
 DECISION_POINT_RADIUS_M = 3.0
 TURN_ANGLE_DEG = 30.0
+#: 路口转向的提前播报距离。语音应在拐点前约 10m 说出转向，给视障用户留出反应时间；
+#: 转弯震动仍由客户端在最后 6m 内接管。
+TURN_PROMPT_DISTANCE_M = 10.0
 
 
 @dataclass(frozen=True)
@@ -146,18 +149,33 @@ def build_route_info(
     pending = 0.0  # 自上一条已发指令起累计的直行距离
     first_walk_emitted = False
 
-    def _emit_walk(remaining_m: float) -> None:
+    def _emit_walk(remaining_at_end: float, *, final: bool = False) -> None:
+        """发出一条直行指令。
+
+        ``remaining_at_end`` 是该直行段结束点（下一个决策点）到终点的剩余距离。
+        ``distance`` trigger 的 valueM 表示“剩余距离降到该值时切换到下一条指令”，
+        不是本段长度；路口前提前 ``TURN_PROMPT_DISTANCE_M`` 切换，确保转向先播。
+        """
         nonlocal seq, pending, first_walk_emitted
         if pending < 0.5:  # 触发距离必须 >0；过短直行并入转向指令
             return
         seq += 1
-        if not first_walk_emitted:
+        if final:
+            # 末段直行后直接进入到达判定；valueM 必须 >0（schema 约束）。
+            trigger = Trigger(type="distance", valueM=0.01)
+            distance_m = pending
+        elif not first_walk_emitted:
             trigger = Trigger(type="immediate")
+            distance_m = remaining_at_end + pending
         else:
-            trigger = Trigger(type="distance", valueM=round(pending, 2))
+            trigger = Trigger(
+                type="distance",
+                valueM=round(remaining_at_end + TURN_PROMPT_DISTANCE_M, 2),
+            )
+            distance_m = remaining_at_end + pending
         segments.append(_instruction(
             seq, InstructionAction.CONTINUE,
-            f"请沿当前通道直行 {pending:.0f} 米。", remaining_m,
+            f"请沿当前通道直行 {pending:.0f} 米。", distance_m,
             InstructionPriority.NORMAL, trigger,
         ))
         first_walk_emitted = True
@@ -206,8 +224,8 @@ def build_route_info(
         prev_bearing = bearing
         i += 1
 
-    # 末段直行：其 distanceM 即该直行段长度（至终点）
-    _emit_walk(pending)
+    # 末段直行：distanceM 即该直行段长度（至终点）
+    _emit_walk(pending, final=True)
     dest = path_points[-1]
     seq += 1
     segments.append(_instruction(
