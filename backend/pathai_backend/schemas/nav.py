@@ -115,6 +115,33 @@ class CreateSessionResponse(StrictModel):
     destination: PlaceCandidate
     route: RouteInfo
     createdAt: datetime
+    #: 起点观测龄（秒，按服务端时钟）。仅作提示：起点新鲜度由客户端判断，不阻断建会话。
+    originObservationAgeS: float | None = None
+    #: 起点是否已超过提示阈值（默认 15 s）。客户端可提示重新定位，但会话仍然有效。
+    originObservationStale: bool = False
+
+
+class PreviewRouteRequest(StrictModel):
+    """API-06b 请求：仅规划路线供预览/播报概要，不创建会话、不写库。"""
+
+    siteId: str = Field(min_length=1)
+    mapVersion: str = Field(min_length=1)
+    origin: OriginPosition
+    destinationId: str = Field(min_length=1)
+    userMode: UserMode = UserMode.BLIND
+    locale: str = "zh-CN"
+
+
+class PreviewRouteResponse(StrictModel):
+    mapVersion: str = Field(min_length=1)
+    destination: PlaceCandidate
+    route: RouteInfo
+    #: 大模型概要；当前无 LLM 概要生成时返回 null，客户端用模板兜底（概要必播）。
+    overviewText: str | None = None
+    #: 起点观测龄（秒，按服务端时钟）；仅作提示，不阻断预览。
+    originObservationAgeS: float | None = None
+    #: 起点是否已超过提示阈值（默认 15 s）；客户端可据此提示重新定位。
+    originObservationStale: bool = False
 
 
 class LocationUpdate(StrictModel):

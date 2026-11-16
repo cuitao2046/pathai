@@ -21,9 +21,11 @@ class FakeLlm:
         self.payload = payload
         self.text = text
         self.calls = 0
+        self.messages: list[list[dict]] = []
 
     def chat(self, messages, response_schema=None, schema_name="voice_agent_output"):
         self.calls += 1
+        self.messages.append(messages)
         body = self.text if self.text is not None else json.dumps(self.payload, ensure_ascii=False)
         return LlmResult(text=body, ttft_ms=12, total_ms=24)
 
@@ -192,6 +194,126 @@ class TestGuards:
         payload = {"intent_type": "navigation_control", "direct_response_speech": "好的。"}
         service = semantic_intent.SemanticIntentService(_dictionary(published), FakeLlm(payload))
         assert service.parse("暂停一下", published, None) is None
+
+
+class TestActionSkillSelection:
+    """模型直接选 action：注册表校验名字，语义层只做执行计划映射。"""
+
+    def test_llm_action_start_navigation(self, maps_dir):
+        published = _published(maps_dir)
+        payload = {"action": "start_navigation", "intent_type": "out_of_scope"}
+        service = semantic_intent.SemanticIntentService(_dictionary(published), FakeLlm(payload))
+        answer = service.parse("可以走了", published, None)
+        assert answer is not None
+        assert answer.intent.value == "start_navigation"
+        assert answer.action == "start_navigation"
+        assert answer.destination is None
+        assert answer.needs_clarification is False
+        assert answer.candidates == []
+
+    def test_llm_action_navigate_to_place_uses_candidates(self, maps_dir):
+        published = _published(maps_dir)
+        payload = {
+            "action": "navigate_to_place",
+            "top_candidates": [
+                {
+                    "standard_name": "卫生室",
+                    "match_type": "exact_or_synonym",
+                    "confidence": 0.95,
+                    "reasoning": "医务室是卫生室的常用别名",
+                }
+            ],
+        }
+        service = semantic_intent.SemanticIntentService(_dictionary(published), FakeLlm(payload))
+        answer = service.parse("带我去拿药的地方", published, None)
+        assert answer is not None
+        assert answer.intent.value == "start_navigation"
+        assert answer.action == "navigate_to_place"
+        assert answer.destination is not None
+        assert answer.destination.placeId == "F1-RM-0039"
+
+    def test_zero_overlap_sends_available_place_list(self, maps_dir):
+        """「上物理课的地方」字面与 POI 零重叠，也要把可用地点清单交给模型。"""
+        published = _published(maps_dir)
+        llm = FakeLlm({"action": "start_navigation"})
+        service = semantic_intent.SemanticIntentService(_dictionary(published), llm)
+        service.parse("上物理课的地方", published, None)
+        assert llm.calls == 1
+        user_message = llm.messages[-1][1]["content"]
+        assert "【本次候选地址" in user_message
+        assert "教师办公室" in user_message
+
+    def test_empty_place_list_returns_not_found_without_llm(self, maps_dir, monkeypatch):
+        published = _published(maps_dir)
+        llm = FakeLlm({"action": "start_navigation"})
+        service = semantic_intent.SemanticIntentService(_dictionary(published), llm)
+        monkeypatch.setattr(semantic_intent, "_available_rows", lambda text, places: [])
+        answer = service.parse("上物理课的地方", published, None)
+        assert answer is not None
+        assert answer.response_text.startswith("没有找到这个地点")
+        assert llm.calls == 0
+
+    def test_unknown_action_is_rejected(self, maps_dir):
+        published = _published(maps_dir)
+        payload = {"action": "teleport_to_mars"}
+        service = semantic_intent.SemanticIntentService(_dictionary(published), FakeLlm(payload))
+        assert service.parse("瞬移到火星", published, None) is None
+
+
+def test_router_returns_llm_action(client, auth_headers, maps_dir, monkeypatch):
+    published = _published(maps_dir)
+    service = semantic_intent.SemanticIntentService(
+        _dictionary(published),
+        FakeLlm({"action": "start_navigation", "intent_type": "out_of_scope"}),
+    )
+    monkeypatch.setattr(semantic_intent, "get_semantic_service", lambda settings: service)
+
+    resp = client.post(
+        "/api/v1/intents/parse",
+        json={
+            "siteId": "school-building-01",
+            "mapVersion": REAL_MAP_VERSION,
+            "text": "可以走了",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["intent"] == "start_navigation"
+    assert body["action"] == {
+        "name": "start_navigation",
+        "params": {},
+        "confirmationRequired": False,
+    }
+    assert body["destination"] is None
+    assert body["needsClarification"] is False
+
+
+def test_router_fuzzy_candidates_skip_llm(client, auth_headers, maps_dir, monkeypatch):
+    """模糊命中多项时直接给候选卡，不产生大模型调用。"""
+    calls: list[str] = []
+
+    class SpyService:
+        def parse(self, text, published, location):
+            calls.append(text)
+            return None
+
+    monkeypatch.setattr(semantic_intent, "get_semantic_service", lambda settings: SpyService())
+
+    resp = client.post(
+        "/api/v1/intents/parse",
+        json={
+            "siteId": "school-building-01",
+            "mapVersion": REAL_MAP_VERSION,
+            "text": "带我去教师办公室",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["needsClarification"] is True
+    assert len(body["candidates"]) == 3
+    assert calls == []
 
 
 def test_router_uses_semantic_answer(client, auth_headers, maps_dir, monkeypatch):

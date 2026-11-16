@@ -25,6 +25,7 @@ import { createWssUrlProvider } from '../utils/wss-url';
 import { createLogger } from '../utils/logger';
 import { getString, getJson, setJson, setString } from '../utils/kv';
 import { resolveVoiceMock, VOICE_MOCK_KEY } from './voice-mock';
+import { getDiscoveryMode, setDiscoveryMode, type DiscoveryMode } from './discovery-mode';
 import { TrajectoryRecorder } from '../core/calibration/trajectory-recorder';
 import type { CalibrationRecord } from '../core/calibration/trajectory-recorder';
 
@@ -229,6 +230,16 @@ class AppContext {
   /** 首页/设置页回显：无障碍模式（未设置过返回默认 'a11y'）。 */
   getA11yMode(): A11yMode {
     return getJson<A11yMode>(A11Y_MODE_KEY) === 'normal' ? 'normal' : 'a11y';
+  }
+
+  /** 设置页：写入服务发现方式（重启小程序生效；默认自动）。 */
+  setDiscoveryModeSetting(mode: DiscoveryMode): void {
+    setDiscoveryMode(mode);
+  }
+
+  /** 设置页回显：服务发现方式（未设置过返回 'auto'）。 */
+  getDiscoveryModeSetting(): DiscoveryMode {
+    return getDiscoveryMode();
   }
 
   /** 设置页：写入全屏按住说话开关（仅视障模式生效，即时生效）。 */

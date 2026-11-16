@@ -1,12 +1,15 @@
-const discover = jest.fn<Promise<string | null>, []>();
-const checkCandidate = jest.fn<Promise<boolean>, [string]>();
+const discover = jest.fn<Promise<{ url: string; identity: unknown } | null>, []>();
+const checkCandidate = jest.fn<Promise<boolean>, [string, string | null]>();
 const getCandidate = jest.fn<string | null, []>();
-const saveCandidate = jest.fn<boolean, [string]>();
+const getDeviceId = jest.fn<string | null, []>();
+const saveCandidate = jest.fn<boolean, [string, string?]>();
 jest.mock('../services/business-discovery', () => ({ discoverBusinessCandidate: () => discover() }));
 jest.mock('../services/p0-candidate', () => ({
   getP0Candidate: () => getCandidate(),
-  checkP0Candidate: (url: string) => checkCandidate(url),
-  saveP0Candidate: (url: string) => saveCandidate(url),
+  getP0DeviceId: () => getDeviceId(),
+  checkP0Candidate: (url: string, deviceId: string | null) => checkCandidate(url, deviceId),
+  saveP0Candidate: (url: string, deviceId?: string) =>
+    deviceId === undefined ? saveCandidate(url) : saveCandidate(url, deviceId),
 }));
 
 type ProbePage = {
@@ -29,8 +32,10 @@ beforeEach(() => {
   discover.mockReset();
   checkCandidate.mockReset();
   getCandidate.mockReset();
+  getDeviceId.mockReset();
   saveCandidate.mockReset();
   getCandidate.mockReturnValue('http://192.168.1.28:8000');
+  getDeviceId.mockReturnValue(null);
   (globalThis as unknown as { wx: unknown }).wx = { showModal: jest.fn(), login: jest.fn() };
 });
 
@@ -42,28 +47,28 @@ describe('P0 隔离探测页', () => {
     page.onShow();
     await Promise.resolve();
     await Promise.resolve();
-    expect(checkCandidate).toHaveBeenCalledWith('http://192.168.1.28:8000');
+    expect(checkCandidate).toHaveBeenCalledWith('http://192.168.1.28:8000', null);
     expect(discover).toHaveBeenCalledTimes(1);
     finish(true);
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    expect(page.data.result).toContain('缓存地址的业务端口 HTTP 可达');
+    expect(page.data.result).toContain('缓存地址的 /healthz 与设备身份校验通过');
     expect(saveCandidate).not.toHaveBeenCalled();
     expect((globalThis as unknown as { wx: { showModal: jest.Mock } }).wx.showModal).not.toHaveBeenCalled();
   });
 
   test('缓存不可达则等待发现结果，探测中不重复发起', async () => {
-    let finish!: (result: string | null) => void;
+    let finish!: (result: { url: string; identity: unknown } | null) => void;
     discover.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     checkCandidate.mockResolvedValue(false);
     const pending = page.onProbe();
     await page.onProbe();
     expect(discover).toHaveBeenCalledTimes(1);
-    finish('http://192.168.1.44:8000');
+    finish({ url: 'http://192.168.1.44:8000', identity: {} });
     await pending;
-    expect(page.data.result).toContain('发现地址的业务端口 HTTP 可达');
+    expect(page.data.result).toContain('发现地址已通过 /healthz 身份校验');
     expect(saveCandidate).toHaveBeenCalledWith('http://192.168.1.44:8000');
   });
 
@@ -78,12 +83,12 @@ describe('P0 隔离探测页', () => {
   });
 
   test('页面隐藏后迟到的旧网络结果不能显示或弹窗', async () => {
-    let finish!: (result: string | null) => void;
+    let finish!: (result: { url: string; identity: unknown } | null) => void;
     checkCandidate.mockResolvedValue(false);
     discover.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const pending = page.onProbe();
     page.onHide();
-    finish('http://192.168.1.44:8000');
+    finish({ url: 'http://192.168.1.44:8000', identity: {} });
     await pending;
     expect(page.data.result).toBe('尚未探测');
     expect(saveCandidate).not.toHaveBeenCalled();

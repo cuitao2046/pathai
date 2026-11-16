@@ -1,5 +1,18 @@
 import { isP0CandidateUrl, resolveBusinessCandidate, resolveP0Candidate } from '../core/discovery/p0-candidate';
-import { checkEndpointHealth, checkP0Candidate, getP0Candidate, saveP0Candidate } from '../services/p0-candidate';
+import {
+  checkEndpointHealth,
+  checkP0Candidate,
+  getP0Candidate,
+  getP0DeviceId,
+  saveP0Candidate,
+} from '../services/p0-candidate';
+
+const DEVICE_A = 'srv-' + 'a'.repeat(32);
+const DEVICE_B = 'srv-' + 'b'.repeat(32);
+
+function healthy(deviceId = DEVICE_A) {
+  return { status: 'ok', service: 'my-backend', device_id: deviceId, version: '0.1.0', api_version: 'v1' };
+}
 
 describe('P0 候选缓存与并发预检', () => {
   const storage = new Map<string, string>();
@@ -11,6 +24,7 @@ describe('P0 候选缓存与并发预检', () => {
     (globalThis as unknown as { wx: unknown }).wx = {
       getStorageSync: (key: string) => storage.get(key),
       setStorageSync: (key: string, value: string) => storage.set(key, value),
+      removeStorageSync: (key: string) => storage.delete(key),
       request,
     };
   });
@@ -35,15 +49,29 @@ describe('P0 候选缓存与并发预检', () => {
     const pending = checkP0Candidate('http://10.1.2.3:8000');
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://10.1.2.3:8000/healthz', method: 'GET' }));
     expect(request.mock.calls[0][0]).not.toHaveProperty('header');
-    request.mock.calls[0][0].success({ statusCode: 200, data: { status: 'ok' } });
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy() });
     expect(await pending).toBe(true);
+  });
+
+  test('缓存预检可要求 device_id 一致，身份不符视为不可达', async () => {
+    const pending = checkP0Candidate('http://10.1.2.3:8000', DEVICE_B);
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy(DEVICE_A) });
+    expect(await pending).toBe(false);
   });
 
   test('通用探活可检查模拟器回环地址（不套用私网候选白名单）', async () => {
     const pending = checkEndpointHealth('http://127.0.0.1:8000');
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://127.0.0.1:8000/healthz' }));
-    request.mock.calls[0][0].success({ statusCode: 200, data: { status: 'ok' } });
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy() });
     expect(await pending).toBe(true);
+  });
+
+  test('保存地址时一并保存设备身份；无身份的新地址会清掉旧身份', () => {
+    expect(saveP0Candidate('http://192.168.1.44:8000', DEVICE_A)).toBe(true);
+    expect(getP0DeviceId()).toBe(DEVICE_A);
+    expect(storage.get('pathai:discovery:p0-candidate-device-id')).toBe(DEVICE_A);
+    expect(saveP0Candidate('http://192.168.1.45:8000')).toBe(true);
+    expect(getP0DeviceId()).toBeNull();
   });
 
   test('仅有效业务端口地址可作为未认证候选缓存', () => {
@@ -64,7 +92,7 @@ describe('P0 候选缓存与并发预检', () => {
     const pending = checkP0Candidate('http://10.1.2.3:8000');
     jest.advanceTimersByTime(1601);
     expect(await pending).toBe(false);
-    request.mock.calls[0][0].success({ statusCode: 200, data: { status: 'ok' } });
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy() });
     jest.useRealTimers();
   });
 

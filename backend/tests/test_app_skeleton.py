@@ -32,7 +32,13 @@ class TestRequestContext:
     def test_healthz_returns_ok_with_request_id(self, client: TestClient):
         resp = client.get("/healthz")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert body["service"] == "my-backend"
+        assert body["device_id"].startswith("srv-")
+        assert len(body["device_id"]) == 36
+        assert body["version"] == "0.1.0"
+        assert body["api_version"] == "v1"
         assert resp.headers["X-Request-Id"].startswith("req_")
 
     def test_request_id_unique_per_request(self, client: TestClient):

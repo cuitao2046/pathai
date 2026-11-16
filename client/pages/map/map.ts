@@ -9,6 +9,7 @@ import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
  */
 import { appContext } from '../../services/app-context';
 import { ensureServiceEndpoint, lastEndpointFailure, currentServiceBaseUrl } from '../../services/service-endpoint';
+import { describeEndpointFailure } from '../../core/discovery/failure';
 import { createNavJournal } from '../../core/nav/create-journal';
 import { createLogger } from '../../utils/logger';
 import { ApiClientError } from '../../core/http/errors';
@@ -36,6 +37,7 @@ import { SpeechQueue } from '../../core/speech/speech-queue';
 import type { LocalVoiceName } from '../../core/speech/local-voice';
 import type { MapServiceEvent } from '../../core/map/map-service';
 import { IntentService, resolveIntentTarget } from '../../services/intent.service';
+import { matchLocalIntent } from '../../core/intent/local-rules';
 import {
   LocationQueryService,
   SURROUNDINGS_UNRESOLVED_TEXT,
@@ -118,6 +120,12 @@ const PREVIEW_CONFIRM_TIMEOUT_MS = 30_000;
  * 概要与「是否开始导航」询问播完各刷新一次——应用自身的播报不得消耗用户的反应时间。
  */
 const PREVIEW_REUSE_WINDOW_MS = 10_000;
+/**
+ * 建会话前重取起点的等待上限（API-05 单次超时 5 s，留 1 s 余量）。
+ * 10 秒复用窗口只管「预览还值不值得复用」，管不住起点观测的年龄：
+ * 服务端口径是观测龄 ≤ 15 s，概要与确认两段播报加起来就会超窗。
+ */
+const START_NAV_ORIGIN_TIMEOUT_MS = 6_000;
 /** 场景二：语音说「开始导航」后等待用户说出目的地的上限。 */
 const AWAIT_DESTINATION_TIMEOUT_MS = 30_000;
 
@@ -308,6 +316,11 @@ Page({
   previewOriginTimer: null as ReturnType<typeof setTimeout> | null,
   /** 概要播完后等待用户确认的超时。 */
   previewConfirmTimer: null as ReturnType<typeof setTimeout> | null,
+  /** 建会话前重取起点的等待器与超时（确认后立刻取一拍新定位）。 */
+  freshOriginResolve: null as ((origin: OriginPosition | null) => void) | null,
+  freshOriginTimer: null as ReturnType<typeof setTimeout> | null,
+  /** 防止确认入口（按钮/语音/自动开始）在等待新定位期间重入，建出两个会话。 */
+  navStarting: false,
   /**
    * 预览新鲜度起点（毫秒）：由语音队列排空事件写入（概要播完、确认询问播完各一次），
    * 是「开始导航」复用预览的 10 秒窗口的唯一起算点（不从预览返回或开始播报起算）。
@@ -500,11 +513,8 @@ Page({
         this.setData({
           loading: false,
           mapReady: false,
-          // 模拟器专用文案：明确是“本机后端连不上 + 模拟器不能用 UDP 广播”，
-          // 不把模拟器限制误导成“局域网里没有服务”。
-          loadError: failure === 'devtools-backend-unreachable' || failure === 'devtools-port-missing'
-            ? '模拟器未连上本机后端：请确认后端已在本机启动（模拟器内无法使用局域网 UDP 广播发现）'
-            : describeError('ENDPOINT_UNRESOLVED'),
+          // 按失败原因区分：模拟器限制、无掩码、网段过大、扫描无命中等，不压成同一个文案。
+          loadError: describeEndpointFailure(failure),
         });
         if (!getScreenReaderVoice()) void appContext.voicePrompts.play('map-load-failed');
         vibrateLong();
@@ -1728,8 +1738,33 @@ Page({
     this.setData({ voiceParsing: true, voiceStatus: '正在理解，请稍候' });
     this.setData({ recognized: text, partial: '', reply: '正在理解…' });
     try {
+      // 本地规则优先：命中即分发既有动作路径，不产生网络请求（决策 D1）
+      const local = matchLocalIntent(text, appContext.map.places);
+      if (local !== null) {
+        log.info(
+          local.needsClarification
+            ? '本地模糊命中，直接给候选卡'
+            : '本地规则命中',
+          {
+            text,
+            intent: local.intent,
+            action: local.action?.name ?? null,
+            candidates: local.candidates.length,
+          },
+        );
+        if (epoch !== this.voiceEpoch) return;
+        this.applyIntent(local);
+        return;
+      }
+      log.info('本地零命中，转服务端大模型', { text });
       const result = await this.intents.parse(text, undefined, this.intentLocation());
       if (epoch !== this.voiceEpoch) return;
+      log.info('服务端意图结果', {
+        text,
+        intent: result.intent,
+        action: result.action?.name ?? null,
+        needsClarification: result.needsClarification,
+      });
       this.applyIntent(result);
     } catch (err) {
       if (epoch !== this.voiceEpoch) return;
@@ -1941,11 +1976,10 @@ Page({
       return;
     }
     const destination = this.navDestination;
-    const origin = this.previewOrigin;
-    if (destination === null || origin === null) {
+    if (destination === null || this.previewOrigin === null) {
       return;
     }
-    void this.startNavigation(destination, origin);
+    void this.startNavigation(destination);
   },
 
   /**
@@ -1979,10 +2013,9 @@ Page({
     }
     if (this.canReusePreview()) {
       const destination = this.navDestination;
-      const origin = this.previewOrigin;
-      if (destination !== null && origin !== null) {
+      if (destination !== null) {
         log.info('开始导航：复用近期预览', destination.name);
-        void this.startNavigation(destination, origin);
+        void this.startNavigation(destination);
         return;
       }
     }
@@ -2116,7 +2149,7 @@ Page({
         return;
       }
       const message =
-        err instanceof ApiClientError ? describeError(err.code) : '路线规划失败，请重试';
+        err instanceof ApiClientError ? describeError(err) : '路线规划失败，请重试';
       log.warn('路线预览失败', err);
       this.finishPreview(message);
       return;
@@ -2160,7 +2193,7 @@ Page({
         // 场景二：用户已用「开始导航」表达意愿 → 概要播完直接开始，不再二次确认
         this.previewAutoStart = false;
         log.info('概要播报结束：直接开始导航', destination.name);
-        void this.startNavigation(destination, origin);
+        void this.startNavigation(destination);
         return;
       }
       this.askStartNavigation(token);
@@ -2243,6 +2276,43 @@ Page({
     this.resolvePreviewOrigin(null);
   },
 
+  /**
+   * 建会话前重取一次当前定位：强制触发一拍立即采集，拿到可信坐标即返回；
+   * 超时或只拿到不可信质量返回 null（调用方据此提示重试，绝不用旧起点建会话）。
+   */
+  requestFreshOrigin(timeoutMs = START_NAV_ORIGIN_TIMEOUT_MS): Promise<OriginPosition | null> {
+    const pipeline = this.pipeline;
+    if (pipeline === null || !pipeline.isRunning) {
+      return Promise.resolve(null);
+    }
+    // 上一次等待作废（重复调用只保留最后一次）
+    if (this.freshOriginTimer !== null) {
+      clearTimeout(this.freshOriginTimer);
+      this.freshOriginTimer = null;
+    }
+    this.freshOriginResolve?.(null);
+    return new Promise((resolve) => {
+      this.freshOriginResolve = resolve;
+      this.freshOriginTimer = setTimeout(() => {
+        this.freshOriginTimer = null;
+        const pending = this.freshOriginResolve;
+        this.freshOriginResolve = null;
+        pending?.(null);
+      }, timeoutMs);
+      void pipeline.tick();
+    });
+  },
+
+  resolveFreshOrigin(origin: OriginPosition): void {
+    if (this.freshOriginTimer !== null) {
+      clearTimeout(this.freshOriginTimer);
+      this.freshOriginTimer = null;
+    }
+    const resolve = this.freshOriginResolve;
+    this.freshOriginResolve = null;
+    resolve?.(origin);
+  },
+
   /** 静默清理预览（被其他意图接管时用，不播取消提示）。 */
   cancelPreviewSilently(): void {
     this.previewToken += 1;
@@ -2296,10 +2366,24 @@ Page({
     this.speech?.enqueue(message, 'turn', null, 'map:preview-cancel');
   },
 
-  /** 确认后：创建会话 → 首条指令（概要不重播）。 */
-  async startNavigation(destination: PlaceCandidate, origin: OriginPosition): Promise<void> {
+  /** 确认后：重取当前定位作为起点 → 创建会话 → 首条指令（概要不重播）。 */
+  async startNavigation(destination: PlaceCandidate): Promise<void> {
     const controller = this.controller;
-    if (controller === null) {
+    if (controller === null || this.navStarting) {
+      return;
+    }
+    // 预览起点是预览早期冻结的观测：10 秒复用窗口只看「预览还剩多少价值」，
+    // 不看观测年龄；服务端只接受 15 s 内的观测，确认后必须重新取一次。
+    this.navStarting = true;
+    const token = this.previewToken;
+    this.setData({ reply: '正在获取当前位置…' });
+    const freshOrigin = await this.requestFreshOrigin();
+    this.navStarting = false;
+    if (token !== this.previewToken) {
+      return; // 等待期间用户取消/改目的地
+    }
+    if (freshOrigin === null) {
+      this.finishPreview('没能获取到当前位置，请稍作停留后重试。');
       return;
     }
     this.previewToken += 1; // 确认后：迟到的预览回调不再生效
@@ -2343,15 +2427,14 @@ Page({
     this.enterNavZoom(); // 视野从全路线收窄到局部（REQ-NAV 展示层）
 
     try {
-      await controller.createSession(destination, origin, 'blind', {
+      await controller.createSession(destination, freshOrigin, 'blind', {
         overviewPlayed: true,
         // 场景一（确认后启动）与场景二（概要后自动启动）共用：首条指令前先播过渡
         transitionClip: NAV_START_TRANSITION_CLIP,
       });
       this.setData({ stateText: NAV_TEXT.active });
     } catch (err) {
-      const message =
-        err instanceof ApiClientError ? describeError(err.code) : '无法开始导航，请重试';
+      const message = err instanceof ApiClientError ? describeError(err) : '无法开始导航，请重试';
       log.warn('会话创建失败', err);
       this.sessionEnded = true;
       this.onDismissNav();
@@ -2540,6 +2623,21 @@ Page({
       this.recordCalibration(estimate, meta.visibleBeaconCount);
     }
     const position = estimate.position;
+    // 建会话前重取起点：只要能拿到可信坐标就交出去（预览/已确认/导航阶段均可能等到）
+    if (
+      this.freshOriginResolve !== null &&
+      position !== undefined &&
+      position !== null &&
+      (estimate.quality === 'reliable' || estimate.quality === 'degraded')
+    ) {
+      this.resolveFreshOrigin({
+        x: position.x,
+        y: position.y,
+        floorId: position.floorId ?? null,
+        confidence: estimate.confidence,
+        observedAt: estimate.observedAt,
+      });
+    }
     if (position !== undefined && position !== null) {
       this.locationWarned = false; // 可信位置恢复：允许下一次不可用重新记日志
       // 只有 reliable/degraded 才带坐标 → 恢复态(unreliable)天然不推进显示

@@ -512,7 +512,9 @@ flowchart LR
   "matchedArea": { "placeId": "main-corridor", "name": "一楼走廊" },
   "algorithmVersion": "location-0.3",
   "paramsVersion": "loc-2026-11-01.1",
-  "observedAt": "2026-10-23T08:00:00Z"
+  "observedAt": "2026-10-23T08:00:00Z",
+  "observationAgeS": 1.8,
+  "observationStale": false
 }
 ```
 
@@ -525,6 +527,7 @@ flowchart LR
 - 未知信标 ID 可在 `ignoredBeaconIds` 中返回，不将其强行参与估计。
 - `paramsVersion` 标识本次解算使用的参数集（`PATHAI_LOCATION_*`），用于与 `mapVersion`/`algorithmVersion` 一起追溯；导航会话创建时固化并在创建/查询响应返回（docs/28 §5.4）。
 - 地图版本不一致返回 `409 MAP_VERSION_CONFLICT`；定位阈值与 `confidence` 到 `quality` 的映射必须经测试定标 `[TBD]`。
+- **时间戳只做脏数据下限**（0.3.4）：缺时区、未来超过 60 s、观测龄超过 300 s 时返回 `422 LOCATION_UNRELIABLE`（`details.reason=observation_time_invalid`）；其余情况**不因新鲜度拒绝**，回带 `observationAgeS`（秒，服务端时钟）与 `observationStale`（是否超过 15 s 提示阈值），是否因过期重新采集由客户端判断（R-018）。
 
 ### API-06 创建导航会话并规划路线
 
@@ -581,7 +584,9 @@ flowchart LR
       }
     ]
   },
-  "createdAt": "2026-10-23T08:00:01Z"
+  "createdAt": "2026-10-23T08:00:01Z",
+  "originObservationAgeS": 19.4,
+  "originObservationStale": true
 }
 ```
 
@@ -591,9 +596,35 @@ flowchart LR
 
 - 仅在用户确认目的地后调用；一个活动导航会话对应一次明确导航任务。
 - `origin.confidence` 必须满足服务端配置阈值，否则 `422 LOCATION_UNRELIABLE`。
+- **起点新鲜度不由服务端拒绝**（0.3.4）：响应回带 `originObservationAgeS`（秒，服务端时钟）与 `originObservationStale`（是否超过 15 s 提示阈值），客户端据此提示或重取，绝不因此返回 422。服务端只在时间戳明显非法时拒绝（缺时区、未来超过 60 s、观测龄超过 300 s），错误 `details.reason = observation_time_invalid`。
 - 当前路线不可达时 `422 ROUTE_NOT_FOUND`；盲模式需跨层但没有可用电梯时返回 `422 ACCESSIBLE_ROUTE_NOT_FOUND`。
 - 创建时记录地图版本、定位算法版本与路由规则版本。
 - 请求使用 `Idempotency-Key`，以应对网络重试而不创建多个会话。
+
+### API-06b 预览路线（只规划，不建会话）
+
+`POST /api/v1/nav/preview`
+
+请求与 API-06 相同（不含 `Idempotency-Key`）。成功 `200`：
+
+```json
+{
+  "mapVersion": "2026-10-01.1",
+  "destination": { "placeId": "library-301", "name": "三楼图书馆", "floorId": "3" },
+  "route": { "routeId": "route_...", "distanceM": 126.5, "polyline": [], "segments": [] },
+  "overviewText": null,
+  "originObservationAgeS": 1.2,
+  "originObservationStale": false
+}
+```
+
+规则：
+
+- 仅规划与概要预览：**不创建会话、不写任何库表**，供用户在确认目的地前听到路线概要；确认后再调 API-06。
+- 地图解析、起点可信度校验与 `plan_route`（含危险层）与 API-06 完全同源，保证预览路线与建会话路线一致。
+- `overviewText` 为大模型概要；暂无概要生成时返回 `null`，客户端用本地模板兜底（概要必播）。
+- 起点时间同样只作提示：回带 `originObservationAgeS` / `originObservationStale`，不因起点过期返回 422；`422 LOCATION_UNRELIABLE` 只用于起点置信度不足或楼层缺失。
+- 错误码同 API-06：`422 LOCATION_UNRELIABLE` / `422 ROUTE_NOT_FOUND` / `404 MAP_NOT_PUBLISHED` 等。
 
 ### API-07 导航位置更新与下一事件
 

@@ -11,7 +11,7 @@ import json
 import math
 import shutil
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -171,6 +171,31 @@ class TestAuthAndVersioning:
 
 
 class TestTrilateration:
+    def test_stale_batch_is_advisory_not_rejection(self, client, auth_headers, rich_maps):
+        # 30 s 前的采集不再拒绝（采集新鲜度由客户端判断），只回带观测龄提示。
+        body = {
+            "siteId": "school-building-01", "mapVersion": SAMPLE, "sequence": 1,
+            "collectedAt": (datetime.now(timezone.utc) - timedelta(seconds=30))
+            .isoformat().replace("+00:00", "Z"),
+            "beacons": [
+                {"beaconId": b[0], "rssi": b[1],
+                 "observedAt": (datetime.now(timezone.utc) - timedelta(seconds=30))
+                 .isoformat().replace("+00:00", "Z")}
+                for b in _obs_at_expect_p()
+            ],
+        }
+        resp = client.post(URL, json=body, headers=auth_headers)
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()
+        assert payload["observationStale"] is True
+        assert 29.0 <= payload["observationAgeS"] <= 40.0
+        assert payload["quality"] == "reliable"
+
+    def test_fresh_batch_reports_not_stale(self, client, auth_headers, rich_maps):
+        payload = _estimate(client, auth_headers, _obs_at_expect_p())
+        assert payload["observationStale"] is False
+        assert payload["observationAgeS"] is not None
+
     def test_reliable_estimate_near_true_position(self, client, auth_headers, rich_maps):
         # 期望点 (-25,-68)：平面距三真实信标 8.8/17.2/14.6m，
         # 按 RSSI@1m=-71 斜距反推整数 RSSI 后解算偏差经真实 solver 验证 <1.5m

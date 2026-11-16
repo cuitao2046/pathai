@@ -11,6 +11,11 @@ import { describeError } from '../../core/http/error-messages';
 import { ApiClientError } from '../../core/http/errors';
 import { appContext } from '../../services/app-context';
 import { currentServiceBaseUrl } from '../../services/service-endpoint';
+import {
+  DISCOVERY_MODE_LABELS,
+  DISCOVERY_MODE_ORDER,
+  type DiscoveryMode,
+} from '../../services/discovery-mode';
 import { runP0LocalProbe } from '../../services/p0-local-probe';
 import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
@@ -27,6 +32,20 @@ const log = createLogger('settings');
 /** 设置页展示用：未解析成功时明确显示“未连接”，不展示任何编译期地址。 */
 function apiUrlText(): string {
   return currentServiceBaseUrl() ?? '未连接（服务地址未解析）';
+}
+
+/** 服务发现方式三态的展示数据（写入后重启小程序生效）。 */
+function discoveryModeView(): {
+  discoveryMode: DiscoveryMode;
+  discoveryModeIndex: number;
+  discoveryModeLabel: string;
+} {
+  const mode = appContext.getDiscoveryModeSetting();
+  return {
+    discoveryMode: mode,
+    discoveryModeIndex: Math.max(0, DISCOVERY_MODE_ORDER.indexOf(mode)),
+    discoveryModeLabel: DISCOVERY_MODE_LABELS[mode],
+  };
 }
 
 Page({
@@ -71,6 +90,11 @@ Page({
     fullScreenPttSetting: true,
     /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
     navArrowSetting: true,
+    /** 服务发现方式：自动 / 仅广播 / 仅扫描（默认自动，重启生效）。 */
+    discoveryMode: 'auto' as DiscoveryMode,
+    discoveryModeIndex: 0,
+    discoveryModeLabel: DISCOVERY_MODE_LABELS.auto,
+    discoveryModeOptions: DISCOVERY_MODE_ORDER.map(mode => DISCOVERY_MODE_LABELS[mode]),
     /** 定位常量计算：服务端当前生效版本（只读展示）。 */
     runtimeParamVersion: '读取中…',
     runtimeGridVersion: '读取中…',
@@ -112,6 +136,7 @@ Page({
         screenReaderVoice: getScreenReaderVoice(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
         navArrowSetting: appContext.getNavArrowSetting(),
+        ...discoveryModeView(),
       },
       () => this.perf?.mark('onLoad-rendered', 1000),
     );
@@ -174,8 +199,22 @@ Page({
         screenReaderVoice: getScreenReaderVoice(),
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
       navArrowSetting: appContext.getNavArrowSetting(),
+      ...discoveryModeView(),
     });
     void this.refreshRuntimeConfig(false);
+  },
+
+  /** 选择服务发现方式：自动 / 仅广播 / 仅扫描（重启小程序生效）。 */
+  onChangeDiscoveryMode(event: WechatMiniprogram.PickerChange): void {
+    const index = Number(event.detail.value);
+    const mode = DISCOVERY_MODE_ORDER[index] ?? 'auto';
+    try {
+      appContext.setDiscoveryModeSetting(mode);
+      this.setData(discoveryModeView());
+      wx.showToast({ title: '已保存，重启小程序生效', icon: 'none' });
+    } catch (_) {
+      wx.showToast({ title: '设置保存失败，请重试', icon: 'none' });
+    }
   },
 
   /** 首个可视帧完成（跳转链路的最后一段：onReady）。 */

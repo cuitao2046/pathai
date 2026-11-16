@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Protocol
@@ -64,14 +65,21 @@ class HttpWechatAuthClient:
 
 
 class FakeWechatAuthClient:
-    """本地联调替身：code 以 ``fake-<openid>`` 形式直接换取 openid。
+    """本地联调替身：不访问网络，任意非空 code 都能换取 openid。
+
+    - ``fake-<openid>``：openid 取前缀后的部分（保持既有联调口径）；
+    - 其他非空 code（真实 ``wx.login`` 形状）：由 code 本身派生稳定 openid，
+      同一 code 始终映射到同一匿名主体；
+    - 空 code 仍按 AUTH_CODE_INVALID 拒绝。
 
     仅允许 PATHAI_ENV=local 且 PATHAI_WECHAT_FAKE=1 时装配（装配处校验）；
     不访问网络、不校验 appid/secret，方便客户端在无真实 appid 时联调登录链路。
     """
 
     def code_to_session(self, code: str) -> str:
+        if not isinstance(code, str) or not code:
+            raise WechatAuthError("invalid_code", "fake 模式需要非空 code")
         prefix = "fake-"
-        if not code.startswith(prefix) or len(code) <= len(prefix):
-            raise WechatAuthError("invalid_code", "fake 模式仅接受 fake-<openid> 形式的 code")
-        return code[len(prefix):]
+        if code.startswith(prefix) and len(code) > len(prefix):
+            return code[len(prefix):]
+        return hashlib.sha256(code.encode("utf-8")).hexdigest()[:32]

@@ -172,15 +172,32 @@ class TestPrompts(LlmBase):
         self.assertEqual(cache_key, prompt_cache_key(self.dictionary))
         self.assertIn(self.dictionary.map_version, cache_key)
 
-    def test_schema_contains_core_enums(self):
+    def test_schema_contains_core_fields(self):
+        # intent_type 不再用 Literal 枚举（新增动作不改类型定义），改为按字段校验
         schema = json.dumps(intent_json_schema(), ensure_ascii=False)
-        for token in ("navigate_to_destination", "ambiguous_concepts", "standard_name", "direct_response_speech"):
+        for token in ("action", "intent_type", "ambiguous_concepts", "standard_name", "direct_response_speech"):
             self.assertIn(token, schema)
 
     def test_fallbacks_and_accessibility_facts_in_prefix(self):
         system = intent_system_prompt(self.dictionary)
         self.assertIn("食堂→饮水", system)
         self.assertIn("未铺设盲道", system)
+
+    def test_action_catalog_comes_from_registry(self):
+        system = intent_system_prompt(self.dictionary)
+        for action in (
+            "navigate_to_place",
+            "start_navigation",
+            "query_current_location",
+            "describe_surroundings",
+            "speak_answer",
+            "cancel_navigation",
+            "end_navigation",
+            "repeat_instruction",
+        ):
+            self.assertIn(f"`{action}`", system)
+        # 动作说明由注册表汇总，而不是 prompt 里手写另一份清单
+        self.assertIn("参数：", system)
 
 
 class TestParserLlmCases(LlmBase):

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import Field, model_validator
 
 from pathai_backend.schemas.common import IntentType, PlaceCandidate, StrictModel
@@ -34,6 +36,18 @@ class IntentParseRequest(StrictModel):
     location: IntentLocation | None = None
 
 
+class IntentAction(StrictModel):
+    """受控动作：客户端按 name 执行，params 只含 actions 白名单内的槽位。
+
+    与客户端 `client/typings/api.d.ts#IntentAction` 对齐；缺省时旧客户端按
+    intent/destination 走既有流程。
+    """
+
+    name: str = Field(min_length=1)
+    params: dict[str, Any] = Field(default_factory=dict)
+    confirmationRequired: bool = False
+
+
 class IntentParseResponse(StrictModel):
     intentId: str = Field(min_length=1)
     intent: IntentType
@@ -42,6 +56,7 @@ class IntentParseResponse(StrictModel):
     destination: PlaceCandidate | None = None
     candidates: list[PlaceCandidate] = Field(default_factory=list)
     responseText: str = Field(min_length=1)
+    action: IntentAction | None = None
 
     @model_validator(mode="after")
     def _check_clarification(self) -> "IntentParseResponse":

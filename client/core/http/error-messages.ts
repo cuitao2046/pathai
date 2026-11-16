@@ -47,6 +47,20 @@ const MESSAGES: Partial<Record<ApiErrorCode, string>> = {
   PAYLOAD_TOO_LARGE: '请求数据过大',
 };
 
-export function describeError(code: ApiErrorCode): string {
+/**
+ * 错误码 → 本地话术。
+ * 传入 ApiClientError 时，LOCATION_UNRELIABLE 优先用服务端原文（如「起点观测已过期，
+ * 请重新定位」）——该码既有「信标太少」也有「观测过期」等原因，统一话术会误导排查。
+ */
+export function describeError(
+  error: ApiErrorCode | { code: ApiErrorCode; message?: string | null },
+): string {
+  const code = typeof error === 'string' ? error : error.code;
+  if (code === 'LOCATION_UNRELIABLE' && typeof error !== 'string') {
+    const serverMessage = error.message?.trim();
+    if (serverMessage !== undefined && serverMessage !== '' && serverMessage !== code) {
+      return serverMessage;
+    }
+  }
   return MESSAGES[code] ?? '出了点问题，请重试';
 }

@@ -46,11 +46,13 @@ class Settings:
     llm_timeout_s: float = 15.0
     #: 结构化输出模式：json_object（DeepSeek/Qwen 通用）或 json_schema（OpenAI 系）
     llm_structured_mode: str = "json_object"
+    #: 完整 LLM trace（原文 prompt + 结构化响应原文）；私有局域网调试期默认关闭
+    llm_trace: bool = False
     token_ttl_seconds: int = 7200
     #: 请求体大小上限（字节）：客户端直连部署无反代兜底，服务端自行防超大 body 耗尽内存。
     #: 现有最大消费者是指纹库导入（8MB 校验），默认 10MB 覆盖之。
     max_body_bytes: int = 10 * 1024 * 1024
-    # 本地联调假微信客户端开关：仅 env=local 允许开启（code 以 fake-<openid> 形式直换）
+    # 本地联调假微信客户端开关：仅 env=local 允许开启（任意非空 code 均可换取稳定 openid）
     wechat_fake: bool = False
     # 地图包目录：约定 backend/maps_data/<siteId>/<mapVersion>.json
     map_data_dir: Path = Path(__file__).resolve().parent.parent / "maps_data"
@@ -98,6 +100,7 @@ class Settings:
             llm_model=env.get("PATHAI_LLM_MODEL", ""),
             llm_timeout_s=float(env.get("PATHAI_LLM_TIMEOUT_S", "15")),
             llm_structured_mode=env.get("PATHAI_LLM_STRUCTURED_MODE", "json_object"),
+            llm_trace=env.get("PATHAI_LLM_TRACE", "").lower() in ("1", "true", "yes"),
             token_ttl_seconds=int(env.get("PATHAI_TOKEN_TTL", "7200")),
             max_body_bytes=int(env.get("PATHAI_MAX_BODY_BYTES", str(10 * 1024 * 1024))),
             wechat_fake=env.get("PATHAI_WECHAT_FAKE", "").lower() in ("1", "true", "yes"),

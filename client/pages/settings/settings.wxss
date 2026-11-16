@@ -31,6 +31,11 @@
   color: #6b7280;
 }
 
+.picker-value {
+  color: #1f2937;
+  text-align: right;
+}
+
 .hint {
   margin-top: 16rpx;
   font-size: 24rpx;

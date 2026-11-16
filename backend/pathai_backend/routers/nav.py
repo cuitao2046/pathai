@@ -21,7 +21,12 @@ from pathai_backend.hazard_layer import HazardRepository
 from pathai_backend.map_repository import MapRepository, PublishedMap
 from pathai_backend.models import NavIdempotency, NavSession
 
-from pathai_backend.observation_time import is_fresh
+from pathai_backend.observation_time import (
+    ADVISORY_STALE_AGE_S,
+    is_fresh_for_guidance,
+    is_sane,
+    observation_age_s,
+)
 
 from pathai_backend.nav_service import (
     ARRIVAL_RADIUS_M,
@@ -57,6 +62,8 @@ from pathai_backend.schemas.nav import (
     LocationUpdate,
     NavUpdateRequest,
     NavUpdateResponse,
+    PreviewRouteRequest,
+    PreviewRouteResponse,
     RouteInfo,
     SessionQueryResponse,
 )
@@ -76,6 +83,17 @@ def get_hazard_repository(request: Request) -> HazardRepository:
 
 def _epoch_to_dt(epoch: int) -> datetime:
     return datetime.fromtimestamp(epoch, tz=timezone.utc)
+
+
+def _origin_age_s(observed: datetime) -> float | None:
+    """起点观测龄（秒，1 位小数）；时区缺失返回 None（随后由 is_sane 拒绝）。"""
+    age = observation_age_s(observed)
+    return None if age is None else round(age, 1)
+
+
+def _is_stale(age_s: float | None) -> bool:
+    """仅作提示：起点是否已超过提示阈值，不参与拒绝判断。"""
+    return age_s is not None and age_s > ADVISORY_STALE_AGE_S
 
 
 def _owned_session(
@@ -112,6 +130,45 @@ def _resolve_published(
     return published
 
 
+@router.post("/preview", response_model=PreviewRouteResponse)
+def preview_route(
+    body: PreviewRouteRequest,
+    user: auth.AuthenticatedUser = Depends(auth.get_current_user),
+    repo: MapRepository = Depends(get_map_repository),
+    hazard_repo: HazardRepository = Depends(get_hazard_repository),
+) -> PreviewRouteResponse:
+    """只做规划与概要预览：不建会话、不写库、不需要 Idempotency-Key。
+
+    与建会话共用同一套地图解析、起点可信度校验与 plan_route（含危险层），
+    保证「预览看到的路线」与「确认后建会话得到的路线」同源。
+    """
+    del user  # 鉴权仅要求登录态；预览不产生任何持久化副作用
+    published = _resolve_published(repo, body.siteId, body.mapVersion)
+    origin_age = _origin_age_s(body.origin.observedAt)
+    if not is_sane(body.origin.observedAt):
+        raise ApiError(
+            422, 'LOCATION_UNRELIABLE', '起点观测时间戳不可用，请校准设备时间后重新定位',
+            details={'reason': 'observation_time_invalid'},
+        )
+    if body.origin.confidence < ORIGIN_MIN_CONFIDENCE or body.origin.floorId is None:
+        raise ApiError(422, "LOCATION_UNRELIABLE", "起点定位不可靠，请先重新定位")
+    index = PackageIndex(published.pkg)
+    origin_node = snap_to_node(index, body.origin.floorId, body.origin.x, body.origin.y)
+    route_info, _dest = plan_route(
+        published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
+        hazard_layer=hazard_repo.get(published.site_id, published.map_version),
+    )
+    place = index.places[body.destinationId]
+    return PreviewRouteResponse(
+        mapVersion=published.map_version,
+        destination=PlaceCandidate(placeId=place.placeId, name=place.name, floorId=place.floorId),
+        route=route_info,
+        overviewText=None,
+        originObservationAgeS=origin_age,
+        originObservationStale=_is_stale(origin_age),
+    )
+
+
 @router.post("/sessions", response_model=CreateSessionResponse, status_code=201)
 def create_session(
     body: CreateSessionRequest,
@@ -136,8 +193,12 @@ def create_session(
         return CreateSessionResponse.model_validate_json(existing.response_json)
 
     published = _resolve_published(repo, body.siteId, body.mapVersion)
-    if not is_fresh(body.origin.observedAt):
-        raise ApiError(422, 'LOCATION_UNRELIABLE', '起点观测已过期，请重新定位')
+    origin_age = _origin_age_s(body.origin.observedAt)
+    if not is_sane(body.origin.observedAt):
+        raise ApiError(
+            422, 'LOCATION_UNRELIABLE', '起点观测时间戳不可用，请校准设备时间后重新定位',
+            details={'reason': 'observation_time_invalid'},
+        )
     if body.origin.confidence < ORIGIN_MIN_CONFIDENCE or body.origin.floorId is None:
         raise ApiError(422, "LOCATION_UNRELIABLE", "起点定位不可靠，请先重新定位")
     index = PackageIndex(published.pkg)
@@ -180,6 +241,8 @@ def create_session(
         destination=PlaceCandidate(placeId=place.placeId, name=place.name, floorId=place.floorId),
         route=route_info,
         createdAt=_epoch_to_dt(now),
+        originObservationAgeS=origin_age,
+        originObservationStale=_is_stale(origin_age),
     )
     db.add(session)
     db.add(
@@ -309,7 +372,7 @@ def nav_update(
 
     trusted = (
         loc.quality in TRUSTED_QUALITIES and loc.floorId is not None
-        and is_fresh(loc.observedAt)
+        and is_fresh_for_guidance(loc.observedAt)
         # A recently delivered older batch must not roll guidance back across requests.
         and loc.observedAt.timestamp() >= session.updated_at_epoch - 5
     )

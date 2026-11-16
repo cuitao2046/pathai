@@ -209,6 +209,25 @@ class TestApi04Intent:
         assert resp.needsClarification is True
         assert len(resp.candidates) == 2
 
+    def test_start_command_action_roundtrip(self):
+        payload = {
+            "intentId": "intent_003",
+            "intent": "start_navigation",
+            "confidence": 0.95,
+            "needsClarification": False,
+            "destination": None,
+            "candidates": [],
+            "responseText": "好的，开始导航。",
+            "action": {
+                "name": "start_navigation",
+                "params": {},
+                "confirmationRequired": False,
+            },
+        }
+        resp = IntentParseResponse.model_validate(payload)
+        assert resp.action is not None
+        assert resp.action.name == "start_navigation"
+
     def test_parse_request_roundtrip(self):
         req = IntentParseRequest.model_validate(
             {

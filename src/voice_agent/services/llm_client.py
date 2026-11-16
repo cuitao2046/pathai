@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 
 import httpx
@@ -34,6 +35,8 @@ class LlmConfig:
     max_tokens: int = 900
     #: json_object | json_schema | none
     structured_mode: str = "json_object"
+    #: 完整 trace（原文 prompt + 原文响应）：私有局域网调试期由 PATHAI_LLM_TRACE 打开
+    trace: bool = False
 
     @property
     def configured(self) -> bool:
@@ -49,6 +52,8 @@ class LlmResult:
     text: str
     ttft_ms: int
     total_ms: int
+    #: 单次调用 trace 标识，便于与 REQ/RAW 日志对齐
+    trace_id: str = ""
 
 
 class LlmClient:
@@ -74,6 +79,16 @@ class LlmClient:
         response_format = self._response_format(response_schema, schema_name)
         if response_format is not None:
             payload["response_format"] = response_format
+
+        trace_id = f"llm_{uuid.uuid4().hex[:12]}"
+        if self._config.trace:
+            # 全量 prompt：含 ASR 原文（user 消息）与静态规则/词典（system 消息）
+            logger.info(
+                "LLM_TRACE %s REQ model=%s messages=%s",
+                trace_id,
+                self._config.model,
+                json.dumps(messages, ensure_ascii=False),
+            )
 
         started = time.monotonic()
         ttft_ms: int | None = None
@@ -108,11 +123,22 @@ class LlmClient:
             raise LlmError("LLM 返回空内容")
         if ttft_ms is None:
             ttft_ms = total_ms
-        logger.info(
-            "llm chat model=%s ttft_ms=%d total_ms=%d chars=%d",
-            self._config.model, ttft_ms, total_ms, len(text),
-        )
-        return LlmResult(text=text, ttft_ms=ttft_ms, total_ms=total_ms)
+        if self._config.trace:
+            # 结构化响应原文：下游解析失败时据此判断是 JSON 截断还是语义偏差
+            logger.info(
+                "LLM_TRACE %s RAW model=%s ttft_ms=%d total_ms=%d text=%s",
+                trace_id,
+                self._config.model,
+                ttft_ms,
+                total_ms,
+                text,
+            )
+        else:
+            logger.info(
+                "llm chat trace_id=%s model=%s ttft_ms=%d total_ms=%d chars=%d",
+                trace_id, self._config.model, ttft_ms, total_ms, len(text),
+            )
+        return LlmResult(text=text, ttft_ms=ttft_ms, total_ms=total_ms, trace_id=trace_id)
 
     def _response_format(self, schema: dict | None, name: str) -> dict | None:
         mode = self._config.structured_mode

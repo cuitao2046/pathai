@@ -2,8 +2,18 @@ import { parseBusinessOffer } from '../core/discovery/business-protocol';
 import { discoverBusinessCandidate } from '../services/business-discovery';
 
 const requestId = '01010101010101010101010101010101';
+const DEVICE_A = 'srv-' + 'a'.repeat(32);
+const DEVICE_B = 'srv-' + 'b'.repeat(32);
 const valid = { protocol: 'local-service-discovery', version: 1, type: 'BUSINESS_OFFER',
   serviceName: 'my-backend', requestId, port: 8000, authenticated: false };
+
+function healthy(deviceId = DEVICE_A) {
+  return { status: 'ok', service: 'my-backend', device_id: deviceId, version: '0.1.0', api_version: 'v1' };
+}
+
+function identity(deviceId = DEVICE_A) {
+  return { service: 'my-backend', deviceId, version: '0.1.0', apiVersion: 'v1' };
+}
 
 function packet(value: unknown): ArrayBuffer {
   return Uint8Array.from(JSON.stringify(value), (character) => character.charCodeAt(0)).buffer;
@@ -55,8 +65,8 @@ describe('免配对业务发现', () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][0].url).toBe('http://192.168.1.44:8000/healthz');
     expect(request.mock.calls[0][0]).not.toHaveProperty('header');
-    request.mock.calls[0][0].success({ statusCode: 200, data: { status: 'ok' } });
-    expect(await pending).toBe('http://192.168.1.44:8000');
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy() });
+    expect(await pending).toEqual({ url: 'http://192.168.1.44:8000', identity: identity() });
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -86,8 +96,21 @@ describe('免配对业务发现', () => {
     await Promise.resolve();
     onMessage?.({ message: packet(valid), remoteInfo: { address: '192.168.1.45' } });
     expect(request).toHaveBeenCalledTimes(2);
-    request.mock.calls[1][0].success({ statusCode: 200, data: { status: 'ok' } });
-    expect(await pending).toBe('http://192.168.1.45:8000');
+    request.mock.calls[1][0].success({ statusCode: 200, data: healthy() });
+    expect(await pending).toEqual({ url: 'http://192.168.1.45:8000', identity: identity() });
+  });
+
+  test('已知 device_id 时忽略其它服务端的 OFFER', async () => {
+    const pending = discoverBusinessCandidate(DEVICE_B);
+    await Promise.resolve();
+    onListening?.();
+    onMessage?.({ message: packet(valid), remoteInfo: { address: '192.168.1.44' } });
+    request.mock.calls[0][0].success({ statusCode: 200, data: healthy(DEVICE_A) });
+    await Promise.resolve();
+    expect(request).toHaveBeenCalledTimes(1);
+    onMessage?.({ message: packet(valid), remoteInfo: { address: '192.168.1.45' } });
+    request.mock.calls[1][0].success({ statusCode: 200, data: healthy(DEVICE_B) });
+    expect(await pending).toEqual({ url: 'http://192.168.1.45:8000', identity: identity(DEVICE_B) });
   });
 
   test('异步 UDP 错误仅结束发现，不请求业务', async () => {

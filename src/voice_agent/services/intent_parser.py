@@ -158,7 +158,10 @@ def _validate_result(
         raise ValueError("LLM 候选全部不在词典内")
 
     status = result.resolution_status
-    if result.intent_type == "navigate_to_destination":
+    is_navigation = result.action == "navigate_to_place" or (
+        result.action is None and result.intent_type == "navigate_to_destination"
+    )
+    if is_navigation:
         if status is None:
             status = (
                 "not_found_in_building"
@@ -184,6 +187,7 @@ class IntentParser:
         text: str,
         spatial_context: UserSpatialContext | None = None,
         pending: Sequence[dict] = (),
+        candidate_places: Sequence[dict] = (),
     ) -> ParseOutcome:
         fast = self._fast_path(text, spatial_context)
         if fast is not None:
@@ -192,9 +196,10 @@ class IntentParser:
         if self._llm is None:
             return self._degrade(text, pending, "LLM 未配置", spatial_context)
 
+        logger.info("意图解析：规则未命中，调用大模型 text=%r", text)
         try:
             messages, cache_key = build_intent_messages(
-                self._dictionary, text, spatial_context, pending
+                self._dictionary, text, spatial_context, pending, candidate_places
             )
             llm_result = self._llm.chat(
                 messages,
@@ -206,6 +211,13 @@ class IntentParser:
             )
             parsed = _validate_result(parsed, self._dictionary)
             parsed = self._fill_direct_speech(parsed, spatial_context)
+            logger.info(
+                "意图解析大模型返回 trace_id=%s text=%r intent=%s ttft_ms=%s",
+                llm_result.trace_id,
+                text,
+                parsed.intent_type,
+                llm_result.ttft_ms,
+            )
             return ParseOutcome(
                 result=parsed,
                 source="llm",
@@ -259,7 +271,7 @@ class IntentParser:
         reason: str,
         ctx: UserSpatialContext | None = None,
     ) -> ParseOutcome:
-        logger.warning("意图解析降级为规则解析：%s", reason)
+        logger.warning("意图解析降级为规则解析：%s（text=%r）", reason, text)
         result = resolve_by_rules(text, self._dictionary, pending)
         # 位置/环境问答即使降级也要有可播报文本（模板兜底，避免"识别成功但没声音"）
         result = self._fill_direct_speech(result, ctx)

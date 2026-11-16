@@ -9,6 +9,19 @@
   <view class="section">
     <view class="section-title">联调配置</view>
     <view class="row"><text class="label">API 地址</text><text user-select>{{apiUrl}}</text></view>
+    <view class="row">
+      <text class="label">服务发现方式</text>
+      <picker
+        mode="selector"
+        range="{{discoveryModeOptions}}"
+        value="{{discoveryModeIndex}}"
+        bindchange="onChangeDiscoveryMode"
+        aria-label="选择服务发现方式"
+      >
+        <view class="picker-value">{{discoveryModeLabel}}</view>
+      </picker>
+    </view>
+    <view class="hint">自动＝缓存探活 → UDP 广播 → 扫描热点网段 172.20.10.0/24（254 个目标）；仅广播/仅扫描只使用指定方式。扫描端口 8000，并发 16、单次超时 1200ms。开发者工具模拟器始终走本机回环。切换后重启小程序生效。</view>
     <view class="row"><text class="label">站点</text><text>{{siteId}}</text></view>
     <view class="row">
       <text class="label">真实信标（live）</text>

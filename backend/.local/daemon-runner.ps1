@@ -125,10 +125,13 @@ try {
         $lastOccupant = ''
 
         Write-RunnerLog ("第 {0} 次调用 start-local.ps1" -f $attempt)
-        # 交给 start-local.ps1 完成环境变量注入 + alembic + uvicorn，输出按行追加到日志
-        & $psExe -NoProfile -ExecutionPolicy Bypass -File $startScript 2>&1 |
-            ForEach-Object { $_.ToString() } |
-            Out-File -FilePath $logFile -Encoding utf8 -Append
+        # 交给 start-local.ps1 完成环境变量注入 + alembic + uvicorn。
+        # 必须让 cmd 直接追加原始字节：走 PowerShell 管道时，原生命令输出会先按控制台代码页
+        # （会话 0 下为 936）解码、再以 UTF-8 写回，中文变成不可逆乱码——LLM trace 里的
+        # prompt/响应原文（PATHAI_LLM_TRACE=1 的调试依据）会全部不可读。
+        $cmdExe = if ($env:ComSpec) { $env:ComSpec } else { Join-Path $env:SystemRoot 'System32\cmd.exe' }
+        $redirect = '"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}" >> "{2}" 2>&1' -f $psExe, $startScript, $logFile
+        & $cmdExe /c $redirect
         $code = $LASTEXITCODE
         Write-RunnerLog ("start-local.ps1 退出（退出码 {0}），{1} 秒后重启" -f $code, $retrySec)
         Start-Sleep -Seconds $retrySec

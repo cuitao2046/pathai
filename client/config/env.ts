@@ -10,8 +10,20 @@
 /** 数据源：mock=开发者工具无 iBeacon 时的模拟信标轨迹；live=真机 BLE 实扫。 */
 export type DataSource = 'mock' | 'live';
 
+/** 后端业务 HTTP 端口（与 backend/.local 守护脚本、扫描发现保持同一口径）。 */
+export const SERVICE_PORT = 8000;
+
 /** 后端 API 根地址（不带末尾斜杠）；开发机 WLAN IP，同 WiFi 下真机可访问。 */
-export const API_BASE_URL = 'http://192.168.1.28:8000';
+export const API_BASE_URL = `http://192.168.1.28:${SERVICE_PORT}`;
+
+/** HTTP 单播扫描：并发请求数（微信小程序网络并发需保守）。 */
+export const SCAN_CONCURRENCY = 16;
+
+/** HTTP 单播扫描：单个 IP 的 `/healthz` 超时（毫秒）。 */
+export const SCAN_TIMEOUT_MS = 1200;
+
+/** HTTP 单播扫描：单次扫描目标上限（含失败提示口径）。 */
+export const SCAN_MAX_HOSTS = 1024;
 
 /** 默认站点 ID：对应 backend/maps_data/school-building-01。 */
 export const DEFAULT_SITE_ID = 'school-building-01';

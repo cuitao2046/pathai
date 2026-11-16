@@ -1,13 +1,21 @@
+import { SERVICE_PORT } from '../config/env';
 import { isP0CandidateUrl } from '../core/discovery/p0-candidate';
-import { API_BASE_URL } from '../config/env';
-import { getString, setString } from '../utils/kv';
+import {
+  parseServiceIdentity,
+  type EndpointProbeResult,
+} from '../core/discovery/service-identity';
+import { createLogger } from '../utils/logger';
+import { getString, remove, setString } from '../utils/kv';
+
+const log = createLogger('probe');
 
 const CACHE_KEY = 'discovery:p0-candidate-url';
+/** 与地址一起缓存设备身份：换 IP 后仍以 device_id 识别同一台服务端。 */
+const DEVICE_KEY = 'discovery:p0-candidate-device-id';
 const TIMEOUT_MS = 1500;
-const expectedPort = API_BASE_URL.match(/:(\d+)$/)?.[1];
 
 function allowedCandidate(url: string): boolean {
-  return isP0CandidateUrl(url) && expectedPort !== undefined && url.endsWith(`:${expectedPort}`);
+  return isP0CandidateUrl(url) && url.endsWith(`:${SERVICE_PORT}`);
 }
 
 export function getP0Candidate(): string | null {
@@ -18,43 +26,76 @@ export function getP0Candidate(): string | null {
   return null;
 }
 
-export function saveP0Candidate(url: string): boolean {
+/** 上次成功解析到的设备身份；用于扫描时只接受同一台服务端。 */
+export function getP0DeviceId(): string | null {
+  return getString(DEVICE_KEY);
+}
+
+/** 保存地址与设备身份；未提供设备身份时清掉旧身份，避免地址与身份错配。 */
+export function saveP0Candidate(url: string, deviceId?: string | null): boolean {
   if (!allowedCandidate(url)) return false;
   setString(CACHE_KEY, url);
+  if (deviceId) {
+    setString(DEVICE_KEY, deviceId);
+  } else {
+    remove(DEVICE_KEY);
+  }
   return getString(CACHE_KEY) === url;
 }
 
-/** 无凭据 `/healthz` 可达性探活（候选缓存与模拟器回环地址共用）。 */
-export function checkEndpointHealth(url: string, timeoutMs = TIMEOUT_MS): Promise<boolean> {
+/**
+ * 探测一个业务根地址的 `/healthz`，校验服务名与 device_id。
+ * 区分「连不上」与「有响应但不是目标服务」，供扫描统计失败原因。
+ */
+export function probeEndpoint(url: string, timeoutMs = TIMEOUT_MS): Promise<EndpointProbeResult> {
   return new Promise((resolve) => {
+    const startedAt = Date.now();
     let finished = false;
     let request: WechatMiniprogram.RequestTask | undefined;
-    const finish = (reachable: boolean) => {
+    const finish = (result: EndpointProbeResult) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
-      if (!reachable) request?.abort();
-      resolve(reachable);
+      if (result.kind === 'unreachable') request?.abort();
+      log.debug(
+        'GET /healthz',
+        url,
+        `结果=${result.kind}`,
+        `耗时=${Date.now() - startedAt}ms`,
+      );
+      resolve(result);
     };
-    const timer = setTimeout(() => finish(false), timeoutMs + 100);
+    const timer = setTimeout(() => finish({ kind: 'unreachable' }), timeoutMs + 100);
     try {
       request = wx.request({
         url: `${url}/healthz`,
         method: 'GET',
         timeout: timeoutMs,
         success: ({ statusCode, data }) => {
-          const body = data as { status?: unknown };
-          finish(statusCode === 200 && body?.status === 'ok');
+          const identity = parseServiceIdentity(statusCode, data);
+          finish(identity ? { kind: 'identified', identity } : { kind: 'unidentified' });
         },
-        fail: () => finish(false),
+        fail: () => finish({ kind: 'unreachable' }),
       });
     } catch {
-      finish(false);
+      finish({ kind: 'unreachable' });
     }
   });
 }
 
-export function checkP0Candidate(url: string): Promise<boolean> {
-  if (!allowedCandidate(url)) return Promise.resolve(false);
-  return checkEndpointHealth(url);
+/** 无凭据 `/healthz` 可达性探活（模拟器回环地址与旧调用方使用）。 */
+export async function checkEndpointHealth(url: string, timeoutMs = TIMEOUT_MS): Promise<boolean> {
+  return (await probeEndpoint(url, timeoutMs)).kind === 'identified';
+}
+
+/**
+ * 缓存候选验活：地址合法且响应身份匹配。
+ * 已知设备身份时必须一致，防止同网另一台后端占用旧 IP 后被误认为原服务。
+ */
+export async function checkP0Candidate(url: string, expectedDeviceId?: string | null): Promise<boolean> {
+  if (!allowedCandidate(url)) return false;
+  const result = await probeEndpoint(url);
+  return result.kind === 'identified' &&
+    (expectedDeviceId === undefined || expectedDeviceId === null ||
+      result.identity.deviceId === expectedDeviceId);
 }

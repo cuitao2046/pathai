@@ -23,7 +23,11 @@ from pathai_backend.errors import ApiError
 from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.models import LocationSequence
-from pathai_backend.observation_time import is_fresh
+from pathai_backend.observation_time import (
+    ADVISORY_STALE_AGE_S,
+    is_sane,
+    observation_age_s,
+)
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.common import GeoPosition
 from pathai_backend.schemas.location import (
@@ -117,8 +121,10 @@ def estimate(
     settings: Settings = Depends(auth.get_settings),
 ) -> PositionEstimateResponse:
     now = datetime.now(timezone.utc)
-    if not is_fresh(body.collectedAt, now) or any(not is_fresh(beacon.observedAt, now) for beacon in body.beacons):
-        raise ApiError(422, 'LOCATION_UNRELIABLE', '定位观测已过期或设备时间不正确，请重新采集', details={'reason': 'observation_time_invalid'})
+    # 只拦截明显非法的时钟数据；收藏是否够新由客户端判断，服务端回带观测龄作提示。
+    if not is_sane(body.collectedAt, now) or any(not is_sane(beacon.observedAt, now) for beacon in body.beacons):
+        raise ApiError(422, 'LOCATION_UNRELIABLE', '定位观测时间戳不可用，请校准设备时间后重新采集', details={'reason': 'observation_time_invalid'})
+    collected_age_s = observation_age_s(body.collectedAt, now)
     if not repo.is_known_site(body.siteId):
         raise ApiError(404, "SITE_NOT_FOUND", f"场所不存在：{body.siteId}")
     latest = repo.latest(body.siteId)
@@ -226,4 +232,6 @@ def estimate(
             overlap=fp_match.overlap,
         ),
         fallbackReason=fallback_reason,
+        observationAgeS=None if collected_age_s is None else round(collected_age_s, 1),
+        observationStale=collected_age_s is not None and collected_age_s > ADVISORY_STALE_AGE_S,
     )

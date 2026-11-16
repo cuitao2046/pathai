@@ -13,6 +13,7 @@ from typing import Sequence
 from ..schemas.spatial_context import UserSpatialContext
 from ..services.dictionary_store import PoiDictionary
 from ..schemas.llm_intent import IntentParseResult
+from ..skills.registry import action_catalog_text
 
 DICT_HEADER = "### 一、建筑可选目的地标准词典（静态缓存区，禁止改写、禁止捏造词典外名称）"
 
@@ -51,14 +52,33 @@ _ROLE_AND_RULES = """### 二、角色与语义对齐规则
 因此上下文里的 `on_tactile_paving=false` 只表示用户当前不在盲道上，
 播报时必须说「本楼未铺设盲道」，**禁止**暗示附近有盲道或建议"沿盲道行走"。
 
-### 五、意图类型
+### 五、动作选择（先理解用户意图，再选一个 action）
 
-query_where_am_i（我在哪/周围有什么）、navigate_to_destination（去某地）、
-query_route_progress（行进中问剩余距离/下一步）、check_hazard_or_door（问门/风险/好不好走）、
-navigation_control（暂停/取消/重播）、out_of_scope（与室内导航无关）。
+`action` 必须是下列动作之一（本段由服务端动作注册表自动汇总，含义即选择依据）：
 
-若楼内没有用户所说的设施，但下方「近似设施推荐」给出了映射，必须返回 `related_fallback` 候选
-（confidence ≥ 0.4）并生成确认反问，不要留空候选。
+{action_catalog}
+
+选择规则：
+1. 先判断用户要做什么，再按上面的含义挑动作，不要按关键词硬套。
+2. 同一句里既说「开始」又给出楼内地点（如「开始导航去资源教室」）时选 `navigate_to_place`。
+3. 与室内导航无关、或信息不足无法判断时：`action` 留空，`intent_type` 填 `out_of_scope`。
+4. `intent_type` 只是兼容字段，可留空；服务端以 `action` 为准。
+5. 若楼内没有用户所说的设施，但下方「近似设施推荐」给出了映射，必须返回 `related_fallback`
+   候选（confidence ≥ 0.4）并生成确认反问，不要留空候选。
+
+### 六、候选地址挑选（用户提到地点时）
+
+用户消息里可能附带【本次候选地址】（通常 10~60 条，含 placeId、标准名、别名、楼层、类型），
+这是当前场所的**可用地点清单**——即使与用户说法字面毫无重叠也会给全。要求：
+1. 只能从候选里挑，**不得输出候选之外的名称**；按用户意图、用途、功能与常识去匹配，
+   例如「放乐器的那间」→音乐教室、「上物理课的地方」→物理实验室；
+   **不要因为字面不重合就判定没有这个地点**。
+2. 返回置信度最高的前三个，写入 `top_candidates`；每项必须带 `place_id`（候选的 placeId）、
+   `standard_name`（候选的 name）、`floor`、`confidence`、`reasoning`（一句话理由）。
+3. 置信度都低时如实给低分（0.2~0.5），并在 `clarification_question` 请用户复述或换个说法；
+   不要为了凑满 top3 编造候选。置信度最高的只是推荐，不等于用户已确认。
+4. 只有候选清单为空（地图未加载）时：仍选 `navigate_to_place`，`top_candidates` 留空，
+   `clarification_question` 明确说「没有找到这个地点」并提示可复述房间名或附近标志物。
 """
 
 
@@ -93,10 +113,12 @@ def intent_system_prompt(dictionary: PoiDictionary) -> str:
     )
     return (
         f"{DICT_HEADER}\n{compact_dictionary_text(dictionary)}\n\n"
-        + _ROLE_AND_RULES.format(building=dictionary.building_name)
-        + "\n\n### 六、近似设施推荐（人工配置，仅当楼内无此设施）\n"
+        + _ROLE_AND_RULES.format(
+            building=dictionary.building_name, action_catalog=action_catalog_text()
+        )
+        + "\n\n### 七、近似设施推荐（人工配置，仅当楼内无此设施）\n"
         + compact_related_fallbacks(dictionary)
-        + "\n\n### 七、输出 Schema（字段与取值必须严格遵守）\n"
+        + "\n\n### 八、输出 Schema（字段与取值必须严格遵守）\n"
         + schema_text
     )
 
@@ -106,6 +128,7 @@ def build_intent_messages(
     user_text: str,
     spatial_context: UserSpatialContext | None = None,
     pending: Sequence[dict] = (),
+    candidate_places: Sequence[dict] = (),
 ) -> tuple[list[dict], str]:
     """构造 messages；返回（messages, 缓存 key）。缓存前缀只含静态内容。"""
     messages = [{"role": "system", "content": intent_system_prompt(dictionary)}]
@@ -118,6 +141,11 @@ def build_intent_messages(
     if pending:
         blocks.append(
             "【当前待澄清会话状态】\n" + json.dumps(list(pending), ensure_ascii=False)
+        )
+    if candidate_places:
+        blocks.append(
+            "【本次候选地址（只能从这里挑）】\n"
+            + json.dumps(list(candidate_places), ensure_ascii=False)
         )
     blocks.append("【用户语音输入】\n" + user_text)
     messages.append({"role": "user", "content": "\n\n".join(blocks)})

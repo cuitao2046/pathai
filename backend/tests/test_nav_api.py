@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -135,6 +135,23 @@ class TestCreateSession:
         origin['observedAt'] = '2000-01-01T00:00:00Z'
         assert _create(client, auth_headers, origin=origin).status_code == 422
 
+    def test_slightly_stale_origin_is_advisory_not_rejection(self, client, auth_headers):
+        # 起点约 18 s（预览 4.8 s + 概要 + 确认播报会自然超窗）：由客户端负责新鲜度，
+        # 服务端不得再 422，只回带观测龄与 stale 提示。
+        origin = _origin()
+        origin['observedAt'] = (datetime.now(timezone.utc) - timedelta(seconds=18)).isoformat().replace("+00:00", "Z")
+        resp = _create(client, auth_headers, origin=origin)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body['originObservationStale'] is True
+        assert 17.0 <= body['originObservationAgeS'] <= 25.0
+
+    def test_fresh_origin_reports_not_stale(self, client, auth_headers):
+        body = _create(client, auth_headers).json()
+        assert body['originObservationStale'] is False
+        assert body['originObservationAgeS'] is not None
+        assert body['originObservationAgeS'] < 15.0
+
     def test_stale_destination_coordinates_cannot_trigger_arrival(self, client, auth_headers, session):
         resp = client.post(f"{CREATE_URL}/{session['sessionId']}/updates", headers=auth_headers, json={
             'sequence': 1, 'location': {'x': DEST_P[0], 'y': DEST_P[1], 'floorId': '1',
@@ -258,6 +275,93 @@ class TestCreateSession:
             f"{CREATE_URL}/{created['sessionId']}", headers=auth_headers
         ).json()
         assert query["paramsVersion"] == "loc-freeze.1"
+
+
+PREVIEW_URL = "/api/v1/nav/preview"
+
+
+class TestPreviewRoute:
+    """API-06b：只规划不建会话（客户端预览/概要播报依赖它）。"""
+
+    def _post(self, client, headers, origin=None, destination=DEST_PLACE,
+              map_version=REAL_MAP_VERSION):
+        return client.post(
+            PREVIEW_URL,
+            json={
+                "siteId": "school-building-01",
+                "mapVersion": map_version,
+                "origin": origin or _origin(),
+                "destinationId": destination,
+                "userMode": "blind",
+                "locale": "zh-CN",
+            },
+            headers=headers,
+        )
+
+    def test_unauthenticated_401(self, client):
+        assert self._post(client, {}).status_code == 401
+
+    def test_returns_route_without_creating_session(self, client, auth_headers):
+        from sqlalchemy import func, select
+
+        from pathai_backend.database import session_scope
+        from pathai_backend.models import NavSession
+
+        with session_scope() as db:
+            before = db.scalar(select(func.count()).select_from(NavSession))
+
+        resp = self._post(client, auth_headers)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["mapVersion"] == REAL_MAP_VERSION
+        assert body["destination"]["placeId"] == DEST_PLACE
+        assert len(body["route"]["polyline"]) >= 2
+        assert body["route"]["segments"]
+        # 无 LLM 概要时明确返回 null，客户端用模板兜底
+        assert body["overviewText"] is None
+        # 起点新鲜度由客户端判断：服务端只回带观测龄提示
+        assert body["originObservationStale"] is False
+
+        with session_scope() as db:
+            after = db.scalar(select(func.count()).select_from(NavSession))
+        assert after == before  # 预览不得落库
+
+    def test_stale_origin_preview_is_advisory_not_rejection(self, client, auth_headers):
+        origin = _origin()
+        origin["observedAt"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=18)
+        ).isoformat().replace("+00:00", "Z")
+        resp = self._post(client, auth_headers, origin=origin)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["originObservationStale"] is True
+
+    def test_absurd_origin_timestamp_still_rejected(self, client, auth_headers):
+        origin = _origin()
+        origin["observedAt"] = "2000-01-01T00:00:00Z"
+        resp = self._post(client, auth_headers, origin=origin)
+        assert resp.status_code == 422
+        assert resp.json()["error"]["details"]["reason"] == "observation_time_invalid"
+
+    def test_same_route_as_created_session(self, client, auth_headers):
+        preview = self._post(client, auth_headers)
+        assert preview.status_code == 200, preview.text
+        created = _create(client, auth_headers, idem="preview-parity")
+        assert created.status_code == 201, created.text
+        preview_route = preview.json()["route"]
+        session_route = created.json()["route"]
+        assert preview_route["polyline"] == session_route["polyline"]
+        assert preview_route["distanceM"] == session_route["distanceM"]
+        assert preview_route["hazardLayerStatus"] == session_route["hazardLayerStatus"]
+
+    def test_unreliable_origin_422(self, client, auth_headers):
+        resp = self._post(client, auth_headers, origin=_origin(confidence=0.1))
+        assert resp.status_code == 422
+        assert resp.json()["error"]["code"] == "LOCATION_UNRELIABLE"
+
+    def test_unknown_map_version_404(self, client, auth_headers):
+        resp = self._post(client, auth_headers, map_version="1999-01-01.1")
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "MAP_NOT_PUBLISHED"
 
 
 class TestNavUpdate:

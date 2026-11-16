@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import platform
 import secrets
+import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,10 +17,11 @@ from starlette.concurrency import run_in_threadpool
 from pathai_backend.admin import service as admin_service
 from pathai_backend.body_limit import BodySizeLimitMiddleware
 from pathai_backend.config import LOCAL_ENV, Settings
-from pathai_backend.database import dispose_engine, init_engine
+from pathai_backend.database import dispose_engine, init_engine, session_scope
 from pathai_backend.errors import install_error_handlers
 from pathai_backend.hazard_layer import HazardRepository
 from pathai_backend.local_discovery_v1 import LocalDiscoveryServer
+from pathai_backend.local_identity_protocol import SERVICE_NAME
 from pathai_backend.local_pairing import LocalPairingService
 from pathai_backend.maintenance import PURGE_INTERVAL_S, run_purge
 from pathai_backend.map_repository import MapRepository
@@ -51,6 +54,31 @@ _CSP = (
 
 logger = logging.getLogger(__name__)
 
+#: 业务日志命名空间：uvicorn 只配置自身 logger，不接管这些前缀，INFO 默认被丢弃。
+_LOG_NAMESPACES = ("pathai", "pathai_backend", "src.voice_agent")
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+
+def _configure_logging() -> None:
+    """为业务命名空间挂一次 StreamHandler 并置 INFO（重复 create_app 不重复挂）。"""
+    for name in _LOG_NAMESPACES:
+        target = logging.getLogger(name)
+        if not any(getattr(handler, "_pathai_handler", False) for handler in target.handlers):
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+            handler._pathai_handler = True  # type: ignore[attr-defined]
+            target.addHandler(handler)
+        target.setLevel(logging.INFO)
+
+# 客户端发现与能力查询的稳定身份口径（/healthz 与 /api/v1/device/info 共用）
+API_VERSION = "v1"
+SERVICE_CAPABILITIES = (
+    "indoor-navigation",
+    "map-service",
+    "fingerprint-location",
+    "voice-intent",
+)
+
 
 async def _purge_loop() -> None:
     """周期清理过期行；后台任务异常只记日志，不拖垮服务。"""
@@ -64,6 +92,7 @@ async def _purge_loop() -> None:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    _configure_logging()
     if settings.local_discovery_port and (
         not 1 <= settings.local_discovery_port <= 65535 or
         not 1 <= settings.local_business_port <= 65535
@@ -80,6 +109,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             # 管理后台固定账户初始化：数据库表须已由 Alembic/create_all 建立
             admin_service.ensure_admin_account()
+            # 设备身份持久化在数据库，同一台机器重启后保持不变；仅用于局域网发现。
+            with session_scope() as session:
+                app.state.device_id = LocalPairingService.device_id(session)
             if settings.local_discovery_port:
                 discovery = LocalDiscoveryServer(
                     app.state.local_pairing, settings.local_business_port, settings.local_discovery_port,
@@ -103,6 +135,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.runtime_params = RuntimeParams(lambda: app.state.settings)
     app.state.local_pairing = LocalPairingService(f"boot-{secrets.token_hex(16)}")
     app.state.local_pairing_ready = False
+    # 未进入 lifespan 时为空的设备身份；正常启动会在 lifespan 内补全
+    app.state.device_id = ""
+    app.state.device_name = socket.gethostname() or "PathAI Gateway"
     if settings.wechat_fake:
         if settings.env != LOCAL_ENV:
             raise RuntimeError("PATHAI_WECHAT_FAKE 仅允许在 PATHAI_ENV=local 下开启")
@@ -153,6 +188,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+        """存活检查 + 设备身份：客户端据此排除同网段的其它服务。"""
+        return {
+            "status": "ok",
+            "service": SERVICE_NAME,
+            "device_id": app.state.device_id,
+            "version": app.version,
+            "api_version": API_VERSION,
+        }
+
+    @app.get("/api/v1/device/info")
+    def device_info() -> dict[str, object]:
+        """局域网发现后的能力查询；只暴露非敏感元数据，不要求鉴权。"""
+        return {
+            "service": SERVICE_NAME,
+            "device_id": app.state.device_id,
+            "device_name": app.state.device_name,
+            "os": platform.platform(),
+            "version": app.version,
+            "api_version": API_VERSION,
+            "services": {"http": settings.local_business_port or 8000},
+            "capabilities": list(SERVICE_CAPABILITIES),
+        }
 
     return app

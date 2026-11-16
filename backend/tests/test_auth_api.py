@@ -197,9 +197,14 @@ class TestFakeAuthSwitch:
             resp = _login(c, "fake-user-1")
             assert resp.status_code == 200
             assert resp.json()["userId"].startswith("anon_")
-            bad = _login(c, "not-fake-form")
-            assert bad.status_code == 401
-            assert _envelope(bad.json())["code"] == "AUTH_CODE_INVALID"
+            # 真实 wx.login 形状的 code（无 fake- 前缀）在 fake 模式下同样可换身份
+            shaped = _login(c, "023abcDEFghiJklMNOpqrSTUvwxYz12345")
+            assert shaped.status_code == 200
+            assert shaped.json()["userId"].startswith("anon_")
+            # 空 code 违反请求契约（min_length=1），在请求校验层即被拒绝
+            empty = _login(c, "")
+            assert empty.status_code == 400
+            assert _envelope(empty.json())["code"] == "INVALID_REQUEST"
 
     def test_demo_env_forbidden(self):
         from pathai_backend.app import create_app
@@ -208,3 +213,26 @@ class TestFakeAuthSwitch:
         settings = Settings(env="demo", database_url="sqlite:///:memory:", wechat_fake=True)
         with pytest.raises(RuntimeError, match="PATHAI_WECHAT_FAKE"):
             create_app(settings)
+
+
+class TestFakeWechatClient:
+    """fake 客户端的 code 口径：任意非空 code 通过，空 code 仍按无效拒绝。"""
+
+    def test_any_non_empty_code_yields_stable_openid(self):
+        from pathai_backend.wechat import FakeWechatAuthClient
+
+        client = FakeWechatAuthClient()
+        assert client.code_to_session("fake-user-1") == "user-1"
+        code = "023abcDEFghiJklMNOpqrSTUvwxYz12345"
+        openid = client.code_to_session(code)
+        assert openid and openid == client.code_to_session(code)
+        assert len({openid, client.code_to_session("another-code")}) == 2
+
+    def test_empty_code_rejected(self):
+        from pathai_backend.wechat import FakeWechatAuthClient, WechatAuthError
+
+        client = FakeWechatAuthClient()
+        for value in ("", None):
+            with pytest.raises(WechatAuthError) as exc:
+                client.code_to_session(value)
+            assert exc.value.reason == "invalid_code"

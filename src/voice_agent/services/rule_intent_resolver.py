@@ -22,6 +22,8 @@ _CONF_RELATED = 0.40
 _CONF_CONTEXTUAL = 1.0
 
 _REPEAT_WORDS = ("再说一遍", "再说一次", "重复", "没听清")
+#: 「开始导航」类短命令：无目的地，由客户端复用近期预览（degraded 通道也要能出）
+_START_WORDS = ("开始导航", "开始吧", "开始", "出发", "走吧", "带我走")
 _CONTROL_WORDS = ("取消导航", "取消", "不去了", "结束导航", "我到了", "结束")
 _WHERE_WORDS = ("我在哪", "在哪儿", "在哪", "什么位置", "我的位置", "当前位置", "周围有什么")
 _HAZARD_WORDS = ("门开着", "门关着", "好走吗", "前面有", "前方有", "有障碍", "挡路", "坡道", "台阶")
@@ -233,6 +235,10 @@ def resolve(
             ],
             clarification_question=_clarify_multiple(names, dictionary),
         )
+
+    # 无目的地的「开始导航」：地点未命中时才判定，避免抢在地点识别之前
+    if _has(norm, _START_WORDS):
+        return _intent("start_navigation", direct_response_speech="好的，开始导航。")
 
     # 位置/环境问答：无目的地命中时才判定，避免「厕所在哪」被误判为位置查询
     if _has(norm, _WHERE_WORDS):

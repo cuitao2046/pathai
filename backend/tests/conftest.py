@@ -32,6 +32,25 @@ def _reset_fingerprint_pointer_cache():
     fingerprint_library.reset_active_pointer_cache()
 
 
+@pytest.fixture(autouse=True)
+def _clear_fastapi_callable_caches():
+    """FastAPI 在 dependencies.models 用进程级 LRU 缓存给 endpoint 函数做分类，
+    缓存键强引用 endpoint 闭包，闭包又捕获了 app；单进程跑完全量用例会累积
+    数百个 app（每个都持有整包地图），使解释器退出阶段的 GC 持续十几分钟。
+    每个用例结束后清空这些缓存，让 app 与地图包可以被及时回收。"""
+    yield
+    from fastapi.dependencies import models as fastapi_models
+
+    for name in (
+        "_is_gen_callable_cached",
+        "_is_async_gen_callable_cached",
+        "_is_coroutine_callable_cached",
+    ):
+        cache_clear = getattr(getattr(fastapi_models, name, None), "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()
+
+
 _BACK_DIR = Path(__file__).resolve().parent.parent
 SAMPLE_MAP_FILE = _BACK_DIR / "maps_data" / "school-building-01" / "2026-10-25.1.json"
 

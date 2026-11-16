@@ -257,6 +257,22 @@ class TestDecisionMatrixBoundaries(BaseCase):
         self.assertEqual(decision.node_id, "F1-TR-0022")
 
 
+class TestStartCommandRules(BaseCase):
+    """无目的地「开始导航」：规则层（LLM 不可用时的降级通道）必须能产出该意图。"""
+
+    def test_start_words_resolve_to_start_navigation(self):
+        for text in ("开始导航", "开始导航。", "开始吧", "出发", "走吧", "带我走"):
+            parsed = resolve(text, self.dictionary)
+            self.assertEqual(parsed.intent_type, "start_navigation", text)
+            self.assertIsNone(parsed.resolution_status, text)
+            self.assertEqual(parsed.top_candidates, [], text)
+
+    def test_start_with_place_still_navigates(self):
+        parsed = resolve("开始导航去资源教室", self.dictionary)
+        self.assertEqual(parsed.intent_type, "navigate_to_destination")
+        self.assertEqual(parsed.top_candidates[0].standard_name, "资源教室")
+
+
 class TestSessionStore(unittest.TestCase):
     def test_ttl_expiry(self):
         now = [1000.0]

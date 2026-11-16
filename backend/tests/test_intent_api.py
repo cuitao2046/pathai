@@ -96,6 +96,47 @@ class TestNavigationIntent:
             assert set(candidate.keys()) == {"placeId", "name", "floorId"}
 
 
+class TestStartCommand:
+    """无目的地「开始导航」：客户端复用近期预览，必须返回受控动作。"""
+
+    @pytest.mark.parametrize(
+        "text",
+        ["开始导航", "开始导航。", "开始吧", "开始", "出发", "走吧", "带我走"],
+    )
+    def test_start_command_returns_controlled_action(self, client, auth_headers, text):
+        body = _parse(client, auth_headers, text)
+        assert body["intent"] == "start_navigation"
+        assert body["needsClarification"] is False
+        assert body["destination"] is None
+        assert body["candidates"] == []
+        assert body["confidence"] >= 0.9
+        assert body["action"] == {
+            "name": "start_navigation",
+            "params": {},
+            "confirmationRequired": False,
+        }
+        assert body["responseText"]
+
+    def test_start_command_with_known_place_keeps_destination(self, client, auth_headers):
+        body = _parse(client, auth_headers, "开始导航去资源教室")
+        assert body["intent"] == "start_navigation"
+        assert body["destination"]["placeId"] == "F1-RM-0003"
+        assert body["action"] is None
+
+    def test_unknown_place_is_not_start_command(self, client, auth_headers):
+        # 有导航意图但地点不存在：仍须澄清，不能凭「去」直接启动预览
+        body = _parse(client, auth_headers, "带我去火星大厅")
+        assert body["intent"] == "start_navigation"
+        assert body["needsClarification"] is True
+        assert body["destination"] is None
+        assert body["action"] is None
+
+    def test_end_navigation_still_wins_over_start_command(self, client, auth_headers):
+        body = _parse(client, auth_headers, "结束导航")
+        assert body["intent"] == "end_navigation"
+        assert body["action"] is None
+
+
 class TestControlIntents:
     @pytest.mark.parametrize(
         ("text", "intent"),
@@ -125,6 +166,25 @@ class TestControlIntents:
         assert body["intent"] == "unknown"
         assert body["needsClarification"] is True
         assert body["confidence"] < 0.5
+
+
+class TestSurroundingsAction:
+    """周边描述：规则层也要出动作（旧客户端/大模型不可用时的降级路径）。"""
+
+    def test_surroundings_without_place_returns_action(self, client, auth_headers):
+        for text in ("周围有什么", "附近有什么", "旁边是什么"):
+            body = _parse(client, auth_headers, text)
+            assert body["intent"] == "search_facility"
+            assert body["action"]["name"] == "describe_surroundings"
+            assert body["needsClarification"] is False
+            assert body["destination"] is None
+
+    def test_surroundings_with_place_navigates_instead(self, client, auth_headers):
+        # 「最近的 <地点>」是去该地点，不是描述周边
+        body = _parse(client, auth_headers, "最近的资源教室")
+        assert body["intent"] == "start_navigation"
+        assert body["action"] is None
+        assert body["destination"]["name"] == "资源教室"
 
 
 class TestContractDetails:

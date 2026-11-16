@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """LLM 意图解析结构化输出契约（docs/26 §3.3；spec REQ-VOICE-03/04）。
 
-本版由规则解析器产出同一 Schema；后续 LLM 接入直接复用。
+`action` 由模型按系统提示词里的动作清单自行选择，注册表决定它是否真实存在；
+`intent_type` 仅为兼容字段（动作注册表可推导），因此**不做 Literal 枚举限制**，
+新增动作不需要改本文件。
 """
 from __future__ import annotations
 
@@ -9,14 +11,6 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-IntentType = Literal[
-    "query_where_am_i",
-    "navigate_to_destination",
-    "query_route_progress",
-    "check_hazard_or_door",
-    "navigation_control",
-    "out_of_scope",
-]
 ResolutionStatus = Literal[
     "resolved_unique_concept",
     "ambiguous_concepts",
@@ -34,6 +28,8 @@ class DestinationCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     standard_name: str = Field(min_length=1, description="必须严格匹配词典 standard_name")
+    #: 候选清单里的 POI 标识，便于日志追溯与前端说明
+    place_id: Optional[str] = None
     floor: Optional[str] = None
     match_type: MatchType
     confidence: float = Field(ge=0.0, le=1.0)
@@ -45,7 +41,10 @@ class DestinationCandidate(BaseModel):
 class IntentParseResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    intent_type: IntentType
+    #: 模型选定的动作名；不存在于动作注册表时按未知动作降级
+    action: Optional[str] = None
+    #: 兼容字段：模型可留空，服务端按动作注册表推导
+    intent_type: str = "out_of_scope"
     raw_target_mention: Optional[str] = None
     resolution_status: Optional[ResolutionStatus] = None
     top_candidates: list[DestinationCandidate] = Field(default_factory=list, max_length=3)

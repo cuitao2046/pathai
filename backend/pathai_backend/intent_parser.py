@@ -12,15 +12,38 @@ from dataclasses import dataclass
 from pathai_backend.map_package.schema import PlaceEntry
 from pathai_backend.schemas.common import IntentType, PlaceCandidate
 
+#: 「开始导航」类短命令：目的地由客户端复用近期预览，不是新一轮目的地识别。
+_START_COMMAND_KEYWORDS: tuple[str, ...] = (
+    "开始导航",
+    "开始吧",
+    "开始",
+    "出发",
+    "走吧",
+    "带我走",
+)
+
 #: 有序触发词表：靠前的意图优先（控制类短命令优先于带目的地的导航请求）。
 _INTENT_RULES: tuple[tuple[IntentType, tuple[str, ...]], ...] = (
     (IntentType.REPEAT_INSTRUCTION, ("再说一遍", "再说一次", "重复", "没听清")),
     (IntentType.END_NAVIGATION, ("结束导航", "我到了", "已到达", "结束")),
     (IntentType.CANCEL, ("取消导航", "取消", "不去了")),
     (IntentType.QUERY_LOCATION, ("我在哪里", "我在哪", "我的位置", "当前位置")),
-    (IntentType.SEARCH_FACILITY, ("最近的", "附近", "哪里有")),
-    (IntentType.START_NAVIGATION, ("带我去", "导航到", "我要去", "我要到", "去", "到")),
+    (
+        IntentType.SEARCH_FACILITY,
+        ("最近的", "附近", "哪里有", "周围", "周边", "旁边", "四周"),
+    ),
+    (
+        IntentType.START_NAVIGATION,
+        (*_START_COMMAND_KEYWORDS, "带我去", "导航到", "我要去", "我要到", "去", "到"),
+    ),
 )
+
+#: 无目的地「开始导航」命令的受控动作名（客户端复用预览后直接建会话）。
+_START_NAVIGATION_ACTION = "start_navigation"
+
+#: 周边描述动作名（与 src/voice_agent/skills/describe_surroundings.py 同名；
+#: 客户端据此走「先定位、再检索周边要素」的既有播报路径）。
+_DESCRIBE_SURROUNDINGS_ACTION = "describe_surroundings"
 
 #: 规则置信度（工程初始值）。
 _CONFIDENCE_COMMAND = 0.95
@@ -40,6 +63,7 @@ class ParsedIntent:
     needs_clarification: bool
     destination: PlaceCandidate | None
     candidates: tuple[PlaceCandidate, ...]
+    action: str | None = None
 
 
 def _match_places(text: str, places: list[PlaceEntry]) -> list[PlaceEntry]:
@@ -89,13 +113,22 @@ def parse_intent(text: str, places: list[PlaceEntry]) -> ParsedIntent:
         IntentType.QUERY_LOCATION,
         IntentType.SEARCH_FACILITY,
     ):
-        return ParsedIntent(
-            intent=matched_intent,
-            confidence=_CONFIDENCE_COMMAND,
-            needs_clarification=False,
-            destination=None,
-            candidates=(),
-        )
+        action = None
+        if matched_intent is IntentType.SEARCH_FACILITY:
+            # 「附近/最近的」+ 明确地点 = 去该地点，不是描述周边；地点命中优先
+            if _match_places(text, places):
+                matched_intent = IntentType.START_NAVIGATION
+            else:
+                action = _DESCRIBE_SURROUNDINGS_ACTION
+        if matched_intent is not IntentType.START_NAVIGATION:
+            return ParsedIntent(
+                intent=matched_intent,
+                confidence=_CONFIDENCE_COMMAND,
+                needs_clarification=False,
+                destination=None,
+                candidates=(),
+                action=action,
+            )
 
     matched = _match_places(text, places)
     if len(matched) == 1:
@@ -105,6 +138,16 @@ def parse_intent(text: str, places: list[PlaceEntry]) -> ParsedIntent:
             needs_clarification=False,
             destination=_candidate(matched[0]),
             candidates=(),
+        )
+    # 无目的地「开始导航」：复用客户端近期预览，交给受控动作而非澄清缺目的地
+    if not matched and any(k in text for k in _START_COMMAND_KEYWORDS):
+        return ParsedIntent(
+            intent=IntentType.START_NAVIGATION,
+            confidence=_CONFIDENCE_COMMAND,
+            needs_clarification=False,
+            destination=None,
+            candidates=(),
+            action=_START_NAVIGATION_ACTION,
         )
     return ParsedIntent(
         intent=matched_intent,
@@ -132,6 +175,8 @@ def build_response_text(parsed: ParsedIntent) -> str:
         return "请稍等，正在查询您的当前位置。"
     if intent is IntentType.SEARCH_FACILITY:
         return "请稍等，正在为您查找附近设施。"
+    if parsed.action == _START_NAVIGATION_ACTION:
+        return "好的，开始导航。"
     if parsed.destination is not None:
         return f"准备导航到{parsed.destination.name}，请确认。"
     if parsed.candidates:

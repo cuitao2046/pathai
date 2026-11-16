@@ -434,6 +434,10 @@ export interface PositionEstimateResponse {
   fallbackReason?: string | null;
   /** 周边要素：仅请求 includeSurroundings=true 时返回（可能为空数组）。 */
   surroundings?: SurroundingElement[] | null;
+  /** 本次观测龄（秒，服务端时钟）；仅作提示，采集是否够新由客户端判断。 */
+  observationAgeS?: number | null;
+  /** 观测龄是否超过提示阈值（15 s）；不影响请求成功。 */
+  observationStale?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +582,10 @@ export interface CreateSessionResponse {
   /** 兼容字段：概要已前移到 API-10 预览阶段，建会话恒为 null。 */
   overviewText?: string | null;
   createdAt: IsoDateTime;
+  /** 起点观测龄（秒，服务端时钟）；仅作提示，不阻断建会话。 */
+  originObservationAgeS?: number | null;
+  /** 起点是否超过提示阈值（15 s）；客户端可提示重新定位，会话仍有效。 */
+  originObservationStale?: boolean;
 }
 
 /** API-10 路线预览请求：只读规划，不创建会话（body 与 API-06 同构）。 */
@@ -596,6 +604,10 @@ export interface PreviewRouteResponse {
   route: RouteInfo;
   /** 大模型生成的概要；失败/超时为 null（客户端用模板兜底，概要必播）。 */
   overviewText?: string | null;
+  /** 起点观测龄（秒，服务端时钟）；仅作提示，不阻断预览。 */
+  originObservationAgeS?: number | null;
+  /** 起点是否超过提示阈值（15 s）；起点新鲜度仍由客户端判断。 */
+  originObservationStale?: boolean;
 }
 
 /** 导航更新中的位置；不可信质量允许缺坐标，可信质量必须携带。 */

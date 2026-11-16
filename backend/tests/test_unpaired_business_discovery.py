@@ -34,7 +34,10 @@ def test_discovery_lifecycle_does_not_enable_pairing(app, settings, monkeypatch)
     monkeypatch.setattr(LocalDiscoveryServer, "close", lambda self: None)
     service = create_app(settings)
     with TestClient(service) as client:
-        assert client.get("/healthz").json() == {"status": "ok"}
+        body = client.get("/healthz").json()
+        assert body["status"] == "ok"
+        assert body["service"] == "my-backend"
+        assert body["device_id"].startswith("srv-")
         assert client.app.state.local_pairing_ready is False
         assert client.post("/local/v1/admin/pair/open", json={"ipv4": "192.168.1.28"}).status_code == 403
 

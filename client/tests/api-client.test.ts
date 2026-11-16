@@ -90,6 +90,26 @@ describe('错误信封与 requestId', () => {
     expect(describeError('INTERNAL_ERROR' as never)).toBe('服务暂时不可用，请稍后再试');
     expect(typeof describeError('HTTP_ERROR')).toBe('string');
   });
+
+  test('LOCATION_UNRELIABLE 透传服务端原文，缺失时回落到本地话术', () => {
+    expect(
+      describeError({ code: 'LOCATION_UNRELIABLE', message: '起点观测已过期，请重新定位' }),
+    ).toBe('起点观测已过期，请重新定位');
+    // 只对 LOCATION_UNRELIABLE 透传：其他码仍用本地话术
+    expect(describeError({ code: 'NETWORK_ERROR', message: 'socket hang up' })).toBe(
+      '网络连接不可用，请检查网络',
+    );
+    // 原文缺失/为空/等于错误码 → 回落，绝不把错误码丢给用户
+    expect(describeError({ code: 'LOCATION_UNRELIABLE', message: null })).toBe(
+      '当前位置信号不稳，请稍作停留',
+    );
+    expect(describeError({ code: 'LOCATION_UNRELIABLE', message: '  ' })).toBe(
+      '当前位置信号不稳，请稍作停留',
+    );
+    expect(describeError({ code: 'LOCATION_UNRELIABLE', message: 'LOCATION_UNRELIABLE' })).toBe(
+      '当前位置信号不稳，请稍作停留',
+    );
+  });
 });
 
 describe('传输层映射', () => {

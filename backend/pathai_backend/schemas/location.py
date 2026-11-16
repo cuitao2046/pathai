@@ -92,6 +92,10 @@ class PositionEstimateResponse(StrictModel):
     fingerprint: FingerprintMatchInfo | None = None
     #: 请求启用指纹库但降级到三点定位的原因（未启用时为 None）。
     fallbackReason: str | None = None
+    #: 本次观测龄（秒，按服务端时钟）。仅作提示：采集是否够新由客户端判断。
+    observationAgeS: float | None = None
+    #: 观测龄是否已超过提示阈值（默认 15 s）。不会导致请求失败。
+    observationStale: bool = False
 
     @model_validator(mode="after")
     def _check_position_trust(self) -> "PositionEstimateResponse":

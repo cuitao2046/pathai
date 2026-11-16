@@ -72,9 +72,11 @@ describe('MockBeaconSource 模拟导航', () => {
   });
 
   test('沿路线跨层行走：到边界后按新楼层信标组发射（模拟电梯换层）', async () => {
+    // 跨层点选在 2 层信标（BK-02-* 集中在 x≈-34…-29、y≈-74…-81）覆盖处：
+    // 2 层仅 5 枚信标，其余位置跨层后本就无可见信标，测不出「换组发射」。
     const { source, received } = makeSource([
-      { x: MOCK_POSITION.x, y: MOCK_POSITION.y, floorId: '1' },
-      { x: MOCK_POSITION.x + 1, y: MOCK_POSITION.y, floorId: '2' },
+      { x: -32, y: -75, floorId: '1' },
+      { x: -31, y: -75, floorId: '2' },
     ]);
 
     jest.advanceTimersByTime(500); // 段内 0.75m，仍在 1 层
