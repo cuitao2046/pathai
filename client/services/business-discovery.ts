@@ -1,5 +1,6 @@
 import { SERVICE_PORT } from '../config/env';
 import { BUSINESS_SERVICE, parseBusinessOffer } from '../core/discovery/business-protocol';
+import type { CancelToken } from '../core/discovery/cancel-token';
 import { P0_DISCOVERY_PROTOCOL } from '../core/discovery/p0-protocol';
 import type { ServiceIdentity } from '../core/discovery/service-identity';
 import { createLogger } from '../utils/logger';
@@ -39,9 +40,11 @@ function randomRequestId(): Promise<string | null> {
 
 export async function discoverBusinessCandidate(
   expectedDeviceId: string | null = null,
+  cancel?: CancelToken,
 ): Promise<BusinessDiscoveryResult | null> {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
+  if (cancel?.aborted) return null;
   if (typeof wx.createUDPSocket !== 'function') {
     log.info('UDP 广播未发起：运行时不支持 createUDPSocket');
     return null;
@@ -69,10 +72,15 @@ export async function discoverBusinessCandidate(
     let offers = 0;
     const attempted = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let unlinkCancel: (() => void) | null = null;
     const finish = (candidate: BusinessDiscoveryResult | null, reason: string) => {
       if (finished) return;
       finished = true;
       if (timer) clearTimeout(timer);
+      if (unlinkCancel) {
+        unlinkCancel();
+        unlinkCancel = null;
+      }
       log.info(
         'UDP 广播结束',
         candidate ? `命中=${candidate.url}` : '未命中',
@@ -94,7 +102,7 @@ export async function discoverBusinessCandidate(
         if (attempted.has(offer) || attempted.size >= 3) return;
         attempted.add(offer);
         checking = true;
-        void probeEndpoint(offer).then((result) => {
+        void probeEndpoint(offer, undefined, cancel).then((result) => {
           checking = false;
           if (result.kind !== 'identified') return;
           // 设备身份以 device_id 为准：已知身份时只接受同一台服务端。
@@ -128,5 +136,6 @@ export async function discoverBusinessCandidate(
       finish(null, `${OFFER_TIMEOUT_MS}ms 内未收到有效 BUSINESS_OFFER`);
     }, OFFER_TIMEOUT_MS);
     try { socket.bind(); } catch { finish(null, 'socket.bind 失败'); }
+    unlinkCancel = cancel?.onCancel(() => finish(null, '已取消')) ?? null;
   });
 }

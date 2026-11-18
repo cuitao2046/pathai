@@ -1,3 +1,4 @@
+import { createCancelSource } from '../core/discovery/cancel-token';
 import { isP0CandidateUrl, resolveBusinessCandidate, resolveP0Candidate } from '../core/discovery/p0-candidate';
 import {
   checkEndpointHealth,
@@ -57,6 +58,16 @@ describe('P0 候选缓存与并发预检', () => {
     const pending = checkP0Candidate('http://10.1.2.3:8000', DEVICE_B);
     request.mock.calls[0][0].success({ statusCode: 200, data: healthy(DEVICE_A) });
     expect(await pending).toBe(false);
+  });
+
+  test('取消立即 abort 在途探活请求', async () => {
+    const abort = jest.fn();
+    request.mockReturnValue({ abort });
+    const source = createCancelSource();
+    const pending = checkP0Candidate('http://10.1.2.3:8000', null, source.token);
+    source.cancel();
+    expect(await pending).toBe(false);
+    expect(abort).toHaveBeenCalledTimes(1);
   });
 
   test('通用探活可检查模拟器回环地址（不套用私网候选白名单）', async () => {

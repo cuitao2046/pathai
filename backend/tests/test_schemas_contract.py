@@ -76,7 +76,7 @@ def _route_payload() -> dict:
     return {
         "routeId": "route_abc123",
         "mapVersion": "2026-10-25.1",
-        "routeRulesVersion": "1.0.0",
+        "routeRulesVersion": "1.1.0",
         "distanceM": 126.5,
         "estimatedDurationSec": None,
         "polyline": [
@@ -344,7 +344,7 @@ class TestApi06CreateSession:
         # 首条指令 = route.segments[0]，且是完整的 NavigationInstruction
         assert isinstance(resp.route.segments[0], NavigationInstruction)
         assert resp.route.segments[0].instructionSequence == 1
-        assert resp.route.routeRulesVersion == "1.0.0"
+        assert resp.route.routeRulesVersion == "1.1.0"
 
 
 class TestApi07NavUpdate:

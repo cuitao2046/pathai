@@ -19,7 +19,26 @@ export type LocalVoiceName =
   | 'map-loaded'
   | 'map-load-failed'
   | 'map-stale'
-  | 'nav-start';
+  | 'nav-start'
+  | 'ready2left-turn'
+  | 'ready2right-turn'
+  | 'left-turn'
+  | 'right-turn'
+  | 'little-left'
+  | 'little-right'
+  | 'u-turn'
+  | 'nav-arrived-near'
+  | 'nav-relocalizing'
+  | 'nav-offline'
+  | 'nav-session-invalid'
+  | 'nav-map-updated'
+  | 'preview-confirm'
+  | 'nav-cancelled'
+  | 'preview-timeout'
+  | 'nav-start-failed'
+  | 'nav-end-failed'
+  | 'heading-aligned'
+  | 'heading-unavailable';
 
 /** 音频句柄（InnerAudioContext 的最小契约）。 */
 export interface LocalVoiceClipHandle {

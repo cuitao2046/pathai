@@ -54,11 +54,27 @@ class LocationEstimateRequest(StrictModel):
     #: 是否启用指纹库优先匹配（设置页开关，默认关闭＝仅蓝牙三点定位）。
     #: 缺省字段时请求体与旧版完全一致，服务端行为不变。
     useFingerprintDb: bool = False
+    #: 查周边动作：同一次定位响应内附上 8m 内周边要素清单。
+    #: 缺省为 False，请求体与旧版一致且不额外计算。
+    includeSurroundings: bool = False
 
 
 class MatchedArea(StrictModel):
     placeId: str = Field(min_length=1)
     name: str = Field(min_length=1)
+
+
+class SurroundingElement(StrictModel):
+    """周边关键要素（spec REQ-VOICE-02；8m 内按距离升序）。
+
+    只暴露可播报语义，不带拓扑编号/绝对坐标；时钟方向以用户朝向为基准。
+    """
+
+    name: str = Field(min_length=1)
+    elementType: str = Field(min_length=1)
+    clockDirection: int = Field(ge=1, le=12)
+    distanceMeters: float = Field(ge=0)
+    accessibilityNote: str | None = None
 
 
 class FingerprintMatchInfo(StrictModel):
@@ -92,6 +108,8 @@ class PositionEstimateResponse(StrictModel):
     fingerprint: FingerprintMatchInfo | None = None
     #: 请求启用指纹库但降级到三点定位的原因（未启用时为 None）。
     fallbackReason: str | None = None
+    #: 周边要素：仅请求 includeSurroundings=true 时返回（可信定位下可能为空数组）。
+    surroundings: list[SurroundingElement] | None = None
     #: 本次观测龄（秒，按服务端时钟）。仅作提示：采集是否够新由客户端判断。
     observationAgeS: float | None = None
     #: 观测龄是否已超过提示阈值（默认 15 s）。不会导致请求失败。

@@ -2,7 +2,7 @@
 """API-06..09 导航会话契约（docs/24 §8 API-06/07/08/09）。
 
 关键不变量（spec REQ-NAV / REQ-SESSION）：
-- 路线携带固定 mapVersion 与 routeRulesVersion（首期 "1.0.0"，会话内固定）；
+- 路线携带固定 mapVersion 与 routeRulesVersion（当前 "1.1.0"，会话内固定）；
 - 公开路线默认不得是 wall_fallback；若是必须 safeForBlind=false 且带风险提示；
 - 事件与状态必须一致：relocalizing→recovering、arrived→arrived；
 - 终态（arrived/ended）不返回可执行旧指令；ended 必须带 endReason/endedAt。
@@ -58,7 +58,7 @@ class RouteInfo(StrictModel):
 
     routeId: str = Field(min_length=1)
     mapVersion: str = Field(min_length=1)
-    routeRulesVersion: str = Field(default="1.0.0", pattern=r"^\d+\.\d+\.\d+$")
+    routeRulesVersion: str = Field(default="1.1.0", pattern=r"^\d+\.\d+\.\d+$")
     distanceM: float = Field(ge=0)
     estimatedDurationSec: int | None = Field(default=None, ge=0)
     polyline: list[GeoPosition] = Field(min_length=2)

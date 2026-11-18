@@ -666,7 +666,7 @@ function edgeAllowed(e, mode) {
   }
   if (mode === 'wheelchair') {
     if (e.wheelchairAccessible === false) return false;
-    if (Number(e.accessibilityLevel) === 999) return false;
+    // accessibilityLevel=999 是视障结构等级，不隐含轮椅不可用。
   }
   return true;
 }

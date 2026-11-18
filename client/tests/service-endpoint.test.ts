@@ -2,6 +2,7 @@
  * service-endpoint：三态发现策略（自动 / 仅广播 / 仅扫描）、设备身份校验、
  * 运行期失效恢复与模拟器回环路径。失败不回退编译期地址。
  */
+import type { CancelToken } from '../core/discovery/cancel-token';
 import type * as ServiceEndpoint from '../services/service-endpoint';
 
 const DEVICE_A = 'srv-' + 'a'.repeat(32);
@@ -132,7 +133,7 @@ test('缓存命中但 device_id 变化：视为换机并重新发现', async () 
   discoverBusinessCandidate.mockResolvedValue({ url: NEXT, identity: identity(DEVICE_B) });
   const ep = load();
   expect(await ep.ensureServiceEndpoint()).toBe(NEXT);
-  expect(discoverBusinessCandidate).toHaveBeenCalledWith(DEVICE_A);
+  expect(discoverBusinessCandidate).toHaveBeenCalledWith(DEVICE_A, expect.anything());
 });
 
 describe('三态策略顺序', () => {
@@ -152,7 +153,7 @@ describe('三态策略顺序', () => {
     scanLanForService.mockResolvedValue(scanned(NEXT));
     const ep = load();
     expect(await ep.ensureServiceEndpoint()).toBe(NEXT);
-    expect(scanLanForService).toHaveBeenCalledWith(null);
+    expect(scanLanForService).toHaveBeenCalledWith(null, expect.anything());
     expect(candidate.saveP0Candidate).toHaveBeenCalledWith(NEXT, DEVICE_A);
   });
 
@@ -198,6 +199,40 @@ describe('三态策略顺序', () => {
     const ep = load();
     expect(await ep.ensureServiceEndpoint()).toBe(NEXT);
     expect(candidate.saveP0Candidate).toHaveBeenCalledWith(NEXT, DEVICE_B);
+  });
+
+  test('地址失效时立即中止正在进行的广播', async () => {
+    let cancelled = false;
+    discoverBusinessCandidate.mockImplementation((_id: unknown, cancel: CancelToken) =>
+      new Promise((resolve) => {
+        cancel.onCancel(() => {
+          cancelled = true;
+          resolve(null);
+        });
+      }));
+    const ep = load();
+    const pending = ep.ensureServiceEndpoint();
+    ep.invalidateServiceEndpoint();
+    expect(await pending).toBeNull();
+    expect(cancelled).toBe(true);
+  });
+
+  test('地址失效时立即中止正在进行的扫描', async () => {
+    getDiscoveryMode.mockReturnValue('scan');
+    let cancelled = false;
+    scanLanForService.mockImplementation((_id: unknown, cancel: CancelToken) =>
+      new Promise((resolve) => {
+        cancel.onCancel(() => {
+          cancelled = true;
+          resolve({ service: null, reason: 'scan-requests-failed', targetCount: 254, responded: 0 });
+        });
+      }));
+    const ep = load();
+    const pending = ep.ensureServiceEndpoint();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    ep.invalidateServiceEndpoint();
+    expect(await pending).toBeNull();
+    expect(cancelled).toBe(true);
   });
 });
 

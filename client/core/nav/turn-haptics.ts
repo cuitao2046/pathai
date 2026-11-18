@@ -264,6 +264,30 @@ export function turnDistanceM(
   return turnCum - s;
 }
 
+/**
+ * 当前位置沿路线到终点的剩余距离（米）。
+ * 跨层按折线累计（电梯段取折线两点欧氏距离）；无法投影到同层折线时返回 null。
+ */
+export function remainingRouteDistanceM(
+  polyline: readonly GeoPosition[],
+  current: { x: number; y: number; floorId?: string | null } | null,
+): number | null {
+  if (current === null || polyline.length < 2) {
+    return null;
+  }
+  const floorId = current.floorId;
+  if (floorId === null || floorId === undefined) {
+    return null;
+  }
+  const cum = polylineCumulative(polyline);
+  const s = projectAlong(polyline, cum, floorId, current.x, current.y);
+  if (s === null) {
+    return null;
+  }
+  const total = cum[cum.length - 1];
+  return Math.max(0, total - s);
+}
+
 function polylineCumulative(polyline: readonly GeoPosition[]): number[] {
   const cum = [0];
   for (let i = 1; i < polyline.length; i += 1) {

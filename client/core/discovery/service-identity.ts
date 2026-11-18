@@ -5,6 +5,7 @@
  * 即使健康检查可达，也不能被当作同一台服务端。
  */
 import { BUSINESS_SERVICE } from './business-protocol';
+import type { CancelToken } from './cancel-token';
 
 /** 服务端持久化的稳定设备标识格式（与后端 LocalDeviceIdentity 一致）。 */
 const DEVICE_ID_PATTERN = /^srv-[0-9a-f]{16,32}$/;
@@ -16,13 +17,14 @@ export interface ServiceIdentity {
   apiVersion: string | null;
 }
 
-/** 单次探测结果：区分“连不上”与“连上了但不是目标服务”。 */
+/** 单次探测结果：区分“连不上”“连上了但不是目标服务”与“被主动取消”。 */
 export type EndpointProbeResult =
   | { kind: 'identified'; identity: ServiceIdentity }
   | { kind: 'unidentified' }
-  | { kind: 'unreachable' };
+  | { kind: 'unreachable' }
+  | { kind: 'cancelled' };
 
-export type EndpointProbe = (url: string) => Promise<EndpointProbeResult>;
+export type EndpointProbe = (url: string, cancel?: CancelToken) => Promise<EndpointProbeResult>;
 
 export function isDeviceId(value: unknown): value is string {
   return typeof value === 'string' && DEVICE_ID_PATTERN.test(value);

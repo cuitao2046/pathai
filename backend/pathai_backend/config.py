@@ -71,6 +71,12 @@ class Settings:
     location_residual_degraded_m: float = 4.0
     #: 参数版本号（写入 API-05 响应与导航会话，便于跨版本追溯）
     location_params_version: str = "unset"
+    # 导航判定阈值（docs/现场测试方案.md 冻结值）：可在小程序设置页由测试人员修改，
+    # 修改后写入 nav_policy 表并覆盖环境值；此处为环境冻结默认值。
+    #: 距目的地节点小于该半径即判定到达
+    nav_arrival_radius_m: float = 2.0
+    #: 路口转向的提前播报距离（剩余距离降到该值时切换为转向指令）
+    nav_turn_prompt_distance_m: float = 3.0
     # 标定控制台（specs/calibration-console）：样本/网格产物目录与运行时热切换 TTL
     calibration_data_dir: Path = Path(__file__).resolve().parent.parent / ".local" / "calibration"
     #: 网格基线（geo/台账/路线/虚拟信标）所在目录；缺失时 ready 判定为不可计算
@@ -121,6 +127,10 @@ class Settings:
                 env.get("PATHAI_LOCATION_RESIDUAL_DEGRADED_M", "4.0")
             ),
             location_params_version=env.get("PATHAI_LOCATION_PARAMS_VERSION", "unset"),
+            nav_arrival_radius_m=float(env.get("PATHAI_NAV_ARRIVAL_RADIUS_M", "2.0")),
+            nav_turn_prompt_distance_m=float(
+                env.get("PATHAI_NAV_TURN_PROMPT_DISTANCE_M", "3.0")
+            ),
             calibration_data_dir=Path(
                 env.get(
                     "PATHAI_CALIBRATION_DATA_DIR",

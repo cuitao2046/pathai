@@ -18,9 +18,16 @@ interface PendingSpeak {
 class ControlledTts implements TtsEngine {
   pending: PendingSpeak[] = [];
   completed: string[] = [];
+  /** 预生成请求（后台合成，不进入播报队列）。 */
+  prepared: string[] = [];
   stopCount = 0;
   /** 置 true 后下一次 speak 立即 reject（模拟引擎仍不可用）。 */
   shouldFailNext = false;
+
+  prepare(text: string): Promise<void> {
+    this.prepared.push(text);
+    return Promise.resolve();
+  }
 
   speak(text: string): Promise<void> {
     if (this.shouldFailNext) {
@@ -128,6 +135,15 @@ describe('SpeechQueue 播报队列', () => {
     await tick();
     expect(engine.pending).toHaveLength(0);
     expect(engine.completed).toEqual(['提示一', '提示二']);
+  });
+
+  it('prepare 只预生成动态文本，跳过固定文案且不进入播报队列', async () => {
+    const queue = makeQueue();
+    queue.prepare('即将左转。'); // 固定转向文案已有本地音频
+    queue.prepare('请沿当前通道直行 5 米。'); // 动态文案才预生成
+    await tick();
+    expect(engine.prepared).toEqual(['请沿当前通道直行 5 米。']);
+    expect(engine.pending).toHaveLength(0); // 不排队、不播报
   });
 
   it('本地音频片段与文本共用 FIFO：片段播完才播后续文本', async () => {

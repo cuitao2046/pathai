@@ -1,0 +1,103 @@
+# -*- coding: utf-8 -*-
+"""路口转向指令时序回归：转向必须在拐点前播报，并保持到用户越过路口。
+
+背景：服务端旧实现对 continue 的 distance trigger 误用“本段长度”与“到终点剩余”
+比较，导致转向指令被跳过；客户端因此只听到少量直行提示，转弯震动也因当前指令
+不是 turn_left/turn_right 而不触发。
+"""
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+
+from pathai_backend.hazard_layer import HazardRepository
+from pathai_backend.map_package.schema import MapPackage
+from pathai_backend.nav_service import PackageIndex, plan_route, snap_to_node
+from pathai_backend.routers.nav import _advance_current_index
+from pathai_backend.schemas.common import InstructionAction, UserMode
+
+MAP_VERSION = "2026-11-08.2"
+_BACKEND = Path(__file__).resolve().parent.parent
+_MAP_PATH = _BACKEND / "maps_data" / "school-building-01" / f"{MAP_VERSION}.json"
+_HAZARD_DIR = _BACKEND / "hazards_data"
+
+
+def _build_route(dest_place_id: str = "F1-RM-0036"):
+    raw = json.loads(_MAP_PATH.read_text(encoding="utf-8"))
+    pkg = MapPackage.model_validate(raw)
+    index = PackageIndex(pkg)
+    origin = snap_to_node(index, "1", -40, 11)
+    hazard = HazardRepository.load(_HAZARD_DIR).get("school-building-01", MAP_VERSION)
+    route, _dest = plan_route(
+        raw, pkg, index, origin, dest_place_id, UserMode.BLIND, hazard_layer=hazard
+    )
+    return route, index
+
+
+def _positions(route, step_m: float = 0.25):
+    pts = route.polyline
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        length = math.hypot(b.x - a.x, b.y - a.y)
+        count = max(1, int(length / step_m))
+        for k in range(count):
+            t = k / count
+            yield a.floorId or "1", a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t
+    last = pts[-1]
+    yield last.floorId or "1", last.x, last.y
+
+
+def test_turn_instructions_are_not_skipped_and_stay_current_at_junction():
+    route, index = _build_route()
+    turn_indices = {
+        i for i, seg in enumerate(route.segments)
+        if seg.action in (InstructionAction.TURN_LEFT, InstructionAction.TURN_RIGHT)
+    }
+    assert turn_indices, "真实路线应包含路口转向"
+
+    cur = 0
+    seen: list[int] = []
+    turn_current_at_node: dict[int, bool] = {}
+    for floor_id, x, y in _positions(route):
+        cur, _remaining = _advance_current_index(route, index, cur, floor_id, x, y)
+        if not seen or seen[-1] != cur:
+            seen.append(cur)
+        seg = route.segments[cur]
+        if cur in turn_indices and seg.trigger.nodeId:
+            node = index.nodes[seg.trigger.nodeId]
+            if math.hypot(x - node.x, y - node.y) <= 0.3:
+                turn_current_at_node[cur] = True
+
+    # 所有转向都必须作为当前指令出现过；这是安全优先级，不能被直行吞掉。
+    assert turn_indices.issubset(set(seen))
+    # 转向文案按用户要求保持短句：即将左转 / 即将右转。
+    for i in turn_indices:
+        assert route.segments[i].text in ("即将左转。", "即将右转。")
+    # 用户到达拐点时必须仍是该转向指令，客户端才能继续转弯震动。
+    assert turn_indices.issubset(set(turn_current_at_node))
+
+
+def test_enter_elevator_advances_after_reaching_target_floor():
+    """跨层恢复：上报楼层已是电梯另一层时，必须越过进/出电梯两条指令。
+
+    客户端在电梯口暂停上报，到目标层采到信标后恢复；此时服务端仍可能停留在
+    「请进入电梯」。若只在同层 3m 内推进，会永久卡住并重复播报进电梯。
+    """
+    route, index = _build_route("F2-RM-0018")
+    enter_index = next(
+        i for i, seg in enumerate(route.segments)
+        if seg.action is InstructionAction.ENTER_ELEVATOR
+    )
+    target_floor_point = next(p for p in route.polyline if p.floorId == "2")
+
+    cur, _remaining = _advance_current_index(
+        route, index, enter_index, "2", target_floor_point.x, target_floor_point.y
+    )
+
+    assert cur > enter_index
+    assert route.segments[cur].action not in (
+        InstructionAction.ENTER_ELEVATOR,
+        InstructionAction.EXIT_ELEVATOR,
+    )
+

@@ -14,6 +14,7 @@
  * 内部防并发：上一次查询未结束时再次 query 直接返回 null（调用方忽略）。
  */
 import type { BeaconSourceLike } from '../core/ble/beacon-source';
+import { getScanProfile } from '../core/ble/scan-profile';
 import type { ApiClient } from '../core/http/api-client';
 import {
   LocationPipeline,
@@ -41,7 +42,6 @@ export type LocationQueryKind = 'location' | 'surroundings';
 
 const DEFAULT_TICK_INTERVAL_MS = 1200;
 const DEFAULT_TIMEOUT_MS = 10_000;
-const WINDOW_MS = 2000;
 
 /**
  * 时钟方位 → 8 个左右扇区（播报侧转换，服务端仍下发 clockDirection 数据口径）。
@@ -64,7 +64,39 @@ const CLOCK_SECTOR: Record<number, string> = {
 };
 
 /** 播报最多列几条周边要素，避免行走时播报过长（合并重复项后再截断）。 */
-const SURROUNDINGS_SPEAK_LIMIT = 3;
+const SURROUNDINGS_SPEAK_LIMIT = 5;
+
+/** 关键通行设施：即使不在最近 N 条内，也要优先播报（避免漏掉电梯/楼梯）。 */
+const KEY_FACILITY_TYPES = ['elevator', 'stairs'];
+
+/** 安全类要素：补位时不得被普通要素挤掉。 */
+function isSafetyCritical(elementType: string): boolean {
+  return elementType === 'hazard' || elementType.startsWith('fire_door');
+}
+
+/**
+ * 选取播报条目：按距离取前 N 条，再确保最近的电梯/楼梯在列。
+ * 补位只替换普通要素（柱子/门/房间），不挤掉风险点与防火门提示。
+ */
+export function selectSurroundingsForSpeech(
+  items: SurroundingElement[],
+  limit = SURROUNDINGS_SPEAK_LIMIT,
+): SurroundingElement[] {
+  const selected = items.slice(0, limit);
+  for (const type of KEY_FACILITY_TYPES) {
+    const facility = items.find((item) => item.elementType === type);
+    if (facility === undefined || selected.includes(facility)) {
+      continue;
+    }
+    for (let i = selected.length - 1; i >= 0; i -= 1) {
+      if (!isSafetyCritical(selected[i].elementType)) {
+        selected[i] = facility;
+        break;
+      }
+    }
+  }
+  return selected.slice().sort((a, b) => a.distanceMeters - b.distanceMeters);
+}
 
 /** 同一位置的判定阈值：同方位扇区且距离差 ≤ 1m。 */
 const MERGE_DISTANCE_M = 1.0;
@@ -196,7 +228,7 @@ export function describeSurroundingsText(
   if (merged.length === 0) {
     return SURROUNDINGS_EMPTY_TEXT;
   }
-  const parts = merged.slice(0, SURROUNDINGS_SPEAK_LIMIT).map((item) => {
+  const parts = selectSurroundingsForSpeech(merged).map((item) => {
     const base = `${formatDistance(item.distanceMeters)}米有${item.name}`;
     const withNote = item.accessibilityNote ? `${base}（${item.accessibilityNote}）` : base;
     return headingAvailable ? `${sectorOf(item.clockDirection)}${withNote}` : withNote;
@@ -249,7 +281,7 @@ export class LocationQueryService {
       map,
       source: makeSource(),
       sequence: new SequenceCounter(),
-      windowMs: this.deps.windowMs ?? WINDOW_MS,
+      windowMs: this.deps.windowMs ?? getScanProfile().windowMs,
       useFingerprintDb: this.deps.useFingerprintDb,
       // 查周边：同一次定位请求内让服务端附上周边清单，避免串两次请求
       includeSurroundings: kind === 'surroundings' ? () => true : undefined,

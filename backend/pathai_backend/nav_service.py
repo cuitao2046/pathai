@@ -33,14 +33,17 @@ from pathai_backend.schemas.common import (
 )
 from pathai_backend.schemas.nav import RouteHazard, RouteInfo
 
-ROUTE_RULES_VERSION = "1.0.0"
+ROUTE_RULES_VERSION = "1.1.0"
 LOCATION_ALGORITHM_VERSION = "location-0.3"  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
-#: 工程初始阈值。
+#: 工程初始阈值（导航阈值冻结值：到达 2.0m / 转向提前 3.0m，见 docs/现场测试方案.md §3.4）。
 ORIGIN_MIN_CONFIDENCE = 0.5
-ARRIVAL_RADIUS_M = 5.0
+ARRIVAL_RADIUS_M = 2.0
 OFF_ROUTE_M = 8.0
 DECISION_POINT_RADIUS_M = 3.0
 TURN_ANGLE_DEG = 30.0
+#: 路口转向的提前播报距离（冻结值）。语音在拐点前约 3m 说出转向；
+#: 转弯震动仍由客户端在最后 6m 内先接管，两者不依赖同一阈值。
+TURN_PROMPT_DISTANCE_M = 3.0
 
 
 @dataclass(frozen=True)
@@ -124,16 +127,31 @@ def build_route_info(
     route: dict, pkg: MapPackage, index: PackageIndex, path_points: list[NavPoint],
     hazards: list[RouteHazard] | None = None,
     hazard_layer: HazardLayer | None = None,
+    turn_prompt_distance_m: float = TURN_PROMPT_DISTANCE_M,
+    approach: tuple[NavPoint, float] | None = None,
 ) -> RouteInfo:
-    """从引擎输出构建 RouteInfo 与 segments（首条指令=segments[0]）。"""
-    node_ids: list[str] = route["path"]
+    """从引擎输出构建 RouteInfo 与 segments（首条指令=segments[0]）。
+
+    ``approach``：实际起点到图上入网节点的首段。路线几何以真实位置为首点，
+    不把起点吸附成节点坐标；入网节点只用于图搜索。
+    """
+    node_ids: list[str] = list(route["path"])
     segments: list[NavigationInstruction] = []
     seq = 0
-    # 剩余距离后缀和：remaining[i] = 从 path[i] 沿路线到终点的边长和
-    edge_dists: list[float] = []
-    for a_id, b_id in zip(node_ids[:-1], node_ids[1:]):
-        edge = index.edge_between(a_id, b_id)
-        edge_dists.append(edge["distance"] if edge else 0.0)
+    # 剩余距离后缀和：remaining[i] = 从 path[i] 沿路线到终点的物理边长和。
+    # 优先使用 RouteGraph 返回的逐边物理距离，避免虚拟边/重复边反查失配。
+    edge_dists: list[float] = list(route.get("edgeDistances") or [])
+    if len(edge_dists) != len(node_ids) - 1:
+        edge_dists = []
+        for a_id, b_id in zip(node_ids[:-1], node_ids[1:]):
+            edge = index.edge_between(a_id, b_id)
+            edge_dists.append(edge["distance"] if edge else 0.0)
+    if approach is not None:
+        # 首段：真实位置 → 入网节点；后续边距离整体后移一位。
+        approach_point, approach_distance = approach
+        path_points = [approach_point, *path_points]
+        node_ids = [approach_point.node_id, *node_ids]
+        edge_dists = [approach_distance, *edge_dists]
     remaining = [0.0] * len(node_ids)
     for i in range(len(node_ids) - 2, -1, -1):
         remaining[i] = remaining[i + 1] + edge_dists[i]
@@ -143,18 +161,33 @@ def build_route_info(
     pending = 0.0  # 自上一条已发指令起累计的直行距离
     first_walk_emitted = False
 
-    def _emit_walk(remaining_m: float) -> None:
+    def _emit_walk(remaining_at_end: float, *, final: bool = False) -> None:
+        """发出一条直行指令。
+
+        ``remaining_at_end`` 是该直行段结束点（下一个决策点）到终点的剩余距离。
+        ``distance`` trigger 的 valueM 表示“剩余距离降到该值时切换到下一条指令”，
+        不是本段长度；路口前提前 ``turn_prompt_distance_m`` 切换，确保转向先播。
+        """
         nonlocal seq, pending, first_walk_emitted
         if pending < 0.5:  # 触发距离必须 >0；过短直行并入转向指令
             return
         seq += 1
-        if not first_walk_emitted:
+        if final:
+            # 末段直行后直接进入到达判定；valueM 必须 >0（schema 约束）。
+            trigger = Trigger(type="distance", valueM=0.01)
+            distance_m = pending
+        elif not first_walk_emitted:
             trigger = Trigger(type="immediate")
+            distance_m = remaining_at_end + pending
         else:
-            trigger = Trigger(type="distance", valueM=round(pending, 2))
+            trigger = Trigger(
+                type="distance",
+                valueM=round(remaining_at_end + turn_prompt_distance_m, 2),
+            )
+            distance_m = remaining_at_end + pending
         segments.append(_instruction(
             seq, InstructionAction.CONTINUE,
-            f"请沿当前通道直行 {pending:.0f} 米。", remaining_m,
+            f"请沿当前通道直行 {pending:.0f} 米。", distance_m,
             InstructionPriority.NORMAL, trigger,
         ))
         first_walk_emitted = True
@@ -192,10 +225,12 @@ def build_route_info(
                     InstructionAction.TURN_LEFT if diff > 0 else InstructionAction.TURN_RIGHT
                 )
                 seq += 1
+                direction = "左" if action is InstructionAction.TURN_LEFT else "右"
+                # 用户明确要求转向文案保持短句，避免“前方约 X 米路口请右转”过长；
+                # 提前量仍由 distance trigger 的 10m 阈值保证。
                 segments.append(_instruction(
                     seq, action,
-                    "前方路口请左转。" if action is InstructionAction.TURN_LEFT
-                    else "前方路口请右转。",
+                    f"即将{direction}转。",
                     remaining[i - 1], InstructionPriority.TURN,
                     Trigger(type="decision_point", nodeId=a.node_id),
                 ))
@@ -203,8 +238,8 @@ def build_route_info(
         prev_bearing = bearing
         i += 1
 
-    # 末段直行：其 distanceM 即该直行段长度（至终点）
-    _emit_walk(pending)
+    # 末段直行：distanceM 即该直行段长度（至终点）
+    _emit_walk(pending, final=True)
     dest = path_points[-1]
     seq += 1
     segments.append(_instruction(
@@ -223,7 +258,15 @@ def build_route_info(
         routeId=f"route_{_short_id()}",
         mapVersion=pkg.mapVersion,
         routeRulesVersion=ROUTE_RULES_VERSION,
-        distanceM=round(route["distance"], 2),
+        distanceM=round(
+            (
+                route.get("physicalDistance")
+                if route.get("physicalDistance") is not None
+                else route["distance"]
+            )
+            + (approach[1] if approach is not None else 0.0),
+            2,
+        ),
         estimatedDurationSec=None,
         polyline=[
             GeoPosition(x=p.x, y=p.y, floorId=p.floor_id) for p in path_points
@@ -315,8 +358,13 @@ def _hazard_details(hazards: list[HazardZone]) -> dict:
 def plan_route(
     raw_data: dict, pkg: MapPackage, index: PackageIndex, origin: NavPoint,
     dest_place_id: str, user_mode: UserMode, hazard_layer: HazardLayer | None = None,
+    turn_prompt_distance_m: float = TURN_PROMPT_DISTANCE_M,
+    origin_position: tuple[str, float, float] | None = None,
 ) -> tuple[RouteInfo, NavPoint]:
     """规划路线；错误码区分 ROUTE_NOT_FOUND 与 ACCESSIBLE_ROUTE_NOT_FOUND。
+
+    ``origin`` 只是图上入网节点（用于寻路）；``origin_position`` 是真实起点
+    (floorId, x, y)。提供时路线以真实位置为首点，不再把起点吸附成节点坐标。
 
     危险层语义：
     - block：进入 edge_allowed 硬禁行（四层回退都不会放行）；
@@ -389,6 +437,15 @@ def plan_route(
         raise ApiError(422, "ROUTE_NOT_FOUND", "当前起终点之间没有适盲路线")
     path_points = [index.nodes[nid] for nid in route["path"]]
     route_hazards = _route_hazards(active, set(route.get("edges") or ()), baseline_edges)
+    approach: tuple[NavPoint, float] | None = None
+    if origin_position is not None:
+        floor_id, x, y = origin_position
+        if floor_id == origin.floor_id:
+            distance = math.hypot(x - origin.x, y - origin.y)
+            # 与节点重合（含浮点噪声）时不加首段，避免零长边。
+            if distance > 0.05:
+                approach = (NavPoint("__origin__", floor_id, x, y), distance)
     return build_route_info(
-        route, pkg, index, path_points, route_hazards, hazard_layer
+        route, pkg, index, path_points, route_hazards, hazard_layer,
+        turn_prompt_distance_m=turn_prompt_distance_m, approach=approach,
     ), dest_node

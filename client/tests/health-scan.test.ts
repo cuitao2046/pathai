@@ -1,3 +1,4 @@
+import { createCancelSource, type CancelToken } from '../core/discovery/cancel-token';
 import { scanForService } from '../core/discovery/health-scan';
 import type { EndpointProbeResult } from '../core/discovery/service-identity';
 
@@ -40,6 +41,48 @@ describe('有界并发 HTTP 扫描池', () => {
     await scanForService(targets, { port: 8000, concurrency: 3, probe });
     expect(peak).toBeLessThanOrEqual(3);
     expect(probe).toHaveBeenCalledTimes(20);
+  });
+
+  test('命中后立即中止在途探测，不再等待其余目标', async () => {
+    let cancelled = false;
+    const probe = jest.fn((url: string, cancel?: CancelToken): Promise<EndpointProbeResult> => {
+      if (url.endsWith('.2:8000')) return Promise.resolve(identified());
+      return new Promise((resolve) => {
+        cancel?.onCancel(() => {
+          cancelled = true;
+          resolve({ kind: 'cancelled' });
+        });
+      });
+    });
+    const result = await scanForService(['192.168.1.1', '192.168.1.2', '192.168.1.3'], {
+      port: 8000,
+      concurrency: 2,
+      probe,
+    });
+    expect(result.match?.url).toBe('http://192.168.1.2:8000');
+    expect(result.attempted).toBe(2);
+    expect(cancelled).toBe(true);
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  test('外部取消立即结束扫描，不再派发剩余目标', async () => {
+    const source = createCancelSource();
+    const probe = jest.fn((_url: string, cancel?: CancelToken): Promise<EndpointProbeResult> =>
+      new Promise((resolve) => {
+        cancel?.onCancel(() => resolve({ kind: 'cancelled' }));
+      }));
+    const pending = scanForService(['192.168.1.1', '192.168.1.2'], {
+      port: 8000,
+      concurrency: 1,
+      probe,
+      cancel: source.token,
+    });
+    await Promise.resolve();
+    source.cancel();
+    const result = await pending;
+    expect(result.match).toBeNull();
+    expect(result.attempted).toBe(1);
+    expect(probe).toHaveBeenCalledTimes(1);
   });
 
   test('已知 device_id 时忽略其它服务端响应', async () => {

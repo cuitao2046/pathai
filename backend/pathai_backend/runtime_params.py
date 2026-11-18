@@ -15,7 +15,11 @@ from typing import Callable
 
 from pathai_backend.config import Settings
 from pathai_backend.database import session_scope
-from pathai_backend.models import CalibrationActivePointer, LocationParamVersion
+from pathai_backend.models import (
+    CalibrationActivePointer,
+    LocationParamVersion,
+    NavPolicy,
+)
 
 #: 单场地部署（与地图包目录一致）；多站点不在本阶段范围。
 DEFAULT_SITE_ID = "school-building-01"
@@ -35,6 +39,8 @@ class RuntimeParams:
         self._db_values: dict[str, object] | None = None
         self._param_version = initial.location_params_version
         self._grid_version: str | None = None
+        self._nav_from_db = False
+        self._calibration_from_db = False
         self._loaded_at = 0.0
         self._lock = threading.Lock()
 
@@ -70,7 +76,8 @@ class RuntimeParams:
         return {
             "paramVersion": self._param_version,
             "gridVersion": self._grid_version,
-            "source": "db" if self._db_values is not None else "env",
+            "source": "db" if self._calibration_from_db else "env",
+            "navPolicySource": "db" if self._nav_from_db else "env",
         }
 
     def _reload(self) -> None:
@@ -83,18 +90,34 @@ class RuntimeParams:
                 self._db_values = None
                 self._param_version = self._base.location_params_version
                 self._grid_version = None
-                return
-            row = session.get(LocationParamVersion, pointer.param_version)
-            if row is None:
-                return
-            self._db_values = {
-                "location_rssi_at_1m": row.rssi_at_1m,
-                "location_path_loss_n": row.path_loss_n,
-                "location_residual_reliable_m": row.residual_reliable_m,
-                "location_residual_degraded_m": row.residual_degraded_m,
-            }
-            self._param_version = row.version
-            self._grid_version = row.grid_version
+                self._calibration_from_db = False
+            else:
+                row = session.get(LocationParamVersion, pointer.param_version)
+                if row is None:
+                    return
+                self._db_values = {
+                    "location_rssi_at_1m": row.rssi_at_1m,
+                    "location_path_loss_n": row.path_loss_n,
+                    "location_residual_reliable_m": row.residual_reliable_m,
+                    "location_residual_degraded_m": row.residual_degraded_m,
+                }
+                self._param_version = row.version
+                self._grid_version = row.grid_version
+                self._calibration_from_db = True
+            # 导航判定阈值与定位参数共用同一个覆盖层，二者互不依赖。
+            nav = session.get(NavPolicy, DEFAULT_SITE_ID)
+            if nav is not None:
+                values = dict(self._db_values or {})
+                values.update(
+                    {
+                        "nav_arrival_radius_m": nav.arrival_radius_m,
+                        "nav_turn_prompt_distance_m": nav.turn_prompt_distance_m,
+                    }
+                )
+                self._db_values = values
+                self._nav_from_db = True
+            else:
+                self._nav_from_db = False
         except Exception:
             # 表未建/瞬断：保留上次缓存；从未加载成功则使用环境值
             return

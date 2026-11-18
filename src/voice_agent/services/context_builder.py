@@ -22,6 +22,14 @@ FLOOR_LABEL = {"1": "一楼", "2": "二楼", "3": "三楼", "4": "四楼"}
 NEARBY_RADIUS_M = 8.0
 NEARBY_MAX_ELEMENTS = 8
 TACTILE_HIT_RADIUS_M = 1.0
+#: 开放空间房间类型：独立柱检测只认这些区域（与 src/tools/detect_open_column_wraps.py 同口径）。
+OPEN_SPACE_ROOM_TYPES = {
+    "corridor", "lobby", "atrium", "elevator_lobby", "stair_lobby", "activity",
+}
+#: 独立柱判定：柱心 1m 环上 8 个方向都必须落在开放空间；否则是贴墙/门垛结构柱，
+#: 不属于可绕行的“独立柱子”，不参与周边播报。
+COLUMN_OPENNESS_RADIUS_M = 1.0
+COLUMN_OPENNESS_DIRECTIONS = 8
 
 #: 语义房间类型 → 区域类型
 _REGION_BY_ROOM_TYPE = {
@@ -80,6 +88,24 @@ def _point_in_ring(x: float, y: float, ring: list[list[float]]) -> bool:
 def _point_in_geometry(x: float, y: float, geometry: dict) -> bool:
     rings = _rings_of(geometry)
     return any(_point_in_ring(x, y, ring) for ring in rings)
+
+
+def _is_freestanding_column(
+    point: tuple[float, float], rooms: list["RoomInfo"]
+) -> bool:
+    """柱心周围 1m 环 8 个方向都在开放空间 → 四周无遮挡的独立柱。"""
+    x, y = point
+    for index in range(COLUMN_OPENNESS_DIRECTIONS):
+        angle = 2 * math.pi * index / COLUMN_OPENNESS_DIRECTIONS
+        px = x + COLUMN_OPENNESS_RADIUS_M * math.cos(angle)
+        py = y + COLUMN_OPENNESS_RADIUS_M * math.sin(angle)
+        if not any(
+            room.room_type in OPEN_SPACE_ROOM_TYPES
+            and _point_in_geometry(px, py, room.geometry)
+            for room in rooms
+        ):
+            return False
+    return True
 
 
 def _zone_suffix(centroid: tuple[float, float], bounds: tuple[float, float, float, float]) -> str:
@@ -174,7 +200,7 @@ class SpatialIndex:
             columns = []
             for feature in geometry.get("columns") or []:
                 point = _centroid_of(feature.get("geometry") or {})
-                if point is not None:
+                if point is not None and _is_freestanding_column(point, rooms):
                     columns.append((feature.get("id", ""), point))
             accessibility = floor.get("accessibility") or {}
             risks = [
@@ -317,10 +343,12 @@ _RISK_NOTES = {
 def _risk_name(risk: RiskInfo) -> str:
     if risk.risk_type == "outward_door":
         return "外开门"
+    # 电梯/楼梯的 label 是设备编号（如 II-03#EL），对用户无意义，统一用口语名；
+    # 口语名与设施要素（“电梯”/“楼梯”）前缀相同，客户端合并时不会重复播报。
     if risk.risk_type == "elevator_entrance":
-        return risk.label or "电梯口"
+        return "电梯口"
     if risk.risk_type == "stair_entrance":
-        return risk.label or "楼梯口"
+        return "楼梯口"
     return risk.label or "风险点"
 
 
@@ -353,14 +381,14 @@ def build_spatial_context(
             if node.facility_type == "elevator":
                 placed.append(
                     _element(
-                        node.label or "无障碍电梯", "elevator", node.coordinates,
+                        "电梯", "elevator", node.coordinates,
                         origin, heading_deg, None,
                     )
                 )
             else:
                 placed.append(
                     _element(
-                        node.label or "楼梯口", "stairs", node.coordinates,
+                        "楼梯", "stairs", node.coordinates,
                         origin, heading_deg, "楼梯，视障不建议通行",
                     )
                 )

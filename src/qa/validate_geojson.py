@@ -156,6 +156,18 @@ def validate_floor(floor_key: str, floor: dict, report: List[str]) -> Dict[str, 
                     issue(f"楼梯边 {e.get('id')} blindAccessible 应为 false")
                 break
 
+    # 3b) accessibilityLevel=999 是视障结构等级，必须与 blindAccessible=false 一致；
+    #     轮椅是否可用只由 wheelchairAccessible 决定，不从 999 推导。
+    for e in edges:
+        if int(e.get("accessibilityLevel") or 0) == 999:
+            if e.get("blindAccessible") is not False:
+                issue(f"边 {e.get('id')} accessibilityLevel=999 但 blindAccessible!=false",
+                      hard=True)
+            # 999 不推导轮椅不可用，但必须显式声明，避免 schema 默认 true 误放行。
+            if "wheelchairAccessible" not in e:
+                issue(f"边 {e.get('id')} accessibilityLevel=999 但缺少"
+                      f" wheelchairAccessible 显式声明", hard=True)
+
     # 4) TF 应有至少一条边
     degree = defaultdict(int)
     for e in edges:
@@ -276,6 +288,8 @@ def validate_cross_floor(geo: dict, report: List[str]) -> Dict[str, Any]:
             stats["stair"] += 1
             if xe.get("accessibilityLevel") != 999:
                 issue(f"{xe.get('id')} 楼梯跨层 a!=999", hard=True)
+            if xe.get("blindAccessible") is not False:
+                issue(f"{xe.get('id')} 楼梯跨层 blindAccessible 应为 false", hard=True)
         elif kind == "elevator":
             stats["elevator"] += 1
             if xe.get("accessibilityLevel") not in (0, None):

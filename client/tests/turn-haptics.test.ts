@@ -9,6 +9,7 @@ import {
   TURN_HAPTIC_CONFIG,
   TurnHaptics,
   intervalForZone,
+  remainingRouteDistanceM,
   resolveTurnNode,
   turnDistanceM,
   zoneForDistance,
@@ -290,6 +291,30 @@ describe('resolveTurnNode / turnDistanceM', () => {
     expect(turnDistanceM([], { x: 0, y: 0, floorId: '1' }, { x: 10, y: 0, floorId: '1' })).toBeNull();
     expect(
       turnDistanceM(polyline, { x: 5, y: 0, floorId: '1' }, { x: 30, y: 0, floorId: '1' }),
+    ).toBeNull();
+  });
+});
+
+describe('remainingRouteDistanceM（HUD 剩余距离）', () => {
+  const polyline: GeoPosition[] = [
+    { x: 0, y: 0, floorId: '1' },
+    { x: 10, y: 0, floorId: '1' },
+    { x: 10, y: 0, floorId: '2' }, // 电梯换层：两点重合，距离 0
+    { x: 10, y: 10, floorId: '2' },
+  ];
+
+  it('按当前位置沿折线投影，返回剩余里程（含跨层后的路段）', () => {
+    expect(remainingRouteDistanceM(polyline, { x: 5, y: 0, floorId: '1' })).toBeCloseTo(15);
+    expect(remainingRouteDistanceM(polyline, { x: 10, y: 0, floorId: '1' })).toBeCloseTo(10);
+    expect(remainingRouteDistanceM(polyline, { x: 10, y: 5, floorId: '2' })).toBeCloseTo(5);
+  });
+
+  it('缺楼层/缺数据时返回 null（HUD 不展示过期距离）', () => {
+    expect(remainingRouteDistanceM(polyline, null)).toBeNull();
+    expect(remainingRouteDistanceM(polyline, { x: 5, y: 0, floorId: null })).toBeNull();
+    expect(remainingRouteDistanceM([], { x: 0, y: 0, floorId: '1' })).toBeNull();
+    expect(
+      remainingRouteDistanceM(polyline, { x: 5, y: 0, floorId: '9' }),
     ).toBeNull();
   });
 });

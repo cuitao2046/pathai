@@ -53,18 +53,20 @@ python -m http.server 8899 --directory tools/hazard-editor
 
 ## 重新生成地图数据
 
-地图包更新后（或切换场所），重新生成内联数据：
+管理后台**发布新地图版本或回滚**成功后，后端会自动重建 `data/map-data.js`（取该场所最新版本），无需手工执行；发布响应返回后刷新页面即可看到新地图与新 `mapVersion`。
+
+手动放在 `backend/maps_data/<siteId>/` 下的地图包不会被自动感知，需重新生成内联数据：
 
 ```powershell
 python tools/hazard-editor/build_data.py
 # 指定地图包 / 初始危险层 / 重新生成基线
 python tools/hazard-editor/build_data.py ^
-  --map backend/maps_data/school-building-01/2026-11-08.2.json ^
+  --map backend/maps_data/school-building-01/2026-11-17.4.json ^
   --initial-hazards backend/hazards_data/school-building-01.json ^
   --seed-out backend/hazards_data/school-building-01.json --force-seed
 ```
 
-脚本会裁剪几何、坐标转厘米取整，当前双楼层数据约 330KB，打开与缩放不需要额外优化。
+脚本默认取该场所最新地图包，`mapVersion` 随地图包动态写入，不再手工维护。脚本会裁剪几何、坐标转厘米取整，当前双楼层数据约 330KB，打开与缩放不需要额外优化。
 
 ## 边界说明（本轮范围）
 

@@ -29,7 +29,6 @@ from pathai_backend.observation_time import (
 )
 
 from pathai_backend.nav_service import (
-    ARRIVAL_RADIUS_M,
     DECISION_POINT_RADIUS_M,
     LOCATION_ALGORITHM_VERSION,
     OFF_ROUTE_M,
@@ -38,6 +37,7 @@ from pathai_backend.nav_service import (
     NavPoint,
     plan_route,
     snap_to_node,
+    TURN_PROMPT_DISTANCE_M,
 )
 from pathai_backend.routers.map import get_map_repository
 from pathai_backend.schemas.common import (
@@ -136,6 +136,7 @@ def preview_route(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     repo: MapRepository = Depends(get_map_repository),
     hazard_repo: HazardRepository = Depends(get_hazard_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> PreviewRouteResponse:
     """只做规划与概要预览：不建会话、不写库、不需要 Idempotency-Key。
 
@@ -157,6 +158,8 @@ def preview_route(
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
+        turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+        origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
     place = index.places[body.destinationId]
     return PreviewRouteResponse(
@@ -206,6 +209,8 @@ def create_session(
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
+        turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+        origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
     place = index.places[body.destinationId]
     # 导航行动文案由路线模板确定，禁止模型改写。
@@ -342,6 +347,181 @@ def _nearest_on_route(
     return best
 
 
+#: 决策点判定为“已通过”的沿线余量。转弯指令必须保持到用户真正越过路口，
+#: 否则客户端会在路口前停止转向震动，甚至漏掉转向播报。
+DECISION_POINT_PASSED_MARGIN_M = 1.0
+
+
+def _route_progress(
+    route: RouteInfo, floor_id: str | None, x: float, y: float
+) -> tuple[float, float, list[float], float] | None:
+    """返回 (沿线进度, 到终点剩余, 折线后缀和, 总长)。"""
+    near = _nearest_on_route(route, floor_id, x, y)
+    if near is None:
+        return None
+    suffix = _polyline_suffix(route)
+    total = suffix[0]
+    _, lateral, remaining = near
+    return total - (remaining - lateral), remaining, suffix, total
+
+
+def _node_route_progress(
+    route: RouteInfo,
+    index: PackageIndex,
+    node_id: str | None,
+    floor_id: str | None,
+    suffix: list[float],
+    total: float,
+    current_progress: float,
+) -> float | None:
+    """决策节点在路线折线上的沿线里程；取离当前进度最近的同坐标顶点。
+
+    不能只找“当前进度之后”的顶点：用户一旦越过节点，节点进度就落在后面，
+    旧实现会找不到节点并退回 3m 近距判定，速度稍快就会卡在转向指令上。
+    """
+    if node_id is None or floor_id is None:
+        return None
+    node = index.nodes.get(node_id)
+    if node is None or node.floor_id != floor_id:
+        return None
+    best = None
+    best_delta = None
+    for i, point in enumerate(route.polyline):
+        if point.floorId != floor_id:
+            continue
+        if hypot(point.x - node.x, point.y - node.y) > 1e-6:
+            continue
+        progress = total - suffix[i]
+        delta = abs(progress - current_progress)
+        if best_delta is None or delta < best_delta:
+            best = progress
+            best_delta = delta
+    return best
+
+
+def _advance_current_index(
+    route: RouteInfo,
+    index: PackageIndex,
+    cur: int,
+    floor_id: str | None,
+    x: float,
+    y: float,
+    turn_prompt_distance_m: float = TURN_PROMPT_DISTANCE_M,
+) -> tuple[int, float | None]:
+    """按沿线进度推进当前指令；转向指令保持到用户真正越过路口。
+
+    - immediate：进入更新即切换；
+    - decision_point：沿线进度超过节点 + 余量才切换（电梯保持原有近距判定）；
+    - distance：剩余距离降到 valueM 时切换，valueM 由 build_route_info 设为
+      “下一个决策点剩余距离 + 提前播报距离”，因此转向会在路口前切换。
+    """
+    geometry = _route_progress(route, floor_id, x, y)
+    if geometry is None:
+        return cur, None
+    progress, remaining, suffix, total = geometry
+    start_cur = cur
+
+    def _step(index_value: int) -> tuple[int, bool]:
+        """前进一步；新到的直行指令至少保留一拍，避免短直行被转向吞掉。
+
+        例外：如果这个直行段后面紧跟一个已进入提前播报窗口的转向，则不要停在
+        直行上，让同一拍继续推进到转向——短直行（2~5m）否则会被低频率位置更新
+        直接跨过，转向播报和震动都会丢。
+        """
+        index_value += 1
+        if route.segments[index_value].action is not InstructionAction.CONTINUE:
+            return index_value, False
+        next_index = index_value + 1
+        if next_index < len(route.segments):
+            next_seg = route.segments[next_index]
+            if (
+                next_seg.action in (InstructionAction.TURN_LEFT, InstructionAction.TURN_RIGHT)
+                and next_seg.trigger.type == "decision_point"
+            ):
+                next_progress = _node_route_progress(
+                    route, index, next_seg.trigger.nodeId, floor_id,
+                    suffix, total, progress,
+                )
+                if (
+                    next_progress is not None
+                    and progress >= next_progress - turn_prompt_distance_m
+                ):
+                    return index_value, False
+        stop = index_value != start_cur
+        return index_value, stop
+
+    while cur < len(route.segments) - 1:
+        seg = route.segments[cur]
+        if seg.action is InstructionAction.ARRIVE:
+            break
+        if seg.trigger.type == "immediate":
+            cur, stop = _step(cur)
+            if stop:
+                break
+            continue
+        if seg.trigger.type == "decision_point" and seg.trigger.nodeId:
+            node = index.nodes.get(seg.trigger.nodeId)
+            if seg.action in (
+                InstructionAction.ENTER_ELEVATOR,
+                InstructionAction.EXIT_ELEVATOR,
+            ):
+                # 电梯没有同层“越过节点”的折线进度，保持原近距判定。
+                # 例外：当前段是「进电梯」，而上报楼层已不是该节点所在楼层——
+                # 说明用户已乘电梯到达另一层（客户端在电梯口暂停、目标层恢复上报），
+                # 直接越过进出电梯两条指令，避免永久卡在「请进入电梯」。
+                if (
+                    seg.action is InstructionAction.ENTER_ELEVATOR
+                    and node is not None
+                    and node.floor_id != floor_id
+                ):
+                    cur, stop = _step(cur)
+                    if stop:
+                        break
+                    continue
+                if (
+                    node is not None
+                    and node.floor_id == floor_id
+                    and hypot(x - node.x, y - node.y) <= DECISION_POINT_RADIUS_M
+                ):
+                    cur, stop = _step(cur)
+                    if stop:
+                        break
+                    continue
+                break
+            node_progress = _node_route_progress(
+                route, index, seg.trigger.nodeId, floor_id, suffix, total, progress
+            )
+            if node_progress is not None:
+                if progress >= node_progress + DECISION_POINT_PASSED_MARGIN_M:
+                    cur, stop = _step(cur)
+                    if stop:
+                        break
+                    continue
+                break
+            # 节点不在折线上时退回近距判定（数据退化兜底）。
+            if (
+                node is not None
+                and node.floor_id == floor_id
+                and hypot(x - node.x, y - node.y) <= DECISION_POINT_RADIUS_M
+            ):
+                cur, stop = _step(cur)
+                if stop:
+                    break
+                continue
+            break
+        if (
+            seg.trigger.type == "distance"
+            and seg.trigger.valueM is not None
+            and remaining <= seg.trigger.valueM
+        ):
+            cur, stop = _step(cur)
+            if stop:
+                break
+            continue
+        break
+    return cur, remaining
+
+
 @router.post("/sessions/{session_id}/updates", response_model=NavUpdateResponse)
 def nav_update(
     session_id: str,
@@ -350,6 +530,7 @@ def nav_update(
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
     hazard_repo: HazardRepository = Depends(get_hazard_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> NavUpdateResponse:
     session = _owned_session(db, session_id, user, for_update=True)
     if session.status in (s.value for s in TERMINAL_SESSION_STATUSES):
@@ -377,7 +558,10 @@ def nav_update(
         and loc.observedAt.timestamp() >= session.updated_at_epoch - 5
     )
     if trusted:
-        arrival = loc.floorId == dest.floor_id and hypot(loc.x - dest.x, loc.y - dest.y) <= ARRIVAL_RADIUS_M
+        arrival = (
+            loc.floorId == dest.floor_id
+            and hypot(loc.x - dest.x, loc.y - dest.y) <= settings.nav_arrival_radius_m
+        )
     else:
         arrival = False
 
@@ -416,6 +600,8 @@ def nav_update(
                 published.data, published.pkg, index, origin2,
                 session.destination_place_id, UserMode(session.user_mode),
                 hazard_layer=hazard_repo.get(session.site_id, published.map_version),
+                turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+                origin_position=(loc.floorId, loc.x, loc.y),
             )
             session.route_json = new_route.model_dump_json()
             session.current_index = 0
@@ -431,31 +617,10 @@ def nav_update(
             )
         else:
             cur = session.current_index
-
-            _, _, remaining = near
-
-            # 推进当前指令：immediate/决策点进入半径/剩余距离达标
-            while cur < len(route.segments) - 1:
-                seg = route.segments[cur]
-                if seg.action is InstructionAction.ARRIVE:
-                    break  # 到达由接近判定触发
-                if seg.trigger.type == "immediate":
-                    cur += 1
-                    continue
-                if (
-                    seg.trigger.type == "decision_point"
-                    and seg.trigger.nodeId in index.nodes
-                    and loc.floorId == index.nodes[seg.trigger.nodeId].floor_id
-                    and hypot(loc.x - index.nodes[seg.trigger.nodeId].x,
-                              loc.y - index.nodes[seg.trigger.nodeId].y)
-                    <= DECISION_POINT_RADIUS_M
-                ):
-                    cur += 1
-                    continue
-                if seg.trigger.type == "distance" and seg.trigger.valueM is not None and remaining <= seg.trigger.valueM:
-                    cur += 1
-                    continue
-                break
+            cur, remaining = _advance_current_index(
+                route, index, cur, loc.floorId, loc.x, loc.y,
+                settings.nav_turn_prompt_distance_m,
+            )
             session.current_index = cur
             session.status = SessionStatus.ACTIVE.value
             response = NavUpdateResponse(

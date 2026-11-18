@@ -44,6 +44,7 @@
 - [x] T-031 新建 `positioning-calibrator` 标定小程序：现场手输标定点、2 s 窗口/中位数/截断采样、60–120 s 停留与高峰/低谷标记、导出 `static_samples.json`；台账→`data/reference_beacons.js` 生成工具与 JS 单测。（`positioning-calibrator/`；`node --test`）
 - [x] T-032 主小程序「标定模式」：设置页开关（重启生效）、操作人、可信估计+可见信标数+指令序号+会话状态本地记录、JSON 导出/清空；不改变算法，附 jest 单测。（`client/core/calibration/`、`pages/map`、`pages/settings`）
 - [x] T-033 新建 `src/tools/fit_location_params.py`：台账重算校验、OLS 拟合 `A`/`n`、`R²`/RMSE、按楼层分组判据（≥50 对且 RMSE 降幅 >30%）、生产解算回放 CEP/阈值建议、参数文件+报告；pytest 覆盖合成反演、分组边界与错误路径。（`src/tools/fit_location_params.py`；`tests/test_fit_location_params.py`）
+- [x] T-034 路线引擎适盲策略与物理距离口径：`ModePolicy` 集中硬约束；修复 wheelchair 不因 `accessibilityLevel=999` 禁行；`RouteGraph` 新增 `physicalDistance`/`edgeDistances`，`build_route_info` 使用纯物理距离；`routeRulesVersion=1.1.0`；补真实地图回归与文档。（`src/topology/route_rules.py`、`backend/pathai_backend/nav_service.py`、`tests/test_route_cost_distance.py`）
 
 ## Gate 3：小程序能力
 

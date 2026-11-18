@@ -1,4 +1,10 @@
 <view class="page">
+  <!-- 地图版本：所有用户可见，普通用户也可确认当前使用的地图数据版本 -->
+  <view class="section">
+    <view class="section-title">地图</view>
+    <view class="row"><text class="label">地图版本</text><text>{{mapVersion}}</text></view>
+  </view>
+
   <view class="section">
     <view class="section-title">用户身份</view>
     <view class="row"><text>用户编号</text><text user-select>{{authUserId || '尚未连接'}}</text></view>
@@ -46,13 +52,28 @@
           aria-label="模拟识别文本"
         />
       </view>
-      <view class="hint">mock 模式：地图页按住说话松开后，以上方文本作为识别结果提交意图。</view>
+      <view class="hint">mock 模式：地图页按住说话松开后，以上方文本作为识别结果提交意图。多轮流程可用 | 分隔，按次依次返回（如「我要去2楼的历史教室。|开始导航」）。</view>
+    </block>
+
+    <block wx:if="{{!voiceMock}}">
+      <view class="row">
+        <text class="label">在线语音语速</text>
+        <picker
+          mode="selector"
+          range="{{ttsSpeedOptions}}"
+          value="{{ttsSpeedIndex}}"
+          bindchange="onChangeTtsSpeed"
+          aria-label="选择在线语音语速"
+        >
+          <view class="picker-value">{{ttsSpeedLabel}}</view>
+        </picker>
+      </view>
+      <view class="hint">仅讯飞在线合成生效，本地转向/到达提示音不受影响；下一句播报即时生效。慢=40 / 标准=50 / 快=65 / 特快=80（讯飞 speed 0~100，数值越大越快）。</view>
     </block>
   </view>
 
   <view class="section">
     <view class="section-title">状态</view>
-    <view class="row"><text class="label">地图版本</text><text>{{mapVersion}}</text></view>
     <view class="row" wx:if="{{downloadText !== ''}}">
       <text class="label">地图下载</text><text>{{downloadText}}</text>
     </view>
@@ -85,6 +106,20 @@
       <switch checked="{{navArrowSetting}}" bindchange="onChangeNavArrow" aria-label="切换导航方向大箭头" />
     </view>
     <view class="hint">仅视障模式生效。开启后导航中显示相对手机朝向的大箭头，并在方向偏离时播报提示。</view>
+    <view class="row">
+      <text class="label">罗盘朝向偏移</text>
+      <input
+        class="mock-input"
+        type="text"
+        value="{{headingOffsetText}}"
+        bindinput="onHeadingOffsetInput"
+        bindblur="onHeadingOffsetBlur"
+        bindconfirm="onHeadingOffsetBlur"
+        placeholder="例如 12 或 -14"
+        aria-label="罗盘朝向偏移，单位度"
+      />
+    </view>
+    <view class="hint">现场两点法标定：面向地图已知方向，偏移 = 地图方位角 − 罗盘读数（日志「查周边罗盘朝向」里的原始值）。范围 -180~180 度，0=不修正；修改后查周边与导航箭头即时生效。</view>
   </view>
 
   <view class="section">
@@ -93,7 +128,7 @@
       <text class="label">首页「采集」入口</text>
       <switch checked="{{fieldCollectionSetting}}" bindchange="onChangeFieldCollection" aria-label="切换首页是否显示现场采集工具入口" />
     </view>
-    <view class="hint">开启后首页右上角显示「采集」按键（静态标定 / 网格指纹采集），<text style="color:#1f2937">即时生效</text>；默认关闭（不对视障终端用户展示）。</view>
+    <view class="hint">开启后首页右上角显示「采集」按键（静态标定 / 网格指纹采集），<text style="color:#1f2937">即时生效</text>；默认关闭。</view>
     <view class="row">
       <text class="label">采集页叠加补装信标</text>
       <switch checked="{{simBeaconPreviewSetting}}" bindchange="onChangeSimBeaconPreview" aria-label="切换采集页是否叠加补装虚拟信标的影响" />
@@ -118,6 +153,42 @@
     <view class="hint" wx:if="{{runtimeParamsHint !== ''}}">{{runtimeParamsHint}}</view>
     <button class="action" bindtap="onOpenCalc" aria-label="打开定位常量计算控制台">打开计算控制台</button>
     <view class="hint">上传现场样本 → 服务端计算 A/n 与指纹网格预览 → 二次确认后成对生效；阶段一样本只评审、不可 apply。</view>
+  </view>
+
+  <!-- 导航判定参数：仅测试人员可见/可改，保存后服务端热生效 -->
+  <view class="section" wx:if="{{isTester}}">
+    <view class="section-title">导航判定参数</view>
+    <view class="row">
+      <text class="label">到达判定半径（米）</text>
+      <input
+        class="mock-input"
+        type="digit"
+        value="{{navArrivalRadiusText}}"
+        bindinput="onNavArrivalInput"
+        placeholder="2.0"
+        aria-label="到达判定半径，单位米"
+      />
+    </view>
+    <view class="hint">距目的地节点小于该半径即判定到达。范围 0.5~20 米，冻结默认 2.0。</view>
+    <view class="row">
+      <text class="label">转向提前播报（米）</text>
+      <input
+        class="mock-input"
+        type="digit"
+        value="{{navTurnPromptDistanceText}}"
+        bindinput="onNavTurnPromptInput"
+        placeholder="3.0"
+        aria-label="转向提前播报距离，单位米"
+      />
+    </view>
+    <view class="hint">剩余距离降到该值时切换为转向指令（提前播报）。范围 0.5~10 米，冻结默认 3.0。</view>
+    <button
+      class="action"
+      bindtap="onSaveNavPolicy"
+      disabled="{{navPolicySaving}}"
+      aria-label="保存导航判定参数"
+    >{{navPolicySaving ? '保存中…' : '保存导航判定参数'}}</button>
+    <view class="hint" wx:if="{{navPolicySource !== ''}}">当前生效来源：{{navPolicySource}}。保存后下一次位置更新即按新值判定。</view>
   </view>
 
   <view class="section">

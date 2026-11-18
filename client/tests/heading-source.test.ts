@@ -1,5 +1,7 @@
 import {
   HeadingSource,
+  applyHeadingOffset,
+  readCompassOnce,
   type CompassReading,
   type HeadingApi,
   type HeadingMode,
@@ -63,6 +65,50 @@ function makeSource(api: HeadingApi, timeoutMs = 1500) {
   });
   return { source, headings, modes, unavailable };
 }
+
+describe('applyHeadingOffset', () => {
+  it('正偏移：地图方位 = 罗盘读数 + 偏移，并归一化到 [0,360)', () => {
+    expect(applyHeadingOffset(78, 12)).toBe(90);
+    expect(applyHeadingOffset(350, 20)).toBe(10);
+    expect(applyHeadingOffset(0, -14)).toBe(346);
+  });
+
+  it('非法偏移按 0 处理，不破坏原始朝向', () => {
+    expect(applyHeadingOffset(123, Number.NaN)).toBe(123);
+  });
+});
+
+describe('readCompassOnce', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('首个罗盘读数 → 归一化并停止罗盘', async () => {
+    const { api, state } = makeApi();
+    const promise = readCompassOnce(api, 1200);
+    state.compassCb?.({ direction: 370 });
+    await expect(promise).resolves.toBe(10);
+    expect(state.compassStop).toBe(1);
+  });
+
+  it('罗盘启动失败 → null（不降级到相对运动）', async () => {
+    const { api, state } = makeApi({ compassFails: true });
+    await expect(readCompassOnce(api)).resolves.toBeNull();
+    expect(state.motionStart).toBe(0);
+  });
+
+  it('超时无回调 → null 并停止罗盘', async () => {
+    const { api, state } = makeApi();
+    const promise = readCompassOnce(api, 800);
+    jest.advanceTimersByTime(800);
+    await expect(promise).resolves.toBeNull();
+    expect(state.compassStop).toBe(1);
+  });
+});
 
 describe('HeadingSource', () => {
   beforeEach(() => {

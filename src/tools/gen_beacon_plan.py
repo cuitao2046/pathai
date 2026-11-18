@@ -35,7 +35,7 @@ gen_beacon_plan.py — 依据 docs/07-信标部署方案.md，从 v9 楼层 GeoJ
         --out result/beacon_deployment_plan_routes.json
 """
 from __future__ import annotations
-import argparse, importlib.util, json, math
+import argparse, importlib.util, json, math, sys
 from collections import Counter, defaultdict
 from datetime import date
 from pathlib import Path
@@ -516,13 +516,30 @@ CONSTRUCTION = {
     ],
 }
 
-def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, require_degree=True):
+def _snap_to_wall_only(x, y, segs, max_d):
+    """仅墙面安装：投影到最近的墙体/楼梯墙线段，不使用门套/柱体等点状附着面。
+    超出 max_d 无墙可贴时返回 None（该候选丢弃，不降级为天花）。"""
+    best = None
+    for x1, y1, x2, y2, kind in segs:
+        if kind not in ("wall", "stair_wall"):
+            continue
+        cx, cy, d = _proj_on_seg(x, y, x1, y1, x2, y2)
+        if d > max_d:
+            continue
+        if best is None or d < best[0]:
+            best = (d, cx, cy)
+    return best
+
+def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, require_degree=True,
+               wall_only=False):
     params = {**DEFAULT_PARAMS, **(params or {})}
     params["offsets"] = {**DEFAULT_PARAMS["offsets"], **(params.get("offsets") or {})}
     install_date = date.today().isoformat()
     all_cands = []
+    idx_by_floor = {}
     for fk, fl in (geo.get("floors") or {}).items():
         floor_no = int(fk); idx = _index_floor(fl)
+        idx_by_floor[floor_no] = idx
         all_cands.extend(collect_door_candidates(floor_no, idx, params))
         all_cands.extend(collect_intersection_candidates(floor_no, idx, params, require_degree=require_degree))
         all_cands.extend(collect_stair_candidates(floor_no, idx, params))
@@ -532,8 +549,52 @@ def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, requir
         all_cands = [c for c in all_cands if c.get("sourceNodeId") in allowed_ids]
     if extra_candidates:
         all_cands.extend(extra_candidates)
+    dropped_wall_only = 0
+    if wall_only:
+        wall_max = float(params["offsets"]["wallSnapMax"])
+        kept = []
+        for c in all_cands:
+            if c.get("mountType") == "wall":
+                kept.append(c)
+                continue
+            idx = idx_by_floor.get(int(c["floor"]))
+            snapped = _snap_to_wall_only(c["coordinates"][0], c["coordinates"][1],
+                                         idx["mount_segs"], wall_max) if idx else None
+            if snapped is None:
+                dropped_wall_only += 1
+                continue
+            d, sx, sy = snapped
+            c["coordinates"] = [sx, sy]
+            c["mountType"] = "wall"
+            c["snapDist_m"] = round(d, 2)
+            c["mountNormalized"] = "wall_only"
+            kept.append(c)
+        all_cands = kept
     n_before = len(all_cands)
     merged = consolidate(all_cands, float(params["consolidateDist"]))
+    if wall_only:
+        # consolidate 可能按高优先级语义复制坐标/安装方式，兜底确保最终全部墙装
+        dropped_after_merge = 0
+        wall_max = float(params["offsets"]["wallSnapMax"])
+        final = []
+        for c in merged:
+            if c.get("mountType") == "wall":
+                final.append(c)
+                continue
+            idx = idx_by_floor.get(int(c["floor"]))
+            snapped = _snap_to_wall_only(c["coordinates"][0], c["coordinates"][1],
+                                         idx["mount_segs"], wall_max) if idx else None
+            if snapped is None:
+                dropped_after_merge += 1
+                continue
+            d, sx, sy = snapped
+            c["coordinates"] = [sx, sy]
+            c["mountType"] = "wall"
+            c["snapDist_m"] = round(d, 2)
+            c["mountNormalized"] = "wall_only"
+            final.append(c)
+        merged = final
+        dropped_wall_only += dropped_after_merge
     beacons = assign_ids(merged, params, install_date)
     by_floor = Counter(str(b["floor"]) for b in beacons)
     by_sem = Counter(b["semanticTag"] for b in beacons)
@@ -561,6 +622,8 @@ def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, requir
         },
         "construction": CONSTRUCTION, "procurement": PROCUREMENT,
         "beacons": beacons,
+        "wallOnly": bool(wall_only),
+        "wallOnlyDropped": dropped_wall_only,
         "summary": {
             "total": len(beacons),
             "byFloor": dict(sorted(by_floor.items())),
@@ -573,6 +636,8 @@ def build_plan(geo, params=None, allowed_ids=None, extra_candidates=None, requir
 
 def _load_route_graph(geo):
     """按需加载导航路由模块（src/topology/route_rules.py），复用其受限 Dijkstra 还原路径。"""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     topo_py = Path(__file__).resolve().parents[1] / "topology" / "route_rules.py"
     spec = importlib.util.spec_from_file_location("route_rules", str(topo_py))
     mod = importlib.util.module_from_spec(spec)
@@ -580,7 +645,7 @@ def _load_route_graph(geo):
     return mod.RouteGraph(geo)
 
 
-def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
+def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT, wall_only=False):
     """按指定导航路线布点：仅在路径节点(门口/交叉口/楼梯/电梯)与走廊填充段部署信标。
 
     routes: list of {start, end, mode?, label?}；复用 RouteGraph.generate_route 还原路径。
@@ -599,7 +664,7 @@ def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
     for rt in routes:
         start, end = rt["start"], rt["end"]
         mode = rt.get("mode", "normal")
-        res = graph.generate_route(start, end, mode)
+        res = graph.generate_route(start, end, mode, via=rt.get("via") or rt.get("waypoints"))
         if not res.get("reachable"):
             print(f"  [warn] 路线不可达，跳过：{start} -> {end} (mode={mode})")
             continue
@@ -645,7 +710,7 @@ def build_plan_routes(geo, routes, params=None, spacing=ROUTE_SPACING_DEFAULT):
                 })
 
     plan = build_plan(geo, params, allowed_ids=allowed, extra_candidates=fill_cands,
-                      require_degree=False)
+                      require_degree=False, wall_only=wall_only)
     plan["schemaVersion"] = "1.3-vi-nav"
     plan["mode"] = "route"
     plan["routeSpacing_m"] = spacing
@@ -678,6 +743,8 @@ def main():
                     help="route 模式：路线清单 JSON（[{start,end,mode?,label?}, ...]）")
     ap.add_argument("--route-spacing", type=float, default=ROUTE_SPACING_DEFAULT,
                     help="route 模式：走廊填充间距(米)，默认 6（视障导航加密）")
+    ap.add_argument("--wall-only", action="store_true",
+                    help="仅墙面安装：所有候选投影到最近墙体，禁用门套/柱体/天花（无墙可贴则丢弃）")
     args = ap.parse_args()
     geo = json.loads(Path(args.geo).read_text(encoding="utf-8"))
 
@@ -688,10 +755,10 @@ def main():
         if isinstance(routes, dict):
             routes = routes.get("routes", routes.get("items", []))
         out = args.out or str(ROOT / "result" / "beacon_deployment_plan_routes.json")
-        plan = build_plan_routes(geo, routes, spacing=args.route_spacing)
+        plan = build_plan_routes(geo, routes, spacing=args.route_spacing, wall_only=args.wall_only)
     else:
         out = args.out or str(DEFAULT_OUT)
-        plan = build_plan(geo)
+        plan = build_plan(geo, wall_only=args.wall_only)
 
     Path(out).write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     s = plan["summary"]

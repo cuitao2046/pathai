@@ -27,6 +27,9 @@ const response = {
   pathLossN: 2.31,
   residualReliableM: 3.5,
   residualDegradedM: 6,
+  navArrivalRadiusM: 2,
+  navTurnPromptDistanceM: 3,
+  navPolicySource: 'env',
   ttlS: 2,
 };
 
@@ -91,6 +94,9 @@ function writeCache(): void {
       pathLossN: 2.2,
       residualReliableM: 3.5,
       residualDegradedM: 6,
+      navArrivalRadiusM: 2,
+      navTurnPromptDistanceM: 3,
+      navPolicySource: 'env',
       ttlS: 2,
       fetchedAt: Date.now(),
     }),

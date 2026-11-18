@@ -389,6 +389,7 @@ def publish_draft(request: Request, site_id: str) -> dict:
         drafts.delete_draft_state(site_id)
     except Exception:  # noqa: BLE001 - 草稿清理失败不影响已完成的发布结果
         pass
+    publish.sync_hazard_editor_data(site_id, settings.map_data_dir)
     service.record_audit(
         "publish",
         True,
@@ -441,6 +442,7 @@ def rollback_version(request: Request, site_id: str, version: str) -> dict:
             "PUBLISH_STATE_UNKNOWN",
             "版本文件已写入但服务刷新失败，请重新读取版本状态确认结果",
         )
+    publish.sync_hazard_editor_data(site_id, settings.map_data_dir)
     service.record_audit(
         "rollback",
         True,

@@ -14,6 +14,7 @@ import {
   SCAN_TIMEOUT_MS,
   SERVICE_PORT,
 } from '../config/env';
+import type { CancelToken } from '../core/discovery/cancel-token';
 import type { EndpointFailureReason } from '../core/discovery/failure';
 import { scanForService, type HealthScanMatch } from '../core/discovery/health-scan';
 import { createLogger } from '../utils/logger';
@@ -43,7 +44,10 @@ function hotspotTargets(): string[] {
   return targets.slice(0, SCAN_MAX_HOSTS);
 }
 
-export async function scanLanForService(knownDeviceId: string | null = null): Promise<ScanDiscoveryResult> {
+export async function scanLanForService(
+  knownDeviceId: string | null = null,
+  cancel?: CancelToken,
+): Promise<ScanDiscoveryResult> {
   const startedAt = Date.now();
   const targets = hotspotTargets();
   log.info(`开始扫描 ${HOTSPOT_SUBNET_CIDR}：${targets.length} 个目标，并发 ${SCAN_CONCURRENCY}，`
@@ -53,11 +57,14 @@ export async function scanLanForService(knownDeviceId: string | null = null): Pr
     port: SERVICE_PORT,
     concurrency: SCAN_CONCURRENCY,
     knownDeviceId,
-    probe: async (url) => {
-      const probe = await probeEndpoint(url, SCAN_TIMEOUT_MS);
-      probed++;
-      if (probed % 64 === 0) {
-        log.info(`扫描进度 ${probed}/${targets.length}`);
+    cancel,
+    probe: async (url, probeCancel) => {
+      const probe = await probeEndpoint(url, SCAN_TIMEOUT_MS, probeCancel);
+      if (probe.kind !== 'cancelled') {
+        probed++;
+        if (probed % 64 === 0) {
+          log.info(`扫描进度 ${probed}/${targets.length}`);
+        }
       }
       return probe;
     },

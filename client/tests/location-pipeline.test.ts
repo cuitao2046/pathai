@@ -247,6 +247,23 @@ describe('LocationPipeline 定位管线', () => {
     expect((second.data as { floorHint: string | null }).floorHint).toBe('1');
   });
 
+  it('clearFloorHint 后下一拍不再携带楼层先验（电梯跨层换层用）', async () => {
+    const pipeline = makePipeline();
+    await pipeline.start();
+    await flush();
+
+    source.emitAll(now);
+    await advance(8000);
+    expect(estimateRequests()).toHaveLength(1);
+
+    pipeline.clearFloorHint();
+
+    source.emitAll(now);
+    await advance(8000);
+    const second = estimateRequests()[1];
+    expect((second.data as { floorHint: string | null }).floorHint).toBeNull();
+  });
+
   it('quality=unreliable → onEstimate（position 为空，坐标不上报）', async () => {
     wxStub.__requestResponder = (options) => {
       if (options.url.endsWith('/api/v1/auth/wechat')) {

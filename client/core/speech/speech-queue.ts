@@ -17,6 +17,7 @@ import { nowMs } from '../../utils/clock';
 import { vibrateLong, vibrateShort } from '../../utils/haptic';
 import { createLogger } from '../../utils/logger';
 import type { TtsEngine } from './tts-engine';
+import { staticClipForText } from './static-clips';
 
 const log = createLogger('speech');
 
@@ -128,6 +129,12 @@ export class SpeechQueue {
     source = 'unknown',
   ): void {
     this.lastText = text; // 先记重播源：降级文本也算一次播报
+    // 固定文案优先本地离线音频：即使 TTS 引擎失效也仍可播报。
+    const clip = staticClipForText(text);
+    if (clip !== null) {
+      this.enqueueClip(clip, priority, source);
+      return;
+    }
     log.info('[enqueue]', source, priority, `len=${text.length}`, text, {
       playing: this.current?.text ?? null,
       pending: this.items.length,
@@ -139,6 +146,25 @@ export class SpeechQueue {
       return;
     }
     this.push({ kind: 'text', text, priority, expiresAtMs, source });
+  }
+
+  /**
+   * 后台预生成（不排队、不播报）：只对动态文本调用引擎 prepare。
+   * 固定文案已有本地离线音频，跳过；引擎不支持或预生成失败都静默忽略，
+   * 不影响队列与正在进行的播报。
+   */
+  prepare(text: string): void {
+    if (text.trim().length === 0 || this.engineBroken) {
+      return;
+    }
+    if (staticClipForText(text) !== null) {
+      return;
+    }
+    const prepare = this.engine.prepare;
+    if (prepare === undefined) {
+      return;
+    }
+    void prepare.call(this.engine, text).catch(() => undefined);
   }
 
   /**
