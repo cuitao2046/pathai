@@ -1,6 +1,6 @@
-"""Two explicit switches, managed by the existing browser administrator."""
+"""测试人员授权：由现有浏览器管理员统一管理，测试人员默认拥有全部功能权限。"""
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import StrictBool, model_validator
+from pydantic import StrictBool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from pathai_backend import auth
@@ -13,12 +13,6 @@ from pathai_backend.schemas.common import StrictModel
 router = APIRouter(prefix="/api/v1/admin/users", tags=["admin-users"])
 class PermissionUpdate(StrictModel):
     isTester: StrictBool
-    canApplyConfig: StrictBool
-    @model_validator(mode="after")
-    def check(self):
-        if self.canApplyConfig and not self.isTester:
-            raise ValueError("配置应用权限需要测试人员身份")
-        return self
 
 @router.get("")
 def users(request: Request, limit: int = Query(default=100, ge=1, le=100), db: Session = Depends(auth.get_db_session)):
@@ -38,7 +32,8 @@ def update(user_id: str, body: PermissionUpdate, request: Request, db: Session =
         row = ClientPermission(subject_id=user.id)
         db.add(row)
     row.is_tester = body.isTester
-    row.can_apply_config = body.canApplyConfig
+    # 测试人员默认全部授权：应用配置权限随测试人员身份自动生效
+    row.can_apply_config = body.isTester
     db.flush()
     result = {"userId": user.user_id, **permissions(db, user.id)}
     # Same database transaction: grants and their audit either both commit or neither does.

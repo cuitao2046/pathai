@@ -119,6 +119,27 @@ const CREATE_RESPONSE: CreateSessionResponse = {
   createdAt: NOW_ISO,
 };
 
+/** 三段路线：用于验证「播第 N 条时预取 N+1、N+2」。 */
+const ROUTE3: RouteInfo = {
+  ...makeRoute('route-3', INSTR_1),
+  segments: [
+    INSTR_1,
+    makeInstruction({
+      instructionId: 'ins-2',
+      instructionSequence: 2,
+      action: 'turn_left',
+      text: '即将左转。',
+      priority: 'turn',
+    }),
+    makeInstruction({
+      instructionId: 'ins-3',
+      instructionSequence: 3,
+      text: '请沿当前通道直行 8 米。',
+    }),
+  ],
+};
+const CREATE3: CreateSessionResponse = { ...CREATE_RESPONSE, route: ROUTE3 };
+
 const ORIGIN: OriginPosition = {
   x: 1,
   y: 2,
@@ -126,6 +147,40 @@ const ORIGIN: OriginPosition = {
   confidence: 0.9,
   observedAt: NOW_ISO,
 };
+
+/** 跨层：进电梯指令（触发节点 = 1F 电梯口）。 */
+const ENTER_ELEVATOR_INSTR = makeInstruction({
+  instructionId: 'ins-enter',
+  instructionSequence: 2,
+  action: 'enter_elevator',
+  text: '请进入电梯，前往 2 楼。',
+  priority: 'safety',
+  trigger: { type: 'decision_point', valueM: null, nodeId: 'elev-f1' },
+});
+
+const CROSS_FLOOR_ROUTE: RouteInfo = {
+  ...makeRoute('route-cf', ENTER_ELEVATOR_INSTR),
+  polyline: [
+    { x: 0, y: 0, floorId: '1' },
+    { x: 0, y: 10, floorId: '2' },
+  ],
+  segments: [ENTER_ELEVATOR_INSTR],
+};
+
+const CROSS_FLOOR_CREATE: CreateSessionResponse = {
+  ...CREATE_RESPONSE,
+  destination: { placeId: 'p2', name: '历史教室', floorId: '2' },
+  route: CROSS_FLOOR_ROUTE,
+};
+
+/** 服务端一次推进跨过进出电梯后返回的下一层直行指令。 */
+const CONTINUE_AFTER_ELEVATOR = makeInstruction({
+  instructionId: 'ins-f2-continue',
+  instructionSequence: 3,
+  text: '请沿当前通道直行 3 米。',
+  priority: 'normal',
+  trigger: { type: 'immediate', valueM: null, nodeId: null },
+});
 
 const ESTIMATE_RELIABLE: PositionEstimateResponse = {
   estimateId: 'loc-1',
@@ -174,11 +229,18 @@ function updateResponse(
 /** 记录型 TTS：speak 同步登记文本；hold=true 时挂起（观察 pending 语义）。 */
 class RecordTts implements TtsEngine {
   readonly spoken: string[] = [];
+  /** 预生成请求（后台合成，不播报）。 */
+  readonly prepared: string[] = [];
   private resolvers: Array<() => void> = [];
   hold = false;
   /** 引擎无响应：stop 也不让挂起的 speak 结束（模拟播放器不回调）。 */
   ignoreStop = false;
   stopCount = 0;
+
+  prepare(text: string): Promise<void> {
+    this.prepared.push(text);
+    return Promise.resolve();
+  }
 
   speak(text: string): Promise<void> {
     this.spoken.push(text);
@@ -240,6 +302,10 @@ class FakePipeline implements NavPipelineControl {
   async startNavigating(): Promise<void> {
     this.calls.push('startNavigating');
   }
+
+  clearFloorHint(): void {
+    this.calls.push('clearFloorHint');
+  }
 }
 
 function replyError(options: WxRequestOptionsStub, statusCode: number, code: ApiErrorCode): void {
@@ -269,6 +335,8 @@ interface Harness {
   routes: RouteInfo[];
   instructions: Array<NavigationInstruction | null>;
   ended: Array<{ reason: EndReason | null; byArrival: boolean }>;
+  pauses: Array<{ targetFloorId: string; text: string }>;
+  resumes: Array<{ floorId: string; text: string }>;
 }
 
 describe('NavSessionController 会话编排', () => {
@@ -279,6 +347,8 @@ describe('NavSessionController 会话编排', () => {
   let routes: RouteInfo[];
   let instructions: Array<NavigationInstruction | null>;
   let ended: Array<{ reason: EndReason | null; byArrival: boolean }>;
+  let pauses: Array<{ targetFloorId: string; text: string }>;
+  let resumes: Array<{ floorId: string; text: string }>;
 
   const createRequests = () =>
     wxStub.__requestLog.filter(
@@ -287,7 +357,12 @@ describe('NavSessionController 会话编排', () => {
   const updateRequests = () =>
     wxStub.__requestLog.filter((r) => r.url.endsWith('/sessions/sess-1/updates'));
 
-  function makeHarness(options: { overview?: string; overviewMaxWaitMs?: number; journal?: NavCreateJournal } = {}): Harness {
+  function makeHarness(options: {
+    overview?: string;
+    overviewMaxWaitMs?: number;
+    journal?: NavCreateJournal;
+    resolveNode?: (nodeId: string) => { x: number; y: number; floorId: string } | null;
+  } = {}): Harness {
     const clips = new RecordClipPlayer();
     const speech = new SpeechQueue({
       engine: tts,
@@ -304,6 +379,7 @@ describe('NavSessionController 会话编排', () => {
       pipeline,
       overviewMaxWaitMs: options.overviewMaxWaitMs,
       createJournal: options.journal,
+      resolveNode: options.resolveNode,
       onStateChange: (state) => states.push(state),
       onRoute: (route) => {
         routes.push(route);
@@ -313,9 +389,14 @@ describe('NavSessionController 会话编排', () => {
       },
       onInstruction: (instruction) => instructions.push(instruction),
       onEnded: (info) => ended.push(info),
+      onElevatorPause: (info) => pauses.push(info),
+      onElevatorResume: (info) => resumes.push(info),
     });
     controllers.push(controller);
-    return { controller, speech, tts, clips, pipeline, states, routes, instructions, ended };
+    return {
+      controller, speech, tts, clips, pipeline,
+      states, routes, instructions, ended, pauses, resumes,
+    };
   }
 
   beforeEach(() => {
@@ -325,6 +406,8 @@ describe('NavSessionController 会话编排', () => {
     routes = [];
     instructions = [];
     ended = [];
+    pauses = [];
+    resumes = [];
     wxStub.__requestLog.length = 0;
     wxStub.__requestResponder = (options) => {
       if (options.url.endsWith('/api/v1/auth/wechat')) {
@@ -439,6 +522,122 @@ describe('NavSessionController 会话编排', () => {
     h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, observedAt: new Date().toISOString() });
     await flush();
     expect(h.controller.state).toBe('active');
+  });
+
+  it('到电梯口暂停上报，采到目标楼层信标后自动恢复', async () => {
+    const healthy = wxStub.__requestResponder!;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/nav/sessions')) {
+        options.success({ statusCode: 201, header: {}, data: CROSS_FLOOR_CREATE });
+        return;
+      }
+      if (options.url.endsWith('/sessions/sess-1/updates')) {
+        options.success({
+          statusCode: 200,
+          header: {},
+          data: updateResponse({ processedSequence: 1, instruction: ENTER_ELEVATOR_INSTR }),
+        });
+        return;
+      }
+      healthy(options);
+    };
+    const h = makeHarness({
+      resolveNode: (nodeId) =>
+        nodeId === 'elev-f1' ? { x: 0, y: 0, floorId: '1' } : null,
+    });
+    await h.controller.createSession(CROSS_FLOOR_CREATE.destination, ORIGIN, 'blind', {
+      overviewPlayed: true,
+    });
+    await flush();
+
+    // 离电梯口约 7m：只记录待暂停，正常上报
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 5, y: 5, floorId: '1' } });
+    await flush();
+    expect(updateRequests()).toHaveLength(1);
+    expect(h.pauses).toHaveLength(0);
+
+    // 到电梯口 3m 内：暂停，停止上报，清楼层先验
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 0, y: 0, floorId: '1' } });
+    await flush();
+    expect(h.pauses).toHaveLength(1);
+    expect(h.pauses[0].targetFloorId).toBe('2');
+    expect(h.tts.spoken).toContain('导航已暂停，请上电梯，到 2 楼出电梯后导航自动恢复。');
+    expect(updateRequests()).toHaveLength(1);
+    expect(h.pipeline.calls.filter((call) => call === 'clearFloorHint').length).toBeGreaterThan(0);
+
+    // 仍在 1 楼：保持暂停，不上报
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 0, y: 1, floorId: '1' } });
+    await flush();
+    expect(updateRequests()).toHaveLength(1);
+    expect(h.resumes).toHaveLength(0);
+
+    // 采到 2 楼信标：连续两拍可信估计才恢复，恢复后立即补发定位
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 0, y: 10, floorId: '2' } });
+    await flush();
+    expect(h.resumes).toHaveLength(0);
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 0, y: 10, floorId: '2' } });
+    await flush();
+    expect(h.resumes).toHaveLength(1);
+    expect(h.tts.spoken).toContain('已到达 2 楼，导航继续。');
+    expect(updateRequests().length).toBeGreaterThan(1);
+  });
+
+  it('服务端直接跳过进电梯指令时，仍按路线在电梯口暂停', async () => {
+    const healthy = wxStub.__requestResponder!;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/nav/sessions')) {
+        options.success({ statusCode: 201, header: {}, data: CROSS_FLOOR_CREATE });
+        return;
+      }
+      if (options.url.endsWith('/sessions/sess-1/updates')) {
+        // 回归现场：服务端在 3m 内一次推进过 enter/exit，客户端只收到下一层直行
+        options.success({
+          statusCode: 200,
+          header: {},
+          data: updateResponse({ processedSequence: 1, instruction: CONTINUE_AFTER_ELEVATOR }),
+        });
+        return;
+      }
+      healthy(options);
+    };
+    const h = makeHarness({
+      resolveNode: (nodeId) =>
+        nodeId === 'elev-f1' ? { x: 0, y: 0, floorId: '1' } : null,
+    });
+    await h.controller.createSession(CROSS_FLOOR_CREATE.destination, ORIGIN, 'blind', {
+      overviewPlayed: true,
+    });
+    await flush();
+    // 路线确定即预生成电梯提示（不占用播报队列）
+    expect(h.tts.prepared).toContain('请进入电梯，前往 2 楼。');
+
+    h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, position: { x: 0.5, y: 0.5, floorId: '1' } });
+    await flush();
+
+    // 虽未收到进电梯指令，路线预置仍应在电梯口暂停，且该拍不上报
+    expect(h.pauses).toHaveLength(1);
+    expect(h.pauses[0].targetFloorId).toBe('2');
+    expect(updateRequests()).toHaveLength(0);
+  });
+
+  it('播报当前指令时后台预取后续两条动态文本', async () => {
+    const healthy = wxStub.__requestResponder!;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/nav/sessions')) {
+        options.success({ statusCode: 201, header: {}, data: CREATE3 });
+        return;
+      }
+      healthy(options);
+    };
+    const h = makeHarness();
+    await h.controller.createSession(CREATE3.destination, ORIGIN, 'blind', {
+      overviewPlayed: true,
+    });
+    await flush();
+
+    // 首条动态指令播报时预取 N+1/N+2；固定转向文案由 SpeechQueue 跳过
+    expect(h.tts.prepared).toContain('请沿当前通道直行 8 米。');
+    expect(h.tts.prepared).not.toContain('即将左转。');
   });
 
   it('进入后台后迟到的导航响应不能恢复状态或播报', async () => {

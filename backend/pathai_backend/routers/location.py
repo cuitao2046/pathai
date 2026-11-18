@@ -35,6 +35,7 @@ from pathai_backend.schemas.location import (
     LocationEstimateRequest,
     PositionEstimateResponse,
 )
+from pathai_backend.surroundings import nearby_surroundings
 
 router = APIRouter(prefix="/api/v1/locations", tags=["location"])
 logger = logging.getLogger(__name__)
@@ -205,6 +206,16 @@ def estimate(
     heading = body.imu.headingDeg if body.imu is not None else None
     if heading is not None:
         heading = heading % 360.0
+
+    surroundings = None
+    if body.includeSurroundings:
+        try:
+            surroundings = nearby_surroundings(published, position, quality, heading)
+        except (KeyError, TypeError, ValueError):
+            # 周边清单是附加信息：构建失败不得影响本次定位主链路。
+            logger.exception("查周边构建失败，返回空清单")
+            surroundings = []
+
     return PositionEstimateResponse(
         estimateId=f"loc_{uuid.uuid4().hex}",
         sequence=body.sequence,
@@ -232,6 +243,7 @@ def estimate(
             overlap=fp_match.overlap,
         ),
         fallbackReason=fallback_reason,
+        surroundings=surroundings,
         observationAgeS=None if collected_age_s is None else round(collected_age_s, 1),
         observationStale=collected_age_s is not None and collected_age_s > ADVISORY_STALE_AGE_S,
     )

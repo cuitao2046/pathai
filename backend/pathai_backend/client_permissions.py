@@ -9,7 +9,8 @@ from pathai_backend.models import ClientPermission
 def permissions(db, subject_id):
     row = db.get(ClientPermission, subject_id)
     tester = bool(row and row.is_tester)
-    return {"isTester": tester, "canApplyConfig": bool(tester and row.can_apply_config)}
+    # 测试人员默认拥有全部功能权限（含应用配置）；canApplyConfig 仅作兼容字段返回
+    return {"isTester": tester, "canApplyConfig": tester}
 
 def _require(request, db, apply):
     authorization = request.headers.get("authorization")

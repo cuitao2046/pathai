@@ -23,14 +23,14 @@ _MAP_PATH = _BACKEND / "maps_data" / "school-building-01" / f"{MAP_VERSION}.json
 _HAZARD_DIR = _BACKEND / "hazards_data"
 
 
-def _build_route():
+def _build_route(dest_place_id: str = "F1-RM-0036"):
     raw = json.loads(_MAP_PATH.read_text(encoding="utf-8"))
     pkg = MapPackage.model_validate(raw)
     index = PackageIndex(pkg)
     origin = snap_to_node(index, "1", -40, 11)
     hazard = HazardRepository.load(_HAZARD_DIR).get("school-building-01", MAP_VERSION)
     route, _dest = plan_route(
-        raw, pkg, index, origin, "F1-RM-0036", UserMode.BLIND, hazard_layer=hazard
+        raw, pkg, index, origin, dest_place_id, UserMode.BLIND, hazard_layer=hazard
     )
     return route, index
 
@@ -76,3 +76,28 @@ def test_turn_instructions_are_not_skipped_and_stay_current_at_junction():
         assert route.segments[i].text in ("即将左转。", "即将右转。")
     # 用户到达拐点时必须仍是该转向指令，客户端才能继续转弯震动。
     assert turn_indices.issubset(set(turn_current_at_node))
+
+
+def test_enter_elevator_advances_after_reaching_target_floor():
+    """跨层恢复：上报楼层已是电梯另一层时，必须越过进/出电梯两条指令。
+
+    客户端在电梯口暂停上报，到目标层采到信标后恢复；此时服务端仍可能停留在
+    「请进入电梯」。若只在同层 3m 内推进，会永久卡住并重复播报进电梯。
+    """
+    route, index = _build_route("F2-RM-0018")
+    enter_index = next(
+        i for i, seg in enumerate(route.segments)
+        if seg.action is InstructionAction.ENTER_ELEVATOR
+    )
+    target_floor_point = next(p for p in route.polyline if p.floorId == "2")
+
+    cur, _remaining = _advance_current_index(
+        route, index, enter_index, "2", target_floor_point.x, target_floor_point.y
+    )
+
+    assert cur > enter_index
+    assert route.segments[cur].action not in (
+        InstructionAction.ENTER_ELEVATOR,
+        InstructionAction.EXIT_ELEVATOR,
+    )
+

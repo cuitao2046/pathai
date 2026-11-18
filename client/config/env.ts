@@ -28,8 +28,8 @@ export const SCAN_MAX_HOSTS = 1024;
 /** 默认站点 ID：对应 backend/maps_data/school-building-01。 */
 export const DEFAULT_SITE_ID = 'school-building-01';
 
-/** 默认数据源：开发者工具不支持 iBeacon，联调先用 mock 轨迹。 */
-export const DEFAULT_DATA_SOURCE: DataSource = 'mock';
+/** 默认数据源：live=真机 BLE 实扫（普通用户默认）；mock 仅由授权用户在设置页显式切换。 */
+export const DEFAULT_DATA_SOURCE: DataSource = 'live';
 
 /** 常规请求超时（毫秒）。 */
 export const REQUEST_TIMEOUT_MS = 10000;

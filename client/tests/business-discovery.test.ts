@@ -1,4 +1,5 @@
 import { parseBusinessOffer } from '../core/discovery/business-protocol';
+import { createCancelSource } from '../core/discovery/cancel-token';
 import { discoverBusinessCandidate } from '../services/business-discovery';
 
 const requestId = '01010101010101010101010101010101';
@@ -119,5 +120,15 @@ describe('免配对业务发现', () => {
     onError?.();
     expect(await pending).toBeNull();
     expect(request).not.toHaveBeenCalled();
+  });
+
+  test('外部取消立即结束发现并关闭 socket', async () => {
+    const source = createCancelSource();
+    const pending = discoverBusinessCandidate(null, source.token);
+    await Promise.resolve();
+    onListening?.();
+    source.cancel();
+    expect(await pending).toBeNull();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

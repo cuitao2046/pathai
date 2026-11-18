@@ -594,26 +594,46 @@ class RouteGraph:
             "ok": (len(crossings) == 0) or allow_toilet,
         }
 
-    def generate_route(self, start_id, end_id, mode="normal"):
-        sp = self.shortest_path(start_id, end_id, mode)
-        if sp is None:
-            return {"reachable": False}
-        wall = self.validate_wall_crossing(sp["path"], mode)
+    def generate_route(self, start_id, end_id, mode="normal", via=None):
+        """生成路线。via 为可选途经点列表（按顺序），用于让测试路线贴合指定走廊，
+        不改变 Dijkstra 边权与模式约束；单段行为与不传 via 完全一致。"""
+        waypoints = [start_id]
+        for wid in (via or []):
+            if wid and wid not in waypoints:
+                waypoints.append(wid)
+        if end_id not in waypoints:
+            waypoints.append(end_id)
+        legs = []
+        for a, b in zip(waypoints, waypoints[1:]):
+            leg = self.shortest_path(a, b, mode)
+            if leg is None:
+                return {"reachable": False}
+            legs.append(leg)
+        path, edges = [], []
+        distance = physical = 0.0
+        edge_distances = []
+        for leg in legs:
+            path.extend(leg["path"] if not path else leg["path"][1:])
+            edges.extend(leg["edges"])
+            distance += leg["distance"]
+            physical += leg.get("physicalDistance") or 0.0
+            edge_distances.extend(leg.get("edgeDistances") or [])
+        wall = self.validate_wall_crossing(path, mode)
         return {
             "reachable": True,
             "mode": mode,
-            "path": sp["path"],
-            "edges": sp["edges"],
-            "distance": sp["distance"],
-            "physicalDistance": sp.get("physicalDistance"),
-            "edgeDistances": sp.get("edgeDistances"),
-            "cross_floor": sp["cross_floor"],
-            "used_elevator": sp["used_elevator"],
-            "used_stair": sp["used_stair"],
-            "mid_nodes": sp["mid_nodes"],
-            "door_fallback": sp.get("door_fallback"),
-            "wall_fallback": sp.get("wall_fallback"),
-            "cross_floor_roundtrip": sp.get("cross_floor_roundtrip"),
+            "path": path,
+            "edges": edges,
+            "distance": round_distance(distance),
+            "physicalDistance": round_distance(physical),
+            "edgeDistances": edge_distances,
+            "cross_floor": any(leg["cross_floor"] for leg in legs),
+            "used_elevator": any(leg["used_elevator"] for leg in legs),
+            "used_stair": any(leg["used_stair"] for leg in legs),
+            "mid_nodes": path[1:-1],
+            "door_fallback": any(leg.get("door_fallback") for leg in legs),
+            "wall_fallback": any(leg.get("wall_fallback") for leg in legs),
+            "cross_floor_roundtrip": any(leg.get("cross_floor_roundtrip") for leg in legs),
             "wall": wall,
             "valid": wall["ok"],
         }

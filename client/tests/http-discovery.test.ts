@@ -39,13 +39,13 @@ describe('HTTP 单播扫描发现', () => {
     expect(result.service?.url).toBe('http://172.20.10.4:8000');
     expect(result.service?.identity.deviceId).toBe(DEVICE_A);
     expect(result.targetCount).toBe(254);
-    expect(probeEndpoint).toHaveBeenCalledWith('http://172.20.10.1:8000', expect.anything());
+    expect(probeEndpoint).toHaveBeenCalledWith('http://172.20.10.1:8000', expect.anything(), expect.anything());
   });
 
   test('命中后不再派发新目标', async () => {
     hitOnly('172.20.10.4');
     await load().scanLanForService(null);
-    expect(probeEndpoint).not.toHaveBeenCalledWith('http://172.20.10.200:8000', expect.anything());
+    expect(probeEndpoint).not.toHaveBeenCalledWith('http://172.20.10.200:8000', expect.anything(), expect.anything());
   });
 
   test('有响应但不是目标服务：scan-no-service', async () => {

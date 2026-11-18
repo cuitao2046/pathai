@@ -58,7 +58,7 @@ def _now() -> str:
 
 
 def _estimate(client, headers, beacons, sequence=1, floor_hint=None, imu=None,
-              map_version=SAMPLE) -> dict:
+              map_version=SAMPLE, include_surroundings=None) -> dict:
     body: dict = {
         "siteId": "school-building-01",
         "mapVersion": map_version,
@@ -70,6 +70,8 @@ def _estimate(client, headers, beacons, sequence=1, floor_hint=None, imu=None,
         ],
         "imu": imu,
     }
+    if include_surroundings is not None:
+        body["includeSurroundings"] = include_surroundings
     resp = client.post(URL, json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -287,6 +289,53 @@ class TestTrilateration:
         body = _estimate(client, auth_headers, obs)
         assert body["matchedArea"] is not None
         assert set(body["matchedArea"].keys()) == {"placeId", "name"}
+
+
+class TestSurroundings:
+    """查周边契约：仅 includeSurroundings=true 时返回，可信定位才有清单。"""
+
+    def test_absent_by_default_keeps_legacy_payload(self, client, auth_headers, rich_maps):
+        body = _estimate(client, auth_headers, _obs_at_expect_p())
+        assert body["surroundings"] is None
+
+    def test_reliable_position_returns_sorted_nearby_elements(
+        self, client, auth_headers, rich_maps
+    ):
+        body = _estimate(
+            client,
+            auth_headers,
+            _obs_at_expect_p(),
+            imu={"samples": [], "headingDeg": 90},
+            include_surroundings=True,
+        )
+        assert body["quality"] == "reliable"
+        items = body["surroundings"]
+        assert isinstance(items, list) and items
+        assert len(items) <= 8
+        distances = [item["distanceMeters"] for item in items]
+        assert distances == sorted(distances)
+        assert all(0 < distance <= 8.0 for distance in distances)
+        for item in items:
+            assert set(item) == {
+                "name", "elementType", "clockDirection", "distanceMeters", "accessibilityNote"
+            }
+            assert 1 <= item["clockDirection"] <= 12
+            assert item["name"]
+            assert item["elementType"]
+        # 期望点附近有常开防火门；提示文案与语音链路同一口径
+        doors = [i for i in items if i["elementType"] == "fire_door_normally_open"]
+        assert doors and doors[0]["accessibilityNote"] == "常开防火门，可直接通行"
+
+    def test_lost_position_returns_empty_list(self, client, auth_headers, rich_maps):
+        body = _estimate(
+            client,
+            auth_headers,
+            [(BK_A[0], -60), (BK_B[0], -60)],
+            include_surroundings=True,
+        )
+        assert body["quality"] == "lost"
+        assert body["position"] is None
+        assert body["surroundings"] == []
 
 
 class TestLocationParamsConfig:

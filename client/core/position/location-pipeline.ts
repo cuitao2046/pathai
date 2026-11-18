@@ -121,6 +121,15 @@ export class LocationPipeline {
     }
   }
 
+  /**
+   * 清除楼层先验：下一拍起由服务端按可见信标多数判层。
+   * 电梯跨层期间必须调用——否则 lastFloorId 会把楼层永久钉在当前层，
+   * 目标层信标再多也会被服务端忽略，导航与地图都无法自动换层。
+   */
+  clearFloorHint(): void {
+    this.lastFloorId = null;
+  }
+
   stop(): void {
     if (!this.running) {
       return;

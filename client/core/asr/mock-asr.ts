@@ -11,13 +11,30 @@ interface AsrSession {
 }
 
 export class MockAsrEngine implements AsrEngine {
-  /** 下一次会话 stop() 后产出的识别文本（调试注入）。 */
-  nextText = '带我去图书馆';
   startCount = 0;
   stopCount = 0;
   cancelCount = 0;
 
   private session: AsrSession | null = null;
+  private rawText = '带我去图书馆';
+  /** 用 `|` 分隔的多句脚本；每 stop 一次取下一句，取完后停在最后一句。 */
+  private script: string[] = [];
+  private scriptIndex = 0;
+
+  /**
+   * 识别文本（调试注入）。
+   * 支持用 `|` 分隔多句，例如「我要去2楼的历史教室。|开始导航」，
+   * 使语音确认这类多轮流程也能在 mock 下走通；单句行为不变。
+   */
+  get nextText(): string {
+    return this.rawText;
+  }
+
+  set nextText(text: string) {
+    this.rawText = text;
+    this.script = text.split('|').map((part) => part.trim());
+    this.scriptIndex = 0;
+  }
 
   start(handlers: AsrHandlers): Promise<string> {
     if (this.session !== null) {
@@ -43,8 +60,18 @@ export class MockAsrEngine implements AsrEngine {
     }
     // 模拟插件 onStop 事件异步送达，保证 stop 与 cancel 的竞争行为一致
     setTimeout(() => {
-      this.settle(this.nextText);
+      this.settle(this.takeText());
     }, 0);
+  }
+
+  /** 取本句话术：脚本按次推进，耗尽后停在最后一句；未配置脚本时用单句默认值。 */
+  private takeText(): string {
+    if (this.script.length === 0) {
+      return this.rawText;
+    }
+    const index = Math.min(this.scriptIndex, this.script.length - 1);
+    this.scriptIndex += 1;
+    return this.script[index];
   }
 
   cancel(): void {

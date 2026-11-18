@@ -1,4 +1,5 @@
 import { SERVICE_PORT } from '../config/env';
+import type { CancelToken } from '../core/discovery/cancel-token';
 import { isP0CandidateUrl } from '../core/discovery/p0-candidate';
 import {
   parseServiceIdentity,
@@ -45,18 +46,26 @@ export function saveP0Candidate(url: string, deviceId?: string | null): boolean 
 
 /**
  * 探测一个业务根地址的 `/healthz`，校验服务名与 device_id。
- * 区分「连不上」与「有响应但不是目标服务」，供扫描统计失败原因。
+ * 区分「连不上」与「有响应但不是目标服务」，供扫描统计失败原因；
+ * 传入取消信号时，取消会立即 abort 在途请求并返回 `cancelled`。
  */
-export function probeEndpoint(url: string, timeoutMs = TIMEOUT_MS): Promise<EndpointProbeResult> {
+export function probeEndpoint(
+  url: string,
+  timeoutMs = TIMEOUT_MS,
+  cancel?: CancelToken,
+): Promise<EndpointProbeResult> {
   return new Promise((resolve) => {
     const startedAt = Date.now();
     let finished = false;
     let request: WechatMiniprogram.RequestTask | undefined;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let unlink: (() => void) | null = null;
     const finish = (result: EndpointProbeResult) => {
       if (finished) return;
       finished = true;
-      clearTimeout(timer);
-      if (result.kind === 'unreachable') request?.abort();
+      if (timer !== null) clearTimeout(timer);
+      unlink?.();
+      if (result.kind === 'unreachable' || result.kind === 'cancelled') request?.abort();
       log.debug(
         'GET /healthz',
         url,
@@ -65,7 +74,12 @@ export function probeEndpoint(url: string, timeoutMs = TIMEOUT_MS): Promise<Endp
       );
       resolve(result);
     };
-    const timer = setTimeout(() => finish({ kind: 'unreachable' }), timeoutMs + 100);
+    if (cancel?.aborted) {
+      finish({ kind: 'cancelled' });
+      return;
+    }
+    timer = setTimeout(() => finish({ kind: 'unreachable' }), timeoutMs + 100);
+    unlink = cancel?.onCancel(() => finish({ kind: 'cancelled' })) ?? null;
     try {
       request = wx.request({
         url: `${url}/healthz`,
@@ -92,9 +106,13 @@ export async function checkEndpointHealth(url: string, timeoutMs = TIMEOUT_MS): 
  * 缓存候选验活：地址合法且响应身份匹配。
  * 已知设备身份时必须一致，防止同网另一台后端占用旧 IP 后被误认为原服务。
  */
-export async function checkP0Candidate(url: string, expectedDeviceId?: string | null): Promise<boolean> {
+export async function checkP0Candidate(
+  url: string,
+  expectedDeviceId?: string | null,
+  cancel?: CancelToken,
+): Promise<boolean> {
   if (!allowedCandidate(url)) return false;
-  const result = await probeEndpoint(url);
+  const result = await probeEndpoint(url, undefined, cancel);
   return result.kind === 'identified' &&
     (expectedDeviceId === undefined || expectedDeviceId === null ||
       result.identity.deviceId === expectedDeviceId);

@@ -13,7 +13,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLANNED = REPO_ROOT / "result" / "ble_deployment.json"
-MAP = REPO_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-07.1.json"
+MAP = REPO_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-17.4.json"
 
 
 def _validator():

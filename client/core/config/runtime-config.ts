@@ -28,6 +28,11 @@ export interface RuntimeParams {
   pathLossN: number;
   residualReliableM: number;
   residualDegradedM: number;
+  /** 导航判定阈值（服务端生效值，米）：到达半径与转向提前播报距离。 */
+  navArrivalRadiusM: number;
+  navTurnPromptDistanceM: number;
+  /** 导航阈值来源：db（设置页保存过）/ env（环境冻结默认）。 */
+  navPolicySource: string;
   ttlS: number;
   /** 客户端拉取时刻（毫秒），用于本地过期判断。 */
   fetchedAt: number;
@@ -42,13 +47,22 @@ interface LocationParamsResponse {
   pathLossN: number;
   residualReliableM: number;
   residualDegradedM: number;
+  navArrivalRadiusM: number;
+  navTurnPromptDistanceM: number;
+  navPolicySource: string;
   ttlS: number;
 }
 
 /** 读取最近一次成功拉取的运行时参数（无缓存返回 null）。 */
 export function cachedRuntimeParams(): RuntimeParams | null {
   const cached = getJson<RuntimeParams>(RUNTIME_PARAMS_KEY);
-  if (cached === null || typeof cached.rssiAt1mDbm !== 'number') {
+  // 旧版本缓存没有导航阈值字段，直接视为无缓存，避免设置页显示 undefined。
+  if (
+    cached === null ||
+    typeof cached.rssiAt1mDbm !== 'number' ||
+    typeof cached.navArrivalRadiusM !== 'number' ||
+    typeof cached.navTurnPromptDistanceM !== 'number'
+  ) {
     return null;
   }
   return cached;
@@ -94,6 +108,9 @@ export async function refreshRuntimeParams(
       pathLossN: data.pathLossN,
       residualReliableM: data.residualReliableM,
       residualDegradedM: data.residualDegradedM,
+      navArrivalRadiusM: data.navArrivalRadiusM,
+      navTurnPromptDistanceM: data.navTurnPromptDistanceM,
+      navPolicySource: data.navPolicySource,
       ttlS: data.ttlS,
       fetchedAt: Date.now(),
     };

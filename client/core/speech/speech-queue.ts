@@ -149,6 +149,25 @@ export class SpeechQueue {
   }
 
   /**
+   * 后台预生成（不排队、不播报）：只对动态文本调用引擎 prepare。
+   * 固定文案已有本地离线音频，跳过；引擎不支持或预生成失败都静默忽略，
+   * 不影响队列与正在进行的播报。
+   */
+  prepare(text: string): void {
+    if (text.trim().length === 0 || this.engineBroken) {
+      return;
+    }
+    if (staticClipForText(text) !== null) {
+      return;
+    }
+    const prepare = this.engine.prepare;
+    if (prepare === undefined) {
+      return;
+    }
+    void prepare.call(this.engine, text).catch(() => undefined);
+  }
+
+  /**
    * 入队一段本地音频（固定提示语，如「现在开始导航。」）。
    *
    * 与 text 项共用一个队列与同一套优先级/抢占规则，因此与概要和首条指令

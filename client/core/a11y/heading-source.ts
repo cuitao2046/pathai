@@ -57,6 +57,64 @@ function normalize(deg: number): number {
   return mod < 0 ? mod + 360 : mod;
 }
 
+/** 罗盘原始方位 → 地图方位：加上现场标定的地图北偏移。 */
+export function applyHeadingOffset(deg: number, offsetDeg: number): number {
+  return normalize(deg + (Number.isFinite(offsetDeg) ? offsetDeg : 0));
+}
+
+/**
+ * 单次读取绝对方位（查周边等非导航场景）。
+ *
+ * 只认罗盘：运动传感器只能给相对转动量，无法换算“相对地图北”的左右方位。
+ * 超时/不支持/无回调均返回 null，由调用方明确降级为“无法判断方向”。
+ */
+export function readCompassOnce(api: HeadingApi, timeoutMs = 1200): Promise<number | null> {
+  return new Promise<number | null>((resolve) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const finish = (value: number | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      try {
+        api.offCompassChange?.(onReading);
+      } catch {
+        // 忽略：部分基础库不支持解绑
+      }
+      try {
+        api.stopCompass();
+      } catch {
+        // 忽略停止异常
+      }
+      resolve(value);
+    };
+
+    const onReading = (res: CompassReading): void => {
+      if (finite(res.direction)) {
+        finish(normalize(res.direction));
+      }
+    };
+
+    try {
+      api.onCompassChange(onReading);
+      api.startCompass({
+        success: () => undefined,
+        fail: () => finish(null),
+      });
+    } catch {
+      finish(null);
+      return;
+    }
+    timer = setTimeout(() => finish(null), timeoutMs);
+  });
+}
+
 export class HeadingSource {
   private readonly api: HeadingApi;
   private readonly timeoutMs: number;

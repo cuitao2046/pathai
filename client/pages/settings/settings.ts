@@ -16,12 +16,18 @@ import {
   DISCOVERY_MODE_ORDER,
   type DiscoveryMode,
 } from '../../services/discovery-mode';
+import {
+  TTS_SPEED_GEAR_ORDER,
+  TTS_SPEED_LABELS,
+  type TtsSpeedGear,
+} from '../../services/tts-speed';
 import { runP0LocalProbe } from '../../services/p0-local-probe';
 import { P0_PROBE_RESULT_LABELS } from '../../services/p0-probe-labels';
 import { createLogger } from '../../utils/logger';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import {
   cachedRuntimeParams,
+  clearRuntimeParams,
   refreshRuntimeParams,
   type RuntimeParams,
 } from '../../core/config/runtime-config';
@@ -48,6 +54,20 @@ function discoveryModeView(): {
   };
 }
 
+/** 在线 TTS 语速四档的展示数据（下一句播报即时生效）。 */
+function ttsSpeedView(): {
+  ttsSpeedGear: TtsSpeedGear;
+  ttsSpeedIndex: number;
+  ttsSpeedLabel: string;
+} {
+  const gear = appContext.getTtsSpeedGear();
+  return {
+    ttsSpeedGear: gear,
+    ttsSpeedIndex: Math.max(0, TTS_SPEED_GEAR_ORDER.indexOf(gear)),
+    ttsSpeedLabel: TTS_SPEED_LABELS[gear],
+  };
+}
+
 Page({
   data: {
     authUserId: '',
@@ -55,7 +75,7 @@ Page({
     screenReaderVoice: false,
     apiUrl: apiUrlText(),
     siteId: DEFAULT_SITE_ID,
-    dataSource: 'mock' as DataSource,
+    dataSource: 'live' as DataSource,
     voiceMock: true,
     mockText: appContext.getMockAsrText() || '带我去图书馆',
     mapVersion: '未加载',
@@ -90,16 +110,29 @@ Page({
     fullScreenPttSetting: true,
     /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
     navArrowSetting: true,
+    /** 罗盘朝向偏移（度，-180~180；现场两点法标定，0=不修正）。 */
+    headingOffsetText: '0',
     /** 服务发现方式：自动 / 仅广播 / 仅扫描（默认自动，重启生效）。 */
     discoveryMode: 'auto' as DiscoveryMode,
     discoveryModeIndex: 0,
     discoveryModeLabel: DISCOVERY_MODE_LABELS.auto,
     discoveryModeOptions: DISCOVERY_MODE_ORDER.map(mode => DISCOVERY_MODE_LABELS[mode]),
+    /** 在线 TTS 语速：慢 / 标准 / 快 / 特快（默认标准，下一句播报即时生效）。 */
+    ttsSpeedGear: 'normal' as TtsSpeedGear,
+    ttsSpeedIndex: TTS_SPEED_GEAR_ORDER.indexOf('normal'),
+    ttsSpeedLabel: TTS_SPEED_LABELS.normal,
+    ttsSpeedOptions: TTS_SPEED_GEAR_ORDER.map((gear) => TTS_SPEED_LABELS[gear]),
     /** 定位常量计算：服务端当前生效版本（只读展示）。 */
     runtimeParamVersion: '读取中…',
     runtimeGridVersion: '读取中…',
     runtimeParamsText: '',
     runtimeParamsHint: '',
+    /** 导航判定阈值（米）：仅测试人员可编辑并保存到服务端。 */
+    isTester: false,
+    navArrivalRadiusText: '2',
+    navTurnPromptDistanceText: '3',
+    navPolicySource: '',
+    navPolicySaving: false,
     busy: false,
   },
 
@@ -136,7 +169,9 @@ Page({
         screenReaderVoice: getScreenReaderVoice(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
         navArrowSetting: appContext.getNavArrowSetting(),
+        headingOffsetText: String(appContext.getHeadingOffsetSetting()),
         ...discoveryModeView(),
+        ...ttsSpeedView(),
       },
       () => this.perf?.mark('onLoad-rendered', 1000),
     );
@@ -145,6 +180,7 @@ Page({
     this.refreshDownload();
     void this.refreshMapVersion();
     void this.refreshRuntimeConfig(false);
+    void this.onRefreshIdentity();
   },
 
   onChangeScreenReaderVoice(e: WechatMiniprogram.SwitchChange): void {
@@ -168,11 +204,22 @@ Page({
     this.setData({ localProbeResult: P0_PROBE_RESULT_LABELS[diagnostic.result] });
   },
 
+  /** 刷新身份信息（仅用于设置页展示，不再做任何功能授权限制）。 */
   async onRefreshIdentity() {
-    try {
-      const response = await appContext.http.client.request<{ userId: string; isTester: boolean; canApplyConfig: boolean }>({ method: 'GET', path: '/api/v1/auth/me' });
-      if (response.data) this.setData({ authUserId: response.data.userId, authAccessText: response.data.canApplyConfig ? '测试人员，可应用配置' : response.data.isTester ? '测试人员，可上传和计算' : '普通用户' });
-    } catch { this.setData({ authAccessText: '暂时无法连接，请重试' }); }
+    const identity = await appContext.refreshIdentity();
+    if (identity === null) {
+      this.setData({ authAccessText: '暂时无法连接，请重试' });
+      return;
+    }
+    this.setData({
+      authUserId: identity.userId,
+      isTester: identity.isTester,
+      authAccessText: identity.canApplyConfig
+        ? '测试人员，可应用配置'
+        : identity.isTester
+          ? '测试人员，可上传和计算'
+          : '普通用户',
+    });
   },
   onCopyUserId() {
     if (this.data.authUserId) wx.setClipboardData({ data: this.data.authUserId });
@@ -199,7 +246,9 @@ Page({
         screenReaderVoice: getScreenReaderVoice(),
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
       navArrowSetting: appContext.getNavArrowSetting(),
+      headingOffsetText: String(appContext.getHeadingOffsetSetting()),
       ...discoveryModeView(),
+      ...ttsSpeedView(),
     });
     void this.refreshRuntimeConfig(false);
   },
@@ -212,6 +261,22 @@ Page({
       appContext.setDiscoveryModeSetting(mode);
       this.setData(discoveryModeView());
       wx.showToast({ title: '已保存，重启小程序生效', icon: 'none' });
+    } catch (_) {
+      wx.showToast({ title: '设置保存失败，请重试', icon: 'none' });
+    }
+  },
+
+  /** 选择在线 TTS 语速档位：下一句播报即时生效。 */
+  onChangeTtsSpeed(event: WechatMiniprogram.PickerChange): void {
+    const index = Number(event.detail.value);
+    const gear = TTS_SPEED_GEAR_ORDER[index] ?? 'normal';
+    try {
+      appContext.setTtsSpeedGear(gear);
+      this.setData(ttsSpeedView());
+      wx.showToast({
+        title: `已切换为${TTS_SPEED_LABELS[gear]}，下一句播报生效`,
+        icon: 'none',
+      });
     } catch (_) {
       wx.showToast({ title: '设置保存失败，请重试', icon: 'none' });
     }
@@ -296,7 +361,65 @@ Page({
       runtimeParamsHint: `来源 ${params.source} · 阈值 ${params.residualReliableM}m / ${params.residualDegradedM}m · 拉取 ${new Date(
         params.fetchedAt,
       ).toLocaleTimeString()}`,
+      navArrivalRadiusText: String(params.navArrivalRadiusM),
+      navTurnPromptDistanceText: String(params.navTurnPromptDistanceM),
+      navPolicySource: params.navPolicySource === 'db' ? '服务端已保存' : '环境默认值',
     });
+  },
+
+  onNavArrivalInput(event: WechatMiniprogram.Input) {
+    this.setData({ navArrivalRadiusText: event.detail.value });
+  },
+
+  onNavTurnPromptInput(event: WechatMiniprogram.Input) {
+    this.setData({ navTurnPromptDistanceText: event.detail.value });
+  },
+
+  /** 保存导航判定阈值：服务端热生效，下一次位置更新即按新值判定。 */
+  async onSaveNavPolicy() {
+    if (this.data.navPolicySaving) {
+      return;
+    }
+    const arrival = Number(this.data.navArrivalRadiusText);
+    const turn = Number(this.data.navTurnPromptDistanceText);
+    if (!Number.isFinite(arrival) || arrival < 0.5 || arrival > 20) {
+      wx.showToast({ title: '到达半径请输入 0.5~20 米', icon: 'none', duration: 2500 });
+      return;
+    }
+    if (!Number.isFinite(turn) || turn < 0.5 || turn > 10) {
+      wx.showToast({ title: '转向提前距离请输入 0.5~10 米', icon: 'none', duration: 2500 });
+      return;
+    }
+    this.setData({ navPolicySaving: true });
+    try {
+      const resp = await appContext.http.client.request<{
+        arrivalRadiusM: number;
+        turnPromptDistanceM: number;
+        source: string;
+      }>({
+        method: 'PUT',
+        path: '/api/v1/config/nav-policy',
+        body: { arrivalRadiusM: arrival, turnPromptDistanceM: turn },
+      });
+      const data = resp.data;
+      if (data === null) {
+        throw new Error('empty response');
+      }
+      // 服务端已热生效；清掉客户端运行时缓存，其他页面重新拉取最新值。
+      clearRuntimeParams();
+      this.setData({
+        navArrivalRadiusText: String(data.arrivalRadiusM),
+        navTurnPromptDistanceText: String(data.turnPromptDistanceM),
+        navPolicySource: '服务端已保存',
+      });
+      wx.showToast({ title: '已保存，下一段导航生效', icon: 'none', duration: 2500 });
+    } catch (err) {
+      log.warn('导航判定参数保存失败', err);
+      const message = err instanceof ApiClientError ? describeError(err.code) : '保存失败，请重试';
+      wx.showToast({ title: message, icon: 'none', duration: 2500 });
+    } finally {
+      this.setData({ navPolicySaving: false });
+    }
   },
 
   onOpenCalc() {
@@ -397,6 +520,25 @@ Page({
     appContext.setFullScreenPttSetting(on);
     this.setData({ fullScreenPttSetting: on });
     wx.showToast({ title: on ? '已开启全屏按住说话' : '已关闭', icon: 'none', duration: 2000 });
+  },
+
+  /** 罗盘朝向偏移：输入时只回显，失焦/确认时校验并保存（即时生效）。 */
+  onHeadingOffsetInput(event: WechatMiniprogram.Input) {
+    this.setData({ headingOffsetText: event.detail.value });
+  },
+
+  onHeadingOffsetBlur(event: WechatMiniprogram.Input) {
+    const text = event.detail.value.trim();
+    const value = Number(text);
+    if (text === '' || !Number.isFinite(value) || value < -180 || value > 180) {
+      wx.showToast({ title: '请输入 -180~180 的度数', icon: 'none', duration: 2500 });
+      this.setData({ headingOffsetText: String(appContext.getHeadingOffsetSetting()) });
+      return;
+    }
+    const rounded = Math.round(value * 10) / 10;
+    appContext.setHeadingOffsetSetting(rounded);
+    this.setData({ headingOffsetText: String(rounded) });
+    wx.showToast({ title: '已保存，方向即时生效', icon: 'none', duration: 2000 });
   },
 
   /** 导航方向大箭头开关（仅视障模式生效，即时生效）。 */

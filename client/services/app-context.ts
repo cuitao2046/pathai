@@ -25,6 +25,12 @@ import { createWssUrlProvider } from '../utils/wss-url';
 import { createLogger } from '../utils/logger';
 import { getString, getJson, setJson, setString } from '../utils/kv';
 import { resolveVoiceMock, VOICE_MOCK_KEY } from './voice-mock';
+import {
+  resolveTtsSpeedGear,
+  ttsSpeedValue,
+  TTS_SPEED_KEY,
+  type TtsSpeedGear,
+} from './tts-speed';
 import { getDiscoveryMode, setDiscoveryMode, type DiscoveryMode } from './discovery-mode';
 import { TrajectoryRecorder } from '../core/calibration/trajectory-recorder';
 import type { CalibrationRecord } from '../core/calibration/trajectory-recorder';
@@ -36,6 +42,13 @@ export const DATA_SOURCE_KEY = 'cfg:dataSource';
 
 /** mock 模拟识别文本的持久化 key（设置页写入，重启后 MockAsrEngine 自动恢复）。 */
 export const MOCK_ASR_TEXT_KEY = 'cfg:mockAsrText';
+
+/**
+ * 上次成功加载地图的信标 UUID 清单（去重、小写）。
+ * 启动楼层探测在地图加载完成前就要开扫，此时拿不到 beaconRegistry，
+ * 因此把 UUID 缓存在 kv，下一次启动即可与地图下载并行扫描。
+ */
+export const BEACON_UUIDS_KEY = 'cfg:beaconUuids';
 
 /** 标定模式开关（设置页写入，重启生效；只记录不改算法）。 */
 export const CALIBRATION_MODE_KEY = 'cfg:calibrationMode';
@@ -55,6 +68,12 @@ export const FULL_SCREEN_PTT_KEY = 'cfg:fullScreenPtt';
 /** 导航方向大箭头开关（仅视障模式生效，默认开）。 */
 export const NAV_ARROW_KEY = 'cfg:navArrow';
 
+/**
+ * 罗盘朝向偏移（度）：地图北与手机罗盘北的夹角，现场两点法标定后填入。
+ * 只对绝对方位（罗盘）生效，运动相对朝向不做修正。
+ */
+export const HEADING_OFFSET_KEY = 'cfg:headingOffsetDeg';
+
 /** 采集页是否叠加「补装 5 枚虚拟信标」的影响（默认关闭＝v11 真实口径）。 */
 export const SIM_BEACON_PREVIEW_KEY = 'cfg:simBeaconPreview';
 
@@ -65,6 +84,14 @@ export const SIM_BEACON_PREVIEW_KEY = 'cfg:simBeaconPreview';
 export const FINGERPRINT_DB_KEY = 'cfg:fingerprintDb';
 
 export type A11yMode = 'a11y' | 'normal';
+
+/** 后端 /api/v1/auth/me 返回的当前微信用户身份与授权。 */
+export interface ClientIdentity {
+  userId: string;
+  /** 授权用户（测试人员）：可见全部设置与现场采集菜单。 */
+  isTester: boolean;
+  canApplyConfig: boolean;
+}
 
 /** 标定模式轨迹缓冲 key。 */
 export const CALIBRATION_RECORDS_KEY = 'cal:trajectory:v1';
@@ -114,6 +141,9 @@ class AppContext {
 
   private readonly ttsInstance: TtsEngine;
   private readonly asrInstance: AsrEngine;
+  /** 当前用户身份（启动后异步读取；未读取/失败按普通用户处理，不展示授权功能）。 */
+  private identity: ClientIdentity | null = null;
+  private identityInFlight: Promise<ClientIdentity | null> | null = null;
 
   constructor() {
     log.info('数据源 =', this.dataSource, '语音mock =', this.voiceMock);
@@ -134,6 +164,8 @@ class AppContext {
       });
       this.ttsInstance = new XfyunTts({
         credential: createWssUrlProvider(this.http.client, '/api/v1/voice/tts-url'),
+        // 每句合成前读取一次档位：设置页改语速后下一句即生效
+        speed: () => ttsSpeedValue(this.getTtsSpeedGear()),
       });
     }
   }
@@ -144,6 +176,45 @@ class AppContext {
 
   get asr(): AsrEngine {
     return this.asrInstance;
+  }
+
+  /**
+   * 读取并缓存当前微信用户的身份权限（同一时刻只发一个请求）。
+   * 失败返回 null 且保留上次结果；调用方须按“未授权”渲染，不得暴露授权功能。
+   */
+  async refreshIdentity(): Promise<ClientIdentity | null> {
+    if (this.identityInFlight !== null) {
+      return this.identityInFlight;
+    }
+    const task = this.http.client
+      .request<ClientIdentity>({ method: 'GET', path: '/api/v1/auth/me' })
+      .then((response) => response.data)
+      .catch((err) => {
+        log.warn('身份权限读取失败', err);
+        return null;
+      });
+    this.identityInFlight = task;
+    task.then(
+      (identity) => {
+        if (identity !== null) {
+          this.identity = identity;
+        }
+        if (this.identityInFlight === task) {
+          this.identityInFlight = null;
+        }
+      },
+      () => {
+        if (this.identityInFlight === task) {
+          this.identityInFlight = null;
+        }
+      },
+    );
+    return task;
+  }
+
+  /** 当前已知身份（尚未读取或读取失败时为 null）。 */
+  getIdentity(): ClientIdentity | null {
+    return this.identity;
   }
 
   /** 调试：注入 mock 识别文本（写引擎 + 本地缓存，重启后 mock 引擎自动恢复）。 */
@@ -172,6 +243,16 @@ class AppContext {
   /** 设置页回显：语音 mock 的最新设置值（未设置过则跟随数据源）。 */
   getVoiceMockSetting(): boolean {
     return resolveVoiceMock(getJson<boolean>(VOICE_MOCK_KEY), this.dataSource);
+  }
+
+  /** 设置页：写入在线 TTS 语速档位（下一句播报即时生效）。 */
+  setTtsSpeedGear(gear: TtsSpeedGear): void {
+    setJson(TTS_SPEED_KEY, gear);
+  }
+
+  /** TTS 引擎/设置页读取：语速档位（未设置或非法值回落「标准」）。 */
+  getTtsSpeedGear(): TtsSpeedGear {
+    return resolveTtsSpeedGear(getJson<TtsSpeedGear>(TTS_SPEED_KEY));
   }
 
   /** 设置页：写入标定模式开关（重启小程序后生效）。 */
@@ -260,6 +341,20 @@ class AppContext {
   /** 首页/设置页回显：导航方向箭头开关（默认开）。 */
   getNavArrowSetting(): boolean {
     return getJson<boolean>(NAV_ARROW_KEY) !== false;
+  }
+
+  /** 设置页：写入罗盘朝向偏移（度，即时生效；范围 -180~180）。 */
+  setHeadingOffsetSetting(deg: number): void {
+    setJson(HEADING_OFFSET_KEY, deg);
+  }
+
+  /** 朝向读取：罗盘偏移（默认 0；非法值按 0 处理，避免把方向整体带偏）。 */
+  getHeadingOffsetSetting(): number {
+    const stored = getJson<number>(HEADING_OFFSET_KEY);
+    if (typeof stored !== 'number' || !Number.isFinite(stored)) {
+      return 0;
+    }
+    return Math.max(-180, Math.min(180, stored));
   }
 }
 

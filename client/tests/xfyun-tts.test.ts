@@ -128,6 +128,7 @@ function makeTts(overrides: {
   player?: FakePlayer;
   fs?: FakeFs;
   credential?: () => Promise<{ url: string; appId: string }>;
+  speed?: () => number;
 } = {}): { tts: XfyunTts; socket: FakeSocket; player: FakePlayer; fs: FakeFs } {
   const socket = overrides.socket ?? new FakeSocket();
   const player = overrides.player ?? new FakePlayer();
@@ -138,6 +139,7 @@ function makeTts(overrides: {
     fs,
     audioFactory: () => player,
     filePath: TMP_PATH,
+    speed: overrides.speed,
   });
   return { tts, socket, player, fs };
 }
@@ -180,6 +182,7 @@ describe('XfyunTts', () => {
     const req = JSON.parse(socket.sent[0]);
     expect(req.header).toEqual({ app_id: 'app-x', status: 2 }); // 一次性合成
     expect(req.parameter.tts.vcn).toBe('x5_lingxiaoxuan_flow');
+    expect(req.parameter.tts.speed).toBe(50); // 默认语速
     expect(req.parameter.tts.audio).toEqual({
       encoding: 'lame',
       sample_rate: 24000,
@@ -212,6 +215,55 @@ describe('XfyunTts', () => {
     player.emitEnded();
     await expect(done).resolves.toBeUndefined();
     expect(player.destroyed).toBe(true);
+  });
+
+  test('prepare 预生成后 speak 直接播放缓存，不重复合成', async () => {
+    const { tts, socket, player, fs } = makeTts();
+
+    const prepared = tts.prepare('前方直行 10 米。');
+    await flush();
+    socket.emitOpen();
+    await flush();
+    socket.emitMessage(audioMessage(bytesToBase64(new Uint8Array([3, 4])), { final: true }));
+    await prepared;
+
+    expect(fs.writes).toHaveLength(1);
+    expect(player.playCount).toBe(0); // 预生成只合成，不播放
+
+    const done = tts.speak('前方直行 10 米。');
+    await flush();
+    expect(socket.sent).toHaveLength(1); // 命中缓存：没有第二次合成
+    expect(player.playCount).toBe(1);
+    expect(player.src).toBe(TMP_PATH);
+    player.emitEnded();
+    await expect(done).resolves.toBeUndefined();
+  });
+
+  test('语速 provider：每句合成前读取，改档后下一句即时生效', async () => {
+    let speed = 65;
+    const { tts, socket, player } = makeTts({ speed: () => speed });
+
+    const first = tts.speak('第一句');
+    await flush();
+    socket.emitOpen();
+    await flush();
+    expect(JSON.parse(socket.sent[0]).parameter.tts.speed).toBe(65);
+    socket.emitMessage(audioMessage(bytesToBase64(new Uint8Array([1])), { final: true }));
+    await flush();
+    player.emitEnded();
+    await expect(first).resolves.toBeUndefined();
+
+    // 不重建引擎，改档后下一句使用新值
+    speed = 80;
+    const second = tts.speak('第二句');
+    await flush();
+    socket.emitOpen();
+    await flush();
+    expect(JSON.parse(socket.sent[1]).parameter.tts.speed).toBe(80);
+    socket.emitMessage(audioMessage(bytesToBase64(new Uint8Array([2])), { final: true }));
+    await flush();
+    player.emitEnded();
+    await expect(second).resolves.toBeUndefined();
   });
 
   test('播放中 stop → onStop 视为播完，speak resolve', async () => {

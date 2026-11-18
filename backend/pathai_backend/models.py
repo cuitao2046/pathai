@@ -277,6 +277,21 @@ class CalibrationActivePointer(Base):
     updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class NavPolicy(Base):
+    """导航判定阈值：每场地一行，可在小程序设置页由测试人员修改。
+
+    无行时回退到环境冻结值（Settings.nav_*），由 runtime_params 统一覆盖。
+    """
+
+    __tablename__ = "nav_policy"
+
+    site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    arrival_radius_m: Mapped[float] = mapped_column(nullable=False)
+    turn_prompt_distance_m: Mapped[float] = mapped_column(nullable=False)
+    updated_at_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 class BeaconDeploymentRecord(Base):
     """真实部署台账：每场地每 beaconId 一条（幂等 upsert）；规划台账保持只读。
 

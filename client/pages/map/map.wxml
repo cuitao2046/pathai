@@ -187,6 +187,7 @@
     <view class="nav-top" aria-hidden="true">
       <view class="destination">目的地：{{destinationName}}</view>
       <view class="state">{{stateText}}</view>
+      <view class="remaining" wx:if="{{remainingText !== ''}}">{{remainingText}}</view>
     </view>
 
     <view class="nav-instruction" aria-hidden="true" wx:if="{{instruction !== ''}}">{{instruction}}</view>

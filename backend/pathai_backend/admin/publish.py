@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import subprocess
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -19,6 +22,12 @@ from pathai_backend.errors import ApiError
 from pathai_backend.map_package import MapPackage
 from pathai_backend.map_package.validate import validate_map_package
 from pathai_backend.map_repository import MapRepository
+
+logger = logging.getLogger(__name__)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_MAP_DATA_DIR = Path(__file__).resolve().parents[2] / "maps_data"
+_EDITOR_BUILD_SCRIPT = _REPO_ROOT / "tools" / "hazard-editor" / "build_data.py"
 
 
 @dataclass(frozen=True)
@@ -127,3 +136,36 @@ def refresh_repository(app, map_data_dir: Path, public_base_url: str) -> None:
     except Exception:
         app.state.map_repository = None
         raise
+
+
+def sync_hazard_editor_data(site_id: str, map_data_dir: Path) -> None:
+    """发布/回滚成功后重建危险区编辑器的内联地图数据（失败只告警，不影响发布结果）。
+
+    只在读取仓库默认地图目录时同步：测试或自定义 PATHAI_MAP_DATA_DIR 指向临时地图，
+    重建会把临时数据写进开发用的 `tools/hazard-editor/data/map-data.js`。
+    """
+    try:
+        if Path(map_data_dir).resolve() != _DEFAULT_MAP_DATA_DIR.resolve():
+            return
+        if not _EDITOR_BUILD_SCRIPT.is_file():
+            return
+        proc = subprocess.run(
+            [sys.executable, str(_EDITOR_BUILD_SCRIPT), "--site", site_id],
+            cwd=str(_REPO_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            timeout=120,
+        )
+        if proc.returncode != 0:
+            logger.warning(
+                "危险区编辑器数据重建失败（%s）：%s",
+                site_id,
+                (proc.stderr or proc.stdout).strip()[-500:],
+            )
+        else:
+            logger.info("危险区编辑器数据已同步：%s", site_id)
+    except Exception:  # noqa: BLE001 - 派生数据失败不得回滚已完成的发布
+        logger.warning("危险区编辑器数据重建失败：%s", site_id, exc_info=True)

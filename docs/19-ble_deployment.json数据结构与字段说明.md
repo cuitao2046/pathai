@@ -1,18 +1,18 @@
 ﻿# `result/ble_deployment.json` 数据结构与字段说明
 
-> 文档版本：1.1 ｜ 对应数据版本：`schemaVersion 1.0`，**61 信标**（现行台账，`fix-rollback-ble-61` 回滚后状态）
-> 生成方式：`generatedBy = "pathai-manual-deploy"`，经 `render_interactive.py` 部署模式拖拽/点选导出，由人工确认后入库 `result/`。
-> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核（修正 `major` 语义、`minor` 取值区间、`sourceNodeId` 空值口径、`originalLocationDesc` 说明、`beaconId` 形态）；2026-10-27 修正 `minor`"万位对应 major"的错误不变量（实测 7 枚不符，见 §3.1 与 `docs/18` TODO-9），并记录 `major` 已统一为楼层（`BK-M-2-001/002` 由 1→2 修正）；2026-11-01 新增 **§8 部署时写入 `installHeightM` 的操作指引**（spec 0.3.1 高度补偿解算）；2026-11-03 部署调整为全部信标贴墙、统一安装高度 **2.5 m**，解算升级为 **(x,y,z) 三维联合解算**（spec 0.3.3 / `location-0.3`）并同步 §8 口径。
+> 文档版本：1.4 ｜ 对应数据版本：`schemaVersion 1.0`，**27 信标**（2026-11-17 单条测试路线 + 仅墙面；45 枚经 -12 dBm 覆盖与几何冗余评估再删减 18 枚）
+> 生成方式：`gen_beacon_plan.py --mode route --wall-only` → `gen_trilateration_plan_routes.py` → `refine_beacon_placement.py --route-mask 6.0 --wall-only` → 交互页部署模式人工删减导出 → 冗余评估删减为 27 枚 → `inject_adjacent_rooms.py` 补齐房间语义。
+> 校订记录：2026-09-21 按 `result/ble_deployment.json` 实测逐字段复核；2026-10-27 修正 `minor`"万位对应 major"的错误不变量；2026-11-01 新增 **§8 部署时写入 `installHeightM` 的操作指引**；2026-11-03 部署调整为全部信标贴墙、统一安装高度 **2.5 m**，解算升级为 **(x,y,z) 三维联合解算**；2026-11-17 按上传图纸红线重做单条测试路线（音乐教室→资源教室前西侧走廊尽头，80.54m），删除原两条路线，生成 **71 枚全墙面**精化方案；随后人工删减 26 枚至 45 枚；再按 -12 dBm（3 档）覆盖与几何冗余评估删减 18 枚，现行台账 **27 枚全墙面**（F1 27 / F2 0）；地图包 `2026-11-17.4` 已随后端重启生效（served=latest）。
 
 ## 1. 文件定位
 
 `ble_deployment.json` 是**信标部署方案（位置规划）**，描述每枚 iBeacon 的部署位置与属性。**它不直接内嵌地图几何**（墙体/房间多边形在 `school_building_01_map_v9.geojson`），与地图的关联靠 **ID 引用 + 描述字段**：
 
-> **当前状态（2026-10-27 用户确认）：全部 61 枚信标均未上墙。**
-> 本文件是**基于交互渲染图（`render_interactive.py` 部署模式）生成的部署点位建议**，
-> 属"规划态"而非"竣工台账"：`installDate` 全为空、`locationDesc` 部分是坐标回显，均属正常。
+> **当前状态（2026-11-17）：全部 27 枚信标均未上墙。**
+> 本文件为**按测试路线生成、再经人工与冗余评估删减确认的部署点位规划**（精化 71 枚 → 人工 45 枚 → 现行 27 枚），
+> 属"规划态"而非"竣工台账"：`installDate` 全为空。
 > 后续按这些点位**现场实际部署**，并逐枚配置参数（`major`/`minor` 照抄本文件，见 `docs/08` §3 第 3 步）。
-> 现行 61 枚为 **Minew E5**，参数由 `beacon-provisioner` Windows 桌面程序从服务端台账读取后直接写入信标（见 `docs/27`）。
+> 现行 27 枚为 **Minew E5**，参数由 `beacon-provisioner` Windows 桌面程序从服务端台账读取后直接写入信标（见 `docs/27`）。
 > 设备名短码（≤7 字符 `F{floor}-{minor后三位}`）与标签二维码（内容 = `beaconId`）在**发布阶段生成**，不回写本文件。
 > 配置完成后应回填 `installDate` 与实测 `rssiAt1m`（仅用于后端参数标定，**不写入设备**），届时本文件才转为"竣工态"。
 
@@ -30,39 +30,39 @@
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `schemaVersion` | string | 数据格式版本，当前 `"1.0"` |
-| `generatedBy` | string | 生成工具标识，当前 `"pathai-manual-deploy"` |
+| `generatedBy` | string | 生成工具标识，当前 `"pathai-redundancy-prune"`（在 45 枚台账上按冗余评估删减） |
 | `generatedAt` | string | 生成时间戳（ISO 8601，UTC） |
-| `beacons` | array\<Beacon\> | 信标对象数组（当前 61 枚） |
+| `beacons` | array\<Beacon\> | 信标对象数组（当前 27 枚） |
 | `summary` | object | 统计汇总，见 §4 |
 
 ## 3. 单信标字段（Beacon 对象）
 
-> 出现率：`61/61` 为全部信标均含该**键**；标注 `n/61` 的为仅部分信标含该键。注意：部分字段键虽存在但值为**空串**（如 `sourceNodeId` 有 29 枚为空串、`sourceNodeType` 有 8 枚为空串），见各条说明。
+> 出现率：`27/27` 为全部信标均含该**键**；标注 `n/27` 的为仅部分信标含该键。注意：`sourceNodeId` 有 **7 枚为空**（质量补点/墙装漂移点无节点挂靠），消费方须容错。
 
 ### 3.1 标识与协议字段
 
 | 字段 | 类型 | 必填 | 含义 / 取值 |
 |---|---|---|---|
-| `beaconId` | string | ✅ | 信标唯一编号。实际存在三种形态：`BK-01-xxx`（F1 顺序位，39 枚）、`BK-02-xxx`（F2，4 枚）、`BK-TR-F1-xxx` / `BK-TR-F2-xxx`（测试路线补点，7+3 枚）、`BK-M-1-xxx` / `BK-M-2-xxx`（人工部署，6+2 枚） |
+| `beaconId` | string | ✅ | 信标唯一编号。当前两种形态：`BK-01-xxx`（路线基础/方向/走廊填充，17 枚）、`BK-Q-F1-xxx`（放置质量补点，10 枚） |
 | `uuid` | string | ✅ | iBeacon UUID，全楼统一 `B9407F30-F5F8-466E-AFF9-25556B57FE6D` |
-| `major` | number | ✅ | iBeacon major：**已与楼层一致**——`major=1`（52 枚，全 F1）/ `major=2`（9 枚，全 F2），61/61 满足 `major == floor`（2026-10-27 修正 `BK-M-2-001/002` 由 1→2）。仍以 `floor` 为楼层唯一权威（详见 `docs/18` TODO-9） |
-| `minor` | number | ✅ | iBeacon minor（信标序号），实测区间 `10001` ~ `20002`。**"万位对应 major"不成立**：7 枚不符——`BK-02-001~004` 与 `BK-TR-F2-001~003` 为 `major=2` 但 `minor=10145~10160`（万位为 1，因 F2 主信标沿 F1 序列连续编号）。判楼层一律用 `floor`（详见 `docs/18` TODO-9） |
+| `major` | number | ✅ | iBeacon major：当前 **`major=1`（27/27，全 F1）**，满足 `major == floor`。仍以 `floor` 为楼层唯一权威（详见 `docs/18` TODO-9） |
+| `minor` | number | ✅ | iBeacon minor（信标序号），当前区间 **10102~10172**（人工删减后留多处空号）。判楼层一律用 `floor`（详见 `docs/18` TODO-9） |
 | `coordinates` | array\<number,2\> | ✅ | 平面坐标 `[x, y]`（米，同源 geojson 坐标系） |
 
 ### 3.2 部署位置与安装参数
 
 | 字段 | 类型 | 必填 | 含义 / 取值 |
 |---|---|---|---|
-| `floor` | number | ✅ | 物理楼层：`1`（52 枚）/ `2`（9 枚） |
+| `floor` | number | ✅ | 物理楼层：当前 `1`（27 枚）/ `2`（0 枚，测试路线不经过 F2） |
 | `locationDesc` | string | ✅ | 位置人类可读描述，如 `1F 电梯口（II-01#EL）· 门套或呼梯板旁` |
-| `mountType` | string | ✅ | 安装方式：`wall`（壁装，54）/ `door_frame`（门框，7） |
+| `mountType` | string | ✅ | 安装方式：**`wall`（壁装，27/27）**；本轮硬约束为仅墙面部署，不产生 `door_frame` / `column` / `ceiling_pendant` |
 | `installHeight` | number | ✅ | 安装高度（米），统一 `2.5`。**所在楼层地面 → 信标壳体中心**的垂直距离；它是发布包 `installHeightM` 的唯一来源，作为信标 z 坐标参与三维解算（spec 0.3.3）。变更与写入操作见 **§8** |
 | `txPower` | number | ✅ | 发射功率（dBm），**统一 `-12`（E5 3 档，覆盖半径约 15 m）**。注意：它**只描述广播档位，不参与测距**；距离解算使用 `RSSI@1m`（measured power，占位 -71 dBm，待现场标定） |
 | `broadcastInterval` | number | ✅ | 广播间隔（ms），统一 `300` |
 | `batteryModel` | string | ✅ | 电池型号，统一 `CR2477` |
 | `expectedLifespan` | number | ✅ | 预期寿命（年），统一 `5` |
-| `installDate` | string | 43/61 | 现场安装日期 `YYYY-MM-DD`，如 `2026-08-14` |
-| `direction` | string | 13/61 | 朝向描述（带方向性布点用），如 `南` |
+| `installDate` | string | 0/27 | 现场安装日期 `YYYY-MM-DD`；规划态全为空，安装后回填 |
+| `direction` | string | 4/27 | 朝向描述（带方向性布点用），如 `东` |
 
 ### 3.3 语义与来源（L2 定位层布点角色）
 
@@ -70,36 +70,35 @@
 
 | 字段 | 类型 | 必填 | 含义 / 取值 |
 |---|---|---|---|
-| `semanticTag` | string | ✅ | L2 布点大类：`trilateration_route_base`（路线基线，43）/ `trilateration_route_fill`（密度填补，10）/ `manual_deploy`（人工补点，8） |
-| `subType` | string | ✅ | 细分类型：`base`(21) / `fill`(17) / `dir`(13) / `manual_deploy`(8) / `elevator_door`(2) |
-| `sourceNodeId` | string | 61/61（**其中 29 枚为空串**） | 挂靠的地图拓扑节点 ID（geojson `topology.nodes`），如 `F1-TF-0011`、`F1-TI-0023`。**空串表示无节点挂靠**（含人工部署 `BK-M-*` 8 枚、测试路线补点 `BK-TR-*`、部分微调后脱离节点的补点），消费方须容错 |
-| `sourceNodeType` | string | 61/61（**其中 8 枚为空串**） | 来源节点类型：`intersection`(24) / `route_fill`(10) / `route_corridor`(7) / `doorway`(6) / `manual_adjusted`(4) / `facility`(2) / `""`(8) |
-| `adjacentRooms` | array\<string\> | ✅ | 相邻房间 ID 列表（R6 校验要求门口/交叉口信标必填），如 `["F1-CR-0053","F1-RM-0066"]` |
-| `riskLevel` | number\|string | ✅ | 定位风险等级：`low`(10) / `0.3`(7) / `0.5`(32) / `1`(11) / `2`(1)（数值越大风险越高） |
+| `semanticTag` | string | ✅ | L2 布点大类：`trilateration_route_base`（路线基线，17）/ `placement_quality_fill`（放置质量补点，10） |
+| `subType` | string | ✅ | 细分类型：`base`(13) / `dir`(4) / `fill`(0) / `quality_fill`(10) |
+| `sourceNodeId` | string | 27/27（**其中 7 枚为 null**） | 挂靠的地图拓扑节点 ID（geojson `topology.nodes`），如 `F1-TI-0028`、`F1-TD-0020`。**null 表示无节点挂靠**（`BK-Q-*`、墙装漂移点与走廊填充点），消费方须容错 |
+| `sourceNodeType` | string | 27/27 | 来源节点类型：`intersection`(16) / `doorway`(4) / `placement_quality`(6) / `manual_adjusted`(1) |
+| `adjacentRooms` | array\<string\> | 27/27 | 相邻房间 ID 列表（R6 校验要求门口/交叉口信标必填）；本版已由 `inject_adjacent_rooms.py` 补齐 |
+| `riskLevel` | number\|string | ✅ | 定位风险等级：`0.5`(17) / `low`(10)（数值越大风险越高） |
 
 ### 3.4 审计回溯字段（可选，微调/复核用）
 
 | 字段 | 类型 | 必填 | 含义 |
 |---|---|---|---|
-| `originalPlannedCoordinates` | array\<number,2\> | 41/61 | 审计回溯用的原始规划坐标（人工微调前的位置） |
-| `originalSourceNodeId` | string | 11/61 | 原始来源拓扑节点 ID（位置微调后节点变更时记录） |
-| `originalSourceNodeType` | string | 11/61 | 原始来源节点类型 |
-| `originalLocationDesc` | string | 11/61 | 原始位置描述。**并非全部含 `原:` 前缀**：实测 11 枚中仅 4 枚含（如 `1F 交叉口（交叉口55） · 原: 交叉口11`），其余 7 枚为 `1F 交叉口（交叉口31）`、`1F 交叉口（交叉口12 · 南向）` 这类无 `原:` 的形态（记录的是重编号后的描述） |
+| `originalPlannedCoordinates` | array\<number,2\> | 15/27 | 人工微调前的规划坐标（回溯用） |
+| `originalSourceNodeId` | string | 11/27 | 微调前挂靠节点 ID |
+| `originalSourceNodeType` | string | 11/27 | 微调前节点类型 |
+| `originalLocationDesc` | string | 8/27 | 微调前位置描述 |
 
 ## 4. `summary` 统计汇总
 
 ```json
 {
-  "total": 61,
-  "byFloor":   { "1": 52, "2": 9 },
-  "bySemantic":{ "trilateration_route_base": 43,
-                 "trilateration_route_fill": 10,
-                 "manual_deploy": 8 },
-  "byMount":   { "door_frame": 7, "wall": 54 }
+  "total": 27,
+  "byFloor":   { "1": 27 },
+  "bySemantic":{ "trilateration_route_base": 17,
+                 "placement_quality_fill": 10 },
+  "byMount":   { "wall": 27 }
 }
 ```
 
-> ⚠️ `summary.total` 必须与 `beacons.length` 一致。本版为 61，与正文一致；历史上曾出现扩容后 summary 未同步（total=61 但正文 98）的数据质量缺陷，已通过回滚修正。
+> ⚠️ `summary.total` 必须与 `beacons.length` 一致。本版为 **27**，与正文一致；历史上曾出现扩容后 summary 未同步的数据质量缺陷，已通过回滚修正。
 
 ## 5. 与地图的关联方式（消费方须知）
 
@@ -115,6 +114,9 @@
 | 密度修复前基线 | `88c3549` | 61 | 人工部署 + adjacentRooms 注入（R6） |
 | P0 密度修复 | `44c2658` | 98 | F1 按 5m 有效范围补点实现全覆盖、降 GDOP 退化 |
 | **当前生效（回滚）** | `fix-rollback-ble-61` @ `533a006` | **61** | 按用户要求撤销 P0 补点，恢复 `88c3549` 状态 |
+| **2026-11-17 路线重建** | 工作区（未提交） | **71** | 按红线单路线（音乐教室→资源教室前西侧走廊尽头）重建；仅墙面；F2 无路线不部署 |
+| **2026-11-17 人工删减** | 工作区（未提交） | **45** | 在 71 枚精化方案上人工删减 26 枚；仍全墙面；源地图包 2026-11-17.2，管理后台发布为 2026-11-17.3 |
+| **2026-11-17 冗余删减** | 工作区（未提交） | **27** | 按 -12 dBm（3 档）覆盖与几何冗余评估删减 18 枚（质量不劣化：tri_degen 18.41%→16.97%，GDOP max 5.77→2.98）；补齐 adjacentRooms；地图包 `2026-11-17.4` 已重启生效（served=latest） |
 
 > 后续若重新启用 P0 密度方案，应同步更新 `summary` 与 `beacons`，并跑 `validate_beacon_deployment.py` 回归。
 

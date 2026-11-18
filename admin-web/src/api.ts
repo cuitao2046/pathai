@@ -118,7 +118,7 @@ async function request<T>(
 export interface ClientUser { userId: string; isTester: boolean; canApplyConfig: boolean }
 export const api = {
   users: () => request<{ users: ClientUser[] }>('GET', '/api/v1/admin/users'),
-  setUserPermissions: (user: ClientUser) => request<ClientUser>('PUT', `/api/v1/admin/users/${encode(user.userId)}/permissions`, { isTester: user.isTester, canApplyConfig: user.canApplyConfig }, { csrf: true }),
+  setUserPermissions: (user: ClientUser) => request<ClientUser>('PUT', `/api/v1/admin/users/${encode(user.userId)}/permissions`, { isTester: user.isTester }, { csrf: true }),
   me: () => request<MePayload>('GET', '/api/v1/admin/auth/me'),
 
   login: (username: string, password: string) =>

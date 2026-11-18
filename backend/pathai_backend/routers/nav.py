@@ -29,7 +29,6 @@ from pathai_backend.observation_time import (
 )
 
 from pathai_backend.nav_service import (
-    ARRIVAL_RADIUS_M,
     DECISION_POINT_RADIUS_M,
     LOCATION_ALGORITHM_VERSION,
     OFF_ROUTE_M,
@@ -137,6 +136,7 @@ def preview_route(
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     repo: MapRepository = Depends(get_map_repository),
     hazard_repo: HazardRepository = Depends(get_hazard_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> PreviewRouteResponse:
     """只做规划与概要预览：不建会话、不写库、不需要 Idempotency-Key。
 
@@ -158,6 +158,8 @@ def preview_route(
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
+        turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+        origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
     place = index.places[body.destinationId]
     return PreviewRouteResponse(
@@ -207,6 +209,8 @@ def create_session(
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
+        turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+        origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
     place = index.places[body.destinationId]
     # 导航行动文案由路线模板确定，禁止模型改写。
@@ -402,6 +406,7 @@ def _advance_current_index(
     floor_id: str | None,
     x: float,
     y: float,
+    turn_prompt_distance_m: float = TURN_PROMPT_DISTANCE_M,
 ) -> tuple[int, float | None]:
     """按沿线进度推进当前指令；转向指令保持到用户真正越过路口。
 
@@ -439,7 +444,7 @@ def _advance_current_index(
                 )
                 if (
                     next_progress is not None
-                    and progress >= next_progress - TURN_PROMPT_DISTANCE_M
+                    and progress >= next_progress - turn_prompt_distance_m
                 ):
                     return index_value, False
         stop = index_value != start_cur
@@ -461,6 +466,18 @@ def _advance_current_index(
                 InstructionAction.EXIT_ELEVATOR,
             ):
                 # 电梯没有同层“越过节点”的折线进度，保持原近距判定。
+                # 例外：当前段是「进电梯」，而上报楼层已不是该节点所在楼层——
+                # 说明用户已乘电梯到达另一层（客户端在电梯口暂停、目标层恢复上报），
+                # 直接越过进出电梯两条指令，避免永久卡在「请进入电梯」。
+                if (
+                    seg.action is InstructionAction.ENTER_ELEVATOR
+                    and node is not None
+                    and node.floor_id != floor_id
+                ):
+                    cur, stop = _step(cur)
+                    if stop:
+                        break
+                    continue
                 if (
                     node is not None
                     and node.floor_id == floor_id
@@ -513,6 +530,7 @@ def nav_update(
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
     hazard_repo: HazardRepository = Depends(get_hazard_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> NavUpdateResponse:
     session = _owned_session(db, session_id, user, for_update=True)
     if session.status in (s.value for s in TERMINAL_SESSION_STATUSES):
@@ -540,7 +558,10 @@ def nav_update(
         and loc.observedAt.timestamp() >= session.updated_at_epoch - 5
     )
     if trusted:
-        arrival = loc.floorId == dest.floor_id and hypot(loc.x - dest.x, loc.y - dest.y) <= ARRIVAL_RADIUS_M
+        arrival = (
+            loc.floorId == dest.floor_id
+            and hypot(loc.x - dest.x, loc.y - dest.y) <= settings.nav_arrival_radius_m
+        )
     else:
         arrival = False
 
@@ -579,6 +600,8 @@ def nav_update(
                 published.data, published.pkg, index, origin2,
                 session.destination_place_id, UserMode(session.user_mode),
                 hazard_layer=hazard_repo.get(session.site_id, published.map_version),
+                turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
+                origin_position=(loc.floorId, loc.x, loc.y),
             )
             session.route_json = new_route.model_dump_json()
             session.current_index = 0
@@ -595,7 +618,8 @@ def nav_update(
         else:
             cur = session.current_index
             cur, remaining = _advance_current_index(
-                route, index, cur, loc.floorId, loc.x, loc.y
+                route, index, cur, loc.floorId, loc.x, loc.y,
+                settings.nav_turn_prompt_distance_m,
             )
             session.current_index = cur
             session.status = SessionStatus.ACTIVE.value

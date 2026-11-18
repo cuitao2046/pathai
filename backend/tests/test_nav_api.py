@@ -130,6 +130,17 @@ class TestCreateSession:
         assert second.status_code == 201, second.text
         assert second.json()['mapVersion'] == REAL_MAP_VERSION
 
+    def test_route_starts_from_actual_origin_not_snapped_node(self, client, auth_headers):
+        # 默认起点比入网节点偏 0.2m：路线首点必须是真实位置（不吸附成节点坐标）。
+        origin = _origin()
+        body = _create(client, auth_headers).json()
+        first = body["route"]["polyline"][0]
+        assert first["x"] == pytest.approx(origin["x"])
+        assert first["y"] == pytest.approx(origin["y"])
+        assert first["floorId"] == "1"
+        # 距离包含「真实位置 → 入网节点」首段（约 0.2m）。
+        assert body["route"]["distanceM"] > 0.2
+
     def test_stale_origin_cannot_create_session(self, client, auth_headers):
         origin = _origin()
         origin['observedAt'] = '2000-01-01T00:00:00Z'
@@ -367,9 +378,9 @@ class TestPreviewRoute:
 class TestNavUpdate:
     """更新坐标几何约束（真实地图包 2026-10-25.1，局部米制坐标）：
 
-    - 到达判定：距目的地节点 F1-TR-0003 ≤ 5m 即 arrived——到达用例用 DEST_P
-      （0m）；非到达用例须用距终点 >5m 的坐标（SAFE_P 距 69.48m，且即路线
-      首顶点，未偏航）；
+    - 到达判定：距目的地节点 F1-TR-0003 ≤ 2m 即 arrived（冻结值，可在设置页修改）
+      ——到达用例用 DEST_P（0m）；非到达用例须用距终点 >2m 的坐标（SAFE_P 距
+      69.48m，且即路线首顶点，未偏航）；
     - 偏航判定：距全部 polyline 顶点 >8m——OFFROUTE_P 固化时距路线 11.12m，
       且吸附节点 F1-TR-0001 盲模式可达目的地，可触发重规划。
     """
@@ -433,7 +444,7 @@ class TestNavUpdate:
         assert replay.json()["processedSequence"] == first.json()["processedSequence"]
 
     def test_arrival_once(self, client, session, auth_headers):
-        # 目的地 F1-RM-0003 节点 F1-TR-0003（DEST_P 距判定终点 0m ≤ 5m）
+        # 目的地 F1-RM-0003 节点 F1-TR-0003（DEST_P 距判定终点 0m ≤ 2m）
         resp = _update(client, auth_headers, session["sessionId"], 7, *DEST_P)
         assert resp.status_code == 200
         body = resp.json()
@@ -444,6 +455,13 @@ class TestNavUpdate:
         later = _update(client, auth_headers, session["sessionId"], 8, *DEST_P)
         assert later.status_code == 409
         assert later.json()["error"]["code"] == "SESSION_NOT_ACTIVE"
+
+    def test_arrival_requires_inside_2m_radius(self, client, session, auth_headers):
+        # 距目的地节点约 3m：旧 5m 阈值会误判到达，冻结为 2m 后仍应保持导航中。
+        resp = _update(client, auth_headers, session["sessionId"], 6, DEST_P[0] + 3.0, DEST_P[1])
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "active"
+        assert resp.json()["event"] == "instruction"
 
     def test_off_route_triggers_reroute(self, client, session, auth_headers):
         resp = _update(client, auth_headers, session["sessionId"], 3, *OFFROUTE_P)

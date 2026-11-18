@@ -22,6 +22,7 @@
  * v0.2.0（用户确认）仅用于本地/自建服务与受控联调网络。
  */
 import { API_BASE_URL } from '../config/env';
+import { createCancelSource, type CancelSource, type CancelToken } from '../core/discovery/cancel-token';
 import type { EndpointFailureReason } from '../core/discovery/failure';
 import { ApiClientError } from '../core/http/errors';
 import { createLogger } from '../utils/logger';
@@ -45,6 +46,8 @@ let current: string | null = null;
 let inflight: Promise<string | null> | null = null;
 let lastFailure: EndpointFailureReason | null = null;
 let generation = 0;
+/** 当前发现轮次的取消源：地址失效/切网时立即中止在途探活、广播与扫描。 */
+let activeRound: CancelSource | null = null;
 
 /** Invalidate without allowing a late failure from an old address to erase a new one. */
 export function invalidateServiceEndpoint(expected?: string): void {
@@ -52,6 +55,8 @@ export function invalidateServiceEndpoint(expected?: string): void {
   ++generation;
   current = null;
   inflight = null;
+  activeRound?.cancel();
+  activeRound = null;
 }
 
 export async function recoverServiceEndpoint(failedBase: string): Promise<void> {
@@ -98,7 +103,9 @@ export async function ensureServiceEndpoint(): Promise<string | null> {
   if (current !== null) return current;
   if (inflight === null) {
     const version = generation;
-    const task = resolveEndpoint(version)
+    const round = createCancelSource();
+    activeRound = round;
+    const task = resolveEndpoint(version, round.token)
       .then(candidate => {
         if (version !== generation) return null;
         current = candidate;
@@ -107,6 +114,7 @@ export async function ensureServiceEndpoint(): Promise<string | null> {
       .catch(() => null)
       .finally(() => {
         if (inflight === task) inflight = null;
+        if (activeRound === round) activeRound = null;
       });
     inflight = task;
   }
@@ -127,9 +135,10 @@ async function verifyCachedEndpoint(
   cached: string,
   knownDeviceId: string | null,
   version: number,
+  cancel: CancelToken,
 ): Promise<boolean> {
   const startedAt = Date.now();
-  const probe = await probeEndpoint(cached);
+  const probe = await probeEndpoint(cached, undefined, cancel);
   const cost = Date.now() - startedAt;
   if (version !== generation) {
     log.debug('缓存探活结果已过期（地址已被替换）', cached, `耗时=${cost}ms`);
@@ -151,7 +160,7 @@ async function verifyCachedEndpoint(
   return true;
 }
 
-async function resolveEndpoint(version: number): Promise<string | null> {
+async function resolveEndpoint(version: number, cancel: CancelToken): Promise<string | null> {
   lastFailure = null;
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
@@ -179,7 +188,7 @@ async function resolveEndpoint(version: number): Promise<string | null> {
   const cached = getP0Candidate();
   const knownDeviceId = getP0DeviceId();
   if (cached !== null) {
-    if (await verifyCachedEndpoint(cached, knownDeviceId, version)) {
+    if (await verifyCachedEndpoint(cached, knownDeviceId, version, cancel)) {
       log.info('服务地址已确定', cached, '来源=缓存', `耗时=${elapsed()}ms`);
       return cached;
     }
@@ -194,7 +203,7 @@ async function resolveEndpoint(version: number): Promise<string | null> {
   if (mode === 'scan') log.info('跳过 UDP 广播：仅扫描模式');
 
   if (mode !== 'scan') {
-    const broadcast = await discoverBusinessCandidate(knownDeviceId);
+    const broadcast = await discoverBusinessCandidate(knownDeviceId, cancel);
     if (version !== generation) return null;
     if (broadcast !== null && saveP0Candidate(broadcast.url, broadcast.identity.deviceId)) {
       log.info('服务地址已确定', broadcast.url, '来源=广播',
@@ -208,7 +217,7 @@ async function resolveEndpoint(version: number): Promise<string | null> {
     }
   }
 
-  const scanned = await scanLanForService(knownDeviceId);
+  const scanned = await scanLanForService(knownDeviceId, cancel);
   if (version !== generation) return null;
   if (scanned.service !== null && saveP0Candidate(scanned.service.url, scanned.service.identity.deviceId)) {
     log.info('服务地址已确定', scanned.service.url, '来源=扫描',

@@ -452,6 +452,12 @@
   margin-top: 6rpx;
 }
 
+.nav-top .remaining {
+  font-size: 30rpx;
+  margin-top: 4rpx;
+  opacity: 0.9;
+}
+
 .nav-instruction {
   padding: 24rpx 28rpx;
   background: #ffffff;

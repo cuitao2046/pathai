@@ -7,7 +7,13 @@ import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
  * 页面编排、canvas 绘制与手势采集；地图数据经 MapService 单例（本地文件缓存
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
-import { appContext } from '../../services/app-context';
+import { appContext, BEACON_UUIDS_KEY } from '../../services/app-context';
+import { getJson, setJson } from '../../utils/kv';
+import {
+  pickStartupFloor,
+  probeStartupFloorSamples,
+  type StartupFloorSample,
+} from '../../core/ble/startup-floor-probe';
 import { ensureServiceEndpoint, lastEndpointFailure, currentServiceBaseUrl } from '../../services/service-endpoint';
 import { describeEndpointFailure } from '../../core/discovery/failure';
 import { createNavJournal } from '../../core/nav/create-journal';
@@ -32,6 +38,7 @@ import {
 import { createBeaconSource } from '../../core/ble/beacon-source-factory';
 import type { BeaconSourceLike } from '../../core/ble/beacon-source';
 import { MockBeaconSource } from '../../core/ble/mock-beacon-source';
+import { getScanProfile } from '../../core/ble/scan-profile';
 import { MOCK_POSITION, MOCK_WALK_SPEED_MPS } from '../../core/map/mock-position';
 import { SpeechQueue } from '../../core/speech/speech-queue';
 import type { LocalVoiceName } from '../../core/speech/local-voice';
@@ -52,7 +59,12 @@ import {
 import { LocationPipeline } from '../../core/position/location-pipeline';
 import { SequenceCounter } from '../../core/position/sequence-counter';
 import { buildRouteOverview } from '../../core/nav/route-overview';
-import { TurnHaptics, resolveTurnNode, turnDistanceM } from '../../core/nav/turn-haptics';
+import {
+  TurnHaptics,
+  remainingRouteDistanceM,
+  resolveTurnNode,
+  turnDistanceM,
+} from '../../core/nav/turn-haptics';
 import { vibrateDoubleShort, vibrateLong, vibrateShort } from '../../utils/haptic';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import {
@@ -68,7 +80,13 @@ import {
   routeBearing,
   shortestDelta,
 } from '../../core/a11y/nav-arrow-angle';
-import { HeadingSource, type HeadingApi, type HeadingMode } from '../../core/a11y/heading-source';
+import {
+  HeadingSource,
+  applyHeadingOffset,
+  readCompassOnce,
+  type HeadingApi,
+  type HeadingMode,
+} from '../../core/a11y/heading-source';
 import { arrowClipPath } from '../../core/a11y/nav-arrow-shape';
 import type { A11yMode } from '../../services/app-context';
 import type {
@@ -108,6 +126,12 @@ const DOUBLE_TAP_WINDOW_MS = 500;
 
 /** 进入逐步引导前的短过渡（本地音频，离线可播）：场景一/场景二共用，位于概要与首条指令之间。 */
 const NAV_START_TRANSITION_CLIP = 'nav-start';
+
+/**
+ * 启动楼层探测窗口：与地图加载并行扫描蓝牙。
+ * 窗口内采到信标 → 按多数楼层显示；未采到 → 默认首层。
+ */
+const STARTUP_FLOOR_PROBE_MS = 2_000;
 
 /** 预览起点等待上限：取不到可信位置就不规划（绝不建会话）。 */
 const PREVIEW_ORIGIN_TIMEOUT_MS = 12_000;
@@ -246,6 +270,8 @@ Page({
     state: 'idle' as NavState,
     stateText: NAV_TEXT.idle,
     instruction: '',
+    /** 距终点剩余距离（HUD 动态文案；'' 表示暂无可用位置/路线）。 */
+    remainingText: '',
     destinationName: '',
     ended: false,
     // 无障碍（specs/nav-accessibility-ux）：模式 + 大箭头
@@ -285,7 +311,7 @@ Page({
   routeForDisplay: null as RouteInfo | null,
   /**
    * 转弯逼近震动（REQ-A11Y-TURN-HAPTIC，仅视障模式）：
-   * 语音负责距拐点 8~10m 的提前播报，震动只负责最后几米的逼近节拍，两者分工。
+   * 语音负责距拐点约 4m 的提前播报，震动在最后 6m 内先接管逼近节拍，两者分工。
    */
   turnHaptics: null as TurnHaptics | null,
   /** 当前导航指令（每次 update 刷新，转弯震动按它取拐点）。 */
@@ -341,6 +367,8 @@ Page({
    */
   screenReaderOn: false,
   sessionEnded: false,
+  /** 电梯口暂停中：不上报、不推进箭头，等目标楼层信标后自动恢复。 */
+  elevatorPaused: false,
   parseInFlight: false,
   voiceEpoch: 0,
   locationInFlight: false,
@@ -355,6 +383,13 @@ Page({
   roomFills: {} as Record<string, RoomFillGroup[]>,
   placeLabels: {} as Record<string, PlaceLabel[]>,
   floorList: [] as FloorItem[],
+  /** 启动楼层探测（与地图加载并行）：运行代号 / 完成标志 / 原始样本 / 是否已应用。 */
+  startupFloorProbeRun: 0,
+  startupFloorProbeFinished: false,
+  startupFloorSamples: [] as StartupFloorSample[],
+  startupFloorApplied: false,
+  /** 探测判定出的楼层：首绘视口直接使用；null = 按首层显示。 */
+  startupFloorId: null as string | null,
   canvasRect: { left: 0, top: 0 },
   canvasReady: false,
   canvasSize: { w: 0, h: 0 },
@@ -409,6 +444,8 @@ Page({
     });
     // 启动播报序列由地图事件驱动（下载开始/就绪/过旧），必须在 bootstrap 之前订阅
     this.mapUnsubscribe = appContext.map.subscribe((event) => this.onMapEvent(event));
+    // 启动楼层探测与地图加载并行：只缓存原始样本，地图就绪后再解析楼层
+    this.startStartupFloorProbe();
     void this.bootstrap();
   },
 
@@ -442,6 +479,8 @@ Page({
   },
 
   onUnload(): void {
+    // 终止启动楼层探测：迟到的样本不再用于判层
+    this.startupFloorProbeRun += 1;
     this.controller?.dispose();
     ++this.voiceEpoch;
     this.parseInFlight = false;
@@ -499,6 +538,100 @@ Page({
   },
 
   // ------------------------------------------------------------------
+  // 启动楼层探测（与地图加载并行）
+  // ------------------------------------------------------------------
+
+  /** 上次成功加载地图时缓存下来的信标 UUID 清单（地图未加载前即可开扫）。 */
+  cachedBeaconUuids(): string[] {
+    const stored = getJson<string[]>(BEACON_UUIDS_KEY);
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+    return stored.filter((uuid) => typeof uuid === 'string' && uuid.length > 0);
+  },
+
+  /**
+   * 启动时与地图加载并行扫描蓝牙：只收集原始样本，楼层留到地图就绪后解析。
+   * 2 秒内无样本（或无缓存 UUID / 蓝牙不可用）→ 保持首层显示。
+   */
+  startStartupFloorProbe(): void {
+    if (appContext.dataSource !== 'live') {
+      // mock 模拟位置固定在首层，无需实扫
+      this.startupFloorProbeFinished = true;
+      return;
+    }
+    const uuids = this.cachedBeaconUuids();
+    if (uuids.length === 0) {
+      log.info('启动楼层探测：无缓存信标清单，按首层显示');
+      this.startupFloorProbeFinished = true;
+      return;
+    }
+    const run = ++this.startupFloorProbeRun;
+    log.info(
+      '启动楼层探测：与地图加载并行扫描',
+      `${uuids.length} 个 UUID / ${STARTUP_FLOOR_PROBE_MS}ms`,
+    );
+    void probeStartupFloorSamples(uuids, STARTUP_FLOOR_PROBE_MS).then((samples) => {
+      if (run !== this.startupFloorProbeRun) {
+        return; // 已完成新探测 / 页面已卸载 / 导航接管
+      }
+      this.startupFloorSamples = samples;
+      this.startupFloorProbeFinished = true;
+      log.info('启动楼层探测完成', `样本=${samples.length}`);
+      this.maybeApplyStartupFloor();
+    });
+  },
+
+  /** 地图就绪且探测完成后应用一次：按信标多数楼层换层，无样本则保持首层。 */
+  maybeApplyStartupFloor(): void {
+    if (this.startupFloorApplied || !this.startupFloorProbeFinished || !this.data.mapReady) {
+      return;
+    }
+    this.startupFloorApplied = true;
+    if (this.startupFloorSamples.length === 0) {
+      log.info('启动楼层探测：规定时间内未采到信标，显示首层');
+      return;
+    }
+    if (this.data.navActive || this.navPhase !== 'idle') {
+      log.info('启动楼层探测：已进入预览/导航，楼层交给定位跟随');
+      return;
+    }
+    const winner = pickStartupFloor(this.startupFloorSamples, (uuid, major, minor) =>
+      appContext.map.beaconRegistry.resolve(uuid, major, minor),
+    );
+    if (winner === null) {
+      log.info('启动楼层探测：样本未命中台账，显示首层');
+      return;
+    }
+    log.info(
+      '启动楼层探测：按信标楼层显示',
+      `${winner.floorId}（${winner.count} 帧，均 ${winner.avgRssi.toFixed(1)}dBm）`,
+    );
+    this.startupFloorId = winner.floorId;
+    this.applyStartupFloor(winner.floorId);
+  },
+
+  /** 把地图切到启动探测出的楼层；视口未建好时只记录，首绘按该层创建。 */
+  applyStartupFloor(floorId: string): void {
+    const item = this.floorList.find((f) => f.floorId === floorId);
+    const floorText = item !== undefined ? `${item.level}F` : floorId;
+    const segs = this.wallSegs[floorId];
+    const vp = this.viewport;
+    if (vp === null || segs === undefined) {
+      this.setData({ currentFloor: floorId, currentFloorText: floorText });
+      return;
+    }
+    if (vp.floorId === floorId) {
+      return;
+    }
+    vp.setFloor(floorId, flatBounds(segs));
+    vp.fit();
+    this.setData({ currentFloor: floorId, currentFloorText: floorText }, () =>
+      this.requestDraw(),
+    );
+  },
+
+  // ------------------------------------------------------------------
   // 数据加载（照 index 页 bootstrap 范式）
   // ------------------------------------------------------------------
 
@@ -540,6 +673,11 @@ Page({
       this.roomFills = fills;
       this.placeLabels = labels;
       this.floorList = floors;
+      // 缓存信标 UUID：下次启动可在地图加载完成前就开扫，判定所在楼层
+      const scanUuids = appContext.map.beaconRegistry.scanUuids;
+      if (scanUuids.length > 0) {
+        setJson(BEACON_UUIDS_KEY, scanUuids);
+      }
       const cur = floors.find((f) => f.floorId === this.data.currentFloor);
       this.setData({
         floors,
@@ -552,6 +690,8 @@ Page({
       });
       log.info('地图首屏就绪', appContext.map.requireVersion());
       this.tryFirstDraw();
+      // 地图可能晚于探测就绪：就绪后补一次应用（无样本则保持首层）
+      this.maybeApplyStartupFloor();
       this.refreshTapExclusions();
       // 启动集中申请权限：地图就绪后再弹，避免与加载叠加
       this.requestStartupPermissions();
@@ -622,7 +762,9 @@ Page({
     if (!this.canvasReady || this.data.loading || this.viewport !== null) {
       return;
     }
-    const firstFloor = this.floorList[0];
+    // 启动楼层探测已判定出楼层时直接以该层建视口，避免先画首层再跳层
+    const initialFloorId = this.startupFloorId ?? this.floorList[0]?.floorId;
+    const firstFloor = this.floorList.find((f) => f.floorId === initialFloorId);
     const segs = firstFloor !== undefined ? this.wallSegs[firstFloor.floorId] : undefined;
     if (firstFloor === undefined || segs === undefined) {
       return;
@@ -633,6 +775,12 @@ Page({
       this.canvasSize.h,
       firstFloor.floorId,
     );
+    if (firstFloor.floorId !== this.data.currentFloor) {
+      this.setData({
+        currentFloor: firstFloor.floorId,
+        currentFloorText: `${firstFloor.level}F`,
+      });
+    }
     this.draw();
   },
 
@@ -1233,7 +1381,10 @@ Page({
       api: this.getHeadingApi(),
       onHeading: (deg, mode) => {
         this.headingMode = mode;
-        this.headingDeg = this.headingSmoother!.update(deg, Date.now());
+        // 仅罗盘是绝对方位，需要叠加地图北偏移；运动相对量不做修正。
+        const corrected =
+          mode === 'compass' ? applyHeadingOffset(deg, appContext.getHeadingOffsetSetting()) : deg;
+        this.headingDeg = this.headingSmoother!.update(corrected, Date.now());
         this.updateArrow();
       },
       onModeChange: (mode) => {
@@ -1321,7 +1472,7 @@ Page({
 
   /** 重算箭头角并更新偏离开警/播报（节流：<2° 不重绘、播报 ≥5 s）。 */
   updateArrow(): void {
-    if (!this.isArrowEnabled()) {
+    if (!this.isArrowEnabled() || this.elevatorPaused) {
       return;
     }
     if (this.data.state === 'recovering') {
@@ -1930,7 +2081,23 @@ Page({
     this.locationInFlight = true;
     const fallback =
       kind === 'surroundings' ? SURROUNDINGS_UNRESOLVED_TEXT : UNRESOLVED_TEXT;
+    // 朝向传感器只在导航态常驻；单次查周边需要临时读一次绝对方位，
+    // 否则 LocationQueryService 只能降级为“暂时无法判断方向”。
+    let temporaryHeading = false;
     try {
+      if (kind === 'surroundings' && this.headingDeg === null && this.headingSource === null) {
+        const raw = await readCompassOnce(this.getHeadingApi());
+        const heading =
+          raw === null ? null : applyHeadingOffset(raw, appContext.getHeadingOffsetSetting());
+        log.info(
+          '查周边罗盘朝向',
+          heading === null ? '不可用' : `${Math.round(heading)}°（原始 ${Math.round(raw!)}°）`,
+        );
+        if (heading !== null && this.headingSource === null && this.headingDeg === null) {
+          this.headingDeg = heading;
+          temporaryHeading = true;
+        }
+      }
       const text = await this.locationQuery.query(kind);
       if (text === null || !this.data.mapReady) {
         return; // 并发被忽略 / 页面已不可用
@@ -1942,6 +2109,9 @@ Page({
       this.setData({ reply: fallback });
       this.speech?.enqueue(fallback, 'normal', null, 'map:location-query-fallback');
     } finally {
+      if (temporaryHeading && this.headingSource === null) {
+        this.headingDeg = null;
+      }
       this.locationInFlight = false;
     }
   },
@@ -2011,6 +2181,19 @@ Page({
       log.info('开始导航意图到达时概要仍在播报：播完直接开始');
       return;
     }
+    // 确认询问阶段：预览仍有效（30s 确认超时未到），直接开始。
+    // 用户开口说「开始导航」会打断询问播报，此时 10s 窗口不会刷新；
+    // 若仍按 canReusePreview 判定，会把刚规划好的预览作废并重新追问目的地。
+    if (
+      this.navPhase === 'awaiting-confirm' &&
+      this.navDestination !== null &&
+      this.previewOrigin !== null
+    ) {
+      const destination = this.navDestination;
+      log.info('开始导航意图到达于确认询问阶段：直接开始', destination.name);
+      void this.startNavigation(destination);
+      return;
+    }
     if (this.canReusePreview()) {
       const destination = this.navDestination;
       if (destination !== null) {
@@ -2078,6 +2261,8 @@ Page({
     if (this.data.navActive || !this.data.mapReady) {
       return;
     }
+    // 导航接管：启动楼层探测的迟到结果不得再切层
+    this.startupFloorProbeRun += 1;
     // 场景二：用户先说「开始导航」再给目的地 → 概要播完直接开始，不再二次确认
     const autoStart = this.navPhase === 'awaiting-destination';
     this.clearAwaitDestinationTimer();
@@ -2088,6 +2273,9 @@ Page({
     this.navDestination = destination;
     this.previewOrigin = null;
     this.navPhase = 'previewing';
+    // 新一轮预览开始：必须清掉上一段会话的结束标记。否则 handleEstimate 会在
+    // 「sessionEnded」守卫处提前返回，起点永远不会交出去，12s 后误报无法定位。
+    this.sessionEnded = false;
     this.overviewAnnounced = false; // 概要由预览流程播报
     this.routeForDisplay = null;
     this.setData(
@@ -2179,6 +2367,8 @@ Page({
       preview.overviewText == null ? '(模板兜底)' : '(LLM)',
     );
     this.setData({ reply: '正在播报路线概要…' });
+    // 预生成概要音频：与入队/过渡音并行，长概要首次播放少等一次合成
+    this.speech?.prepare(overview);
     this.speech?.enqueue(overview, 'normal', null, 'map:overview');
     // 以语音队列排空事件判定「概要播完」，再询问是否开始导航（不用固定延时）。
     // 取消/改目的地会推进 previewToken，作废本回调；不需要依赖 idle reason。
@@ -2396,6 +2586,7 @@ Page({
     this.clearAwaitDestinationTimer();
     this.navPhase = 'navigating';
     this.sessionEnded = false;
+    this.elevatorPaused = false;
     this.overviewAnnounced = true; // 概要已在预览阶段播完，不重播
     this.previewFreshAt = null;
     this.previewAutoStart = false;
@@ -2418,6 +2609,7 @@ Page({
         state: 'idle' as NavState,
         stateText: NAV_TEXT.idle,
         instruction: '正在确定您的位置…',
+        remainingText: '',
         destinationName: destination.name,
         destination: null,
         candidates: [],
@@ -2507,6 +2699,8 @@ Page({
       map: appContext.map,
       source,
       sequence: new SequenceCounter(),
+      // 按机型选择聚合窗口（iOS 2s / 安卓 1.5s）：扫描节拍由系统决定，窗口是可控量。
+      windowMs: getScanProfile().windowMs,
       // 指纹库开关（默认关闭）：每拍读取，关闭时请求体与旧版完全一致
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
       onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
@@ -2537,6 +2731,8 @@ Page({
           await pipeline.start('navigating');
         }
       },
+      // 电梯暂停期间清楼层先验：由服务端按可见信标多数判层，地图随扫描楼层自动切换
+      clearFloorHint: () => pipeline.clearFloorHint(),
     };
     this.turnHaptics = new TurnHaptics({ vibrateShort, vibrateLong });
     this.controller = new NavSessionController({
@@ -2545,6 +2741,22 @@ Page({
       map: appContext.map,
       speech: this.speech,
       pipeline: pipelineControl,
+      // 电梯口判距：把指令触发节点解析成坐标（地图包节点表）
+      resolveNode: (nodeId) => resolveTurnNode(appContext.map.floors, nodeId),
+      onElevatorPause: ({ text }) => {
+        this.elevatorPaused = true;
+        this.setData({
+          stateText: '导航已暂停（电梯）',
+          instruction: text,
+          arrowVisible: false,
+          arrowAlert: false,
+        });
+      },
+      onElevatorResume: ({ text }) => {
+        this.elevatorPaused = false;
+        this.setData({ stateText: NAV_TEXT.active, instruction: text });
+        this.updateArrow();
+      },
       onStateChange: (state) => {
         this.setData({ state, stateText: NAV_TEXT[state] }, () => this.syncTurnHaptics());
         if (state === 'recovering') {
@@ -2566,6 +2778,7 @@ Page({
             buildRouteOverview(route, this.navDestination.name, (floorId) =>
               appContext.map.floors[floorId]?.displayName,
             );
+          this.speech?.prepare(overview);
           this.speech?.enqueue(overview, 'normal', null, 'map:overview');
           // 概要播放期间 HUD 显示状态占位；首条指令等队列播完再由 onInstruction 写入
           this.setData({ instruction: '正在播报路线概要…' });
@@ -2583,6 +2796,7 @@ Page({
         }
         this.routeForDisplay = route;
         this.stopTurnHaptics(); // 新路线：旧转弯的逼近节拍立即作废，等新指令重新装载
+        this.updateRemainingDistance(); // 路线就绪：按当前位置刷新剩余距离
         this.requestDraw(); // 导航视觉：重绘路线（REQ-NAV 展示层）
         this.updateArrow(); // 路线就绪后按当前位置算箭头方向
       },
@@ -2655,9 +2869,11 @@ Page({
       this.followPosition();
       this.updateArrow(); // 可信位置更新 → 重算当前折线段方向
       this.syncTurnHaptics(); // 1s 一拍：刷新到当前转弯的剩余沿线距离（两次上报之间由节拍器外推）
+      this.updateRemainingDistance(); // HUD 剩余距离随定位动态更新
     } else {
-      // 本拍没有可信坐标：停表，恢复/新指令再重新装载
+      // 本拍没有可信坐标：停表并清掉剩余距离（避免展示过期数值）
       this.stopTurnHaptics();
+      this.setRemainingText('');
     }
     const controller = this.controller;
     if (controller === null || this.sessionEnded) {
@@ -2719,6 +2935,7 @@ Page({
     if (pos.floorId !== vp.floorId) {
       const segs = this.wallSegs[pos.floorId];
       if (segs !== undefined) {
+        log.info('定位楼层变化：地图自动切换', `${vp.floorId} → ${pos.floorId}`);
         vp.setFloor(pos.floorId, flatBounds(segs));
         const item = this.floorList.find((f) => f.floorId === pos.floorId);
         this.setData({
@@ -2742,6 +2959,33 @@ Page({
     const { sx, sy } = vp.toScreen(pos.x, pos.y);
     vp.panBy(this.canvasSize.w / 2 - sx, this.canvasSize.h / 2 - sy);
     this.requestDraw();
+  },
+
+  /**
+   * HUD 剩余距离：当前位置沿路线投影到终点，按整米节流更新。
+   * 位置/路线缺失或无法投影时清空，绝不展示过期数值。
+   */
+  updateRemainingDistance(): void {
+    if (!this.data.navActive) {
+      this.setRemainingText('');
+      return;
+    }
+    const route = this.routeForDisplay;
+    const pos = this.navPosition;
+    if (route === null || pos === null) {
+      this.setRemainingText('');
+      return;
+    }
+    const remaining = remainingRouteDistanceM(route.polyline, pos);
+    this.setRemainingText(
+      remaining === null ? '' : `剩余 ${Math.max(0, Math.round(remaining))} 米`,
+    );
+  },
+
+  setRemainingText(text: string): void {
+    if (this.data.remainingText !== text) {
+      this.setData({ remainingText: text });
+    }
   },
 
   /** 双击结束导航（防误触，自原导航页平移）。 */
@@ -2806,6 +3050,7 @@ Page({
   /** 导航结束后关闭 HUD，回到待命地图。 */
   onDismissNav(): void {
     this.navPhase = 'idle';
+    this.elevatorPaused = false;
     this.stopTurnHaptics();
     this.currentInstruction = null;
     this.previewToken += 1;
@@ -2826,6 +3071,7 @@ Page({
       navActive: false,
       ended: false,
       instruction: '',
+      remainingText: '',
       destinationName: '',
       state: 'idle' as NavState,
       stateText: NAV_TEXT.idle,

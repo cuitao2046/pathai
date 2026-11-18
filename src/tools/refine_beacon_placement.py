@@ -1334,6 +1334,48 @@ def rebuild_summary(plan):
     return plan["summary"]
 
 
+def force_wall_only(plan, geo, max_snap=1.0):
+    """仅墙面部署：把柱面/门套/天花等非墙挂载点投影到最近墙体并改为 wall。
+    超出 max_snap 的挂载点保留原状并记入 unresolved，交人工评估（不静默降级）。"""
+    wall_by_floor = {}
+    for fk, fl in (geo.get("floors") or {}).items():
+        segs = []
+        for w in (fl.get("geometry") or {}).get("walls") or []:
+            c = (w.get("geometry") or {}).get("coordinates") or []
+            if len(c) >= 2:
+                segs.append(LineString([(x, y) for x, y in c]))
+        wall_by_floor[str(fk)] = segs
+    moved, unresolved = 0, []
+    for b in plan.get("beacons", []):
+        if b.get("mountType") == "wall":
+            continue
+        segs = wall_by_floor.get(str(b.get("floor"))) or []
+        if not segs:
+            unresolved.append(b.get("beaconId"))
+            continue
+        p = Point(b["coordinates"])
+        best = min(segs, key=lambda s: s.distance(p))
+        d = best.distance(p)
+        if d > max_snap:
+            unresolved.append(b.get("beaconId"))
+            continue
+        q = best.interpolate(best.project(p))
+        b["coordinates"] = [round(q.x, 3), round(q.y, 3)]
+        b["plannedCoordinates"] = [round(q.x, 3), round(q.y, 3)]
+        b["mountType"] = "wall"
+        b["installHeight"] = 2.5
+        b["mountTypeNormalized"] = "wall_only"
+        b["locationDesc"] = (b.get("locationDesc", "")
+                             .replace("指定柱面挂载", "墙面安装")
+                             .replace("柱面挂载", "墙面安装"))
+        moved += 1
+    if moved:
+        print(f"仅墙面归一: 非墙挂载 -> wall 共 {moved} 个", flush=True)
+    if unresolved:
+        print(f"⚠️ 无法贴墙的非墙挂载点 {len(unresolved)} 个: {unresolved[:10]}", flush=True)
+    return moved, unresolved
+
+
 def main():
     ap = argparse.ArgumentParser(description="三点定位信标方案放置质量后处理(四规则)")
     ap.add_argument("--plan", default=str(DEFAULT_PLAN), help="输入信标方案 JSON")
@@ -1350,6 +1392,8 @@ def main():
                          "(走廊/大厅/门厅/电梯厅/楼梯厅/活动区)」多边形内(贴墙"
                          "容差 ROUTE_SPACE_TOL), 比 --route-mask 的圆缓冲更大"
                          "更贴合空间语义; 启用时优先于 --route-mask")
+    ap.add_argument("--wall-only", action="store_true",
+                    help="仅墙面部署: 把柱面/门套/天花等非墙挂载点投影到最近墙体并改为 wall")
     args = ap.parse_args()
 
     plan_path = Path(args.plan)
@@ -1384,6 +1428,9 @@ def main():
     refined_plan = json.loads(json.dumps(plan))
     for fl in ["1", "2"]:
         print(f"\n===== Floor {fl} =====", flush=True)
+        if not any(str(b["floor"]) == fl for b in plan["beacons"]):
+            print(f"  F{fl} 无部署信标（路线不经过该层），跳过", flush=True)
+            continue
         model = build_model(geo, plan, fl, target, seed=args.seed,
                             route_mask_m=args.route_mask,
                             route_spaces=route_spaces.get(fl))
@@ -1513,6 +1560,8 @@ def main():
 
     if not args.review_only:
         normalize_mount_types(refined_plan)
+        if args.wall_only:
+            force_wall_only(refined_plan, geo)
         rebuild_summary(refined_plan)
         json.dump(refined_plan, open(out_path, "w", encoding="utf-8"),
                   ensure_ascii=False, indent=2)

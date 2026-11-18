@@ -378,24 +378,43 @@ describe('describeSurroundingsText（查周边话术）', () => {
     ...over,
   });
 
-  test('reliable：按 8 扇区左右方位列周边，最多 3 条，不出现时钟方位', () => {
+  test('reliable：按 8 扇区左右方位列周边，最多 5 条，不出现时钟方位', () => {
     const text = describeSurroundingsText(
       estimateOf({
         surroundings: [
           surrounding({}),
-          surrounding({ name: '楼梯口', clockDirection: 1, distanceMeters: 5 }),
+          surrounding({ name: '楼梯口', elementType: 'stairs', clockDirection: 1, distanceMeters: 5 }),
           surrounding({ name: '饮水机', clockDirection: 12, distanceMeters: 2 }),
           surrounding({ name: '柱子', clockDirection: 7, distanceMeters: 6 }),
         ],
       }),
     );
-    expect(text).toBe('左前方3米有档案室门；右前方5米有楼梯口；前方2米有饮水机。');
+    expect(text).toBe(
+      '前方2米有饮水机；左前方3米有档案室门；右前方5米有楼梯口；左后方6米有柱子。',
+    );
     expect(text).not.toContain('点钟');
     expect(
       describeSurroundingsText(
         estimateOf({ surroundings: [surrounding({ clockDirection: 7 })] }),
       ),
     ).toBe('左后方3米有档案室门。');
+  });
+
+  test('电梯不在最近条目内时仍优先播报，且不挤掉风险提示', () => {
+    const text = describeSurroundingsText(
+      estimateOf({
+        surroundings: [
+          surrounding({ name: '柱子1', elementType: 'pillar', clockDirection: 12, distanceMeters: 1 }),
+          surrounding({ name: '柱子2', elementType: 'pillar', clockDirection: 12, distanceMeters: 1.1 }),
+          surrounding({ name: '柱子3', elementType: 'pillar', clockDirection: 12, distanceMeters: 1.2 }),
+          surrounding({ name: '柱子4', elementType: 'pillar', clockDirection: 12, distanceMeters: 1.3 }),
+          surrounding({ name: '外开门', elementType: 'hazard', clockDirection: 12, distanceMeters: 1.4 }),
+          surrounding({ name: '电梯', elementType: 'elevator', clockDirection: 3, distanceMeters: 7 }),
+        ],
+      }),
+    );
+    expect(text).toContain('右方7米有电梯');
+    expect(text).toContain('外开门');
   });
 
   test('12 个时钟方位统一映射到 8 个左右扇区', () => {

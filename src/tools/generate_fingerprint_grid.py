@@ -634,7 +634,7 @@ def collect_route_corridors(geo, routes):
     for idx, rt in enumerate(routes, 1):
         start, end = rt["start"], rt["end"]
         mode = rt.get("mode", "normal")
-        res = graph.generate_route(start, end, mode)
+        res = graph.generate_route(start, end, mode, via=rt.get("via") or rt.get("waypoints"))
         tag = f"R{idx}"
         if not res.get("reachable"):
             print(f"  [warn] 路线不可达：{start} -> {end}", file=sys.stderr)
@@ -1028,7 +1028,7 @@ def generate_route_mode(geo, routes, spacing=ROUTE_FP_SPACING_M,
     route_lines, stair_elev_nodes, route_meta = {}, [], []
     for rt in routes:
         start, end, mode = rt["start"], rt["end"], rt.get("mode", "normal")
-        res = graph.generate_route(start, end, mode)
+        res = graph.generate_route(start, end, mode, via=rt.get("via") or rt.get("waypoints"))
         if not res.get("reachable"):
             print(f"  [warn] 路线不可达，跳过：{start} -> {end}")
             continue

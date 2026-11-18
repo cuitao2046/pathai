@@ -48,6 +48,10 @@ const log = createLogger('nav');
 const ARRIVAL_NEAR_CONFIDENCE = 0.75;
 /** 概要窗口最长等待：引擎/队列异常时不再等，直接进入引导（宁可少播一句概要）。 */
 const OVERVIEW_MAX_WAIT_MS = 30_000;
+/** 电梯口暂停判定半径（与后端 decision_point 半径一致）。 */
+const ELEVATOR_PAUSE_RADIUS_M = 3.0;
+/** 目标楼层连续可信估计次数：避免电梯内跨层信号抖动导致误恢复。 */
+const ELEVATOR_RESUME_HITS = 2;
 
 /**
  * 建会话专用超时（其余接口仍走默认 10s 快失败）。
@@ -62,6 +66,8 @@ export interface NavPipelineControl {
   stop(): void;
   /** 导航中重启采集（已在运行则切换节流档位）。 */
   startNavigating(): Promise<void>;
+  /** 清除楼层先验：电梯暂停期间由服务端按可见信标多数判层。 */
+  clearFloorHint?(): void;
 }
 
 export interface NavSessionControllerOptions {
@@ -76,6 +82,12 @@ export interface NavSessionControllerOptions {
   onInstruction?: (instruction: NavigationInstruction | null) => void;
   /** 会话收尾（arrived/end/resume 失效）。 */
   onEnded?: (info: { reason: EndReason | null; byArrival: boolean }) => void;
+  /** 解析拓扑节点坐标（电梯口判距用）；缺省时退化为收到进电梯指令即暂停。 */
+  resolveNode?: (nodeId: string) => { x: number; y: number; floorId: string } | null;
+  /** 到达电梯口：导航暂停（页面更新 HUD；语音由控制器播报）。 */
+  onElevatorPause?: (info: { targetFloorId: string; text: string }) => void;
+  /** 目标楼层信标已采到：导航恢复（页面更新 HUD；语音由控制器播报）。 */
+  onElevatorResume?: (info: { floorId: string; text: string }) => void;
   /** 概要窗口最长等待（毫秒），默认 30s；超时跳过概要直接进入引导。 */
   overviewMaxWaitMs?: number;
   createJournal?: NavCreateJournal;
@@ -87,6 +99,8 @@ export class NavSessionController {
   private readonly machine = new NavStateMachine();
   private readonly tracker = new InstructionTracker();
   private session: CreateSessionResponse | null = null;
+  /** 当前生效路线（创建/重规划时更新）：滑动窗口预取后续指令文本用。 */
+  private currentRoute: RouteInfo | null = null;
   private sessionSeq = 0;
   private updateInFlight = false;
   private pendingLocation: LocationUpdate | null = null;
@@ -112,6 +126,13 @@ export class NavSessionController {
   private createInFlight: Promise<CreateSessionResponse> | null = null;
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   private locallyPaused = false;
+  /** 已收到「进电梯」指令，正等待用户走到电梯口。 */
+  private pendingElevator: { nodeId: string | null; targetFloorId: string } | null = null;
+  /** 已到电梯口：暂停上报，继续扫描等待目标楼层信标。 */
+  private elevatorPaused = false;
+  private elevatorTargetFloorId: string | null = null;
+  /** 目标楼层连续可信估计计数（防跨层信号抖动误恢复）。 */
+  private elevatorResumeHits = 0;
   private foreground = true;
   private lifecycle = 0;
   private pausedAt = 0;
@@ -124,6 +145,7 @@ export class NavSessionController {
     this.clearOverviewTimer();
     ++this.overviewToken;
     this.pendingLocation = null;
+    this.resetElevatorState();
   }
 
   private clearSilenceTimer(): void {
@@ -133,7 +155,7 @@ export class NavSessionController {
 
   private armSilenceTimer(): void {
     this.clearSilenceTimer();
-    if (!this.foreground || this.locallyPaused || this.machine.isTerminal) return;
+    if (!this.foreground || this.locallyPaused || this.elevatorPaused || this.machine.isTerminal) return;
     this.silenceTimer = setTimeout(() => {
       this.silenceTimer = null;
       this.pauseLocally();
@@ -141,7 +163,7 @@ export class NavSessionController {
   }
 
   private pauseLocally(): void {
-    if (this.locallyPaused || !this.foreground || this.machine.isTerminal) return;
+    if (this.locallyPaused || this.elevatorPaused || !this.foreground || this.machine.isTerminal) return;
     this.locallyPaused = true;
     this.pausedAt = Date.now();
     this.clearSilenceTimer();
@@ -283,10 +305,13 @@ export class NavSessionController {
     this.clearPendingCreate();
 
     this.session = data;
+    this.currentRoute = data.route;
     this.sessionSeq = 0;
     this.lastConfidence = 0;
     this.lastRelocalizeText = null;
     this.tracker.reset();
+    this.resetElevatorState();
+    this.prefetchRouteTexts(data.route);
     this.transition({ type: 'SESSION_CREATED', status: data.status });
     if (opts.overviewPlayed === true) {
       // 概要在 API-10 预览阶段已播完：直接进入逐步引导，不重播概要。
@@ -313,11 +338,12 @@ export class NavSessionController {
     this.overviewToken += 1; // 作废旧窗口：迟到的队列回调不得再推进
     log.info('概要已在预览阶段播完：直接进入逐步引导');
     this.opts.onRoute?.(data.route, null);
+    const first = data.route.segments[0] ?? null;
+    this.armElevatorFromRoute(data.route);
     const clip = transitionClip?.trim() ?? '';
     if (clip !== '') {
       this.opts.speech.enqueueClip(clip, 'normal', 'nav:start-transition');
     }
-    const first = data.route.segments[0] ?? null;
     this.opts.onInstruction?.(first);
     this.announce(first);
     this.armSilenceTimer();
@@ -337,6 +363,7 @@ export class NavSessionController {
     const token = (this.overviewToken += 1);
     log.info('概要先行：暂停定位上报', data.overviewText === null ? '(模板兜底)' : '(LLM)');
     this.opts.onRoute?.(data.route, data.overviewText ?? null);
+    this.armElevatorFromRoute(data.route);
 
     const finish = (reason: SpeechIdleReason | 'timeout'): void => {
       if (token !== this.overviewToken || !this.overviewPending) {
@@ -375,23 +402,174 @@ export class NavSessionController {
     }
   }
 
+  /** 电梯状态复位（新会话/重规划/结束/销毁）。 */
+  private resetElevatorState(): void {
+    this.pendingElevator = null;
+    this.elevatorPaused = false;
+    this.elevatorTargetFloorId = null;
+    this.elevatorResumeHits = 0;
+  }
+
+  /** 从「请进入电梯，前往 2 楼」提取目标楼层；失败回落目的地楼层。 */
+  private elevatorTargetFloor(text: string): string | null {
+    const match = /前往\s*([^\s，。]+?)\s*楼/.exec(text);
+    return match?.[1] ?? this.session?.destination.floorId ?? null;
+  }
+
+  private elevatorPauseText(targetFloorId: string): string {
+    return `导航已暂停，请上电梯，到 ${targetFloorId} 楼出电梯后导航自动恢复。`;
+  }
+
+  private elevatorResumeText(floorId: string): string {
+    return `已到达 ${floorId} 楼，导航继续。`;
+  }
+
+  /** 电梯提示是安全文案：拿到目标楼层就预生成，避免暂停瞬间才开始合成。 */
+  private prefetchElevatorSpeech(targetFloorId: string): void {
+    this.opts.speech.prepare(this.elevatorPauseText(targetFloorId));
+    this.opts.speech.prepare(this.elevatorResumeText(targetFloorId));
+  }
+
+  /** 记录「进电梯」指令：等用户走到电梯口附近再暂停，避免提前 10 米停住。 */
+  private noteElevatorInstruction(instruction: NavigationInstruction | null): void {
+    if (
+      instruction === null ||
+      instruction.action !== 'enter_elevator' ||
+      this.elevatorPaused ||
+      this.pendingElevator !== null
+    ) {
+      return;
+    }
+    const targetFloorId = this.elevatorTargetFloor(instruction.text);
+    if (targetFloorId === null) {
+      return;
+    }
+    this.pendingElevator = {
+      nodeId: instruction.trigger.nodeId ?? null,
+      targetFloorId,
+    };
+    this.prefetchElevatorSpeech(targetFloorId);
+    log.info('收到进电梯指令：接近电梯口后暂停导航', targetFloorId);
+  }
+
+  /**
+   * 从整条路线预置电梯暂停点。
+   * 服务端在用户进入电梯口 3m 内时会把「进电梯 → 出电梯 → 下一层直行」一次推进完，
+   * 客户端可能一帧都收不到 enter_elevator；因此不能只依赖更新响应里的指令，
+   * 建会话/重规划拿到路线时就应先找到电梯入口节点与目标楼层。
+   */
+  private armElevatorFromRoute(route: RouteInfo): void {
+    if (this.elevatorPaused) {
+      return;
+    }
+    const enter = route.segments.find((segment) => segment.action === 'enter_elevator');
+    if (enter === undefined) {
+      return;
+    }
+    const targetFloorId = this.elevatorTargetFloor(enter.text);
+    if (targetFloorId === null) {
+      return;
+    }
+    this.pendingElevator = {
+      nodeId: enter.trigger.nodeId ?? null,
+      targetFloorId,
+    };
+    this.prefetchElevatorSpeech(targetFloorId);
+    log.info('路线含电梯：接近电梯口后暂停导航', targetFloorId);
+  }
+
+  /** 到达电梯口：暂停上报并播报；采集继续，等目标楼层信标自动恢复。 */
+  private pauseForElevator(targetFloorId: string): void {
+    if (this.elevatorPaused) {
+      return;
+    }
+    this.elevatorPaused = true;
+    this.elevatorTargetFloorId = targetFloorId;
+    this.elevatorResumeHits = 0;
+    this.pendingElevator = null;
+    this.clearSilenceTimer();
+    // 关键：清掉楼层先验。否则服务端始终按当前层解算，目标层信标再多也会被忽略，
+    // 地图也就无法随扫描到的楼层自动切换。
+    this.opts.pipeline.clearFloorHint?.();
+    const text = this.elevatorPauseText(targetFloorId);
+    this.opts.onElevatorPause?.({ targetFloorId, text });
+    this.opts.speech.enqueue(text, 'safety', null, 'nav:elevator-pause');
+    log.info('到达电梯口：暂停导航，等待目标楼层信标', targetFloorId);
+  }
+
+  /** 目标楼层信标已采到：恢复上报与引导。 */
+  private resumeFromElevator(floorId: string): void {
+    this.elevatorPaused = false;
+    this.elevatorTargetFloorId = null;
+    this.elevatorResumeHits = 0;
+    const text = this.elevatorResumeText(floorId);
+    this.opts.onElevatorResume?.({ floorId, text });
+    this.opts.speech.enqueue(text, 'safety', null, 'nav:elevator-resume');
+    log.info('检测到目标楼层信标：恢复导航', floorId);
+  }
+
   /** 定位估计入口（LocationPipeline.onEstimate）；不可信质量只报 quality。 */
   handleEstimate(estimate: PositionEstimateResponse): void {
     if (this.session === null || this.machine.isTerminal) {
       return;
     }
     const trusted = estimate.quality === 'reliable' || estimate.quality === 'degraded';
+    const position = trusted ? estimate.position ?? null : null;
+
+    // 电梯暂停：不上报，但继续扫描并按拍清除楼层先验，让服务端按可见信标多数判层
+    if (this.elevatorPaused) {
+      this.opts.pipeline.clearFloorHint?.();
+      const onTargetFloor =
+        position !== null &&
+        position.floorId !== null &&
+        position.floorId !== undefined &&
+        position.floorId === this.elevatorTargetFloorId;
+      if (onTargetFloor) {
+        this.elevatorResumeHits += 1;
+        if (this.elevatorResumeHits >= ELEVATOR_RESUME_HITS) {
+          this.resumeFromElevator(position.floorId as string);
+        }
+      } else {
+        this.elevatorResumeHits = 0;
+      }
+      if (this.elevatorPaused) {
+        return;
+      }
+    }
+
     const location: LocationUpdate = {
-      x: trusted ? (estimate.position?.x ?? null) : null,
-      y: trusted ? (estimate.position?.y ?? null) : null,
-      floorId: trusted ? (estimate.position?.floorId ?? null) : null,
+      x: trusted ? (position?.x ?? null) : null,
+      y: trusted ? (position?.y ?? null) : null,
+      floorId: trusted ? (position?.floorId ?? null) : null,
       confidence: estimate.confidence,
       quality: estimate.quality,
       observedAt: estimate.observedAt,
     };
     if (trusted) {
       this.lastConfidence = estimate.confidence;
+    } else {
+      // 位置不可信时放开楼层先验：允许服务端按可见信标重新判层。
+      // 兜底「跨层未触发暂停」或从楼梯换层后 hint 仍钉在旧楼层的情况，
+      // 否则会永久 recovering，地图也无法跟随扫描到的楼层。
+      this.opts.pipeline.clearFloorHint?.();
     }
+
+    // 进电梯指令已下发：走到电梯口（触发节点 3m 内）即暂停，等目标楼层信标
+    if (trusted && position !== null && this.pendingElevator !== null) {
+      const node =
+        this.pendingElevator.nodeId === null
+          ? null
+          : this.opts.resolveNode?.(this.pendingElevator.nodeId) ?? null;
+      const atEntrance =
+        node === null ||
+        (node.floorId === position.floorId &&
+          Math.hypot(node.x - position.x, node.y - position.y) <= ELEVATOR_PAUSE_RADIUS_M);
+      if (atEntrance) {
+        this.pauseForElevator(this.pendingElevator.targetFloorId);
+        return;
+      }
+    }
+
     // 服务端规则：unreliable/lost 只带 quality（服务端转 recovering），坐标不报
     void this.sendUpdate(location);
   }
@@ -402,8 +580,14 @@ export class NavSessionController {
    * 不伪造坐标。
    */
   reportUnavailable(): void {
-    if (this.session === null || this.machine.isTerminal || this.overviewPending) {
+    if (
+      this.session === null ||
+      this.machine.isTerminal ||
+      this.overviewPending ||
+      this.elevatorPaused
+    ) {
       // 概要窗口内不报 unavailable：否则服务端转 recovering 会下发 safety 打断概要。
+      // 电梯暂停期间同样不报：会话保持 active，等目标楼层信标后直接恢复上报。
       return;
     }
     void this.sendUpdate({
@@ -501,6 +685,12 @@ export class NavSessionController {
       // 概要还没播完：不重播旧指令、不提前上报，统一由排队事件放行
       return;
     }
+    if (this.elevatorPaused) {
+      // 电梯暂停跨前后台保持：已重启采集，等目标楼层信标后自动恢复；
+      // 不重播「请进入电梯」，避免回前台再打断一次。
+      log.info('回前台：电梯暂停中，等待目标楼层信标');
+      return;
+    }
     // 重播：active 重播当前转向指令；recovering 重播安全提示（不播旧方向）
     if (this.machine.state === 'active') {
       this.armSilenceTimer();
@@ -534,6 +724,7 @@ export class NavSessionController {
     this.overviewToken += 1; // 概要窗口作废：迟到的队列回调/超时不得再推进
     this.overviewPending = false;
     this.clearOverviewTimer();
+    this.resetElevatorState();
     this.opts.speech.clearAll('nav:end-session');
     this.opts.onEnded?.({ reason, byArrival: false });
   }
@@ -566,6 +757,10 @@ export class NavSessionController {
 
   private async sendUpdate(location: LocationUpdate): Promise<void> {
     if (this.session === null || this.machine.isTerminal || !this.foreground) {
+      return;
+    }
+    if (this.elevatorPaused) {
+      // 电梯暂停：会话保持 active，不发送定位更新；恢复后由目标楼层估计重新开始
       return;
     }
     if (this.overviewPending) {
@@ -638,14 +833,20 @@ export class NavSessionController {
 
     if (data.event === 'reroute') {
       this.opts.speech.clearNormal('nav:reroute'); // 旧路线提示作废
+      this.resetElevatorState(); // 新路线：旧的电梯等待作废
       if (data.route !== undefined && data.route !== null) {
+        this.currentRoute = data.route;
         this.opts.onRoute?.(data.route, null); // 重规划不重播概要
+        this.armElevatorFromRoute(data.route); // 新路线可能仍含电梯
+        this.prefetchRouteTexts(data.route);
       }
+      this.noteElevatorInstruction(data.instruction);
       this.opts.onInstruction?.(data.instruction);
       this.announce(data.instruction); // 新首条
       return;
     }
     if (data.event === 'arrived') {
+      this.resetElevatorState();
       const near = this.lastConfidence < ARRIVAL_NEAR_CONFIDENCE;
       this.opts.speech.enqueue(
         near ? '已到达目的地附近，请留意周围环境。' : '已到达目的地。',
@@ -671,6 +872,7 @@ export class NavSessionController {
       }
       return;
     }
+    this.noteElevatorInstruction(data.instruction);
     this.opts.onInstruction?.(data.instruction);
     this.announce(data.instruction);
   }
@@ -682,6 +884,10 @@ export class NavSessionController {
     if (!this.tracker.observe(instruction)) {
       return; // 重复指令：不重复播报
     }
+    // 滑动窗口预取：正在播第 N 条时，后台合成第 N+1、N+2 条动态文本
+    this.prefetchFollowing(instruction);
+    // 当前条也先发起预生成：与正在播的上一条/过渡音并行，队列空闲时直接命中缓存
+    this.opts.speech.prepare(instruction.text);
     // 固定文案优先走本地离线音频；动态文案（距离/楼层/地点）继续走 TTS。
     const clip = staticInstructionClip(instruction.text);
     if (clip !== null) {
@@ -689,6 +895,35 @@ export class NavSessionController {
       return;
     }
     this.opts.speech.enqueue(instruction.text, instruction.priority, null, 'nav:instruction');
+  }
+
+  /** 路线确定时先预生成电梯提示（进出各一条），避免跨层时才开始合成。 */
+  private prefetchRouteTexts(route: RouteInfo): void {
+    for (const segment of route.segments) {
+      if (
+        segment.action === 'enter_elevator' ||
+        segment.action === 'exit_elevator'
+      ) {
+        this.opts.speech.prepare(segment.text);
+      }
+    }
+  }
+
+  /** 预取当前指令之后的 2 条动态文本（固定转向/到达文案由本地音频负责，队列会跳过）。 */
+  private prefetchFollowing(instruction: NavigationInstruction): void {
+    const route = this.currentRoute;
+    if (route === null) {
+      return;
+    }
+    const index = route.segments.findIndex(
+      (segment) => segment.instructionSequence === instruction.instructionSequence,
+    );
+    if (index < 0) {
+      return;
+    }
+    for (const next of route.segments.slice(index + 1, index + 3)) {
+      this.opts.speech.prepare(next.text);
+    }
   }
 
   /** 409 STALE_NAV_UPDATE 恢复：从 API-08 取 lastProcessedSequence 对齐。 */
