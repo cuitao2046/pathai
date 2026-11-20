@@ -308,6 +308,7 @@ export interface MapPackageRoot {
   places: MapPlaceEntry[];
   beacons: MapBeaconEntry[];
   floors: Record<string, MapFloorData>;
+  fieldSurveyPoints?: import('../data/field-survey-points').SharedFieldSurveyPoint[];
 }
 
 // ---------------------------------------------------------------------------
@@ -374,6 +375,8 @@ export interface ImuPayload {
 }
 
 export interface LocationEstimateRequest {
+  experimentConfigId?: string;
+  experimentMethod?: 'A' | 'B' | 'C';
   siteId: string;
   mapVersion: string;
   /** 按 (subject, site) 全局单调递增，服务端拒收 <。 */
@@ -569,6 +572,7 @@ export interface CreateSessionRequest {
   /** 缺省按最安全的 blind 模式（跨层强制电梯）。 */
   userMode?: UserMode;
   locale?: string;
+  experiment?: { configId: string; runId: string; planId: string; method: 'A' | 'B' | 'C' };
 }
 
 export interface CreateSessionResponse {

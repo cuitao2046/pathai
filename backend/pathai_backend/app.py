@@ -34,6 +34,7 @@ from pathai_backend.routers import admin_users as admin_users_router
 from pathai_backend.routers import beacons as beacons_router
 from pathai_backend.routers import calibration as calibration_router
 from pathai_backend.routers import config as config_router
+from pathai_backend.routers import field as field_router
 from pathai_backend.routers import fingerprint_db as fingerprint_db_router
 from pathai_backend.routers import intent as intent_router
 from pathai_backend.routers import location as location_router
@@ -173,6 +174,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(beacons_router.router)
     app.include_router(calibration_router.router)
     app.include_router(config_router.router)
+    app.include_router(field_router.router)
     app.include_router(fingerprint_db_router.router)
     app.include_router(map_router.router)
     app.include_router(intent_router.router)

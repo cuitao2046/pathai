@@ -1,0 +1,212 @@
+<view class="field-page">
+  <view wx:if="{{loading}}" class="panel">正在读取现场任务…</view>
+  <block wx:elif="{{allowed}}">
+    <view class="tabs" wx:if="{{phase === 'idle'}}">
+      <button wx:for="{{tabs}}" wx:key="id" class="{{tab === item.id ? 'selected' : ''}}"
+        data-index="{{item.id}}" bindtap="onTab">{{item.label}}</button>
+    </view>
+    <view wx:if="{{demo}}" class="notice">模拟信标 · 仅供试采</view>
+    <view wx:if="{{issue}}" class="notice" aria-live="polite">{{issue}}</view>
+    <button wx:if="{{needsRetry}}" bindtap="retrySave">重试本地保存</button>
+
+    <block wx:if="{{tab === 0 && phase === 'idle'}}">
+      <view class="panel">
+        <picker mode="selector" range="{{taskLabels}}" value="{{taskIndex}}" bindchange="onTask">
+          <view class="select">{{taskLabels[taskIndex]}} ▾</view>
+        </picker>
+        <picker mode="date" value="{{day}}" bindchange="onDate"><view class="select">采集日期 {{day}} ▾</view></picker>
+        <view class="row"><text>使用候选点试采</text><switch checked="{{trial}}" bindchange="onTrial" /></view>
+        <view wx:if="{{trial && taskIndex < 3}}" class="muted">每段采集 10 秒，记录归入试采。</view>
+        <picker wx:if="{{!trial && planLabels.length}}" mode="selector" range="{{planLabels}}"
+          value="{{planIndex}}" bindchange="onPlan"><view class="select">{{planLabels[planIndex]}} ▾</view></picker>
+        <view wx:if="{{!trial && !planLabels.length}}" class="muted">该日期暂无生效的正式清单</view>
+        <block wx:if="{{taskIndex === 4}}">
+          <picker wx:if="{{configLabels.length}}" mode="selector" range="{{configLabels}}" value="{{configIndex}}" bindchange="onConfig">
+            <view class="select">{{configLabels[configIndex]}} ▾</view>
+          </picker>
+          <view wx:else class="muted">暂无冻结配置</view>
+          <picker mode="selector" range="{{methodLabels}}" value="{{methodIndex}}" bindchange="onMethod">
+            <view class="select">{{methodLabels[methodIndex]}} ▾</view>
+          </picker>
+          <view class="muted">{{nextMethod ? '本轮指定方法 ' + nextMethod : '当日 9 轮已完成'}}</view>
+        </block>
+        <view class="row"><text>{{progressText}}</text><text>待补传 {{pending}}</text></view>
+        <view wx:if="{{taskIndex === 1 && !trial && makeup.length}}" class="muted">当前清单待补采 {{makeup.length}} 点。</view>
+        <button wx:if="{{taskIndex >= 3}}" class="primary" disabled="{{busy || needsRetry || !points.length}}" bindtap="onStart">开始路线</button>
+      </view>
+      <view wx:if="{{taskIndex < 3}}" class="panel point-map-panel">
+        <view class="row point-map-caption"><text>{{points.length ? '点选地图上的采集点' : '暂无可采集点'}}</text><text class="muted">绿点已完成</text></view>
+        <view class="point-map-wrap">
+          <canvas type="2d" id="experimentPointMap" class="point-map"
+            catchtouchstart="onMapTouchStart" catchtouchmove="onMapTouchMove"
+            catchtouchend="onMapTouchEnd" catchtouchcancel="onMapTouchCancel" aria-label="采集点位地图" />
+          <view class="map-tools map-tools--left point-map-tools" aria-label="地图缩放控制">
+            <view class="zoom-hit" aria-role="button" bindtap="onMapZoomIn" aria-label="放大地图"><view class="zoom-face">＋</view></view>
+            <view class="zoom-hit" aria-role="button" bindtap="onMapZoomOut" aria-label="缩小地图"><view class="zoom-face">－</view></view>
+            <view class="zoom-hit" aria-role="button" bindtap="onMapFit" aria-label="回到全图"><view class="zoom-face">全图</view></view>
+          </view>
+        </view>
+        <view wx:if="{{mapFloors.length > 1}}" class="point-map-floors">
+          <button wx:for="{{mapFloors}}" wx:key="floorId" data-floor="{{item.floorId}}" bindtap="onMapFloor"
+            class="{{mapFloor === item.floorId ? 'primary' : 'secondary'}}">{{item.displayName}}</button>
+        </view>
+      </view>
+      <view wx:if="{{taskIndex < 3 && selectedPointId}}" class="point-menu">
+        <view class="row"><text class="point-menu-title">{{selectedPointId}}</text>
+          <button class="point-menu-close" bindtap="closePointMenu">关闭</button></view>
+        <view wx:for="{{selectedWalls}}" wx:for-index="wallIndex" wx:key="label" class="row point-wall">
+          <text class="{{wallIndex === 0 ? 'wall-a' : 'wall-b'}}">{{wallIndex === 0 ? 'A' : 'B'}} · {{item.label}}</text>
+          <text>{{item.distanceM}} m</text>
+        </view>
+        <view wx:if="{{!selectedWalls.length}}" class="muted">该点暂无测距参考墙</view>
+        <view wx:if="{{directionProgress}}" class="muted" aria-live="polite">{{directionProgress}}</view>
+        <view class="row point-menu-actions">
+          <button class="primary" disabled="{{busy || needsRetry || selectedPointComplete}}" bindtap="onStart">
+            {{selectedPointComplete ? '已完成' : directionCompleted > 0 ? '继续补采' : '开始采集'}}
+          </button>
+          <button class="secondary" disabled="{{busy || selectedPointComplete}}" bindtap="onSkip">跳过此点</button>
+        </view>
+      </view>
+      <view wx:if="{{taskIndex < 3 && selectedPointId}}" class="point-menu-space" />
+      <view wx:if="{{taskIndex === 0 && !trial && planIndex >= 0}}" class="panel">
+        <view class="section-title">定位常量计算</view>
+        <view class="calibration-row muted"><text>参数</text><text>默认值（A）</text><text>现场拟合值（B）</text></view>
+        <view wx:for="{{calRows}}" wx:key="label" class="calibration-row">
+          <text>{{item.label}}</text><text>{{item.baseline}}</text><text>{{item.fitted}}</text>
+        </view>
+        <view wx:if="{{calMessage}}" class="muted" aria-live="polite">{{calMessage}}</view>
+        <view wx:if="{{calRun.result}}">
+          <view wx:for="{{calRun.result.warnings}}" wx:key="*this" class="muted">{{item}}</view>
+        </view>
+        <button class="secondary" disabled="{{busy || demo || pending || calComputing}}" bindtap="onPrepareCalibration">生成正式标定样本</button>
+        <button wx:if="{{calSampleId}}" class="secondary" disabled="{{busy || demo || calComputing}}" bindtap="onComputeCalibration">开始计算</button>
+        <button wx:if="{{calSampleId}}" class="secondary" disabled="{{busy || demo}}" bindtap="onRefreshCalibration">刷新结果</button>
+        <button wx:if="{{calRun.status === 'computed' && calRun.result.deployable}}" class="primary" disabled="{{busy || demo}}" bindtap="onApplyCalibration">应用拟合参数与网格</button>
+      </view>
+      <view wx:if="{{summary}}" class="panel result">
+        <text selectable>{{summary}}</text>
+        <view>路线编号 {{lastRun}}</view>
+        <button wx:if="{{!demo}}" class="primary" bindtap="onFlush">确认上传</button>
+      </view>
+    </block>
+
+    <block wx:if="{{tab === 0 && phase !== 'idle'}}">
+      <view class="panel countdown" aria-live="polite">{{remaining}}</view>
+      <view wx:if="{{phase === 'prepare' && headingTarget}}" class="panel">
+        <view class="row"><text>目标方向 {{headingTarget}}</text><text>当前朝向 {{headingCurrent || '—'}}</text></view>
+        <view class="muted">{{headingStatus}}</view>
+        <view class="muted">手机平放，顶部朝向你面向的方向。</view>
+        <button wx:if="{{headingManual}}" class="primary" bindtap="onConfirmPreparationHeading">已面向{{headingTarget}}，开始准备</button>
+      </view>
+      <view wx:if="{{phase === 'record'}}" class="panel">
+        <view class="row"><text>{{checkpointText}}</text><text>已录 {{frames}} 条 RSSI</text></view>
+        <block wx:if="{{taskIndex >= 3}}">
+          <button class="primary mark" bindtap="onMark">打点</button>
+          <button wx:if="{{undo}}" class="secondary" bindtap="onUndo">撤销</button>
+          <button class="secondary" bindtap="onFinishRoute">结束路线</button>
+        </block>
+        <button class="secondary" bindlongpress="onAbort">长按中止</button>
+      </view>
+      <view wx:else class="panel"><button class="secondary" bindtap="onAbort">取消准备</button></view>
+    </block>
+
+    <block wx:if="{{tab === 1}}">
+      <view class="panel"><view class="row"><text>{{beacons.length}} 枚规划信标</text><text>{{scanText}}</text></view>
+        <button class="secondary" bindtap="onScan">开始扫描</button>
+        <button class="secondary" bindtap="onExportInspections">导出台账</button>
+      </view>
+      <view class="panel" wx:if="{{selectedBeacon}}">
+        <view>{{selectedBeacon}}</view>
+        <picker mode="selector" range="{{actionLabels}}" value="{{actionIndex}}" bindchange="onAction"><view class="select">{{actionLabels[actionIndex]}} ▾</view></picker>
+        <input data-field="location" value="{{form.location}}" placeholder="实际位置（留空用台账位置）" bindinput="onInput" maxlength="250" />
+        <input data-field="mount" value="{{form.mount}}" placeholder="固定方式" bindinput="onInput" maxlength="80" />
+        <textarea data-field="note" value="{{form.note}}" placeholder="异常、设备设置或拆除说明" bindinput="onInput" maxlength="500" />
+        <button class="primary" disabled="{{demo}}" bindtap="onInspection">保存巡检记录</button>
+      </view>
+      <button class="beacon" wx:for="{{beacons}}" wx:key="id" data-id="{{item.id}}" bindtap="onBeacon">
+        <view class="row"><text class="{{item.seen ? 'seen' : 'not-seen'}}">{{item.seen ? '●' : '○'}} {{item.id}}</text>
+          <text>{{item.rssi === null ? '—' : item.rssi + ' dBm'}}</text></view>
+        <view class="row muted"><text>{{item.name}}</text><text>{{item.last}}</text></view>
+      </button>
+    </block>
+
+    <block wx:if="{{tab === 2}}">
+      <view class="panel">
+        <picker mode="selector" range="{{taskLabels}}" value="{{taskIndex}}" bindchange="onTask"><view class="select">{{taskLabels[taskIndex]}} ▾</view></picker>
+        <picker mode="selector" range="{{pointLabels}}" value="{{pointIndex}}" bindchange="onPoint"><view class="select">{{pointLabels[pointIndex]}} ▾</view></picker>
+        <view class="muted">候选坐标 {{points[pointIndex].x}}, {{points[pointIndex].y}} · 已登记 {{drafts}} 点</view>
+        <view class="muted">{{surveyDisplay.base}}</view>
+        <view wx:if="{{surveyDisplay.baseDistances}}" class="muted">{{surveyDisplay.baseDistances}}</view>
+        <view class="select">测距参照 A：{{form.anchorA || '缺少 X 方向参考墙'}}</view>
+        <view class="row fields"><input type="digit" data-field="distanceA" value="{{form.distanceA}}" placeholder="A 实测距离 m" bindinput="onInput" /><input type="digit" data-field="checkA" value="{{form.checkA}}" placeholder="A 复测距离 m" bindinput="onInput" /></view>
+        <view class="select">参考墙 B：{{form.anchorB || '缺少 Y 方向参考墙'}}</view>
+        <view class="row fields"><input type="digit" data-field="distanceB" value="{{form.distanceB}}" placeholder="B 实测距离 m" bindinput="onInput" /><input type="digit" data-field="checkB" value="{{form.checkB}}" placeholder="B 复测距离 m" bindinput="onInput" /></view>
+        <view class="select">换算坐标（只读）：<text selectable>{{surveyDisplay.preview}}</text></view>
+        <view class="muted">{{surveyDisplay.offset}} · 当前版本 {{surveyDisplay.version}}</view>
+        <textarea data-field="note" value="{{form.note}}" placeholder="现场参考墙描述、覆盖边缘或排除说明" bindinput="onInput" maxlength="500" />
+        <button class="primary" disabled="{{busy || demo || !surveyDisplay.canSave}}" bindtap="onSaveSurvey">保存该点复测</button>
+        <view wx:if="{{surveyDisplay.history.length}}" class="muted">
+          <view>复测记录</view>
+          <view wx:for="{{surveyDisplay.history}}" wx:key="*this">{{item}}</view>
+        </view>
+      </view>
+      <view class="panel">
+        <view class="muted">{{surveyPublished}}</view>
+        <button class="primary" disabled="{{busy || demo || !pointLabels.length}}" bindtap="onCopyAndPublish">复制候选真值并发布</button>
+        <view class="muted">用候选数据补齐未登记点，已有复测点使用最新版本。</view>
+        <view class="muted">{{surveyPlanRequirement}}</view>
+        <view class="muted">首次登记或真值调整后发布。新版从发布当天起沿用。</view>
+        <button class="secondary" disabled="{{busy || demo || !surveyPlanReady}}" bindtap="onPublish">仅发布已登记的真值</button>
+      </view>
+    </block>
+
+    <block wx:if="{{tab === 3}}">
+      <view class="panel">
+        <view>当前待补传 {{pending}} 条</view>
+        <button class="primary" disabled="{{demo || !pending}}" bindtap="onFlush">重试上传</button>
+        <button class="secondary" bindtap="onExport">导出正式实验 ZIP</button>
+        <button class="secondary" bindtap="onExportTrial">导出含试采的 ZIP</button>
+        <button class="secondary" disabled="{{demo || busy}}" bindtap="onFreeze">冻结当前实验配置</button>
+        <view wx:if="{{!demo}}" class="fingerprint-build">
+          <view wx:if="{{fingerprintBuildLoading}}" class="muted">正在读取 T4 批次…</view>
+          <block wx:elif="{{fingerprintBuildError}}">
+            <view class="muted">{{fingerprintBuildError}}</view>
+            <button class="secondary" bindtap="loadFingerprintBuildPlans">重试读取 T4 批次</button>
+          </block>
+          <block wx:elif="{{fingerprintBuildPlans.length}}">
+            <view class="muted">选择已完成四向采集并上传的 T4 批次</view>
+            <checkbox-group bindchange="onFingerprintBuildPlans">
+              <label wx:for="{{fingerprintBuildPlans}}" wx:key="planId" class="fingerprint-build-plan">
+                <checkbox value="{{item.planId}}" checked="{{item.selected}}" disabled="{{busy}}" />
+                <text>{{item.batch}} · {{item.pointCount}} 点{{item.active ? ' · 当前生效' : ''}}</text>
+              </label>
+            </checkbox-group>
+          </block>
+          <view wx:else class="muted">当前地图还没有 T4 正式清单，请先到「真值登记」发布。</view>
+        </view>
+        <button class="secondary" disabled="{{demo || busy || fingerprintBuildLoading || !fingerprintBuildCount}}" bindtap="onBuildFingerprint">从正式 T4 数据建库</button>
+        <picker wx:if="{{configLabels.length}}" mode="selector" range="{{configLabels}}" value="{{configIndex}}" bindchange="onConfig">
+          <view class="select">T7 试走重放配置 {{configLabels[configIndex]}} ▾</view>
+        </picker>
+        <view class="muted">T8 重放沿用该轮实际使用的冻结配置。</view>
+        <input data-field="replayRun" value="{{form.replayRun}}" placeholder="{{lastRun || '已上传的 T8 或 T7 路线编号'}}" bindinput="onInput" maxlength="128" />
+        <button class="secondary" disabled="{{demo || busy}}" bindtap="onReplay">重放 A/B/C</button>
+        <text wx:if="{{replayText}}" class="result" selectable>{{replayText}}</text>
+      </view>
+      <view class="panel">
+        <view>场记与观察员记录</view>
+        <picker mode="date" value="{{day}}" bindchange="onDate"><view class="select">{{day}} ▾</view></picker>
+        <input data-field="runId" value="{{form.runId}}" placeholder="{{lastRun || '路线编号（可选）'}}" bindinput="onInput" maxlength="128" />
+        <input data-field="pointId" value="{{form.pointId}}" placeholder="检查点编号（可选）" bindinput="onInput" maxlength="128" />
+        <input data-field="observed" value="{{form.observed}}" placeholder="观察时刻 HH:mm:ss（可选）" bindinput="onInput" maxlength="8" />
+        <picker mode="selector" range="{{ratingLabels}}" value="{{ratingIndex < 0 ? 0 : ratingIndex}}" bindchange="onRating">
+          <view class="select">{{ratingIndex < 0 ? '转向评价（可选）' : ratingLabels[ratingIndex]}} ▾</view>
+        </picker>
+        <textarea data-field="note" value="{{form.note}}" placeholder="到达、异常或清场说明" bindinput="onInput" maxlength="1000" />
+        <view class="row"><text>已清场</text><switch checked="{{cleared}}" bindchange="onCleared" /></view>
+        <button class="primary" disabled="{{demo}}" bindtap="onNote">保存场记</button>
+      </view>
+    </block>
+  </block>
+  <view wx:else class="panel"><view>{{issue}}</view><button bindtap="load">重试</button></view>
+</view>

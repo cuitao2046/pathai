@@ -8,6 +8,8 @@
 """
 ROOM_TYPE_RULES = [
     ("卫生间", "toilet"), ("洗手间", "toilet"),
+    ("楼梯前室", "stair_lobby"), ("楼梯前厅", "stair_lobby"),
+    ("电梯前室", "elevator_lobby"), ("电梯前厅", "elevator_lobby"),
     ("楼梯", "staircase"), ("电梯", "elevator_hall"),
     ("走道", "corridor"), ("走廊", "corridor"), ("过道", "corridor"),
     ("门厅", "lobby"), ("大厅", "lobby"),

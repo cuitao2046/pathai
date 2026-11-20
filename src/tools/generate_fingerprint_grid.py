@@ -43,10 +43,10 @@ from shapely.strtree import STRtree
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GEO_IN = str(BASE_DIR / "result" / "school_building_01_map_v9.geojson")
 OUT_DEFAULT = str(BASE_DIR / "result" / "fingerprint_grid.json")
-BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-08.2.json")
+BEACON_PACKAGE = str(BASE_DIR / "backend" / "maps_data" / "school-building-01" / "2026-11-19.2.json")
 ROUTES_DEFAULT = str(BASE_DIR / "result" / "beacon_routes.json")
 SIM_BEACONS = str(BASE_DIR / "result" / "simulated_beacons.json")
-GRID_VERSION = "11.1.0"
+GRID_VERSION = "11.1.1"
 
 # ----------------------------- 设计层参数 -----------------------------
 NORMAL_SPACING_M = 2.0

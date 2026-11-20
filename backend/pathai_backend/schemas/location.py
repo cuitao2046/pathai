@@ -7,6 +7,7 @@ RSSI 接受范围 -100..-20 dBm 为工程默认值，现场标定后冻结。
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -54,6 +55,8 @@ class LocationEstimateRequest(StrictModel):
     #: 是否启用指纹库优先匹配（设置页开关，默认关闭＝仅蓝牙三点定位）。
     #: 缺省字段时请求体与旧版完全一致，服务端行为不变。
     useFingerprintDb: bool = False
+    experimentConfigId: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    experimentMethod: Literal["A", "B", "C"] | None = None
     #: 查周边动作：同一次定位响应内附上 8m 内周边要素清单。
     #: 缺省为 False，请求体与旧版一致且不额外计算。
     includeSurroundings: bool = False

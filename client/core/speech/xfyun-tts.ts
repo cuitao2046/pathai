@@ -96,6 +96,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 export interface AudioPlayerLike {
   src: string;
   onEnded(cb: () => void): void;
+  onPlay?(cb: () => void): void;
   onStop(cb: () => void): void;
   onError(cb: (err: { errMsg?: string }) => void): void;
   play(): void;
@@ -133,6 +134,7 @@ interface SynthSession {
   aborted: boolean;
   socket: SocketLike | null;
   player: AudioPlayerLike | null;
+  onPlay?: () => void;
   /** 合成阶段中止钩子（stop 在合成/传输期间被调用时立即结束该阶段）。 */
   abortSynth: (() => void) | null;
 }
@@ -187,7 +189,7 @@ export class XfyunTts implements TtsEngine {
     this.speed = deps.speed ?? (() => DEFAULT_SPEED);
   }
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string, onPlay?: () => void): Promise<void> {
     if (text.trim().length === 0) {
       return;
     }
@@ -196,6 +198,7 @@ export class XfyunTts implements TtsEngine {
       aborted: false,
       socket: null,
       player: null,
+      onPlay,
       abortSynth: null,
     };
     this.session = session;
@@ -533,6 +536,7 @@ export class XfyunTts implements TtsEngine {
         }
       };
       player.onEnded(() => settle(null));
+      if (session.onPlay) player.onPlay?.(session.onPlay);
       player.onStop(() => settle(null)); // stop() 视为播完，交还队列控制权
       player.onError((err) => settle(new Error(err.errMsg ?? 'TTS 音频播放失败')));
       player.src = src;

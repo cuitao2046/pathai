@@ -453,6 +453,23 @@ def render_ts(header: str, items: list[dict], item_keys: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_fingerprint_grid_ts(grid: list[dict], version: str, sim_beacons: list[dict]) -> str:
+    sim_keys = ["simId", "floorId", "x", "y", "installHeightM",
+                "simulated", "status", "label", "targetArea", "rationale"]
+    parts = [FP_TS_HEADER.replace("{version}", version)
+             + render_ts("", sim_beacons, sim_keys).lstrip("\n")]
+    chunks = []
+    # Keep each literal small enough for TypeScript to type-check.
+    for start in range(0, len(grid), 500):
+        name = f"gridPart{len(chunks) + 1}"
+        chunks.append(name)
+        literal = render_ts("", grid[start:start + 500], GRID_FULL_KEYS).lstrip("\n")
+        parts.append(f"const {name}: FpGridPoint[] = {literal}")
+    parts.append("export const FINGERPRINT_GRID: FpGridPoint[] = ["
+                 + ", ".join(f"...{name}" for name in chunks) + "];\n")
+    return "\n".join(parts)
+
+
 def _pick(item: dict, keys: list[str]) -> dict:
     return {k: item.get(k) for k in keys}
 
@@ -531,13 +548,7 @@ def main() -> int:
         CAL_TS_HEADER, points, ["pointId", "floorId", "truth", "scene", "batch", "nearGridId"],
     )
     (OUT_DIR / "calibration_points.ts").write_text(cal_ts, encoding="utf-8")
-    fp_ts = (
-        FP_TS_HEADER.replace("{version}", grid_version)
-        + render_ts("", sim_beacons, ["simId", "floorId", "x", "y", "installHeightM",
-                                      "simulated", "status", "label", "targetArea", "rationale"]).lstrip("\n")
-        + "\nexport const FINGERPRINT_GRID: FpGridPoint[] = "
-        + render_ts("", grid, GRID_FULL_KEYS).lstrip("\n")
-    )
+    fp_ts = render_fingerprint_grid_ts(grid, grid_version, sim_beacons)
     (OUT_DIR / "fingerprint_grid.ts").write_text(fp_ts, encoding="utf-8")
     js_count = write_collector_js(grid_version)
 

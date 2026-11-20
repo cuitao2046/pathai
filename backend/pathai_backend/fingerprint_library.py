@@ -27,7 +27,9 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from pathai_backend.config import DEFAULT_FINGERPRINT_MIN_MARGIN_DB
 from pathai_backend.models import (
+    FieldRecord,
     FingerprintLibraryPoint,
     FingerprintLibraryPointer,
     FingerprintLibraryRecord,
@@ -61,7 +63,6 @@ INGEST_MODES = (MODE_MERGE, MODE_REPLACE_FLOOR)
 MATCH_MIN_OVERLAP = 3
 MATCH_MAX_RMSE_DB = 8.0
 MATCH_MIN_CONFIDENCE = 0.55
-MATCH_MIN_MARGIN_DB = 3.0
 MATCH_CONFIDENCE_RMSE_DB = 20.0
 
 
@@ -457,6 +458,10 @@ def _prune_versions(
         )
     ).all()
     pruned: list[str] = []
+    retained_for_experiments = {
+        json.loads(payload)["C"]["libraryVersion"]
+        for payload in session.scalars(select(FieldRecord.payload).where(FieldRecord.kind == "config"))
+    }
     non_active_seen = 0
     for row in rows:
         if row.version == active_version_id:
@@ -465,7 +470,7 @@ def _prune_versions(
         # 窗口内保留：active 占 1 个名额，其余按最新顺序补足。
         if non_active_seen <= RETAIN_VERSION_COUNT - 1:
             continue
-        if row.details_pruned:
+        if row.details_pruned or row.version in retained_for_experiments:
             continue
         session.execute(
             delete(FingerprintLibraryRecord).where(
@@ -807,13 +812,23 @@ def query(
     beacons: list[Any],
     site_id: str = DEFAULT_SITE_ID,
     floor_hint: str | None = None,
+    frozen: dict | None = None,
+    min_margin_db: float = DEFAULT_FINGERPRINT_MIN_MARGIN_DB,
 ) -> tuple[FingerprintMatch | None, str | None]:
     """返回 (命中, 未命中原因)。原因用于客户端/日志解释降级。"""
-    active = active_version(session, site_id)
+    active = (session.get(FingerprintLibraryVersion, frozen["libraryVersion"])
+              if frozen else active_version(session, site_id))
     if active is None:
         return None, "no_active_library"
+    if active.site_id != site_id or active.details_pruned:
+        return None, "library_unavailable"
+    min_overlap = frozen["minOverlap"] if frozen else MATCH_MIN_OVERLAP
+    max_rmse = frozen["maxRmse"] if frozen else MATCH_MAX_RMSE_DB
+    confidence_rmse = frozen["confidenceRmse"] if frozen else MATCH_CONFIDENCE_RMSE_DB
+    min_confidence = frozen["minConfidence"] if frozen else MATCH_MIN_CONFIDENCE
+    min_margin = frozen["minMargin"] if frozen else min_margin_db
     live = _live_vectors(pkg, beacons)
-    if len(live) < MATCH_MIN_OVERLAP:
+    if len(live) < min_overlap:
         return None, "too_few_known_beacons"
 
     floors = set(pkg.floors.keys())
@@ -832,7 +847,7 @@ def query(
             continue
         stored = json.loads(row.vector_json)
         common = [key for key in live if key in stored]
-        if len(common) < MATCH_MIN_OVERLAP:
+        if len(common) < min_overlap:
             continue
         rmse = (
             sum((live[key] - float(stored[key])) ** 2 for key in common) / len(common)
@@ -848,13 +863,13 @@ def query(
     if best is None:
         return None, "no_overlap"
     rmse, row, overlap, coverage = best
-    confidence = max(0.0, 1.0 - rmse / MATCH_CONFIDENCE_RMSE_DB) * coverage
-    if rmse > MATCH_MAX_RMSE_DB:
+    confidence = max(0.0, 1.0 - rmse / confidence_rmse) * coverage
+    if rmse > max_rmse:
         return None, "rmse_too_large"
-    if confidence < MATCH_MIN_CONFIDENCE:
+    if confidence < min_confidence:
         return None, "low_confidence"
     margin = second_rmse - rmse if second_rmse != float("inf") else float("inf")
-    if margin < MATCH_MIN_MARGIN_DB:
+    if margin < min_margin:
         return None, "ambiguous"
     return (
         FingerprintMatch(

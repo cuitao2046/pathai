@@ -1,8 +1,8 @@
 {
   "building_name": "初中学部1#教学楼",
   "site_id": "school-building-01",
-  "map_version": "2026-11-17.4",
-  "exported_at": "2026-11-17T03:17:57+00:00",
+  "map_version": "2026-11-19.2",
+  "exported_at": "2026-11-19T07:08:52+00:00",
   "pois": [
     {
       "standard_name": "书法教室",
@@ -948,6 +948,14 @@
     {
       "floor": "1F",
       "floor_id": "1",
+      "room_id": "F1-ELL-06",
+      "label": "门厅无障碍出入口",
+      "type": "elevator_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
       "room_id": "F1-LB-0045",
       "label": "门厅无障碍出入口",
       "type": "lobby",
@@ -1197,6 +1205,14 @@
       "floor": "1F",
       "floor_id": "1",
       "room_id": "F1-STL-10",
+      "label": "楼梯前室",
+      "type": "stair_lobby",
+      "reason": "not_destination"
+    },
+    {
+      "floor": "1F",
+      "floor_id": "1",
+      "room_id": "F1-STL-11",
       "label": "楼梯前室",
       "type": "stair_lobby",
       "reason": "not_destination"

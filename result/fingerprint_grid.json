@@ -2,13 +2,13 @@
   "schemaVersion": "fingerprint_grid_v2",
   "venueId": "school-building-01",
   "venueName": "初中学部1#教学楼",
-  "version": "11.1.0",
+  "version": "11.1.1",
   "generator": "generate_fingerprint_grid.py",
-  "generatedAt": "2026-11-17T03:12:07.969926+00:00",
+  "generatedAt": "2026-11-19T07:08:23.977639+00:00",
   "mode": "full",
   "layers": {
     "design": "全楼部署假设：2m 底网 + 路口/门口/高风险 1m 细分，不做覆盖裁剪",
-    "collection": "当前实际部署 27 枚信标（F1 27 / F2 0），地图包 2026-11-17.4，按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable；另含 5 枚未安装补装信标的仿真口径 collectableWithSim"
+    "collection": "当前实际部署 27 枚信标（F1 27 / F2 0），地图包 2026-11-19.2，按 plan10m85（3D 斜距+材质墙衰减 RSSI>=-85 且 >=3）与 geo15m（3D 斜距 15m 且 >=3）两个口径标记 collectable；另含 5 枚未安装补装信标的仿真口径 collectableWithSim"
   },
   "origin": {
     "x": -86,
@@ -270,7 +270,7 @@
   ],
   "simulatedBeacons": {
     "policy": "未安装·仅仿真：不进 result/ble_deployment.json 部署计划，不参与 collectable 判定",
-    "source": "2026-11-17.4",
+    "source": "2026-11-19.1",
     "beacons": [
       {
         "beaconId": "SIM-BK-01-001",
@@ -340,46 +340,46 @@
   ],
   "summary": {
     "1": {
-      "total": 1447,
-      "base2m": 596,
-      "split1m": 851,
+      "total": 1456,
+      "base2m": 599,
+      "split1m": 857,
       "byRegion": {
-        "intersection": 640,
-        "normal": 596,
-        "doorway": 156,
+        "intersection": 645,
+        "normal": 599,
+        "doorway": 157,
         "high_risk": 55
       },
       "byTier": {
-        "2m": 596,
-        "1m": 851
+        "2m": 599,
+        "1m": 857
       },
       "triggers": {
         "intersection": {
           "anchors": 84,
           "cells": 243,
-          "keys": 640
+          "keys": 645
         },
         "doorway": {
           "anchors": 201,
-          "cells": 192,
-          "keys": 378
+          "cells": 193,
+          "keys": 383
         },
         "high_risk": {
           "anchors": 38,
-          "cells": 95,
-          "keys": 207
+          "cells": 96,
+          "keys": 213
         }
       },
       "wallClearanceMoved": 0,
       "wallClearanceEnabled": false,
       "wallUnder03m": 41,
-      "collectable": 256,
-      "collectablePlan10m": 256,
-      "collectableGeo15m": 516,
-      "routeTagged": 221,
-      "routeCollectablePlan10m": 213,
-      "collectableWithSim": 306,
-      "routeCollectableWithSim": 217,
+      "collectable": 262,
+      "collectablePlan10m": 262,
+      "collectableGeo15m": 525,
+      "routeTagged": 228,
+      "routeCollectablePlan10m": 219,
+      "collectableWithSim": 312,
+      "routeCollectableWithSim": 223,
       "simAdded": 50,
       "simBeaconAdds": {
         "SIM-BK-01-001": 50,
@@ -447,15 +447,15 @@
       }
     },
     "total": {
-      "total": 2109,
-      "base2m": 873,
-      "split1m": 1236,
-      "collectablePlan10m": 256,
-      "collectableGeo15m": 516,
-      "routeTagged": 221,
-      "routeCollectablePlan10m": 213,
-      "collectableWithSim": 323,
-      "routeCollectableWithSim": 217,
+      "total": 2118,
+      "base2m": 876,
+      "split1m": 1242,
+      "collectablePlan10m": 262,
+      "collectableGeo15m": 525,
+      "routeTagged": 228,
+      "routeCollectablePlan10m": 219,
+      "collectableWithSim": 329,
+      "routeCollectableWithSim": 223,
       "simAdded": 67,
       "simBeaconAdds": {
         "SIM-BK-01-001": 50,
@@ -40851,6 +40851,166 @@
           ]
         },
         {
+          "fpId": "FP-1-C012R073-J",
+          "id": "FP-1-C012R073-J",
+          "shortId": "C012R073-J",
+          "floor": 1,
+          "coordinates": [
+            -74,
+            -19
+          ],
+          "x": -74,
+          "y": -19,
+          "col": 12,
+          "row": 73,
+          "regionType": "intersection",
+          "priority": 1,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TI-0009",
+          "nearNodeType": "intersection",
+          "triggers": [
+            {
+              "id": "F1-TI-0009",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0055",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0056",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TR-0044",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0004",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-SR-0004",
+              "type": "stair_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 4,
+          "visible15m": 11,
+          "nearestBeaconM": 1.802,
+          "strongestRssi": -69.0,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
+          "fpId": "FP-1-C026R073-J",
+          "id": "FP-1-C026R073-J",
+          "shortId": "C026R073-J",
+          "floor": 1,
+          "coordinates": [
+            -60,
+            -19
+          ],
+          "x": -60,
+          "y": -19,
+          "col": 26,
+          "row": 73,
+          "regionType": "intersection",
+          "priority": 1,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TI-0054",
+          "nearNodeType": "intersection",
+          "triggers": [
+            {
+              "id": "F1-TI-0054",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TD-0086",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0087",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0089",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-DR-0036",
+              "type": "outward_door",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TR-0046",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0005",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0012",
+              "type": "elevator",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-SR-0005",
+              "type": "stair_entrance",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-ER-0002",
+              "type": "elevator_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 5,
+          "visible15m": 13,
+          "nearestBeaconM": 2.327,
+          "strongestRssi": -66.9,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
           "fpId": "FP-1-C037R073-J",
           "id": "FP-1-C037R073-J",
           "shortId": "C037R073-J",
@@ -41087,6 +41247,173 @@
           ]
         },
         {
+          "fpId": "FP-1-C012R074",
+          "id": "FP-1-C012R074",
+          "shortId": "C012R074",
+          "floor": 1,
+          "coordinates": [
+            -74,
+            -18
+          ],
+          "x": -74,
+          "y": -18,
+          "col": 12,
+          "row": 74,
+          "regionType": "normal",
+          "priority": 4,
+          "source": "base_2m",
+          "tier": 2,
+          "isBase2m": true,
+          "nearNodeId": null,
+          "nearNodeType": null,
+          "triggers": [],
+          "collectable": false,
+          "collectablePlan10m": false,
+          "collectableGeo15m": true,
+          "criteria": [
+            "geo15m"
+          ],
+          "visible10m": 2,
+          "visible15m": 11,
+          "nearestBeaconM": 2.376,
+          "strongestRssi": -73.0,
+          "collectableWithSim": false,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
+          "fpId": "FP-1-C025R074-J",
+          "id": "FP-1-C025R074-J",
+          "shortId": "C025R074-J",
+          "floor": 1,
+          "coordinates": [
+            -61,
+            -18
+          ],
+          "x": -61,
+          "y": -18,
+          "col": 25,
+          "row": 74,
+          "regionType": "intersection",
+          "priority": 1,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TI-0054",
+          "nearNodeType": "intersection",
+          "triggers": [
+            {
+              "id": "F1-TI-0054",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0060",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0105",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TD-0086",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0087",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0089",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0139",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-DR-0036",
+              "type": "outward_door",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TF-0012",
+              "type": "elevator",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-ER-0002",
+              "type": "elevator_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 4,
+          "visible15m": 14,
+          "nearestBeaconM": 0.934,
+          "strongestRssi": -59.2,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
+          "fpId": "FP-1-C026R074",
+          "id": "FP-1-C026R074",
+          "shortId": "C026R074",
+          "floor": 1,
+          "coordinates": [
+            -60,
+            -18
+          ],
+          "x": -60,
+          "y": -18,
+          "col": 26,
+          "row": 74,
+          "regionType": "normal",
+          "priority": 4,
+          "source": "base_2m",
+          "tier": 2,
+          "isBase2m": true,
+          "nearNodeId": null,
+          "nearNodeType": null,
+          "triggers": [],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 4,
+          "visible15m": 13,
+          "nearestBeaconM": 1.669,
+          "strongestRssi": -63.4,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
           "fpId": "FP-1-C037R074-J",
           "id": "FP-1-C037R074-J",
           "shortId": "C037R074-J",
@@ -41294,6 +41621,228 @@
           "routeTags": []
         },
         {
+          "fpId": "FP-1-C012R075-D",
+          "id": "FP-1-C012R075-D",
+          "shortId": "C012R075-D",
+          "floor": 1,
+          "coordinates": [
+            -74,
+            -17
+          ],
+          "x": -74,
+          "y": -17,
+          "col": 12,
+          "row": 75,
+          "regionType": "doorway",
+          "priority": 2,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TD-0078",
+          "nearNodeType": "doorway",
+          "triggers": [
+            {
+              "id": "F1-TD-0078",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TR-0044",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0004",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-SR-0004",
+              "type": "stair_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": false,
+          "collectablePlan10m": false,
+          "collectableGeo15m": true,
+          "criteria": [
+            "geo15m"
+          ],
+          "visible10m": 1,
+          "visible15m": 11,
+          "nearestBeaconM": 3.169,
+          "strongestRssi": -76.3,
+          "collectableWithSim": false,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": []
+        },
+        {
+          "fpId": "FP-1-C025R075-J",
+          "id": "FP-1-C025R075-J",
+          "shortId": "C025R075-J",
+          "floor": 1,
+          "coordinates": [
+            -61,
+            -17
+          ],
+          "x": -61,
+          "y": -17,
+          "col": 25,
+          "row": 75,
+          "regionType": "intersection",
+          "priority": 1,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TI-0060",
+          "nearNodeType": "intersection",
+          "triggers": [
+            {
+              "id": "F1-TI-0060",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0105",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TD-0086",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0087",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0139",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TF-0012",
+              "type": "elevator",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-ER-0002",
+              "type": "elevator_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 4,
+          "visible15m": 14,
+          "nearestBeaconM": 0.492,
+          "strongestRssi": -57.0,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
+          "fpId": "FP-1-C026R075-J",
+          "id": "FP-1-C026R075-J",
+          "shortId": "C026R075-J",
+          "floor": 1,
+          "coordinates": [
+            -60,
+            -17
+          ],
+          "x": -60,
+          "y": -17,
+          "col": 26,
+          "row": 75,
+          "regionType": "intersection",
+          "priority": 1,
+          "source": "split_1m",
+          "tier": 1,
+          "isBase2m": false,
+          "nearNodeId": "F1-TI-0060",
+          "nearNodeType": "intersection",
+          "triggers": [
+            {
+              "id": "F1-TI-0060",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TI-0105",
+              "type": "intersection",
+              "kind": "intersection"
+            },
+            {
+              "id": "F1-TD-0086",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0087",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TD-0139",
+              "type": "doorway",
+              "kind": "doorway"
+            },
+            {
+              "id": "F1-TR-0046",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0005",
+              "type": "staircase",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-TF-0012",
+              "type": "elevator",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-SR-0005",
+              "type": "stair_entrance",
+              "kind": "high_risk"
+            },
+            {
+              "id": "F1-ER-0002",
+              "type": "elevator_entrance",
+              "kind": "high_risk"
+            }
+          ],
+          "collectable": true,
+          "collectablePlan10m": true,
+          "collectableGeo15m": true,
+          "criteria": [
+            "plan10m85",
+            "geo15m"
+          ],
+          "visible10m": 4,
+          "visible15m": 13,
+          "nearestBeaconM": 1.468,
+          "strongestRssi": -62.2,
+          "collectableWithSim": true,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": [
+            "R1"
+          ]
+        },
+        {
           "fpId": "FP-1-C037R075-S",
           "id": "FP-1-C037R075-S",
           "shortId": "C037R075-S",
@@ -41372,6 +41921,42 @@
           "visible15m": 10,
           "nearestBeaconM": 3.219,
           "strongestRssi": -79.1,
+          "collectableWithSim": false,
+          "simAdded": false,
+          "simAddedBy": [],
+          "routeTags": []
+        },
+        {
+          "fpId": "FP-1-C012R076",
+          "id": "FP-1-C012R076",
+          "shortId": "C012R076",
+          "floor": 1,
+          "coordinates": [
+            -74,
+            -16
+          ],
+          "x": -74,
+          "y": -16,
+          "col": 12,
+          "row": 76,
+          "regionType": "normal",
+          "priority": 4,
+          "source": "base_2m",
+          "tier": 2,
+          "isBase2m": true,
+          "nearNodeId": null,
+          "nearNodeType": null,
+          "triggers": [],
+          "collectable": false,
+          "collectablePlan10m": false,
+          "collectableGeo15m": true,
+          "criteria": [
+            "geo15m"
+          ],
+          "visible10m": 1,
+          "visible15m": 11,
+          "nearestBeaconM": 4.055,
+          "strongestRssi": -79.0,
           "collectableWithSim": false,
           "simAdded": false,
           "simAddedBy": [],

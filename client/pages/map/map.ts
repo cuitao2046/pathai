@@ -8,6 +8,7 @@ import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
 import { appContext, BEACON_UUIDS_KEY } from '../../services/app-context';
+import { FieldNavigationRecorder, takeFieldNavigation } from '../../services/field-navigation';
 import { getJson, setJson } from '../../utils/kv';
 import {
   pickStartupFloor,
@@ -267,6 +268,17 @@ Page({
     collectOptWidth: toolBtnWidthRpx(['静态标定']),
     // 导航态（REQ-PAGE：导航融合进地图页，原独立导航页退役）
     navActive: false,
+    fieldMethod: '',
+    fieldRunId: '',
+    fieldCheckpoint: '',
+    fieldUndo: false,
+    fieldRunFinished: false,
+    fieldStorageIssue: '',
+    fieldSaveRetry: false,
+    fieldSessionReady: false,
+    fieldActualArrived: false,
+    fieldSystemArrived: false,
+    fieldSaving: false,
     state: 'idle' as NavState,
     stateText: NAV_TEXT.idle,
     instruction: '',
@@ -316,6 +328,7 @@ Page({
   turnHaptics: null as TurnHaptics | null,
   /** 当前导航指令（每次 update 刷新，转弯震动按它取拐点）。 */
   currentInstruction: null as NavigationInstruction | null,
+  fieldRecorder: null as FieldNavigationRecorder | null,
   /** 正在震动的转弯 instructionId；变化即视为新转弯，复位“已到达”。 */
   turnHapticInstructionId: null as string | null,
   /** 导航态最近一次可信位置（unreliable/lost 不更新 → 恢复态不推进显示）。 */
@@ -450,6 +463,7 @@ Page({
   },
 
   onHide(): void {
+    this.fieldRecorder?.persistDraft();
     ++this.voiceEpoch;
     this.parseInFlight = false;
     this.setData({ voiceParsing: false });
@@ -466,6 +480,19 @@ Page({
   },
 
   onShow(): void {
+    const fieldRun = takeFieldNavigation();
+    if (fieldRun) {
+      try {
+        this.fieldRecorder = new FieldNavigationRecorder(fieldRun, (text) => {
+          this.setData({ fieldStorageIssue: text, fieldSaveRetry: this.fieldRecorder?.needsSaveRetry ?? false });
+        });
+        this.setData({
+          fieldMethod: fieldRun.selection.method, fieldRunId: fieldRun.selection.runId,
+          fieldSessionReady: false, fieldActualArrived: false, fieldSystemArrived: false, fieldSaving: false,
+        });
+        this.requestDraw();
+      } catch (error) { wx.showToast({ title: String(error), icon: 'none' }); }
+    }
     // 从设置页返回后刷新采集入口可见性与无障碍模式（开关即时生效）
     this.setData({ collectEntry: appContext.getFieldCollectionToolSetting() });
     this.applyA11ySettings();
@@ -475,10 +502,13 @@ Page({
     if (controller !== null && controller.sessionId !== null && !this.sessionEnded) {
       void controller.handleForeground();
       this.syncTurnHaptics(); // 回前台：按最近位置/指令恢复转弯逼近节拍
+    } else if (this.fieldRecorder && this.data.fieldSystemArrived && this.pipeline && !this.pipeline.isRunning) {
+      void this.pipeline.start('navigating').catch((error) => log.warn('实验到达后恢复采集失败', error));
     }
   },
 
   onUnload(): void {
+    this.fieldRecorder?.finish('aborted', '导航页退出');
     // 终止启动楼层探测：迟到的样本不再用于判层
     this.startupFloorProbeRun += 1;
     this.controller?.dispose();
@@ -991,6 +1021,26 @@ Page({
         ctx.fillStyle = '#ffffff';
         ctx.fillText('终', sx, sy);
       }
+    }
+
+    const fieldPlan = this.fieldRecorder?.run.plan;
+    const nextFieldIndex = this.fieldRecorder?.count;
+    for (const [index, point] of (fieldPlan?.points ?? []).entries()) {
+      if (point.floorId !== vp.floorId) continue;
+      const { sx, sy } = vp.toScreen(point.x, point.y);
+      ctx.save();
+      ctx.fillStyle = point.pointId.startsWith('P-') ? '#b45309' : '#1d4ed8';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, index === nextFieldIndex ? 8 : 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.strokeText(point.pointId, sx, sy - 11);
+      ctx.fillText(point.pointId, sx, sy - 11);
+      ctx.restore();
     }
 
     // 位置点：导航态画最近可信位置（无估计则不画，不伪造）；待命态保留 mock 锚点
@@ -1675,11 +1725,16 @@ Page({
       this.setData({ fallbackText: next });
     };
     this.speech = new SpeechQueue({
+      onPlayback: (phase, item) => {
+        if (item.source.startsWith('nav:')) {
+          this.fieldRecorder?.event(`speech_${phase}`, { source: item.source, text: item.text });
+        }
+      },
       engine: {
-        speak: (text) => {
+        speak: (text, onPlay) => {
           if (this.data.pttState === 'recording') return Promise.resolve();
           // 文本展示不交给系统旁白朗读；导航提示走同一 TTS 队列，避免 HUD 抢焦点。
-          return appContext.tts.speak(text);
+          return appContext.tts.speak(text, onPlay);
         },
         stop: () => appContext.tts.stop(),
       },
@@ -1691,7 +1746,8 @@ Page({
       onTextFallback: appendFallback,
       // 本地提示音（如 nav-start）与 TTS 共用同一队列/优先级，串行不重叠；
       // 文件缺失或解码失败时 LocalVoice 也会 resolve，不会卡住后续首条指令。
-      playClip: (clip) => this.screenReaderOn || this.data.pttState === 'recording' ? Promise.resolve() : appContext.voicePrompts.play(clip as LocalVoiceName),
+      playClip: (clip, onPlay) => this.screenReaderOn || this.data.pttState === 'recording'
+        ? Promise.resolve() : appContext.voicePrompts.play(clip as LocalVoiceName, onPlay),
       stopClip: () => appContext.voicePrompts.stop(),
     });
   },
@@ -2567,6 +2623,10 @@ Page({
     if (controller === null || this.navStarting) {
       return;
     }
+    if (this.fieldRecorder && appContext.map.places.find((p) => p.placeId === destination.placeId)?.nodeId !== 'F1-TR-0003') {
+      this.finishPreview('实验目的地固定为资源教室。返回地图后请从实验入口开始。');
+      return;
+    }
     // 预览起点是预览早期冻结的观测：10 秒复用窗口只看「预览还剩多少价值」，
     // 不看观测年龄；服务端只接受 15 s 内的观测，确认后必须重新取一次。
     this.navStarting = true;
@@ -2580,6 +2640,15 @@ Page({
     if (freshOrigin === null) {
       this.finishPreview('没能获取到当前位置，请稍作停留后重试。');
       return;
+    }
+    if (this.fieldRecorder !== null) {
+      try {
+        this.fieldRecorder.start();
+        this.updateFieldCheckpoint();
+      } catch (error) {
+        this.finishPreview(String(error));
+        return;
+      }
     }
     this.previewToken += 1; // 确认后：迟到的预览回调不再生效
     this.clearPreviewTimers();
@@ -2631,6 +2700,7 @@ Page({
       });
       this.setData({ stateText: NAV_TEXT.active });
     } catch (err) {
+      this.finishFieldNavigation('aborted', '导航会话创建失败');
       const message = err instanceof ApiClientError ? describeError(err) : '无法开始导航，请重试';
       log.warn('会话创建失败', err);
       this.sessionEnded = true;
@@ -2703,8 +2773,11 @@ Page({
       windowMs: getScanProfile().windowMs,
       // 指纹库开关（默认关闭）：每拍读取，关闭时请求体与旧版完全一致
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
+      experiment: () => this.fieldRecorder?.run.selection ?? null,
+      onRawSample: (sample) => this.fieldRecorder?.addSample(sample),
       onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
       onUnusable: (err) => {
+        this.fieldRecorder?.event('unavailable', { code: err.code });
         // 导航中信号丢失/信标不足：只报 quality 让服务端转 recovering，
         // 不伪造坐标；进入 recovering 的状态迁移由 onStateChange 负责长震动。
         if (
@@ -2723,7 +2796,11 @@ Page({
     this.pipeline = pipeline;
 
     const pipelineControl: NavPipelineControl = {
-      stop: () => pipeline.stop(),
+      stop: () => {
+        // The navigation session may end before the participant reaches the physical finish line.
+        if (this.fieldRecorder && this.controller?.state === 'arrived') return;
+        pipeline.stop();
+      },
       startNavigating: async () => {
         if (pipeline.isRunning) {
           pipeline.setMode('navigating');
@@ -2734,13 +2811,29 @@ Page({
       // 电梯暂停期间清楼层先验：由服务端按可见信标多数判层，地图随扫描楼层自动切换
       clearFloorHint: () => pipeline.clearFloorHint(),
     };
-    this.turnHaptics = new TurnHaptics({ vibrateShort, vibrateLong });
+    this.turnHaptics = new TurnHaptics({
+      vibrateShort,
+      vibrateLong: () => {
+        const instructionId = this.turnHapticInstructionId;
+        if (instructionId) this.fieldRecorder?.event('turn_haptic', { instructionId });
+        vibrateLong();
+      },
+    });
     this.controller = new NavSessionController({
       createJournal: createNavJournal(currentServiceBaseUrl(), appContext.map.siteId),
       client: appContext.http.client,
       map: appContext.map,
       speech: this.speech,
       pipeline: pipelineControl,
+      experiment: () => this.fieldRecorder?.run.selection,
+      onSessionCreated: (created) => {
+        if (!this.fieldRecorder) return;
+        this.fieldRecorder.event('session', {
+          sessionId: created.sessionId, route: created.route, turnHapticsEnabled: this.data.a11yMode === 'a11y',
+        });
+        this.setData({ fieldSessionReady: true });
+        this.updateFieldCheckpoint();
+      },
       // 电梯口判距：把指令触发节点解析成坐标（地图包节点表）
       resolveNode: (nodeId) => resolveTurnNode(appContext.map.floors, nodeId),
       onElevatorPause: ({ text }) => {
@@ -2768,6 +2861,7 @@ Page({
         }
       },
       onRoute: (route, overviewText) => {
+        this.fieldRecorder?.event('route', { route });
         // 新流程：概要在 API-10 预览阶段已播完（overviewAnnounced=true），此处不重播；
         // 无预览的历史/异常路径才在此入队概要，形成「概要 → 首条指令」顺序。
         if (!this.overviewAnnounced && this.navDestination !== null) {
@@ -2803,17 +2897,33 @@ Page({
       // 每次更新都刷新 HUD 的当前指令（此前只在 onRoute 里写 segments[0]，
       // 导致起步后文案一直停在第一条，后续转弯/直行指令只播不显示）
       onInstruction: (instruction) => {
+        if (instruction !== null && this.currentInstruction?.instructionId !== instruction.instructionId) {
+          const turn = instruction.trigger.nodeId ?
+            resolveTurnNode(appContext.map.floors, instruction.trigger.nodeId) : null;
+          this.fieldRecorder?.event('instruction', { instruction, turn });
+        }
         this.currentInstruction = instruction;
         if (instruction !== null) {
           this.setData({ instruction: instruction.text });
         }
         this.syncTurnHaptics(); // 仅转弯指令会启动逼近节拍，其余指令在这里停表
       },
-      onEnded: () => {
+      onEnded: ({ reason, byArrival }) => {
+        if (!this.sessionEnded) this.fieldRecorder?.event('end', { reason, byArrival });
         this.sessionEnded = true;
         this.stopTurnHaptics(); // 导航结束/到达：立即停节拍并清理定时器
         this.currentInstruction = null;
+        if (byArrival && this.fieldRecorder) {
+          this.stopHeading();
+          this.setData({ fieldSystemArrived: true, fieldSaving: false, instruction: '', remainingText: '', arrowVisible: false });
+          return;
+        }
         pipeline.stop();
+        const completed = reason === 'user_finished' && this.data.fieldSaving && this.data.fieldActualArrived;
+        if (!this.finishFieldNavigation(completed ? 'complete' : 'aborted', reason ?? '导航结束')) {
+          this.setData({ fieldSaving: false });
+          return;
+        }
         // 到达播报由 controller 入队；此处只清理界面，不打断播报，直接回待命。
         this.onDismissNav();
       },
@@ -2838,6 +2948,13 @@ Page({
     estimate: PositionEstimateResponse,
     meta?: { visibleBeaconCount: number },
   ): void {
+    if (!this.data.fieldSystemArrived) {
+      this.fieldRecorder?.event('estimate', {
+        position: estimate.position, source: estimate.positionSource,
+        paramsVersion: estimate.paramsVersion, fallbackReason: estimate.fallbackReason,
+        observedAt: estimate.observedAt, quality: estimate.quality, confidence: estimate.confidence,
+      });
+    }
     if (meta) {
       this.recordCalibration(estimate, meta.visibleBeaconCount);
     }
@@ -3082,5 +3199,88 @@ Page({
     this.clearIntentPanels();
     this.syncArrowLifecycle(); // 关闭导航 HUD：停传感器并隐藏箭头
     this.requestDraw();
+  },
+
+  onBeginFieldNavigation(): void {
+    if (!this.fieldRecorder || this.data.fieldSaveRetry || !this.data.mapReady || this.navPhase !== 'idle') return;
+    const place = appContext.map.places.find((row) => row.nodeId === 'F1-TR-0003');
+    if (!place || appContext.map.mapVersion !== this.fieldRecorder.run.plan.mapVersion) {
+      wx.showToast({ title: '实验路线或冻结地图不可用', icon: 'none' });
+      return;
+    }
+    void this.beginRoutePreview({ placeId: place.placeId, name: place.name, floorId: place.floorId });
+  },
+
+  onReturnFieldExperiment(): void {
+    if (this.data.fieldSaveRetry) return;
+    this.fieldRecorder = null;
+    this.onDismissIntent();
+    this.setData({ fieldMethod: '', fieldRunFinished: false });
+    wx.navigateTo({ url: `/pages/collect/experiment/experiment?task=NV&runId=${this.data.fieldRunId}` });
+  },
+
+  updateFieldCheckpoint(): void {
+    const recorder = this.fieldRecorder;
+    if (!recorder) return;
+    const total = recorder.run.plan.points.length;
+    const next = recorder.run.plan.points[recorder.count]?.pointId;
+    this.setData({ fieldCheckpoint: `${recorder.count}/${total}${next ? ` · 下一点 ${next}` : ''}`,
+      fieldUndo: recorder.canUndo });
+    this.requestDraw();
+  },
+
+  onFieldMark(): void {
+    const recorder = this.fieldRecorder;
+    if (!recorder || !this.data.fieldSessionReady || this.data.fieldSaving ||
+      (this.sessionEnded && !this.data.fieldSystemArrived)) return;
+    const count = recorder.count;
+    recorder.mark();
+    if (recorder.count === count) return;
+    vibrateShort();
+    this.updateFieldCheckpoint();
+    setTimeout(() => this.updateFieldCheckpoint(), 2050);
+  },
+
+  onFieldUndo(): void {
+    this.fieldRecorder?.undo();
+    this.updateFieldCheckpoint();
+  },
+
+  onConfirmFieldArrival(): void {
+    if (!this.data.fieldSessionReady || this.data.fieldSaving || !this.fieldRecorder?.confirmArrival()) return;
+    this.setData({ fieldActualArrived: true });
+    vibrateShort();
+  },
+
+  onCompleteFieldRoute(): void {
+    const controller = this.controller;
+    if (!this.fieldRecorder || !this.data.fieldActualArrived || this.data.fieldSaving) return;
+    if (this.sessionEnded) {
+      if (this.finishFieldNavigation('complete', this.data.fieldSystemArrived ? 'arrived' : 'user_finished')) {
+        this.onDismissNav();
+      }
+      return;
+    }
+    if (!controller?.sessionId) return;
+    this.setData({ fieldSaving: true });
+    void controller.endSession('user_finished').catch(() => {
+      this.setData({ fieldSaving: false });
+      wx.showToast({ title: '尚未结束路线，请重试', icon: 'none' });
+    });
+  },
+
+  finishFieldNavigation(status: 'complete' | 'aborted', reason: string): boolean {
+    if (!this.fieldRecorder) return true;
+    if (!this.fieldRecorder.finish(status, reason)) return false;
+    this.fieldRecorder = null;
+    this.setData({ fieldRunFinished: true, fieldUndo: false, fieldSessionReady: false, fieldSaving: false,
+      fieldStorageIssue: '', fieldSaveRetry: false });
+    return true;
+  },
+
+  onRetryFieldSave(): void {
+    if (this.data.fieldSaveRetry && this.finishFieldNavigation('aborted', '重试本地保存')) {
+      this.onDismissNav();
+    }
   },
 });

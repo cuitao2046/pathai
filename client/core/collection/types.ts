@@ -36,6 +36,7 @@ export interface StaticObservation {
 
 /** 一次倒计时采集 = 一条独立会话（同点多会话互不覆盖）。 */
 export interface StaticSessionRec {
+  orientation?: 'N' | 'E' | 'S' | 'W';
   pointId: string;
   sessionIndex: number;
   /** ISO 时刻。 */

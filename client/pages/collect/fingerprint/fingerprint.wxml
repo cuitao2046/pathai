@@ -1,4 +1,16 @@
 <view class="page">
+  <!-- 地图画布 -->
+  <canvas
+    type="2d"
+    id="collectCanvas"
+    class="collect-canvas"
+    catchtouchstart="onTouchStart"
+    catchtouchmove="onTouchMove"
+    catchtouchend="onTouchEnd"
+    catchtouchcancel="onTouchCancel"
+    aria-label="指纹网格地图，走到网格点后点击该点采集"
+  />
+
   <!-- 本层统计（楼层切换与导出已移到右下操作列） -->
   <view class="stats-bar" aria-live="polite">
     <text>本层可采集 {{floorStats.collectable}} / {{floorStats.total}} · 已采 {{floorStats.collected}}</text>
@@ -42,18 +54,6 @@
 
   <view class="mock-hint" wx:if="{{isMock}}">mock 模式：模拟信标轨迹，数据仅供联调</view>
 
-  <!-- 地图画布 -->
-  <canvas
-    type="2d"
-    id="collectCanvas"
-    class="collect-canvas"
-    catchtouchstart="onTouchStart"
-    catchtouchmove="onTouchMove"
-    catchtouchend="onTouchEnd"
-    catchtouchcancel="onTouchCancel"
-    aria-label="指纹网格地图，走到网格点后点击该点采集"
-  />
-
   <!-- 缩放控件：单指精细调整（双指缩放之外的补充）；显式 z-index 保证可点按 -->
   <view class="map-tools" aria-label="地图缩放控制">
     <view class="zoom-hit" aria-role="button" bindtap="onZoomIn" aria-label="放大地图"><view class="zoom-face">＋</view></view>
@@ -94,26 +94,22 @@
     <text class="meta">快照采集中，请原地站立</text>
   </view>
 
-  <!-- 点位确认卡 -->
-  <view class="card-mask" wx:if="{{card !== null}}" bindtap="onCardCancel">
-    <view class="card" catchtap="noop" aria-label="网格点确认">
-      <view class="card-title">{{card.fpId}}</view>
-      <view class="card-row"><text class="label">短号</text><text>{{card.shortId}}</text></view>
-      <view class="card-row"><text class="label">格位</text><text>{{card.gridText}}</text></view>
-      <view class="card-row"><text class="label">区域</text><text>{{card.regionText}}</text></view>
-      <view class="card-row"><text class="label">采集口径</text><text>{{card.collectText}}</text></view>
-      <view class="card-row"><text class="label">参考口径</text><text>{{card.refText}}</text></view>
-      <view class="card-row"><text class="label">路线（优先）</text><text>{{card.routeText}}</text></view>
-      <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
-      <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>
-      <view class="card-row"><text class="label">已采次数</text><text>{{card.recordCount}}</text></view>
-      <view class="card-row"><text class="label">定位距离</text><text>{{card.distanceText}}</text></view>
-      <view class="card-hint">请通过现场参照物确认已站在网格点上；确认后 3 秒快照采集，期间请原地站立。</view>
-      <view class="card-actions">
-        <button class="btn ghost" bindtap="onCardCancel" aria-label="取消">取消</button>
-        <button class="btn ghost" bindtap="onManageRecords" aria-label="记录管理">管理</button>
-        <button class="btn primary" bindtap="onCardConfirm" aria-label="确认到点，开始快照">确认采集</button>
-      </view>
+  <!-- 点位确认卡，地图区域继续响应手势 -->
+  <view class="card" wx:if="{{card !== null}}" aria-label="网格点确认">
+    <view class="card-title">{{card.fpId}}</view>
+    <view class="card-row"><text class="label">短号</text><text>{{card.shortId}}</text></view>
+    <view class="card-row"><text class="label">格位</text><text>{{card.gridText}}</text></view>
+    <view class="card-row"><text class="label">坐标</text><text>{{card.coordText}}</text></view>
+    <view class="card-row"><text class="label">已采次数</text><text>{{card.recordCount}}</text></view>
+    <view class="card-row" wx:for="{{card.wallReferences}}" wx:key="*this">
+      <text class="label wall-label-{{index}}">参考墙 {{index === 0 ? 'A' : 'B'}}</text><text>{{item}}</text>
+    </view>
+    <view class="card-hint" wx:if="{{card.placementIssue}}">{{card.placementIssue}}</view>
+    <view class="card-hint" wx:else>确认已到达点位后开始 3 秒倒计时，期间请原地站立。</view>
+    <view class="card-actions">
+      <button class="btn ghost" bindtap="onCardCancel" aria-label="取消">取消</button>
+      <button class="btn ghost" bindtap="onManageRecords" aria-label="记录管理">管理</button>
+      <button class="btn primary" disabled="{{card.placementIssue !== ''}}" bindtap="onCardConfirm" aria-label="确认到点，开始快照">确认采集</button>
     </view>
   </view>
 

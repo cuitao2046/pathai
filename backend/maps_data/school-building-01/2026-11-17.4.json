@@ -79065,7 +79065,7 @@
         -45.05915721673677,
         -3.725964625672986
        ],
-       "public": false,
+       "public": true,
        "accessible": true,
        "hasIndependentEntrance": false,
        "walkablePolygon": {
@@ -79473,7 +79473,7 @@
         -48.73145743217468,
         -0.8215247499404863
        ],
-       "public": false,
+       "public": true,
        "accessible": true,
        "hasIndependentEntrance": false,
        "walkablePolygon": {
@@ -116724,7 +116724,7 @@
        -3.725964625672986
       ],
       "geometryId": "F1-AC-0046",
-      "public": false,
+      "public": true,
       "accessible": true,
       "hasIndependentEntrance": false,
       "floor": 1
@@ -116739,7 +116739,7 @@
        -0.8215247499404863
       ],
       "geometryId": "F1-AC-0047",
-      "public": false,
+      "public": true,
       "accessible": true,
       "hasIndependentEntrance": false,
       "floor": 1

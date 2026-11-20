@@ -471,6 +471,10 @@ Page({
   },
 
   /** 现场采集工具开关：控制首页「采集」入口可见性，即时生效。 */
+  onOpenFieldExperiment(): void {
+    wx.navigateTo({ url: '/pages/collect/experiment/experiment' });
+  },
+
   onChangeFieldCollection(event: WechatMiniprogram.SwitchChange) {
     const on = event.detail.value;
     appContext.setFieldCollectionToolSetting(on);

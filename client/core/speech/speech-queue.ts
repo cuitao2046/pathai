@@ -57,9 +57,10 @@ export interface SpeechQueueOptions {
    * 本地音频片段播放器（固定提示语用，离线可播、不依赖云端合成）。
    * 必须在播完、出错或被打断时 resolve；未提供时片段按已播完处理。
    */
-  playClip?: (clip: string) => Promise<void>;
+  playClip?: (clip: string, onPlay?: () => void) => Promise<void>;
   /** 打断正在播的本地音频片段（片段被抢占/看门狗放手时调用）。 */
   stopClip?: () => void;
+  onPlayback?: (phase: 'requested' | 'started' | 'finished', item: { source: string; text: string }) => void;
 }
 
 /** 播报看门狗：基础时长 + 每字时长，封顶 60s（正常一句 60 字 ≈ 32s）。 */
@@ -80,8 +81,9 @@ export class SpeechQueue {
   private readonly notifyUnavailable: (lastText: string) => void;
   private readonly fallbackText: ((text: string) => void) | null;
   private readonly stallTimeout: (text: string) => number;
-  private readonly playClip: ((clip: string) => Promise<void>) | null;
+  private readonly playClip: NonNullable<SpeechQueueOptions['playClip']> | null;
   private readonly stopClip: (() => void) | null;
+  private readonly onPlayback: SpeechQueueOptions['onPlayback'];
   private items: QueueItem[] = [];
   private current: QueueItem | null = null;
   /** 当前项的看门狗（引擎无响应时强制放手）。 */
@@ -103,6 +105,7 @@ export class SpeechQueue {
     this.stallTimeout = options.stallTimeoutMs ?? defaultStallTimeout;
     this.playClip = options.playClip ?? null;
     this.stopClip = options.stopClip ?? null;
+    this.onPlayback = options.onPlayback;
   }
 
   /** 录音抢占：清空队列并停止播放，迟到播放回调被 current 身份隔离。 */
@@ -291,6 +294,13 @@ export class SpeechQueue {
     this.current = next;
     const isClip = next.kind === 'clip';
     log.info('[play]', next.source, next.priority, next.text);
+    this.onPlayback?.('requested', next);
+    let started = false;
+    const onPlay = this.onPlayback ? () => {
+      if (started || this.current !== next) return;
+      started = true;
+      this.onPlayback?.('started', next);
+    } : undefined;
     this.stallTimer = setTimeout(
       () => {
         this.handleStall(next);
@@ -300,9 +310,9 @@ export class SpeechQueue {
     const playback =
       next.kind === 'clip'
         ? this.playClip !== null
-          ? this.playClip(next.clip ?? '')
+          ? this.playClip(next.clip ?? '', onPlay)
           : Promise.resolve() // 未注入播放器：片段按已播完跳过，绝不回退成 TTS 读文件名
-        : this.engine.speak(next.text);
+        : this.engine.speak(next.text, onPlay);
     playback
       .then(() => {
         if (this.current !== next) {
@@ -312,6 +322,7 @@ export class SpeechQueue {
         }
         this.clearStallTimer();
         log.info('[play-end]', next.text);
+        if (started) this.onPlayback?.('finished', next);
         this.current = null;
         this.pump();
       })

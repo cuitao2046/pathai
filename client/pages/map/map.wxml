@@ -183,10 +183,23 @@
   </view>
 
   <!-- 导航 HUD（REQ-PAGE：导航态融合进地图页；原独立导航页退役） -->
+  <view class="nav-hud" wx:if="{{fieldMethod && !navActive && !destination && !loading}}">
+    <view class="nav-top">
+      <view class="state">T8 方法 {{fieldMethod}}</view>
+      <view class="destination">{{fieldRunFinished ? '本轮已结束' : '请在实验起点准备'}} · {{fieldRunId}}</view>
+      <view wx:if="{{fieldStorageIssue}}" class="field-arrival-status" aria-live="polite">{{fieldStorageIssue}}</view>
+      <button wx:if="{{fieldSaveRetry}}" bindtap="onRetryFieldSave">重试本地保存</button>
+      <block wx:else>
+        <button wx:if="{{!fieldRunFinished}}" bindtap="onBeginFieldNavigation">开始实验导航</button>
+        <button bindtap="onReturnFieldExperiment">返回现场实验</button>
+      </block>
+    </view>
+  </view>
   <view class="nav-hud" wx:if="{{navActive}}">
     <view class="nav-top" aria-hidden="true">
       <view class="destination">目的地：{{destinationName}}</view>
       <view class="state">{{stateText}}</view>
+      <view wx:if="{{fieldMethod}}" class="state">实验方法 {{fieldMethod}}</view>
       <view class="remaining" wx:if="{{remainingText !== ''}}">{{remainingText}}</view>
     </view>
 
@@ -198,9 +211,24 @@
     </view>
 
     <view class="mock-hint" aria-hidden="true" wx:if="{{isMockSource && !ended}}">mock 模式：使用模拟信标轨迹定位</view>
+    <view class="field-nav-controls" wx:if="{{fieldMethod && (fieldSessionReady || fieldSaveRetry)}}">
+      <view wx:if="{{fieldStorageIssue}}" class="field-arrival-status" aria-live="polite">{{fieldStorageIssue}}</view>
+      <button wx:if="{{fieldSaveRetry}}" bindtap="onRetryFieldSave">重试本地保存</button>
+      <block wx:else>
+        <view class="field-arrival-status" aria-live="polite">
+          系统{{fieldSystemArrived ? '已判定到达' : '待判定'}} · 人工{{fieldActualArrived ? '已确认到达' : '待确认'}}
+        </view>
+        <button class="field-mark" disabled="{{fieldSaving}}" bindtap="onFieldMark">打点 {{fieldCheckpoint}}</button>
+        <button wx:if="{{fieldUndo}}" disabled="{{fieldSaving}}" bindtap="onFieldUndo">撤销</button>
+        <button wx:if="{{!fieldActualArrived}}" bindtap="onConfirmFieldArrival">确认实际到达</button>
+        <button wx:else disabled="{{fieldSaving}}" bindtap="onCompleteFieldRoute">
+          {{fieldSystemArrived ? '保存本轮' : '结束等待并保存'}}
+        </button>
+      </block>
+    </view>
 
     <button
-      wx:if="{{!ended}}"
+      wx:if="{{!ended && (!fieldMethod || (!fieldSystemArrived && !fieldActualArrived))}}"
       class="end-button"
       bindtap="onEndTap"
       aria-label="结束导航，双击确认"

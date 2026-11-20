@@ -162,6 +162,10 @@ export class MapService {
     return this.pkg?.places ?? [];
   }
 
+  get fieldSurveyPoints(): readonly import('../../data/field-survey-points').SharedFieldSurveyPoint[] {
+    return this.pkg?.fieldSurveyPoints ?? [];
+  }
+
   get beacons(): MapBeaconEntry[] {
     return this.pkg?.beacons ?? [];
   }

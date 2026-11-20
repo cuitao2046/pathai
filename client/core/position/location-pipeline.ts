@@ -15,6 +15,7 @@ import type { BeaconRegistry } from '../ble/beacon-registry';
 import type { BeaconSourceLike } from '../ble/beacon-source';
 import {
   ScanWindowAggregator,
+  type BeaconSample,
   type ResolvedObservation,
 } from '../ble/scan-window';
 import { nowMs } from '../../utils/clock';
@@ -58,6 +59,8 @@ export interface LocationPipelineOptions {
    * useFingerprintDb=true；关闭时请求体与旧版逐字节一致。
    */
   useFingerprintDb?: () => boolean;
+  experiment?: () => { configId: string; method: 'A' | 'B' | 'C' } | null;
+  onRawSample?: (sample: BeaconSample) => void;
   /**
    * 查周边动作：仅在返回 true 时给请求体加 includeSurroundings=true，
    * 服务端在同一次响应内附上周边要素清单；默认不发送。
@@ -95,7 +98,10 @@ export class LocationPipeline {
     this.mode = mode;
     try {
       await this.opts.source.start((sample) => {
-        if (this.isCurrent(generation)) this.aggregator.push(sample);
+        if (this.isCurrent(generation)) {
+          this.aggregator.push(sample);
+          this.opts.onRawSample?.(sample);
+        }
       });
     } catch (err) {
       // 蓝牙未开/权限不足等启动失败必须可重试：否则 running 卡在 true，
@@ -205,7 +211,11 @@ export class LocationPipeline {
       beacons: snapshot.map(toObservation),
     };
     // 关闭（默认）时不写该字段：请求体与旧版完全一致，服务端行为不变
-    if (this.opts.useFingerprintDb?.() === true) {
+    const experiment = this.opts.experiment?.();
+    if (experiment) {
+      body.experimentConfigId = experiment.configId;
+      body.experimentMethod = experiment.method;
+    } else if (this.opts.useFingerprintDb?.() === true) {
       body.useFingerprintDb = true;
     }
     if (this.opts.includeSurroundings?.() === true) {

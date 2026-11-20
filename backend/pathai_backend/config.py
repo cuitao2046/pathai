@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 
 LOCAL_ENV = "local"
 DEMO_ENV = "demo"
+DEFAULT_FINGERPRINT_MIN_MARGIN_DB = 3.0
 
 # 本地默认数据库文件位置：backend/.local/pathai.db
 _LOCAL_DB_FILE = Path(__file__).resolve().parent.parent / ".local" / "pathai.db"
@@ -71,6 +73,7 @@ class Settings:
     location_residual_degraded_m: float = 4.0
     #: 参数版本号（写入 API-05 响应与导航会话，便于跨版本追溯）
     location_params_version: str = "unset"
+    fingerprint_min_margin_db: float = DEFAULT_FINGERPRINT_MIN_MARGIN_DB
     # 导航判定阈值（docs/现场测试方案.md 冻结值）：可在小程序设置页由测试人员修改，
     # 修改后写入 nav_policy 表并覆盖环境值；此处为环境冻结默认值。
     #: 距目的地节点小于该半径即判定到达
@@ -84,11 +87,20 @@ class Settings:
     #: 多 worker 从库中读取生效参数的最长缓存时间（秒）
     calibration_params_ttl_s: float = 2.0
 
+    def __post_init__(self) -> None:
+        if not isfinite(self.fingerprint_min_margin_db) or self.fingerprint_min_margin_db < 0:
+            raise ValueError("PATHAI_FINGERPRINT_MIN_MARGIN_DB 必须是有限的非负数")
+
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "Settings":
         env = environ if environ is not None else dict(os.environ)
         map_data_dir = env.get("PATHAI_MAP_DATA_DIR")
         hazard_data_dir = env.get("PATHAI_HAZARD_DATA_DIR")
+        margin = env.get("PATHAI_FINGERPRINT_MIN_MARGIN_DB", str(DEFAULT_FINGERPRINT_MIN_MARGIN_DB))
+        try:
+            fingerprint_min_margin_db = float(margin)
+        except ValueError as exc:
+            raise ValueError("PATHAI_FINGERPRINT_MIN_MARGIN_DB 必须是有限的非负数") from exc
         return cls(
             env=env.get("PATHAI_ENV", LOCAL_ENV),
             database_url=env.get("PATHAI_DATABASE_URL", ""),
@@ -127,6 +139,7 @@ class Settings:
                 env.get("PATHAI_LOCATION_RESIDUAL_DEGRADED_M", "4.0")
             ),
             location_params_version=env.get("PATHAI_LOCATION_PARAMS_VERSION", "unset"),
+            fingerprint_min_margin_db=fingerprint_min_margin_db,
             nav_arrival_radius_m=float(env.get("PATHAI_NAV_ARRIVAL_RADIUS_M", "2.0")),
             nav_turn_prompt_distance_m=float(
                 env.get("PATHAI_NAV_TURN_PROMPT_DISTANCE_M", "3.0")

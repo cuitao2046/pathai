@@ -21,6 +21,7 @@ import { LocationPipeline } from '../../../core/position/location-pipeline';
 import { SequenceCounter } from '../../../core/position/sequence-counter';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
 import { pickPointOnScreen } from '../../../core/collection/hit-test';
+import { drawReferenceWalls } from '../../../core/collection/reference-walls';
 import {
   FP_POINT_COLORS,
   filterVisiblePoints,
@@ -28,7 +29,6 @@ import {
   isRoutePoint,
   isSimOnly,
   pointStyle,
-  routeText,
   type FilterMode,
   type FloorCounts,
 } from '../../../core/collection/fingerprint-visibility';
@@ -71,6 +71,7 @@ import { ApiClientError } from '../../../core/http/errors';
 import type { ApiResponse } from '../../../core/http/api-client';
 import type { FpDeletion, FpRecord } from '../../../core/collection/types';
 import { FINGERPRINT_GRID, FINGERPRINT_GRID_VERSION, type FpGridPoint } from '../../../data/fingerprint_grid';
+import { FIELD_FINGERPRINT_GRID, FIELD_GRID_VERSION } from '../../../data/field-fingerprint-grid';
 import {
   resolveRuntimeGrid,
   type RuntimeGrid,
@@ -105,13 +106,6 @@ const COLORS = FP_POINT_COLORS;
  * 按各层 fitScale 换算：F1 约 2.4×、F2 约 1.8×）。路线点不受该限制。
  */
 
-const REGION_TEXT: Record<string, string> = {
-  normal: '普通',
-  intersection: '交叉路口',
-  doorway: '门口',
-  high_risk: '楼梯/电梯口',
-};
-
 function qualityUsable(q: string): boolean {
   return q === 'reliable' || q === 'degraded';
 }
@@ -119,15 +113,11 @@ function qualityUsable(q: string): boolean {
 interface CardData {
   fpId: string;
   shortId: string;
-  regionText: string;
-  floorText: string;
   coordText: string;
   gridText: string;
-  collectText: string;
-  refText: string;
-  routeText: string;
+  wallReferences: string[];
+  placementIssue: string;
   recordCount: number;
-  distanceText: string;
 }
 
 Page({
@@ -206,8 +196,11 @@ Page({
   tickTimer: null as ReturnType<typeof setInterval> | null,
   remainingS: 0,
   pausedRemainingS: 0,
+  useFieldGrid: true,
 
-  onLoad(): void {
+  onLoad(options?: Record<string, string | undefined>): void {
+    this.useFieldGrid = options?.legacy !== '1';
+    if (this.useFieldGrid) this.setData({ filterMode: 'all' });
     this.tripletById = new Map();
     this.recordCounts = new Map();
     this.gridByFloor = new Map();
@@ -280,7 +273,7 @@ Page({
     }
     // 网格按层分组
     this.gridByFloor = new Map();
-    for (const p of FINGERPRINT_GRID) {
+    for (const p of this.useFieldGrid ? FIELD_FINGERPRINT_GRID : FINGERPRINT_GRID) {
       const list = this.gridByFloor!.get(p.floorId);
       if (list) {
         list.push(p);
@@ -289,7 +282,10 @@ Page({
       }
     }
     this.refreshStats();
-    this.setData({ loading: false });
+    this.setData({
+      loading: false,
+      ...(this.useFieldGrid ? { gridVersion: FIELD_GRID_VERSION, gridSourceText: 'T4 现场网格' } : {}),
+    });
     this.initPipeline();
     // 首次进入时 onShow 早于异步 bootstrap 完成（pipeline 尚不存在），
     // 必须在这里补一次启动；否则 mock/live 都不会开始采样。
@@ -311,6 +307,13 @@ Page({
     }
     this.gridRefreshInFlight = true;
     try {
+      if (this.useFieldGrid) {
+        const params = cachedRuntimeParams() ??
+          await refreshRuntimeParams(appContext.http.client, { maxAgeMs: 60_000 });
+        this.runtimeParamsVersion = params?.paramsVersion ?? null;
+        this.setData({ gridParamsVersion: this.runtimeParamsVersion ?? '' });
+        return;
+      }
       const grid = await resolveRuntimeGrid(appContext.http.client, FINGERPRINT_GRID);
       const params =
         cachedRuntimeParams() ??
@@ -394,7 +397,9 @@ Page({
     this.mapView = new CollectMapView(this, {
       canvasId: 'collectCanvas',
       deps: {
-        floors: appContext.map.floors,
+        floors: this.useFieldGrid && appContext.map.floors['1']
+          ? { '1': appContext.map.floors['1'] }
+          : appContext.map.floors,
         places: appContext.map.places,
         beacons: appContext.map.beacons,
       },
@@ -410,6 +415,9 @@ Page({
         onTap: (_world, screen) => this.handleMapTap(screen),
         onLongPress: () => undefined, // 网格固定，不支持补标
         onFloorChanged: (floorId) => {
+          if (this.pendingCardPoint && this.pendingCardPoint.floorId !== floorId) {
+            this.onCardCancel();
+          }
           const item = (this.data.floors.length > 0 ? this.data.floors : this.mapView?.floorList ?? [])
             .find((f) => f.floorId === floorId);
           this.setData({
@@ -432,6 +440,7 @@ Page({
     const tombstones = listTombstones();
     this.recordCounts = new Map();
     for (const r of records) {
+      if (this.useFieldGrid && r.gridVersion !== FIELD_GRID_VERSION) continue;
       this.recordCounts!.set(r.fpId, (this.recordCounts!.get(r.fpId) ?? 0) + 1);
     }
     const unexportedCount = countUnexported(records);
@@ -493,7 +502,7 @@ Page({
   },
 
   handleMapTap(screen: { x: number; y: number }): void {
-    if (this.data.collecting || this.data.card !== null) {
+    if (this.data.collecting) {
       return;
     }
     const vp = this.mapView?.vp;
@@ -534,41 +543,19 @@ Page({
   },
 
   openCard(p: FpGridPoint): void {
-    const floorItem = (this.mapView?.floorList ?? []).find((f) => f.floorId === p.floorId);
-    const est = this.lastEstimate;
-    const recordCount = this.recordCounts!.get(p.fpId) ?? 0;
-    const collectableNow = p.collectable || (this.data.simPreview && p.collectableWithSim === true);
-    let distanceText = '—';
-    if (
-      est !== null &&
-      est.position != null &&
-      qualityUsable(est.quality) &&
-      est.position.floorId === p.floorId
-    ) {
-      const d = Math.hypot(est.position.x - p.x, est.position.y - p.y);
-      distanceText = `≈${d.toFixed(1)} m`;
-    }
-    const collectText = p.collectable
-      ? `可采集（3D 10m 内可见 ≥3，最强 ${p.strongestRssi ?? '—'}dBm）`
-      : this.data.simPreview && p.collectableWithSim === true
-        ? `仅补装仿真可采（${p.simAddedBy.length} 枚未安装虚拟信标补足 ≥3）`
-        : `当前不可采集（3D 10m 内可见 ${p.visible10m} 个）`;
+    const fieldPoint = this.useFieldGrid
+      ? FIELD_FINGERPRINT_GRID.find((point) => point.fpId === p.fpId)
+      : undefined;
     this.setData({
       card: {
         fpId: p.fpId,
         shortId: p.shortId,
-        regionText: REGION_TEXT[p.regionType] ?? p.regionType,
-        floorText: floorItem !== undefined ? `${floorItem.level}F` : p.floorId,
         coordText: `${p.x.toFixed(1)}, ${p.y.toFixed(1)}`,
         gridText: `列 ${p.col} / 行 ${p.row}`,
-        collectText:
-          recordCount > 0 && !collectableNow
-            ? `${collectText}；已采记录保留，导出不丢弃`
-            : collectText,
-        refText: `15m 可见 ${p.visible15m} 个${p.visible15m >= 3 ? '（已满足备用口径）' : ''}`,
-        routeText: routeText(p.routeTags),
-        recordCount,
-        distanceText,
+        wallReferences: (fieldPoint?.references ?? []).map((ref) =>
+          `${ref.direction} · ${ref.id} · ${ref.distanceM.toFixed(2)} m`),
+        placementIssue: fieldPoint?.placementIssue ?? '',
+        recordCount: this.recordCounts!.get(p.fpId) ?? 0,
       },
     });
     this.pendingCardPoint = {
@@ -578,6 +565,7 @@ Page({
       y: p.y,
       regionType: p.regionType,
     };
+    this.mapView?.requestDraw();
   },
 
   pendingCardPoint: null as FpSnapshotPoint | null,
@@ -585,22 +573,18 @@ Page({
   onCardCancel(): void {
     this.setData({ card: null });
     this.pendingCardPoint = null;
-  },
-
-  noop(): void {
-    // 阻止确认卡冒泡关闭
+    this.mapView?.requestDraw();
   },
 
   /** 确认到点：两短振 → 3s 快照倒计时（spec §4.2）。 */
   onCardConfirm(): void {
     const p = this.pendingCardPoint;
-    if (p === null || this.data.collecting) {
+    if (p === null || this.data.collecting || this.data.card?.placementIssue) {
       return;
     }
     vibrateShort();
     setTimeout(() => vibrateShort(), 180);
-    this.setData({ card: null });
-    this.pendingCardPoint = null;
+    this.onCardCancel();
 
     this.collectPoint = p;
     // 每次快照用干净窗口：重建聚合器（tee tap 闭包引用 this.aggregator）
@@ -662,6 +646,7 @@ Page({
       // 版本标记：仅当覆盖层成功解析（在线/缓存）时写入；
       // 内置快照（含拉取失败降级）不写网格版本，下游按 unknown 处理，避免误标（spec P2）。
       gridVersion:
+        this.useFieldGrid ? FIELD_GRID_VERSION :
         this.runtimeGrid !== null && this.runtimeGrid.source !== 'builtin'
           ? this.runtimeGrid.gridVersion
           : undefined,
@@ -777,7 +762,7 @@ Page({
           return;
         }
         store.clearAll();
-        this.setData({ card: null });
+        this.onCardCancel();
         this.refreshStats();
         wx.showToast({ title: '已清理', icon: 'success' });
       },
@@ -1216,6 +1201,12 @@ Page({
     ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
+    const point = this.pendingCardPoint;
+    if (this.useFieldGrid && point && point.floorId === vp.floorId) {
+      const references = FIELD_FINGERPRINT_GRID.find((p) => p.fpId === point.fpId)?.references ?? [];
+      const walls = appContext.map.floors[vp.floorId]?.geometry.walls ?? [];
+      drawReferenceWalls(ctx, vp, point, walls, references);
+    }
     // LOD（路线点豁免）+ 筛选档位；路线点最后绘制，保证在最上层
     const pts = this.visiblePoints(this.gridByFloor!.get(vp.floorId) ?? [], vp);
     const normalPts = pts.filter((p) => !isRoutePoint(p));

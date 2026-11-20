@@ -56,9 +56,30 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        message = "请求格式或字段不合法"
+        details: dict[str, Any] = {}
+        if request.url.path == "/api/v1/field/plans":
+            # Keep user-provided values and request bodies out of logs and responses.
+            issues = [{"field": ".".join(map(str, err["loc"])), "type": err["type"]}
+                      for err in exc.errors()]
+            logger.info("field plan validation failed request_id=%s method=%s issues=%s",
+                        request.state.request_id, request.method, issues[:5])
+            if issues:
+                details = issues[0]
+                field, kind = details["field"], details["type"]
+                if field == "query.day":
+                    message = "请提供有效的采集日期，格式为 YYYY-MM-DD"
+                elif field == "body.points" and kind in ("too_short", "too_long"):
+                    message = "正式清单须包含 1 至 256 个已登记点位"
+                elif field.startswith("body.points."):
+                    _, _, index, *parts = field.split(".")
+                    if index.isdecimal():
+                        point = int(index) + 1
+                        message = (f"清单第 {point} 个点的字段 {parts[0]} 不合法"
+                                   if parts else f"清单第 {point} 个点的真值数据不合法，请重新核对并保存")
         return JSONResponse(
             status_code=400,
-            content=error_envelope(request, "INVALID_REQUEST", "请求格式或字段不合法", False, {}),
+            content=error_envelope(request, "INVALID_REQUEST", message, False, details),
         )
 
     @app.exception_handler(StarletteHTTPException)

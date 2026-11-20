@@ -78,6 +78,7 @@ export interface NavSessionControllerOptions {
   onStateChange: (state: NavState) => void;
   /** 路线更新（创建/reroute）；overviewText 为后端生成、客户端模板为 null。 */
   onRoute?: (route: RouteInfo, overviewText: string | null) => void;
+  onSessionCreated?: (session: CreateSessionResponse) => void;
   /** 当前指令（每次更新都会回调，含重复指令）：页面用它刷新 HUD 文案。 */
   onInstruction?: (instruction: NavigationInstruction | null) => void;
   /** 会话收尾（arrived/end/resume 失效）。 */
@@ -91,6 +92,7 @@ export interface NavSessionControllerOptions {
   /** 概要窗口最长等待（毫秒），默认 30s；超时跳过概要直接进入引导。 */
   overviewMaxWaitMs?: number;
   createJournal?: NavCreateJournal;
+  experiment?: () => CreateSessionRequest['experiment'];
   /** Maximum silence after a usable navigation response (default 10 seconds). */
   responseSilenceMs?: number;
 }
@@ -260,6 +262,8 @@ export class NavSessionController {
         userMode,
         locale: 'zh-CN',
       };
+      const experiment = this.opts.experiment?.();
+      if (experiment) this.frozenCreateBody.experiment = experiment;
     }
     this.opts.createJournal?.save({ key: this.pendingIdempotencyKey, body: this.frozenCreateBody });
     let resp;
@@ -305,6 +309,7 @@ export class NavSessionController {
     this.clearPendingCreate();
 
     this.session = data;
+    this.opts.onSessionCreated?.(data);
     this.currentRoute = data.route;
     this.sessionSeq = 0;
     this.lastConfidence = 0;
@@ -718,6 +723,19 @@ export class NavSessionController {
       if (!(err instanceof ApiClientError && err.code === 'SESSION_NOT_ACTIVE')) {
         throw err;
       }
+      if (this.opts.experiment?.()) {
+        if (this.machine.state === 'arrived') return;
+        const { data } = await this.opts.client.request<SessionQueryResponse>({
+          method: 'GET', path: `/api/v1/nav/sessions/${this.session.sessionId}`,
+        });
+        if (this.state === 'arrived') return;
+        if (data?.status === 'arrived') {
+          this.transition({ type: 'QUERY_STATUS', status: data.status });
+          this.opts.onEnded?.({ reason: 'arrived', byArrival: true });
+          return;
+        }
+        if (data?.status !== 'ended') throw err;
+      }
       // 已终态：视为结束成功
     }
     this.transition({ type: 'END_ACK' });
@@ -891,10 +909,10 @@ export class NavSessionController {
     // 固定文案优先走本地离线音频；动态文案（距离/楼层/地点）继续走 TTS。
     const clip = staticInstructionClip(instruction.text);
     if (clip !== null) {
-      this.opts.speech.enqueueClip(clip, instruction.priority, 'nav:instruction');
+      this.opts.speech.enqueueClip(clip, instruction.priority, `nav:instruction:${instruction.instructionId}`);
       return;
     }
-    this.opts.speech.enqueue(instruction.text, instruction.priority, null, 'nav:instruction');
+    this.opts.speech.enqueue(instruction.text, instruction.priority, null, `nav:instruction:${instruction.instructionId}`);
   }
 
   /** 路线确定时先预生成电梯提示（进出各一条），避免跨层时才开始合成。 */

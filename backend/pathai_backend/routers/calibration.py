@@ -99,6 +99,16 @@ def compute_run(
     return _call(lambda: svc.compute_run(db, settings, body.sampleId))
 
 
+@router.get("/samples/{sample_id}", dependencies=_ADMIN_WRITE)
+def get_sample(sample_id: str, db: Session = Depends(auth.get_db_session)) -> dict:
+    from pathai_backend.models import CalibrationSample
+
+    sample = db.get(CalibrationSample, sample_id)
+    if sample is None:
+        raise ApiError(404, "SAMPLE_NOT_FOUND", "标定样本不存在")
+    return svc._sample_summary(sample)
+
+
 @router.get("/runs/latest", dependencies=[Depends(require_private_network)])
 def latest_run(
     sampleId: str | None = None,

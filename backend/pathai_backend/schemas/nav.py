@@ -94,6 +94,13 @@ class OriginPosition(StrictModel):
     observedAt: datetime
 
 
+class NavigationExperiment(StrictModel):
+    configId: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    runId: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    planId: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    method: Literal["A", "B", "C"]
+
+
 class CreateSessionRequest(StrictModel):
     """API-06 请求：仅在用户确认目的地后调用，须带 Idempotency-Key。"""
 
@@ -104,6 +111,7 @@ class CreateSessionRequest(StrictModel):
     # 主用户为视障人士，缺省按最安全的 blind 模式（跨层强制电梯）
     userMode: UserMode = UserMode.BLIND
     locale: str = "zh-CN"
+    experiment: NavigationExperiment | None = None
 
 
 class CreateSessionResponse(StrictModel):

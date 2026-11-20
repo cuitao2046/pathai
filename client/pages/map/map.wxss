@@ -430,8 +430,23 @@
 .nav-hud .nav-fallback,
 .nav-hud .mock-hint,
 .nav-hud .end-button,
+.nav-hud .field-nav-controls,
 .nav-hud .dismiss-button {
   pointer-events: auto;
+}
+
+.field-nav-controls .field-mark {
+  min-height: 100rpx;
+  line-height: 100rpx;
+  color: #ffffff;
+  background: #1a56db;
+}
+.field-arrival-status {
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+  color: #172554;
+  font-size: 24rpx;
 }
 
 .nav-top {

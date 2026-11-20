@@ -82,6 +82,8 @@ export class CollectMapView {
   private dpr = 1;
   private size = { w: 0, h: 0 };
   private rect = { left: 0, top: 0 };
+  private pageScrollTop = 0;
+  private destroyed = false;
   private dirty = false;
   private rafPending = false;
   private gesture: GestureState = {
@@ -135,7 +137,7 @@ export class CollectMapView {
         const fields = res[0];
         const node = fields?.node as WechatMiniprogram.Canvas | undefined;
         if (
-          node === undefined ||
+          this.destroyed || node === undefined ||
           typeof fields?.width !== 'number' ||
           typeof fields?.height !== 'number'
         ) {
@@ -186,6 +188,19 @@ export class CollectMapView {
     this.requestDraw();
   }
 
+  updatePageScroll(scrollTop: number): void {
+    this.rect.top -= scrollTop - this.pageScrollTop;
+    this.pageScrollTop = scrollTop;
+  }
+
+  refreshCanvasPosition(): void {
+    this.page.createSelectorQuery().select(`#${this.canvasId}`).boundingClientRect((result) => {
+      if (!this.destroyed && !Array.isArray(result) && result) {
+        this.rect = { left: result.left, top: result.top };
+      }
+    }).exec();
+  }
+
   /** 单指点按放大：以画布中心为锚点；到达上限后 scale/offset 不变。 */
   zoomIn(): void {
     this.zoomBy(ZOOM_STEP_FACTOR);
@@ -221,6 +236,7 @@ export class CollectMapView {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.canvas = null;
     this.ctx = null;
     this.viewport = null;

@@ -46,6 +46,7 @@ export interface LocalVoiceClipHandle {
   stop(): void;
   destroy(): void;
   onEnded(listener: () => void): void;
+  onPlay?(listener: () => void): void;
   onError(listener: () => void): void;
 }
 
@@ -57,6 +58,7 @@ export interface LocalVoiceOptions {
 
 interface QueueItem {
   name: LocalVoiceName;
+  onPlay?: () => void;
   resolve: () => void;
 }
 
@@ -77,9 +79,9 @@ export class LocalVoice {
   }
 
   /** 入队播放一段提示音。 */
-  play(name: LocalVoiceName): Promise<void> {
+  play(name: LocalVoiceName, onPlay?: () => void): Promise<void> {
     return new Promise<void>((resolve) => {
-      this.queue.push({ name, resolve });
+      this.queue.push({ name, resolve, onPlay });
       this.pump();
     });
   }
@@ -135,6 +137,7 @@ export class LocalVoice {
     };
     this.active = entry;
     handle.onEnded(() => entry.finish());
+    if (item.onPlay) handle.onPlay?.(item.onPlay);
     handle.onError(() => entry.finish());
     try {
       handle.play();

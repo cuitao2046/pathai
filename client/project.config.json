@@ -23,6 +23,8 @@
       { "type": "folder", "value": "node_modules" },
       { "type": "folder", "value": "tests" },
       { "type": "folder", "value": "scripts" },
+      { "type": "folder", "value": "review-artifacts" },
+      { "type": "folder", "value": "docs" },
       { "type": "file", "value": "core/discovery/p1-crypto-entry.js" },
       { "type": "folder", "value": "typings" },
       { "type": "file", "value": "jest.config.js" },

@@ -29,6 +29,7 @@ export interface CollectionExportMeta {
 }
 
 interface StaticExportSession {
+  orientation?: StaticSessionRec['orientation'];
   sessionIndex: number;
   startedAt: string;
   durationS: number;
@@ -53,8 +54,8 @@ interface StaticExportPoint {
 export interface StaticExportData {
   schemaVersion: '1.0';
   type: 'positioning_calibration_static';
-  /** 与服务端样本契约一致：静态标定产物可用于部署。 */
-  deployable: true;
+  /** 与服务端样本契约一致：静态标定产物可用于部署，T6 测试样本仅供评估。 */
+  deployable: boolean;
   venueId: string;
   operator: string;
   device: string | null;
@@ -69,6 +70,7 @@ export interface StaticExportData {
 export function buildStaticExport(
   store: StaticPointsStore,
   meta: CollectionExportMeta,
+  staticTest = false,
 ): { data: StaticExportData; warnings: string[] } {
   const warnings: string[] = [];
   const points = store.listPoints();
@@ -102,6 +104,7 @@ export function buildStaticExport(
       markType: 'map_tap',
       sessions: list.map((s) => ({
         sessionIndex: s.sessionIndex,
+        ...(s.orientation ? { orientation: s.orientation } : {}),
         startedAt: s.startedAt,
         durationS: s.durationS,
         trafficWindow: s.trafficWindow,
@@ -116,7 +119,7 @@ export function buildStaticExport(
     data: {
       schemaVersion: '1.0',
       type: 'positioning_calibration_static',
-      deployable: true,
+      deployable: !staticTest,
       venueId: meta.venueId,
       operator: meta.operator,
       device: meta.device,

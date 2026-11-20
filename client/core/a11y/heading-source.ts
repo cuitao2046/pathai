@@ -46,6 +46,8 @@ export interface HeadingSourceOptions {
   onUnavailable?: () => void;
   /** 罗盘/运动回调等待阈值（ms），超时即降级。 */
   timeoutMs?: number;
+  /** 需要绝对方向的场景仅使用罗盘。 */
+  compassOnly?: boolean;
 }
 
 function finite(value: number | undefined): value is number {
@@ -179,11 +181,13 @@ export class HeadingSource {
     } catch {
       // 停止失败不影响页面（异常仅记录在调用方）
     }
-    try {
-      this.api.stopDeviceMotionListening();
-      this.api.offDeviceMotionChange?.(this.onMotion);
-    } catch {
-      // 同上
+    if (!this.options.compassOnly) {
+      try {
+        this.api.stopDeviceMotionListening();
+        this.api.offDeviceMotionChange?.(this.onMotion);
+      } catch {
+        // 同上
+      }
     }
     this.mode = 'unavailable';
   }
@@ -216,6 +220,12 @@ export class HeadingSource {
 
   private fallbackToMotion(): void {
     if (!this.running) {
+      return;
+    }
+    if (this.options.compassOnly) {
+      this.stop();
+      this.options.onModeChange?.('unavailable');
+      this.options.onUnavailable?.();
       return;
     }
     this.clearTimer();

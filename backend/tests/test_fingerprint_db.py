@@ -9,12 +9,14 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from pathai_backend.app import create_app
+from pathai_backend.config import Settings
 from pathai_backend.database import get_engine
 from pathai_backend.models import Base
 
@@ -114,11 +116,10 @@ def _payload(
 
 
 @pytest.fixture()
-def fp_client(settings, monkeypatch):
+def fp_app(settings, monkeypatch):
     from pathai_backend.routers import calibration as cal_router
     from pathai_backend.routers import fingerprint_db as fp_router
     from tests.conftest import FakeWechatClient
-    from tests.test_calibration_api import _as_ready_admin
 
     cal_router._LAST_WRITE.clear()
     # 限流由校准控制台用例覆盖；功能用例不因进程内 5s 窗口互相干扰。
@@ -126,7 +127,14 @@ def fp_client(settings, monkeypatch):
     application = create_app(settings)
     application.state.wechat_client = FakeWechatClient({"code-ok": "openid-FP"})
     Base.metadata.create_all(get_engine())
-    with TestClient(application, raise_server_exceptions=False) as client:
+    return application
+
+
+@pytest.fixture()
+def fp_client(fp_app):
+    from tests.test_calibration_api import _as_ready_admin
+
+    with TestClient(fp_app, raise_server_exceptions=False) as client:
         # ingest/rollback 已收敛为 admin 会话 + CSRF；包装器自动补 CSRF 头
         yield _as_ready_admin(client)
 
@@ -436,6 +444,30 @@ class TestMatchAndFallback:
         body = _estimate(fp_client, fp_headers, beacons, sequence=1, use_fp=True)
         assert body["positionSource"] == "trilateration"
         assert body["fallbackReason"] == "ambiguous"
+
+    def test_configured_margin_applies_to_estimate_and_diagnostic_query(self, fp_app, fp_client, fp_headers):
+        _ingest(fp_client, [
+            _record("G1-001", RSSI_TRILAT),
+            _record("G1-002", tuple(rssi + 2 for rssi in RSSI_TRILAT), coords=[-10.0, -10.0]),
+        ])
+        beacons = _beacon_obs()
+        query_body = {"siteId": "school-building-01", "mapVersion": "latest",
+                      "beacons": [{"beaconId": key, "rssi": rssi} for key, rssi in beacons]}
+        query_url = "/api/v1/fingerprint-db/query"
+        assert fp_client.post(query_url, json=query_body).json()["reason"] == "ambiguous"
+        assert _estimate(fp_client, fp_headers, beacons, sequence=1, use_fp=True)["fallbackReason"] == "ambiguous"
+
+        configured = Settings.from_env({"PATHAI_FINGERPRINT_MIN_MARGIN_DB": "1.5"})
+        fp_app.state.settings = replace(fp_app.state.settings,
+                                        fingerprint_min_margin_db=configured.fingerprint_min_margin_db)
+        assert fp_client.post(query_url, json=query_body).json()["fpId"] == "G1-001"
+        assert _estimate(fp_client, fp_headers, beacons, sequence=2, use_fp=True)["positionSource"] == "fingerprint"
+
+
+@pytest.mark.parametrize("value", ["-1", "nan", "inf", "wrong"])
+def test_invalid_fingerprint_margin_is_rejected(value):
+    with pytest.raises(ValueError, match="PATHAI_FINGERPRINT_MIN_MARGIN_DB"):
+        Settings.from_env({"PATHAI_FINGERPRINT_MIN_MARGIN_DB": value})
 
 
 class TestDeletionSemantics:

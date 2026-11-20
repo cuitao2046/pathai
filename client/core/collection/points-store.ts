@@ -8,6 +8,8 @@
 import type { CalibrationPointRec, FpRecord, StaticSessionRec } from './types';
 import type { PresetCalibrationPoint } from '../../data/calibration_points';
 
+type CollectionPresetPoint = Pick<PresetCalibrationPoint, 'pointId' | 'floorId' | 'truth' | 'scene'>;
+
 export type KvLoad<T> = () => T | null;
 /** 返回 false 表示只写进了会话内存、未真正落盘（调用方需回滚/告警）。 */
 export type KvSave<T> = (data: T) => boolean | void;
@@ -31,11 +33,11 @@ interface StaticPersist {
 export type StaticPointsPersist = StaticPersist;
 
 export class StaticPointsStore {
-  private readonly preset: PresetCalibrationPoint[];
+  private readonly preset: CollectionPresetPoint[];
   private data: StaticPersist;
 
   constructor(
-    preset: PresetCalibrationPoint[],
+    preset: CollectionPresetPoint[],
     load: KvLoad<StaticPersist>,
     private save: KvSave<StaticPersist>,
   ) {
@@ -111,7 +113,14 @@ export class StaticPointsStore {
       sessionIndex: this.data.sessions.filter((s) => s.pointId === pointId).length + 1,
     };
     this.data.sessions.push(rec);
-    this.commit();
+    try {
+      if (this.save(this.data) === false) {
+        throw new Error('静态采集记录写入失败');
+      }
+    } catch (error) {
+      this.data.sessions.pop();
+      throw error;
+    }
     return rec;
   }
 

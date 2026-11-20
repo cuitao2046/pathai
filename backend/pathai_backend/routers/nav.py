@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Request
@@ -40,6 +42,7 @@ from pathai_backend.nav_service import (
     TURN_PROMPT_DISTANCE_M,
 )
 from pathai_backend.routers.map import get_map_repository
+from pathai_backend.routers.field import SITE as FIELD_SITE, frozen_config, require_plan
 from pathai_backend.schemas.common import (
     EndReason,
     InstructionAction,
@@ -185,7 +188,8 @@ def create_session(
     idem_key = (request.headers.get("Idempotency-Key") or "").strip()
     if not idem_key or len(idem_key) > 128:
         raise ApiError(400, "INVALID_REQUEST", "缺少 Idempotency-Key")
-    request_hash = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    excluded = {"experiment"} if body.experiment is None else set()
+    request_hash = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
 
     existing = db.get(
         NavIdempotency, {"subject_id": user.subject_id, "idempotency_key": idem_key}
@@ -196,6 +200,21 @@ def create_session(
         return CreateSessionResponse.model_validate_json(existing.response_json)
 
     published = _resolve_published(repo, body.siteId, body.mapVersion)
+    experiment_json = None
+    if body.experiment is not None:
+        if body.siteId != FIELD_SITE:
+            raise ApiError(422, "INVALID_FIELD_PLAN", "该场所未配置实验导航")
+        experiment = body.experiment
+        require_plan(db, experiment.planId, "NV", published.map_version)
+        config = frozen_config(db, experiment.configId, published.map_version)
+        profile = config["A" if experiment.method == "A" else "B"]
+        settings = replace(settings, nav_arrival_radius_m=config["arrivalRadiusM"],
+                           nav_turn_prompt_distance_m=config["turnPromptDistanceM"],
+                           location_params_version=profile["paramsVersion"])
+        experiment_json = json.dumps(experiment.model_dump())
+        place = next((p for p in published.pkg.places if p.placeId == body.destinationId), None)
+        if not place or place.nodeId != "F1-TR-0003":
+            raise ApiError(422, "INVALID_FIELD_PLAN", "实验路线终点必须为资源教室")
     origin_age = _origin_age_s(body.origin.observedAt)
     if not is_sane(body.origin.observedAt):
         raise ApiError(
@@ -224,6 +243,7 @@ def create_session(
         subject_id=user.subject_id,
         site_id=body.siteId,
         map_version=published.map_version,
+        experiment_json=experiment_json,
         destination_place_id=place.placeId,
         destination_name=place.name,
         destination_floor_id=place.floorId,
@@ -545,6 +565,10 @@ def nav_update(
     published = repo.get(session.site_id, session.map_version)
     if published is None:
         raise ApiError(404, "MAP_NOT_PUBLISHED", "会话地图版本已不可用")
+    if session.experiment_json:
+        config = frozen_config(db, json.loads(session.experiment_json)["configId"], session.map_version)
+        settings = replace(settings, nav_arrival_radius_m=config["arrivalRadiusM"],
+                           nav_turn_prompt_distance_m=config["turnPromptDistanceM"])
     index = PackageIndex(published.pkg)
     route = RouteInfo.model_validate_json(session.route_json)
     loc: LocationUpdate = body.location

@@ -312,10 +312,26 @@ Page({
   /** 样本正文放在页面实例上，避免 MB 级字符串经 setData 传到视图层。 */
   localContent: null as string | null,
 
-  onLoad(): void {
+  onLoad(options: Record<string, string | undefined> = {}): void {
     this.applyCurrent(cachedRuntimeParams());
     this.refreshSandboxFiles();
     void this.refreshAll();
+    if (options.sampleId && /^s-[a-f0-9]{20}$/.test(options.sampleId)) {
+      void this.loadUploadedSample(options.sampleId);
+    }
+  },
+
+  async loadUploadedSample(sampleId: string): Promise<void> {
+    try {
+      const response = await appContext.http.client.request<SampleSummary>({
+        method: 'GET', path: `/api/v1/calibration/samples/${sampleId}`,
+      });
+      const sample = unwrapData(response);
+      this.setData({ sample, run: null, result: null, gridPreview: null, blockedReason: '' });
+      this.setState('server_ready', '已加载正式现场标定样本，可以开始计算');
+    } catch (error) {
+      this.setState('server_invalid', errorMessage(error));
+    }
   },
 
   onUnload(): void {

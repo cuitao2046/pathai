@@ -50,6 +50,7 @@ def _nav_policy_payload(runtime: RuntimeParams) -> dict:
 def location_params(request: Request) -> dict:
     runtime: RuntimeParams = request.app.state.runtime_params
     settings = runtime.get()
+    defaults = request.app.state.settings
     snapshot = runtime.snapshot()
     return {
         "siteId": DEFAULT_SITE_ID,
@@ -60,6 +61,13 @@ def location_params(request: Request) -> dict:
         "pathLossN": settings.location_path_loss_n,
         "residualReliableM": settings.location_residual_reliable_m,
         "residualDegradedM": settings.location_residual_degraded_m,
+        "defaults": {
+            "paramsVersion": defaults.location_params_version,
+            "rssiAt1mDbm": defaults.location_rssi_at_1m,
+            "pathLossN": defaults.location_path_loss_n,
+            "residualReliableM": defaults.location_residual_reliable_m,
+            "residualDegradedM": defaults.location_residual_degraded_m,
+        },
         "navArrivalRadiusM": settings.nav_arrival_radius_m,
         "navTurnPromptDistanceM": settings.nav_turn_prompt_distance_m,
         "navPolicySource": snapshot["navPolicySource"],

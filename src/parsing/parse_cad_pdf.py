@@ -201,6 +201,7 @@ LABEL_SKIP_RE = re.compile(
 _OPEN_ID_KEY = {
     "corridor": "corridor", "lobby": "lobby",
     "activity": "activity", "atrium": "atrium",
+    "stair_lobby": "stair_lobby", "elevator_lobby": "elevator_lobby",
 }
 
 # 功能房间统一类型（需求⑳+1）：办公室/实验室/教室等封闭功能房间一律 type="room"，
@@ -795,7 +796,7 @@ def build_rooms(all_segs, closures, label_points=None,
     # 的空间识别不会影响房间等封闭空间的识别。
     #   仅固定「纯开放组件」（组件内不含任何封闭空间标签）；开放+封闭共域的
     #   共享组件仍交给下方几何分割处理（保持既有分治行为，避免误切房间）。
-    _OPEN_RT = {"corridor", "lobby", "activity", "atrium"}
+    _OPEN_RT = set(_OPEN_ID_KEY)
     _open_cids = set()
     _enclosed_cids = set()
     for _entry in (label_points or []):
@@ -1181,36 +1182,44 @@ def build_rooms(all_segs, closures, label_points=None,
             if key < 0:
                 continue
             mask_c = (combo == key).astype(np.uint8) * 255
-            if int(np.count_nonzero(mask_c)) * m2_per_px < CIRC_MIN_M2:
-                continue
             name = seed_name.get(int(key % (int(seg_key.max()) + 1)), "走道")
+            is_lobby = classify_room_type(name) in {"stair_lobby", "elevator_lobby"}
+            min_area = 1.5 if is_lobby else CIRC_MIN_M2
+            if int(np.count_nonzero(mask_c)) * m2_per_px < min_area:
+                continue
             ys_i, xs_i = np.where(mask_c)
             mg = 20
             x0c, x1c = max(0, xs_i.min() - mg), min(W, xs_i.max() + mg)
             y0c, y1c = max(0, ys_i.min() - mg), min(H, ys_i.max() + mg)
-            cnts, _h = cv2.findContours(mask_c[y0c:y1c, x0c:x1c],
-                                        cv2.RETR_EXTERNAL,
-                                        cv2.CHAIN_APPROX_SIMPLE)
-            if not cnts:
-                continue
-            approx = cv2.approxPolyDP(max(cnts, key=cv2.contourArea),
-                                      Z * 1.5, True)
-            pts = [((float(p[0][0] + x0c) / Z + minx),
-                    (float(p[0][1] + y0c) / Z + miny)) for p in approx]
-            if len(pts) < 3:
-                continue
-            poly = Polygon(pts)
-            if not poly.is_valid:
-                poly = poly.buffer(0)
-            if poly.is_empty:
-                continue
-            # 交通域写入 owner，使门洞两侧投票能把门归属到走道
-            new_cid = next_split_id
-            next_split_id += 1
-            owner[combo == key] = np.float32(new_cid)
-            rooms.append((name, poly))
-            room_cids.append(new_cid)
-            n_circ += 1
+            # 同一个种子的 Voronoi 区与自由空间求交后可能分成多块。
+            # 分别成面并分配归属，避免被最大轮廓遗漏却仍占用 owner。
+            crop = mask_c[y0c:y1c, x0c:x1c]
+            count, components, stats, _ = cv2.connectedComponentsWithStats(crop, connectivity=4)
+            owner_crop = owner[y0c:y1c, x0c:x1c]
+            for component in sorted(range(1, count), key=lambda i: -stats[i, cv2.CC_STAT_AREA]):
+                if stats[component, cv2.CC_STAT_AREA] * m2_per_px < min_area:
+                    continue
+                pixels = components == component
+                contours, _ = cv2.findContours(
+                    pixels.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if not contours:
+                    continue
+                approx = cv2.approxPolyDP(max(contours, key=cv2.contourArea), Z * 1.5, True)
+                pts = [((float(p[0][0] + x0c) / Z + minx),
+                        (float(p[0][1] + y0c) / Z + miny)) for p in approx]
+                if len(pts) < 3:
+                    continue
+                poly = Polygon(pts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly.is_empty:
+                    continue
+                new_cid = next_split_id
+                next_split_id += 1
+                owner_crop[pixels] = np.float32(new_cid)
+                rooms.append((name, poly))
+                room_cids.append(new_cid)
+                n_circ += 1
         print(f"    公共交通空间(走道/门厅)识别: {n_circ} 处, "
               f"总面积 {float(np.count_nonzero(circ)) * m2_per_px:.0f}m2")
     except Exception as e:                                   # pragma: no cover

@@ -171,6 +171,30 @@ class BeaconEntry(_AllowExtraModel):
         return self
 
 
+class SurveyRouteReference(_AllowExtraModel):
+    pointId: str
+    direction: Literal["+Y", "-Y"]
+    distanceM: float = Field(gt=0)
+
+
+class FieldSurveyPoint(_AllowExtraModel):
+    pointId: str
+    floorId: str
+    truth: tuple[float, float]
+    scene: str
+    calibrationId: str | None = None
+    checkpointId: str | None = None
+    checkpointOnly: bool = False
+    routeReference: SurveyRouteReference | None = None
+    walls: list[dict] = Field(min_length=1, max_length=2)
+
+    @model_validator(mode="after")
+    def validate_measurement_references(self) -> "FieldSurveyPoint":
+        if len(self.walls) != (1 if self.routeReference else 2):
+            raise ValueError("现场测点须有两项测距参照")
+        return self
+
+
 class MapPackage(_AllowExtraModel):
     siteId: str = Field(min_length=1)
     mapVersion: str = Field(min_length=1)
@@ -180,3 +204,4 @@ class MapPackage(_AllowExtraModel):
     crossFloorEdges: list[CrossFloorEdge] = Field(default_factory=list)
     places: list[PlaceEntry] = Field(default_factory=list)
     beacons: list[BeaconEntry] = Field(default_factory=list)
+    fieldSurveyPoints: list[FieldSurveyPoint] = Field(default_factory=list)

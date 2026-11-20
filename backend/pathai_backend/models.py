@@ -10,6 +10,16 @@ class Base(DeclarativeBase):
     pass
 
 
+class FieldRecord(Base):
+    """Immutable records for one field experiment."""
+
+    __tablename__ = "field_records"
+    kind: Mapped[str] = mapped_column(String(12), primary_key=True)
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    operator: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class AnonymousSubject(Base):
     """匿名主体：仅存加盐 openid 哈希，不存明文身份。"""
 
@@ -86,6 +96,7 @@ class NavSession(Base):
     )
     site_id: Mapped[str] = mapped_column(String(64), nullable=False)
     map_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    experiment_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     destination_place_id: Mapped[str] = mapped_column(String(64), nullable=False)
     destination_name: Mapped[str] = mapped_column(String(128), nullable=False)
     destination_floor_id: Mapped[str] = mapped_column(String(16), nullable=False)

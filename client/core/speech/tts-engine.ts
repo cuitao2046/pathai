@@ -5,7 +5,7 @@
  * resolve 结束（视为已播完，交还控制权给队列）。
  */
 export interface TtsEngine {
-  speak(text: string): Promise<void>;
+  speak(text: string, onPlay?: () => void): Promise<void>;
   stop(): void;
   /**
    * 后台预生成（可选）：把文本合成到本地缓存，供后续 speak 直接播放。

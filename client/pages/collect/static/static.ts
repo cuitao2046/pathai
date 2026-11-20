@@ -18,20 +18,30 @@ import { LocationPipeline } from '../../../core/position/location-pipeline';
 import { SequenceCounter } from '../../../core/position/sequence-counter';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
 import { pickPointOnScreen } from '../../../core/collection/hit-test';
+import { drawReferenceWalls } from '../../../core/collection/reference-walls';
 import { createTeeSource, estimateSnapshot } from '../../../core/collection/collect-scan';
 import { StaticSampler } from '../../../core/collection/static-sampler';
 import { StaticPointsStore } from '../../../core/collection/points-store';
 import { buildStaticExport, type CollectionExportMeta } from '../../../core/collection/export-builder';
 import type { CalibrationPointRec } from '../../../core/collection/types';
+import { expandFieldSurveyPoints, FIELD_SURVEY_POINTS } from '../../../data/field-survey-points';
 import { PRESET_CALIBRATION_POINTS } from '../../../data/calibration_points';
 import { SIMULATED_BEACONS } from '../../../data/fingerprint_grid';
 import type { PositionEstimateResponse } from '../../../typings/api';
 
 const log = createLogger('collect-static');
 
-const STORE_KEY = 'col:static:v1';
+const COLLECTION_MODES = [
+  { label: 'T3 参数标定', purpose: 'calibration', key: 'col:field:t3:v1' },
+  { label: 'T6 静态测试', purpose: 'static_test', key: 'col:field:t6:v1' },
+  { label: 'T7/T8 路线检查点', purpose: 'checkpoint' },
+  { label: '原标定点与历史记录', key: 'col:static:v1' },
+] as const;
 
 const DURATION_OPTIONS = [30, 60, 120];
+const FIELD_ORIENTATIONS = ['N', 'E', 'S', 'W'] as const;
+const FIELD_SAMPLE_SECONDS = 30;
+const FIELD_TURN_SECONDS = 5;
 
 /** 采集进行中实时表最多展示的行数（完整数据在导出里）。 */
 const OBS_ROWS_MAX = 6;
@@ -76,6 +86,12 @@ interface CardData {
   sessionCount: number;
   distanceText: string;
   custom: boolean;
+  walls: string[];
+}
+
+function fieldSurveyPoints() {
+  const shared = appContext.map.fieldSurveyPoints;
+  return shared.length ? expandFieldSurveyPoints(shared) : FIELD_SURVEY_POINTS;
 }
 
 Page({
@@ -88,8 +104,11 @@ Page({
     currentFloor: '1',
     currentFloorText: '1F',
     durationOptions: DURATION_OPTIONS,
-    durationIndex: 1,
-    durationS: DURATION_OPTIONS[1],
+    modeIndex: 0,
+    modeLabels: COLLECTION_MODES.map((mode) => mode.label),
+    pointIds: [] as string[],
+    durationIndex: 2,
+    durationS: DURATION_OPTIONS[2],
     stats: { pointCount: 0, sampledPointCount: 0, sessionCount: 0 },
     /** 是否在标定地图上叠加 5 枚未安装虚拟信标（设置项，默认关闭＝现状口径）。 */
     simPreview: false,
@@ -132,6 +151,9 @@ Page({
   sessionCounts: null as Map<string, number> | null,
   // 采集进行中状态（不进 data，避免高频 setData 冲突）
   sampler: null as StaticSampler | null,
+  fieldOrientationIndex: -1,
+  turning: false,
+  activeDurationS: 0,
   collectPoint: null as CalibrationPointRec | null,
   estimateAtStart: null as ReturnType<typeof estimateSnapshot>,
   tickTimer: null as ReturnType<typeof setInterval> | null,
@@ -142,11 +164,6 @@ Page({
     this.pointsByFloor = new Map();
     this.sessionCounts = new Map();
     this.rawTripletsInCollection = new Set();
-    this.store = new StaticPointsStore(
-      PRESET_CALIBRATION_POINTS,
-      () => getJson(STORE_KEY),
-      (d) => setJson(STORE_KEY, d),
-    );
     this.sequence = new SequenceCounter();
     this.setData({
       simPreview: appContext.getSimBeaconPreviewSetting(),
@@ -203,7 +220,7 @@ Page({
       this.setData({ loading: false, loadError: '地图加载失败，请确认后端服务后重试' });
       return;
     }
-    this.refreshPoints();
+    this.loadPointMode(this.data.modeIndex);
     this.setData({
       loading: false,
       floors: [],
@@ -345,12 +362,51 @@ Page({
   // 点位数据
   // ------------------------------------------------------------------
 
+  loadPointMode(index: number): void {
+    const mode = COLLECTION_MODES[index];
+    if (!mode) return;
+    const points = 'purpose' in mode
+      ? fieldSurveyPoints().filter((point) => point.purpose === mode.purpose)
+      : PRESET_CALIBRATION_POINTS;
+    // Shared point IDs can refer to new coordinates on a new map version.
+    const key = 'key' in mode
+      ? ('purpose' in mode && appContext.map.fieldSurveyPoints.length
+        ? `${mode.key}:${appContext.map.requireVersion()}` : mode.key)
+      : null;
+    this.presetCount = points.length;
+    this.store = new StaticPointsStore(
+      points,
+      () => key === null ? null : getJson(key),
+      (data) => key === null ? false : setJson(key, data),
+    );
+    const durationIndex = index === 0 ? 2 : 1;
+    this.setData({ modeIndex: index, card: null, durationIndex, durationS: DURATION_OPTIONS[durationIndex] });
+    this.pendingCardPoint = null;
+    this.refreshStatsAndDraw();
+    if ('purpose' in mode) this.mapView?.setFloor('1');
+  },
+
+  presetCount: 0,
+
+  onPointModeChange(e: WechatMiniprogram.PickerChange): void {
+    if (!this.data.loading && !this.data.loadError && !this.data.collecting) this.loadPointMode(Number(e.detail.value));
+  },
+
+  onPointSelect(e: WechatMiniprogram.PickerChange): void {
+    if (this.data.collecting) return;
+    const id = this.data.pointIds[Number(e.detail.value)];
+    const point = this.store?.listPoints().find((p) => p.pointId === id);
+    if (point) this.openCard(point);
+  },
+
   refreshPoints(): void {
     if (this.store === null) {
       return;
     }
     this.pointsByFloor = new Map();
-    for (const p of this.store.listPoints()) {
+    const points = this.store.listPoints();
+    this.setData({ pointIds: points.map((p) => p.pointId) });
+    for (const p of points) {
       const list = this.pointsByFloor!.get(p.floorId);
       if (list) {
         list.push(p);
@@ -400,7 +456,7 @@ Page({
   },
 
   handleMapTap(screen: { x: number; y: number }): void {
-    if (this.data.collecting || this.data.card !== null) {
+    if (this.data.collecting) {
       return;
     }
     const vp = this.mapView?.vp;
@@ -422,6 +478,7 @@ Page({
   },
 
   handleLongPress(world: { x: number; y: number }): void {
+    if (this.data.modeIndex !== 3 || this.data.card !== null) return;
     const vp = this.mapView?.vp;
     if (this.mapView === null || vp === null || vp === undefined || this.data.collecting) {
       return;
@@ -463,18 +520,26 @@ Page({
       const d = Math.hypot(est.position.x - p.truth[0], est.position.y - p.truth[1]);
       distanceText = `≈${d.toFixed(1)} m`;
     }
+    const surveyPoint = fieldSurveyPoints().find((point) => point.pointId === p.pointId);
+    const references = (surveyPoint?.walls ?? [])
+      .map((wall) => `${wall.direction} · ${wall.id} · ${wall.distanceM.toFixed(surveyPoint?.checkpointOnly ? 3 : 2)} m`);
+    const route = surveyPoint?.routeReference;
+    if (route) references.unshift(`从 ${route.pointId} 沿路线 ${route.direction} 量 ${route.distanceM} m`);
     this.setData({
       card: {
         pointId: p.pointId,
         sceneText: p.label !== p.scene ? `${p.scene} · ${p.label}` : p.scene,
         floorText: floorItem !== undefined ? `${floorItem.level}F` : p.floorId,
-        truthText: `${p.truth[0].toFixed(1)}, ${p.truth[1].toFixed(1)}`,
+        truthText: `${p.truth[0].toFixed(3)}, ${p.truth[1].toFixed(3)}`,
         sessionCount: this.sessionCounts!.get(p.pointId) ?? 0,
         distanceText,
         custom: p.custom,
+        walls: references,
       },
     });
     this.pendingCardPoint = p;
+    this.mapView?.setFloor(p.floorId);
+    this.mapView?.requestDraw();
   },
 
   pendingCardPoint: null as CalibrationPointRec | null,
@@ -482,10 +547,7 @@ Page({
   onCardCancel(): void {
     this.setData({ card: null });
     this.pendingCardPoint = null;
-  },
-
-  noop(): void {
-    // 阻止确认卡冒泡关闭
+    this.mapView?.requestDraw();
   },
 
   /** 确认到点：倒计时开始（振动提示由 startTick 统一给出，避免与确认反馈叠成三连振）。 */
@@ -494,9 +556,41 @@ Page({
     if (p === null || this.data.collecting) {
       return;
     }
-    this.setData({ card: null });
-    this.pendingCardPoint = null;
+    this.onCardCancel();
+    this.beginCollection(p, this.data.durationS);
+  },
 
+  onCardConfirmField(): void {
+    const p = this.pendingCardPoint;
+    if (p === null || this.data.collecting) {
+      return;
+    }
+    this.onCardCancel();
+    this.fieldOrientationIndex = 0;
+    this.collectPoint = p;
+    this.beginTurn();
+  },
+
+  beginTurn(): void {
+    this.turning = true;
+    this.sampler = null;
+    this.remainingS = FIELD_TURN_SECONDS;
+    this.setData({
+      card: null,
+      collecting: true,
+      countdownText: `请面向 ${FIELD_ORIENTATIONS[this.fieldOrientationIndex]} · ${this.remainingS}s`,
+      sampleCount: 0,
+      beaconCount: 0,
+      noSampleHint: false,
+      noSampleText: '',
+      obsRows: [],
+    });
+    this.startTick();
+  },
+
+  beginCollection(p: CalibrationPointRec, durationS: number): void {
+    this.turning = false;
+    this.activeDurationS = durationS;
     this.collectPoint = p;
     this.sampler = new StaticSampler({
       truth: p.truth,
@@ -512,7 +606,7 @@ Page({
       },
     });
     this.estimateAtStart = estimateSnapshot(this.lastEstimate);
-    this.remainingS = this.data.durationS;
+    this.remainingS = durationS;
     this.pausedRemainingS = 0;
     this.rawSamplesInCollection = 0;
     this.rawTripletsInCollection?.clear();
@@ -520,7 +614,9 @@ Page({
     this.startScan();
     this.setData({
       collecting: true,
-      countdownText: `${this.remainingS}s`,
+      countdownText: this.fieldOrientationIndex < 0
+        ? `${this.remainingS}s`
+        : `${FIELD_ORIENTATIONS[this.fieldOrientationIndex]} · ${this.remainingS}s`,
       sampleCount: 0,
       beaconCount: 0,
       noSampleHint: false,
@@ -546,6 +642,17 @@ Page({
   },
 
   onTick(): void {
+    if (this.turning && this.collectPoint !== null) {
+      this.remainingS -= 1;
+      if (this.remainingS <= 0) {
+        this.beginCollection(this.collectPoint, FIELD_SAMPLE_SECONDS);
+      } else {
+        this.setData({
+          countdownText: `请面向 ${FIELD_ORIENTATIONS[this.fieldOrientationIndex]} · ${this.remainingS}s`,
+        });
+      }
+      return;
+    }
     const sampler = this.sampler;
     if (sampler === null) {
       this.stopTick();
@@ -562,7 +669,9 @@ Page({
       .map((o) => ({ beaconId: o.beaconId, n: o.n, rssiMedian: o.rssiMedian }));
     const noSample = sampler.sampleCount === 0;
     this.setData({
-      countdownText: `${this.remainingS}s`,
+      countdownText: this.fieldOrientationIndex < 0
+        ? `${this.remainingS}s`
+        : `${FIELD_ORIENTATIONS[this.fieldOrientationIndex]} · ${this.remainingS}s`,
       sampleCount: sampler.sampleCount,
       beaconCount: sampler.resolvedBeaconCount,
       noSampleHint: noSample,
@@ -590,17 +699,33 @@ Page({
     if (sampler === null || p === null || this.store === null) {
       return;
     }
-    const finished = sampler.finish(this.data.durationS);
-    this.store.addSession(p.pointId, {
-      startedAt: finished.startedAt,
-      durationS: finished.durationS,
-      trafficWindow: false,
-      observations: finished.observations,
-      ...(this.estimateAtStart ? { estimateAtStart: this.estimateAtStart } : {}),
-      ...(estimateSnapshot(this.lastEstimate)
-        ? { estimateAtEnd: estimateSnapshot(this.lastEstimate) as NonNullable<ReturnType<typeof estimateSnapshot>> }
-        : {}),
-    });
+    const finished = sampler.finish(this.activeDurationS);
+    const orientation = FIELD_ORIENTATIONS[this.fieldOrientationIndex];
+    const estimateAtEnd = estimateSnapshot(this.lastEstimate);
+    try {
+      this.store.addSession(p.pointId, {
+        startedAt: finished.startedAt,
+        durationS: finished.durationS,
+        ...(orientation ? { orientation } : {}),
+        trafficWindow: false,
+        observations: finished.observations,
+        ...(this.estimateAtStart ? { estimateAtStart: this.estimateAtStart } : {}),
+        ...(estimateAtEnd ? { estimateAtEnd } : {}),
+      });
+    } catch (error) {
+      log.error('静态采集记录写入失败', String(error));
+      this.sampler = null;
+      this.collectPoint = null;
+      this.fieldOrientationIndex = -1;
+      this.setData({ collecting: false, countdownText: '' });
+      this.refreshStatsAndDraw();
+      wx.showModal({
+        title: '本段未保存',
+        content: '请检查本地存储后重试。之前已保存的采集段仍可导出。',
+        showCancel: false,
+      });
+      return;
+    }
     log.info('会话已记录', p.pointId, `${finished.observations.length} 信标`);
     // 原始广播明细只进日志：包含第三方/未命中台账的帧，供现场诊断，不上界面
     log.info(
@@ -609,6 +734,12 @@ Page({
       `triplets=${this.rawTripletsInCollection?.size ?? 0}`,
       `matched=${sampler.sampleCount}`,
     );
+    if (orientation && this.fieldOrientationIndex < FIELD_ORIENTATIONS.length - 1) {
+      this.fieldOrientationIndex += 1;
+      this.beginTurn();
+      return;
+    }
+    this.fieldOrientationIndex = -1;
     this.sampler = null;
     this.collectPoint = null;
     this.estimateAtStart = null;
@@ -731,7 +862,7 @@ Page({
     const points = store.listPoints();
     const customCount = points.filter((p) => p.custom === true).length;
     const visiblePreset = points.length - customCount;
-    const hiddenCount = Math.max(0, PRESET_CALIBRATION_POINTS.length - visiblePreset);
+    const hiddenCount = Math.max(0, this.presetCount - visiblePreset);
     if (stats.sessionCount === 0 && customCount === 0 && hiddenCount === 0) {
       wx.showToast({ title: '还没有采集记录', icon: 'none' });
       return;
@@ -786,10 +917,11 @@ Page({
       mapVersion: appContext.map.isLoaded ? appContext.map.requireVersion() : '',
       ledgerSha256: null,
     };
-    const { data, warnings } = buildStaticExport(store, meta);
+    const { data, warnings } = buildStaticExport(store, meta, this.data.modeIndex === 1);
     const json = JSON.stringify(data, null, 2);
     const fs = wx.getFileSystemManager();
-    const path = `${wx.env.USER_DATA_PATH}/static_samples_${Date.now()}.json`;
+    const prefix = this.data.modeIndex === 1 ? 't6_static_test' : 'static_samples';
+    const path = `${wx.env.USER_DATA_PATH}/${prefix}_${Date.now()}.json`;
     fs.writeFile({
       filePath: path,
       data: json,
@@ -821,10 +953,34 @@ Page({
   // 叠加图层：点位 + 定位点
   // ------------------------------------------------------------------
 
+  drawReferenceWalls(
+    ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
+    vp: NonNullable<CollectMapView['vp']>,
+  ): void {
+    const point = this.pendingCardPoint;
+    if (!this.data.card || !point || point.floorId !== vp.floorId) return;
+    const surveyPoint = fieldSurveyPoints().find((p) => p.pointId === point.pointId);
+    const walls = appContext.map.floors[vp.floorId]?.geometry.walls;
+    if (!surveyPoint || !walls) return;
+
+    const [x, y] = point.truth;
+    drawReferenceWalls(ctx, vp, { x, y }, walls, surveyPoint.walls.map((reference) => {
+      const offset = reference.direction.startsWith('-') ? -reference.distanceM : reference.distanceM;
+      const alongX = reference.direction.endsWith('X');
+      return {
+        id: reference.id,
+        marker: surveyPoint.routeReference ? 'B' : undefined,
+        hitX: x + (alongX ? offset : 0),
+        hitY: y + (alongX ? 0 : offset),
+      };
+    }));
+  },
+
   drawOverlay(
     ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
     vp: NonNullable<CollectMapView['vp']>,
   ): void {
+    this.drawReferenceWalls(ctx, vp);
     const pts = this.pointsByFloor!.get(vp.floorId) ?? [];
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

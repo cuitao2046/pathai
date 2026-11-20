@@ -29,6 +29,7 @@ from pathai_backend.observation_time import (
     observation_age_s,
 )
 from pathai_backend.routers.map import get_map_repository
+from pathai_backend.routers.field import SITE as FIELD_SITE, frozen_config, frozen_location_params
 from pathai_backend.schemas.common import GeoPosition
 from pathai_backend.schemas.location import (
     FingerprintMatchInfo,
@@ -150,12 +151,18 @@ def estimate(
         residual_degraded_m=settings.location_residual_degraded_m,
         params_version=settings.location_params_version,
     )
+    config = None
+    if body.experimentConfigId or body.experimentMethod:
+        if not body.experimentConfigId or not body.experimentMethod or body.siteId != FIELD_SITE:
+            raise ApiError(422, "INVALID_FIELD_CONFIG", "需要指定冻结配置和实验方法")
+        config = frozen_config(db, body.experimentConfigId, published.map_version)
+        params = frozen_location_params(config, body.experimentMethod)
 
     # 指纹库优先：命中阈值（重叠/RMSE/置信度/与次优差距）由服务层判定；
     # 未启用开关时完全不触达指纹库，行为与旧版一致。
     fp_match: fingerprint_library.FingerprintMatch | None = None
     fallback_reason: str | None = None
-    if body.useFingerprintDb:
+    if body.experimentMethod == "C" or (config is None and body.useFingerprintDb):
         try:
             fp_match, fallback_reason = fingerprint_library.query(
                 db,
@@ -163,6 +170,8 @@ def estimate(
                 beacons=body.beacons,
                 site_id=body.siteId,
                 floor_hint=body.floorHint,
+                frozen=config["C"] if config else None,
+                min_margin_db=settings.fingerprint_min_margin_db,
             )
         except Exception:  # 指纹库异常不得影响定位主链路：降级三点定位
             logger.exception("指纹库查询失败，降级为三点定位")

@@ -124,6 +124,7 @@
 
   <view class="section">
     <view class="section-title">现场采集工具</view>
+    <button bindtap="onOpenFieldExperiment">打开现场实验</button>
     <view class="row">
       <text class="label">首页「采集」入口</text>
       <switch checked="{{fieldCollectionSetting}}" bindchange="onChangeFieldCollection" aria-label="切换首页是否显示现场采集工具入口" />

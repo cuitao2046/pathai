@@ -112,6 +112,7 @@ function createWxAudio(src: string): LocalVoiceClipHandle {
     stop: () => audio.stop(),
     destroy: () => audio.destroy(),
     onEnded: (listener) => audio.onEnded(listener),
+    onPlay: (listener) => audio.onPlay(listener),
     onError: (listener) => audio.onError(() => listener()),
   };
 }

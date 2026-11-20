@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from pathai_backend import auth, fingerprint_library as svc
 from pathai_backend.admin.deps import require_admin_ready
+from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.routers.calibration import (
@@ -107,6 +108,7 @@ def query(
     body: FingerprintQueryRequest,
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
+    settings: Settings = Depends(auth.get_settings),
 ) -> FingerprintMatchResponse:
     if not repo.is_known_site(body.siteId):
         raise ApiError(404, "SITE_NOT_FOUND", f"场所不存在：{body.siteId}")
@@ -133,6 +135,7 @@ def query(
         beacons=observations,
         site_id=body.siteId,
         floor_hint=body.floorHint,
+        min_margin_db=settings.fingerprint_min_margin_db,
     )
     if match is None:
         return FingerprintMatchResponse(matched=False, reason=reason)

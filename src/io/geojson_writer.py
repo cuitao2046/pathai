@@ -214,12 +214,19 @@ def wall_material_from_thickness(t_m):
     return "partition"           # 轻质隔墙
 
 
+def _polygon_parts(geom):
+    if geom is None or geom.is_empty:
+        return
+    if geom.geom_type == "Polygon":
+        yield geom
+    elif geom.geom_type in {"MultiPolygon", "GeometryCollection"}:
+        for part in geom.geoms:
+            yield from _polygon_parts(part)
+
+
 def _keep_walkable_pieces(geom, min_piece_m2):
     """过滤差集后的微小碎片，返回 Polygon 或 MultiPolygon（pt 坐标）。"""
-    if geom is None or geom.is_empty:
-        return None
-    pieces = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
-    keep = [g for g in pieces if g.area * SCALE * SCALE >= min_piece_m2]
+    keep = [g for g in _polygon_parts(geom) if g.area * SCALE * SCALE >= min_piece_m2]
     if not keep:
         return None
     if len(keep) == 1:
@@ -229,9 +236,9 @@ def _keep_walkable_pieces(geom, min_piece_m2):
 
 def _walkable_geojson(geom):
     """Walkable Polygon → GeoJSON MultiPolygon 坐标（m），带内环（柱洞）。"""
-    if geom is None or geom.is_empty:
+    polys = list(_polygon_parts(geom))
+    if not polys:
         return None
-    polys = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
 
     def _ring(coords):
         return [list(pt2m((x, y))) for x, y in coords]
@@ -418,7 +425,7 @@ def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
     if not (elev_geoms or stair_geoms):
         return 0
 
-    OPEN = set(_OPEN_ID_KEY) | {"elevator_lobby", "stair_lobby", "lobby"}
+    OPEN = set(_OPEN_ID_KEY) - {"elevator_lobby", "stair_lobby"}
     band_pt = band_m / SCALE
     # 面积阈值：输入为 m²，shapely 多边形面积为 pt²，换算 1 m² = 1/SCALE² pt²
     _inv = 1.0 / (SCALE * SCALE)
@@ -463,12 +470,12 @@ def split_lobby_pockets(rooms, stair_boxes, evtr_boxes,
         rid = "F{}-{}L-{:02d}".format(
             floor_no if floor_no is not None else "X",
             ("EL" if kind == "elevator" else "ST"), seq[0])
-        new_rooms.append(_make_lobby_room(rid, kind, u, r, floor_no))
         claimed.append(u)
         # 收缩原开放空间（去掉口袋区域），其余保留为走廊/门厅
         shrunk = _lobby_largest_poly(rp.difference(u))
         if shrunk is not None and not getattr(shrunk, "is_empty", True) \
                 and shrunk.area > amin:
+            new_rooms.append(_make_lobby_room(rid, kind, u, r, floor_no))
             r["polygon_pt"] = shrunk
             r["walkable_poly_pt"] = shrunk
             r["coords_m"] = [list(pt2m((x, y))) for x, y in shrunk.exterior.coords]

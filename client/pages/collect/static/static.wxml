@@ -1,7 +1,14 @@
 <view class="page">
   <!-- 顶栏：仅倒计时档位（楼层与导出已移到右下操作列） -->
-  <view class="topbar">
+  <view class="topbar" wx:if="{{!collecting}}">
+    <picker range="{{modeLabels}}" value="{{modeIndex}}" bindchange="onPointModeChange">
+      <button class="pill">{{modeLabels[modeIndex]}}</button>
+    </picker>
+    <picker range="{{pointIds}}" bindchange="onPointSelect">
+      <button class="pill" disabled="{{pointIds.length === 0}}">选点</button>
+    </picker>
     <picker
+      wx:if="{{modeIndex === 3}}"
       mode="selector"
       range="{{durationOptions}}"
       value="{{durationIndex}}"
@@ -14,8 +21,9 @@
 
   <view class="stats-bar" aria-live="polite">
     <view class="stats-line">
-      <text>点位 {{stats.pointCount}} · 已采 {{stats.sampledPointCount}} · 会话 {{stats.sessionCount}}</text>
-      <text class="legend">蓝=待采 绿=已采</text>
+      <text wx:if="{{modeIndex === 2}}">路线检查点 {{stats.pointCount}}</text>
+      <text wx:else>点位 {{stats.pointCount}} · 已采 {{stats.sampledPointCount}} · 会话 {{stats.sessionCount}}</text>
+      <text wx:if="{{modeIndex !== 2}}" class="legend">蓝=待采 绿=已采</text>
     </view>
     <!-- 真实 BLE 状态：适配器未就绪/扫描失败/在扫但零广播都必须能看见 -->
     <view class="ble-line ble-{{blePhase}}">
@@ -60,7 +68,7 @@
 
   <!-- 操作按键列：清理 / 楼层切换 / 导出，贴屏幕右下边缘垂直排列（可视面随文字宽度） -->
   <view class="op-tools" aria-label="采集操作">
-    <view class="op-btn danger" bindtap="onClearRecords" aria-role="button" aria-label="清理本机采集记录">清理</view>
+    <view wx:if="{{modeIndex !== 2}}" class="op-btn danger" bindtap="onClearRecords" aria-role="button" aria-label="清理本机采集记录">清理</view>
     <view
       wx:for="{{floors}}"
       wx:key="floorId"
@@ -70,7 +78,7 @@
       aria-role="button"
       aria-label="切换到{{item.displayName}}"
     >{{item.level}}F</view>
-    <view class="op-btn" bindtap="onExport" aria-role="button" aria-label="导出采集记录">导出</view>
+    <view wx:if="{{modeIndex !== 2}}" class="op-btn" bindtap="onExport" aria-role="button" aria-label="导出采集记录">导出</view>
   </view>
 
   <!-- 采集中：实时窗口表（底部居中定时器上方，避开右下按键列） -->
@@ -102,22 +110,25 @@
   </view>
 
   <!-- 点位确认卡 -->
-  <view class="card-mask" wx:if="{{card !== null}}" bindtap="onCardCancel">
-    <view class="card" catchtap="noop" aria-label="点位确认">
+    <view class="card" wx:if="{{card !== null}}" aria-label="点位确认">
       <view class="card-title">{{card.pointId}}</view>
       <view class="card-row"><text class="label">场景</text><text>{{card.sceneText}}</text></view>
       <view class="card-row"><text class="label">楼层</text><text>{{card.floorText}}</text></view>
-      <view class="card-row"><text class="label">真值坐标</text><text>{{card.truthText}}</text></view>
-      <view class="card-row"><text class="label">已采次数</text><text>{{card.sessionCount}}</text></view>
+      <view class="card-row"><text class="label">{{modeIndex === 3 ?  '真值坐标'  : '候选坐标'}}</text><text>{{card.truthText}}</text></view>
+      <view class="card-row" wx:if="{{modeIndex !== 2}}"><text class="label">已采次数</text><text>{{card.sessionCount}}</text></view>
       <view class="card-row"><text class="label">定位距离</text><text>{{card.distanceText}}</text></view>
-      <view class="card-hint">请通过门牌/墙角/柱子等现场参照物确认已到达点位；确认后开始倒计时采集，期间请原地站立。</view>
+      <view class="card-row" wx:for="{{card.walls}}" wx:key="*this">
+        <text class="label wall-label-{{index}}">测距参照 {{index === 0 ? 'A' : 'B'}}</text><text>{{item}}</text>
+      </view>
+      <view class="card-hint" wx:if="{{card.walls.length}}">按地图方向从同一点水平垂直打向两面墙。所列距离为地图参考值，待现场复测。</view>
+      <view class="card-hint" wx:else>请通过门牌/墙角/柱子等现场参照物确认已到达点位；确认后开始倒计时采集，期间请原地站立。</view>
       <view class="card-actions">
         <button class="btn ghost" bindtap="onCardCancel" aria-label="取消">取消</button>
-        <button class="btn ghost" bindtap="onManageSessions" aria-label="会话与点位管理">管理</button>
-        <button class="btn primary" bindtap="onCardConfirm" aria-label="确认到点，开始采集">确认采集</button>
+        <button wx:if="{{modeIndex !== 2}}" class="btn ghost" bindtap="onManageSessions" aria-label="会话与点位管理">管理</button>
+        <button wx:if="{{modeIndex === 0 || modeIndex === 3}}" class="btn primary" bindtap="onCardConfirm" aria-label="确认到点，开始采集">{{modeIndex === 0 ? '采集 120 秒' : '确认采集'}}</button>
+        <button wx:if="{{modeIndex === 1 || modeIndex === 3}}" class="btn primary" bindtap="onCardConfirmField">连续采四个朝向</button>
       </view>
     </view>
-  </view>
 
   <view class="overlay" wx:if="{{loading}}">
     <text class="overlay-text">{{loadError !== '' ? loadError : '正在加载地图…'}}</text>
