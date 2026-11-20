@@ -5,8 +5,10 @@ import argparse
 import csv
 import io
 import json
+import statistics
 from collections import Counter
 from math import hypot
+from pathlib import Path
 from zipfile import ZipFile
 
 FILES = {
@@ -15,6 +17,8 @@ FILES = {
     "NV": "nav_sessions.jsonl",
 }
 TURN_ACTIONS = {"turn_left", "turn_right", "u_turn"}
+DEFAULT_JUMP_THRESHOLD_M = 3.0
+METRIC_VERSION = "1.0"
 
 
 def rows(bundle, name):
@@ -140,7 +144,153 @@ def check_navigation(run, config):
             "turnTiming": turn_reference_timing(run, events, instructions), "arrival": arrival}
 
 
-def analyze(path):
+def percentile(values, fraction):
+    ordered = sorted(values)
+    if not ordered:
+        return None
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def summarize(values):
+    values = [value for value in values if value is not None]
+    if not values:
+        return {"n": 0, "mean": None, "p90": None, "p95": None, "max": None}
+    return {"n": len(values), "mean": round(statistics.fmean(values), 3),
+            "p90": round(percentile(values, 0.9), 3),
+            "p95": round(percentile(values, 0.95), 3), "max": round(max(values), 3)}
+
+
+def ratio(values):
+    values = list(values)
+    return sum(1 for value in values if value) / len(values) if values else None
+
+
+def replay_documents(replay):
+    if replay is None:
+        return []
+    if isinstance(replay, (str, Path)):
+        replay = json.loads(Path(replay).read_text(encoding="utf-8"))
+    if isinstance(replay, list):
+        return replay
+    if isinstance(replay, dict) and "results" in replay:
+        return replay["results"]
+    return [replay]
+
+
+def replay_metrics(replay):
+    """A/B/C accuracy from ``/field/replay`` documents, with all/hit-only views."""
+    documents = replay_documents(replay)
+    tasks = {}
+    sources = Counter()
+    fallback_reasons = Counter()
+    for document in documents:
+        if "error" in document:
+            continue
+        bucket = tasks.setdefault(document.get("task", "?"), {})
+        for checkpoint in document.get("checkpoints", []):
+            for method, result in checkpoint.get("methods", {}).items():
+                data = bucket.setdefault(method, {"errors": [], "floor": [], "hits": []})
+                if result.get("errorM") is not None:
+                    data["errors"].append(result["errorM"])
+                    data["floor"].append(result.get("floorCorrect") is True)
+                if method == "C":
+                    sources[result.get("source")] += 1
+                    if result.get("fallbackReason"):
+                        fallback_reasons[result["fallbackReason"]] += 1
+                    if result.get("source") == "fingerprint" and result.get("errorM") is not None:
+                        data["hits"].append(result["errorM"])
+    accuracy = {}
+    for task, methods in tasks.items():
+        accuracy[task] = {}
+        for method, data in methods.items():
+            accuracy[task][method] = {
+                "all": {**summarize(data["errors"]), "floorCorrectRate": ratio(data["floor"])},
+            }
+            if method == "C":
+                accuracy[task][method]["hitOnly"] = summarize(data["hits"])
+    attempts = sources["fingerprint"] + sources["trilateration"]
+    return {
+        "documents": sum(1 for document in documents if "error" not in document),
+        "errors": [document for document in documents if "error" in document],
+        "tasks": accuracy,
+        "C": {"fingerprintHits": sources["fingerprint"],
+              "fallbacksToB": sources["trilateration"],
+              "fallbackRate": sources["trilateration"] / attempts if attempts else None,
+              "fallbackReasons": dict(fallback_reasons)},
+    }
+
+
+def navigation_metrics(segments, jump_threshold):
+    """Availability and timing metrics computed from recorded navigation events."""
+    estimates = 0
+    located = 0
+    intervals = []
+    rtts = []
+    jumps = 0
+    runs_with_jump = 0
+    for segment in segments:
+        stream = [event for event in segment["navigation"]
+                  if event.get("kind") == "estimate" and isinstance(event.get("t"), (int, float))]
+        positions = []
+        for event in stream:
+            estimates += 1
+            if event.get("position"):
+                located += 1
+                positions.append(event)
+            if isinstance(event.get("requestMs"), (int, float)):
+                rtts.append(event["requestMs"])
+        intervals.extend(
+            current["t"] - previous["t"]
+            for previous, current in zip(stream, stream[1:])
+            if 0 < current["t"] - previous["t"] <= 60_000)
+        run_jumps = sum(
+            1 for previous, current in zip(positions, positions[1:])
+            if previous["position"].get("floorId") == current["position"].get("floorId")
+            and hypot(current["position"]["x"] - previous["position"]["x"],
+                      current["position"]["y"] - previous["position"]["y"]) > jump_threshold)
+        jumps += run_jumps
+        runs_with_jump += 1 if run_jumps else 0
+    return {
+        "validLocationRate": located / estimates if estimates else None,
+        "estimates": estimates,
+        "positionedEstimates": located,
+        "jumpCount": jumps,
+        "runsWithJump": runs_with_jump,
+        "jumpThresholdM": jump_threshold,
+        "updateIntervalMs": summarize(intervals),
+        "requestRttMs": summarize(rtts),
+    }
+
+
+def timing_metrics(navigation):
+    """Instruction/arrival timing distributions from the scored navigation runs."""
+    speech, haptics, arrivals = [], [], []
+    speech_status = Counter()
+    playback_status = Counter()
+    for run in navigation:
+        for armed in run["turnTiming"].values():
+            speech_status[armed["speech"]["status"]] += 1
+            if armed["speech"]["deltaMs"] is not None:
+                speech.append(armed["speech"]["deltaMs"])
+            if armed["haptic"]["deltaMs"] is not None:
+                haptics.append(armed["haptic"]["deltaMs"])
+        for score in run["turns"].values():
+            playback_status[score["status"]] += 1
+        if run["arrival"]["deltaMs"] is not None:
+            arrivals.append(run["arrival"]["deltaMs"])
+    return {
+        "turnSpeechDeltaMs": summarize(speech),
+        "turnHapticDeltaMs": summarize(haptics),
+        "arrivalDetectionDeltaMs": summarize(arrivals),
+        "turnSpeechStatusCounts": dict(speech_status),
+        "turnPlaybackStatusCounts": dict(playback_status),
+    }
+
+
+def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M):
     with ZipFile(path) as bundle:
         if set(bundle.namelist()) != {*FILES.values(), "ground_truth.csv", "observer_records.csv", "manifest.json"}:
             raise ValueError("实验 ZIP 的八类产物不齐")
@@ -148,6 +298,7 @@ def analyze(path):
         configs = {c["configId"]: c for c in info["frozenConfigurations"]}
         ids = set()
         nav = []
+        nav_segments = []
         c = Counter()
         for task, file in FILES.items():
             count = 0
@@ -160,6 +311,7 @@ def analyze(path):
                     count += 1
                     if task == "NV" and row["status"] == "complete":
                         nav.append(check_navigation(row, configs[row["configId"]]))
+                        nav_segments.append(row)
                         if row["method"] == "C":
                             c.update(e.get("source") for e in row["navigation"] if e["kind"] == "estimate")
             if count != info["counts"][task]:
@@ -170,14 +322,67 @@ def analyze(path):
     return {"counts": info["counts"], "truthRows": truth_rows, "observerTurnRatings": dict(observed),
             "C": {"fingerprintHits": c["fingerprint"], "fallbacksToB": c["trilateration"],
                   "fallbackRate": c["trilateration"] / attempts if attempts else None},
-            "navigation": nav}
+            "navigation": nav,
+            "accuracy": replay_metrics(replay),
+            "usability": navigation_metrics(nav_segments, jump_threshold),
+            "timeliness": timing_metrics(nav),
+            "analysisConfig": {"metricVersion": METRIC_VERSION, "jumpThresholdM": jump_threshold,
+                               "export": info.get("analysisConfig")}}
+
+
+def metric_rows(report):
+    rows_out = []
+
+    def add(dimension, task, method, view, metric, value):
+        rows_out.append({"dimension": dimension, "task": task, "method": method,
+                         "view": view, "metric": metric, "value": value})
+
+    for task, methods in report.get("accuracy", {}).get("tasks", {}).items():
+        for method, views in methods.items():
+            for view, values in views.items():
+                for metric, value in values.items():
+                    add("accuracy", task, method, view, metric, value)
+    for metric in ("fingerprintHits", "fallbacksToB", "fallbackRate"):
+        add("accuracy", "*", "C", "replay", metric, report.get("accuracy", {}).get("C", {}).get(metric))
+    for metric, value in report.get("usability", {}).items():
+        if isinstance(value, dict):
+            for key, item in value.items():
+                add("usability", "*", "*", "all", f"{metric}.{key}", item)
+        else:
+            add("usability", "*", "*", "all", metric, value)
+    for metric, value in report.get("timeliness", {}).items():
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(item, dict):
+                    for sub, number in item.items():
+                        add("timeliness", "*", "*", "all", f"{metric}.{key}.{sub}", number)
+                else:
+                    add("timeliness", "*", "*", "all", f"{metric}.{key}", item)
+        else:
+            add("timeliness", "*", "*", "all", metric, value)
+    return rows_out
+
+
+def write_csv(report, path):
+    with open(path, "w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.DictWriter(stream, fieldnames=[
+            "dimension", "task", "method", "view", "metric", "value"])
+        writer.writeheader()
+        writer.writerows(metric_rows(report))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive")
+    parser.add_argument("--replay", help="batch replay JSON written by tools/replay_all_field_runs.py")
+    parser.add_argument("--jump-threshold", type=float, default=DEFAULT_JUMP_THRESHOLD_M,
+                        help="位置跳变判定距离（米），默认 3.0")
+    parser.add_argument("--csv", help="把指标表另存为 CSV")
     args = parser.parse_args()
-    print(json.dumps(analyze(args.archive), ensure_ascii=False, indent=2))
+    report = analyze(args.archive, replay=args.replay, jump_threshold=args.jump_threshold)
+    if args.csv:
+        write_csv(report, args.csv)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

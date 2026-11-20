@@ -5,7 +5,7 @@ import csv
 from collections import defaultdict
 import io
 import json
-from math import hypot
+from math import hypot, isinf
 import statistics
 import time
 import zipfile
@@ -51,6 +51,11 @@ CALIBRATION_DURATION_MS = 120_000
 CALIBRATION_WINDOW_MS = 40_000
 FINGERPRINT_MIN_DURATION_MS = 25_000
 FINGERPRINT_LEGACY_DURATION_MS = 30_000
+#: 重放时的「挂起库」半径：距 ST/T8 测试点过近的 FP 点会被排除，避免精度虚高。
+DEFAULT_SUSPEND_RADIUS_M = 1.5
+#: 汇总口径（写入导出 manifest，便于分析脚本与报告口径一致）。
+ANALYSIS_METRIC_VERSION = "1.0"
+ANALYSIS_JUMP_THRESHOLD_M = 3.0
 PLAN_POINT_COUNTS = {"CAL": 12, "ST": 18, "DY": 8, "NV": 8}
 PLAN_TASK_LABELS = {"CAL": "T3 参数标定", "ST": "T6 静态对比", "DY": "T7 行走打点", "NV": "T8 导航对比"}
 FILES = {
@@ -107,6 +112,13 @@ class PublishSamplesRequest(BaseModel):
 class ReplayRequest(BaseModel):
     configId: RecordId | None = None
     runId: RecordId
+    suspendRadiusM: float = Field(default=DEFAULT_SUSPEND_RADIUS_M, ge=0, le=50)
+
+
+class ReplayBatchRequest(BaseModel):
+    configId: RecordId | None = None
+    runIds: list[RecordId] = Field(min_length=1, max_length=50)
+    suspendRadiusM: float = Field(default=DEFAULT_SUSPEND_RADIUS_M, ge=0, le=50)
 
 
 class Frame(BaseModel):
@@ -642,12 +654,114 @@ def build_fingerprint_library(body: PublishSamplesRequest, request: Request, db:
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
 
 
-@router.post("/field/replay")
-def replay_checkpoints(body: ReplayRequest, request: Request, db: Session = Depends(get_db_session)):
-    """Compare A/B/C on the same two-second raw window around each checkpoint."""
-    _rate_limit("field_replay", 1.0)
-    run = next((r for r in _rows(db, "segment") if r["runId"] == body.runId and r["task"] in ("DY", "NV")), None)
-    if not run or run["status"] == "aborted":
+def _finite(value: float | None) -> float | None:
+    return None if value is None or isinf(value) else round(value, 3)
+
+
+def _error_m(estimate, truth: dict | None) -> float | None:
+    if truth is None or estimate.x is None or estimate.y is None:
+        return None
+    if estimate.floor_id != truth["floorId"]:
+        return None
+    return round(hypot(estimate.x - truth["x"], estimate.y - truth["y"]), 3)
+
+
+def _suspend_ids(db: Session, config: dict, points: dict, radius_m: float,
+                 task: str) -> list[str]:
+    """挂起库：排除距 ST/T8 真值点过近的 FP 点（生产库不改动）。"""
+    if task not in ("ST", "NV") or radius_m <= 0 or not points:
+        return []
+    return fingerprint_library.fp_ids_near(
+        db, version=config["C"]["libraryVersion"],
+        points=[(point["floorId"], point["x"], point["y"]) for point in points.values()],
+        radius_m=radius_m)
+
+
+def _compare(db: Session, package, config: dict, samples, truth: dict | None,
+             timestamp: int, *, exclude_fp_ids: list[str] | None = None) -> dict:
+    """用同一段原始 RSSI 对 A/B/C 求定位结果与误差。"""
+    vectors = defaultdict(list)
+    for sample in samples:
+        vectors[sample["beacon"]].append(min(-20, max(-100, sample["rssi"])))
+    observations = [BeaconInput(beacon_id=key, rssi=round(statistics.median(values)))
+                    for key, values in vectors.items()]
+    matches = [BeaconObservation(
+        beaconId=obs.beacon_id, rssi=obs.rssi,
+        observedAt=datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc))
+        for obs in observations]
+    a, b = [estimate_location(pkg=package, observations=observations, floor_hint=None,
+                              params=frozen_location_params(config, method))
+            for method in ("A", "B")]
+    hit, reason, diagnostics = fingerprint_library.query_with_diagnostics(
+        db, pkg=package, beacons=matches, frozen=config["C"],
+        exclude_fp_ids=set(exclude_fp_ids) if exclude_fp_ids else None)
+    comparison = {}
+    for method, estimate in (("A", a), ("B", b), ("C", hit or b)):
+        comparison[method] = {
+            "x": estimate.x, "y": estimate.y, "floorId": estimate.floor_id,
+            "errorM": _error_m(estimate, truth),
+            "floorCorrect": (None if truth is None or estimate.x is None or estimate.y is None
+                             else estimate.floor_id == truth["floorId"]),
+        }
+    result = comparison["C"]
+    result.update({"source": "fingerprint" if hit else "trilateration", "fallbackReason": reason})
+    if hit is not None:
+        result.update({"rmseDb": hit.rmse_db, "overlap": hit.overlap,
+                       "marginDb": _finite(hit.margin_db), "confidence": hit.confidence})
+    else:
+        result["diagnostics"] = diagnostics.as_dict()
+    return comparison
+
+
+def _replay_static(db: Session, request: Request, body: ReplayRequest,
+                   segments: list[dict]) -> dict:
+    """T6 静态对比：每个 (点位, 朝向) 取最新完整段，按整段中位数对 A/B/C 求误差。"""
+    run = next(row for row in segments if row["task"] == "ST" and row["status"] != "aborted")
+    package = request.app.state.map_repository.get(SITE, run["mapVersion"])
+    if not package:
+        raise ApiError(404, "MAP_NOT_PUBLISHED", "试走的地图已不可用")
+    config_id = (body.configId
+                 or next((row["configId"] for row in segments if row.get("configId")), None))
+    if not config_id:
+        raise ApiError(422, "INVALID_FIELD_CONFIG", "重放 T6 静态对比需要选择冻结配置")
+    config = frozen_config(db, config_id, run["mapVersion"])
+    plan = require_plan(db, run["planId"], "ST", run["mapVersion"]) if run["planId"] else None
+    points = {point["pointId"]: point for point in plan["points"]} if plan else {}
+    latest: dict[tuple[str, str], dict] = {}
+    for row in segments:
+        if row["task"] != "ST" or row["status"] == "aborted":
+            continue
+        if row["mapVersion"] != run["mapVersion"]:
+            raise ApiError(422, "INVALID_FIELD_PLAN", "同一轮静态采集的地图版本不一致")
+        key = (row["pointId"], row["orientation"])
+        if key not in latest or row["endedAtEpoch"] > latest[key]["endedAtEpoch"]:
+            latest[key] = row
+    suspend_ids = _suspend_ids(db, config, points, body.suspendRadiusM, "ST")
+    checkpoints = []
+    for (point_id, orientation), row in sorted(latest.items()):
+        checkpoints.append({
+            "pointId": point_id, "orientation": orientation, "segmentId": row["segmentId"],
+            "t": row["startedAtEpoch"], "timeSource": "segment",
+            "methods": _compare(db, package.pkg, config, row["rssi"], points.get(point_id),
+                                row["startedAtEpoch"], exclude_fp_ids=suspend_ids),
+        })
+    covered = {item["pointId"] for item in checkpoints}
+    return {"runId": body.runId, "task": "ST", "configId": config_id, "trial": plan is None,
+            "suspendRadiusM": body.suspendRadiusM, "suspendedFpIds": suspend_ids,
+            "missingPointIds": [point_id for point_id in points if point_id not in covered],
+            "checkpoints": checkpoints}
+
+
+def _replay_run(db: Session, request: Request, body: ReplayRequest) -> dict:
+    """Compare A/B/C on the same raw window around each checkpoint."""
+    segments = [row for row in _rows(db, "segment") if row["runId"] == body.runId]
+    if not segments or all(row["status"] == "aborted" for row in segments):
+        raise ApiError(404, "FIELD_RUN_NOT_FOUND", "找不到已上传的可重放路线")
+    if (any(row["task"] == "ST" for row in segments)
+            and not any(row["task"] in ("DY", "NV") for row in segments)):
+        return _replay_static(db, request, body, segments)
+    run = next((row for row in segments if row["task"] in ("DY", "NV")), None)
+    if run is None or run["status"] == "aborted":
         raise ApiError(404, "FIELD_RUN_NOT_FOUND", "找不到已上传的可重放路线")
     package = request.app.state.map_repository.get(SITE, run["mapVersion"])
     if not package:
@@ -669,32 +783,42 @@ def replay_checkpoints(body: ReplayRequest, request: Request, db: Session = Depe
                 and (plan is None or row["pointId"] in points)
                 and run["startedAtEpoch"] <= row["t"] <= run["endedAtEpoch"]):
             marks[row["pointId"]] = (row["t"], "observer")
+    suspend_ids = _suspend_ids(db, config, points, body.suspendRadiusM, run["task"])
     result = []
     for point_id, (timestamp, reference) in marks.items():
-        truth = points.get(point_id)
-        vectors = defaultdict(list)
-        for sample in run["rssi"]:
-            if abs(sample["t"] - timestamp) <= 1000:
-                vectors[sample["beacon"]].append(min(-20, max(-100, sample["rssi"])))
-        observations = [BeaconInput(beacon_id=k, rssi=round(statistics.median(v))) for k, v in vectors.items()]
-        matches = [BeaconObservation(beaconId=obs.beacon_id, rssi=obs.rssi,
-                                     observedAt=datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc))
-                   for obs in observations]
-        a, b = [estimate_location(pkg=package.pkg, observations=observations, floor_hint=None,
-                                  params=frozen_location_params(config, method)) for method in ("A", "B")]
-        hit, reason = fingerprint_library.query(db, pkg=package.pkg, beacons=matches, frozen=config["C"])
-        comparison = {}
-        for method, estimate in (("A", a), ("B", b), ("C", hit or b)):
-            distance = None
-            if truth and estimate.x is not None and estimate.y is not None and estimate.floor_id == truth["floorId"]:
-                distance = round(hypot(estimate.x - truth["x"], estimate.y - truth["y"]), 3)
-            comparison[method] = {"x": estimate.x, "y": estimate.y, "floorId": estimate.floor_id,
-                                  "errorM": distance}
-        comparison["C"].update({"source": "fingerprint" if hit else "trilateration", "fallbackReason": reason})
-        result.append({"pointId": point_id, "t": timestamp, "timeSource": reference, "methods": comparison})
-    return {"runId": body.runId, "task": run["task"], "configId": config_id, "trial": plan is None,
+        samples = [sample for sample in run["rssi"]
+                   if abs(sample["t"] - timestamp) <= 1000]
+        result.append({
+            "pointId": point_id, "t": timestamp, "timeSource": reference,
+            "methods": _compare(db, package.pkg, config, samples, points.get(point_id),
+                                timestamp, exclude_fp_ids=suspend_ids),
+        })
+    return {"runId": body.runId, "task": run["task"], "configId": config_id,
+            "trial": plan is None, "suspendRadiusM": body.suspendRadiusM,
+            "suspendedFpIds": suspend_ids,
             "missingPointIds": [point_id for point_id in points if point_id not in marks],
             "checkpoints": result}
+
+
+@router.post("/field/replay")
+def replay_checkpoints(body: ReplayRequest, request: Request, db: Session = Depends(get_db_session)):
+    _rate_limit("field_replay", 1.0)
+    return _replay_run(db, request, body)
+
+
+@router.post("/field/replay/batch")
+def replay_batch(body: ReplayBatchRequest, request: Request, db: Session = Depends(get_db_session)):
+    """One-shot replay of many runs; per-run failures return an error item instead of failing the batch."""
+    _rate_limit("field_replay_batch", 1.0)
+    results = []
+    for run_id in dict.fromkeys(body.runIds):
+        try:
+            results.append(_replay_run(db, request, ReplayRequest(
+                configId=body.configId, runId=run_id, suspendRadiusM=body.suspendRadiusM)))
+        except ApiError as exc:
+            results.append({"runId": run_id, "error": {
+                "code": exc.code, "message": exc.message, "statusCode": exc.status_code}})
+    return {"results": results}
 
 
 @router.post("/field/notes")
@@ -728,7 +852,8 @@ def inspection_export(db: Session = Depends(get_db_session)):
 
 
 @router.get("/export/experiment")
-def export_experiment(include_trial: bool = False, db: Session = Depends(get_db_session)):
+def export_experiment(request: Request, include_trial: bool = False,
+                      db: Session = Depends(get_db_session)):
     task_plans = {p["planId"]: p for p in _rows(db, "plan")}
     counts = dict.fromkeys(FILES, 0)
     excluded = []
@@ -773,6 +898,19 @@ def export_experiment(include_trial: bool = False, db: Session = Depends(get_db_
             "schemaVersion": "1.0", "exportedOn": date.today().isoformat(), "includeTrial": include_trial,
             "counts": counts, "excluded": excluded, "mapAndParamVersions": sorted(versions),
             "cEstimateCounts": c_estimates,
+            "analysisConfig": {
+                "metricVersion": ANALYSIS_METRIC_VERSION,
+                "suspendRadiusM": DEFAULT_SUSPEND_RADIUS_M,
+                "jumpThresholdM": ANALYSIS_JUMP_THRESHOLD_M,
+                "expectedUpdateIntervalMs": {"standby": 8000, "preview": 2500, "navigating": 1000},
+                "matchThresholds": {
+                    "minOverlap": fingerprint_library.MATCH_MIN_OVERLAP,
+                    "maxRmseDb": fingerprint_library.MATCH_MAX_RMSE_DB,
+                    "confidenceRmseDb": fingerprint_library.MATCH_CONFIDENCE_RMSE_DB,
+                    "minConfidence": fingerprint_library.MATCH_MIN_CONFIDENCE,
+                    "minMarginDb": request.app.state.settings.fingerprint_min_margin_db,
+                },
+            },
             "plans": list(task_plans.values()), "frozenConfigurations": list(_rows(db, "config")),
         }, ensure_ascii=False))
     name = f"experiment_export_{date.today().isoformat()}.zip"

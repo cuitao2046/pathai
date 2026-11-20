@@ -49,7 +49,10 @@ export interface LocationPipelineOptions {
   source: BeaconSourceLike;
   sequence: { next(): number; advanceTo?(lastSequence: number): void };
   /** 已完成的一拍估计（任意 quality；unreliable/lost 时 position 可能为空）。 */
-  onEstimate: (estimate: PositionEstimateResponse, meta: { visibleBeaconCount: number }) => void;
+  onEstimate: (
+    estimate: PositionEstimateResponse,
+    meta: { visibleBeaconCount: number; requestMs: number },
+  ) => void;
   /** 本拍没有可用估计（请求失败/响应异常；导航档信标不足也走这里）。 */
   onUnusable: (err: ApiClientError) => void;
   /** 窗口时长（毫秒），默认 2000；测试可缩短。 */
@@ -226,6 +229,7 @@ export class LocationPipeline {
       body.imu = { samples: [], headingDeg: ((heading % 360) + 360) % 360 };
     }
     let estimate: PositionEstimateResponse;
+    const requestStartedAt = nowMs();
     try {
       const resp = await this.opts.client.request<PositionEstimateResponse>({
         method: 'POST',
@@ -268,7 +272,10 @@ export class LocationPipeline {
     if (!this.isCurrent(generation)) return;
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;
     // 质量交给上层：导航只用 trusted 坐标推进，unreliable/lost 仅上报 quality
-    this.opts.onEstimate(estimate, { visibleBeaconCount: body.beacons.length });
+    this.opts.onEstimate(estimate, {
+      visibleBeaconCount: body.beacons.length,
+      requestMs: Math.max(0, nowMs() - requestStartedAt),
+    });
   }
 }
 

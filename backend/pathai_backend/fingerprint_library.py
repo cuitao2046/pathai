@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import secrets
 import statistics
 from dataclasses import dataclass
@@ -805,6 +806,149 @@ def _live_vectors(pkg: Any, beacons: list[Any]) -> dict[str, float]:
     return vectors
 
 
+@dataclass(frozen=True)
+class MatchDiagnostics:
+    """未命中时的可解释诊断（仅重放/评估路径使用，生产查询不构建）。"""
+
+    library_version: str | None
+    live_beacon_count: int
+    excluded_count: int
+    best: dict[str, Any] | None
+    candidates: list[dict[str, Any]]
+    confidence: float | None
+    margin_db: float | None
+    reason: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "libraryVersion": self.library_version,
+            "liveBeaconCount": self.live_beacon_count,
+            "excludedCount": self.excluded_count,
+            "best": self.best,
+            "candidates": self.candidates,
+            "confidence": self.confidence,
+            "marginDb": (None if self.margin_db is None or math.isinf(self.margin_db)
+                         else round(self.margin_db, 3)),
+            "reason": self.reason,
+        }
+
+
+def _candidate(rmse: float, row: FingerprintLibraryPoint, overlap: int,
+               coverage: float) -> dict[str, Any]:
+    return {"fpId": row.fp_id, "floorId": row.floor_id, "x": row.x, "y": row.y,
+            "rmseDb": round(rmse, 3), "overlap": overlap, "coverage": round(coverage, 3)}
+
+
+def _diagnostics(library_version: str | None, live_count: int, excluded_count: int,
+                 scored: list, reason: str | None, confidence: float | None = None,
+                 margin: float | None = None) -> MatchDiagnostics:
+    candidates = [_candidate(*item) for item in sorted(scored, key=lambda item: item[0])[:3]]
+    return MatchDiagnostics(
+        library_version=library_version, live_beacon_count=live_count,
+        excluded_count=excluded_count, best=candidates[0] if candidates else None,
+        candidates=candidates,
+        confidence=None if confidence is None else round(min(1.0, confidence), 3),
+        margin_db=margin, reason=reason,
+    )
+
+
+def _match(
+    session: Session,
+    *,
+    pkg: Any,
+    beacons: list[Any],
+    site_id: str,
+    floor_hint: str | None,
+    frozen: dict | None,
+    min_margin_db: float,
+    exclude_fp_ids: set[str] | None,
+    collect_diagnostics: bool,
+) -> tuple[FingerprintMatch | None, str | None, MatchDiagnostics | None]:
+    active = (session.get(FingerprintLibraryVersion, frozen["libraryVersion"])
+              if frozen else active_version(session, site_id))
+    if active is None:
+        return None, "no_active_library", (
+            _diagnostics(None, 0, 0, [], "no_active_library")
+            if collect_diagnostics else None)
+    if active.site_id != site_id or active.details_pruned:
+        return None, "library_unavailable", (
+            _diagnostics(active.version, 0, 0, [], "library_unavailable")
+            if collect_diagnostics else None)
+    min_overlap = frozen["minOverlap"] if frozen else MATCH_MIN_OVERLAP
+    max_rmse = frozen["maxRmse"] if frozen else MATCH_MAX_RMSE_DB
+    confidence_rmse = frozen["confidenceRmse"] if frozen else MATCH_CONFIDENCE_RMSE_DB
+    min_confidence = frozen["minConfidence"] if frozen else MATCH_MIN_CONFIDENCE
+    min_margin = frozen["minMargin"] if frozen else min_margin_db
+    live = _live_vectors(pkg, beacons)
+    if len(live) < min_overlap:
+        return None, "too_few_known_beacons", (
+            _diagnostics(active.version, len(live), 0, [], "too_few_known_beacons")
+            if collect_diagnostics else None)
+
+    floors = set(pkg.floors.keys())
+    if floor_hint is not None and floor_hint in floors:
+        floors = {floor_hint}
+
+    rows = session.scalars(
+        select(FingerprintLibraryPoint).where(
+            FingerprintLibraryPoint.version == active.version
+        )
+    ).all()
+    excluded_count = (sum(1 for row in rows if row.fp_id in exclude_fp_ids)
+                      if exclude_fp_ids else 0)
+    best: tuple[float, FingerprintLibraryPoint, int, float] | None = None
+    scored: list[tuple[float, FingerprintLibraryPoint, int, float]] = []
+    second_rmse = float("inf")
+    for row in rows:
+        if row.floor_id not in floors:
+            continue
+        if exclude_fp_ids and row.fp_id in exclude_fp_ids:
+            continue
+        stored = json.loads(row.vector_json)
+        common = [key for key in live if key in stored]
+        if len(common) < min_overlap:
+            continue
+        rmse = (
+            sum((live[key] - float(stored[key])) ** 2 for key in common) / len(common)
+        ) ** 0.5
+        coverage = len(common) / max(1, min(len(live), len(stored)))
+        if collect_diagnostics:
+            scored.append((rmse, row, len(common), coverage))
+        if best is None or rmse < best[0]:
+            if best is not None:
+                second_rmse = min(second_rmse, best[0])
+            best = (rmse, row, len(common), coverage)
+        else:
+            second_rmse = min(second_rmse, rmse)
+
+    if best is None:
+        return None, "no_overlap", (
+            _diagnostics(active.version, len(live), excluded_count, scored, "no_overlap")
+            if collect_diagnostics else None)
+    rmse, row, overlap, coverage = best
+    confidence = max(0.0, 1.0 - rmse / confidence_rmse) * coverage
+    margin = second_rmse - rmse if second_rmse != float("inf") else float("inf")
+    reason = ("rmse_too_large" if rmse > max_rmse
+              else "low_confidence" if confidence < min_confidence
+              else "ambiguous" if margin < min_margin else None)
+    match = None if reason else FingerprintMatch(
+        library_version=active.version,
+        fp_id=row.fp_id,
+        floor_id=row.floor_id,
+        x=row.x,
+        y=row.y,
+        rmse_db=round(rmse, 3),
+        confidence=round(min(1.0, confidence), 3),
+        overlap=overlap,
+        margin_db=margin,
+    )
+    diagnostics = None
+    if collect_diagnostics:
+        diagnostics = _diagnostics(active.version, len(live), excluded_count, scored,
+                                   reason, confidence, margin)
+    return match, reason, diagnostics
+
+
 def query(
     session: Session,
     *,
@@ -816,72 +960,47 @@ def query(
     min_margin_db: float = DEFAULT_FINGERPRINT_MIN_MARGIN_DB,
 ) -> tuple[FingerprintMatch | None, str | None]:
     """返回 (命中, 未命中原因)。原因用于客户端/日志解释降级。"""
-    active = (session.get(FingerprintLibraryVersion, frozen["libraryVersion"])
-              if frozen else active_version(session, site_id))
-    if active is None:
-        return None, "no_active_library"
-    if active.site_id != site_id or active.details_pruned:
-        return None, "library_unavailable"
-    min_overlap = frozen["minOverlap"] if frozen else MATCH_MIN_OVERLAP
-    max_rmse = frozen["maxRmse"] if frozen else MATCH_MAX_RMSE_DB
-    confidence_rmse = frozen["confidenceRmse"] if frozen else MATCH_CONFIDENCE_RMSE_DB
-    min_confidence = frozen["minConfidence"] if frozen else MATCH_MIN_CONFIDENCE
-    min_margin = frozen["minMargin"] if frozen else min_margin_db
-    live = _live_vectors(pkg, beacons)
-    if len(live) < min_overlap:
-        return None, "too_few_known_beacons"
+    match, reason, _ = _match(
+        session, pkg=pkg, beacons=beacons, site_id=site_id, floor_hint=floor_hint,
+        frozen=frozen, min_margin_db=min_margin_db, exclude_fp_ids=None,
+        collect_diagnostics=False)
+    return match, reason
 
-    floors = set(pkg.floors.keys())
-    if floor_hint is not None and floor_hint in floors:
-        floors = {floor_hint}
 
+def query_with_diagnostics(
+    session: Session,
+    *,
+    pkg: Any,
+    beacons: list[Any],
+    site_id: str = DEFAULT_SITE_ID,
+    floor_hint: str | None = None,
+    frozen: dict | None = None,
+    min_margin_db: float = DEFAULT_FINGERPRINT_MIN_MARGIN_DB,
+    exclude_fp_ids: set[str] | None = None,
+) -> tuple[FingerprintMatch | None, str | None, MatchDiagnostics]:
+    """离线评估用查询：支持挂起库（排除指定 FP 点）并返回最佳候选诊断。"""
+    match, reason, diagnostics = _match(
+        session, pkg=pkg, beacons=beacons, site_id=site_id, floor_hint=floor_hint,
+        frozen=frozen, min_margin_db=min_margin_db, exclude_fp_ids=exclude_fp_ids,
+        collect_diagnostics=True)
+    assert diagnostics is not None  # collect_diagnostics=True 保证非空
+    return match, reason, diagnostics
+
+
+def fp_ids_near(session: Session, *, version: str,
+                points: list[tuple[str, float, float]], radius_m: float) -> list[str]:
+    """返回与给定真值点（楼层 + 坐标）距离不超过 radius_m 的 FP 点编号。
+
+    仅用于重放时的「挂起库」，不改变生产库内容与版本。
+    """
+    if radius_m <= 0 or not points:
+        return []
+    limit = radius_m ** 2
     rows = session.scalars(
-        select(FingerprintLibraryPoint).where(
-            FingerprintLibraryPoint.version == active.version
-        )
+        select(FingerprintLibraryPoint).where(FingerprintLibraryPoint.version == version)
     ).all()
-    best: tuple[float, FingerprintLibraryPoint, int, float] | None = None
-    second_rmse = float("inf")
-    for row in rows:
-        if row.floor_id not in floors:
-            continue
-        stored = json.loads(row.vector_json)
-        common = [key for key in live if key in stored]
-        if len(common) < min_overlap:
-            continue
-        rmse = (
-            sum((live[key] - float(stored[key])) ** 2 for key in common) / len(common)
-        ) ** 0.5
-        coverage = len(common) / max(1, min(len(live), len(stored)))
-        if best is None or rmse < best[0]:
-            if best is not None:
-                second_rmse = min(second_rmse, best[0])
-            best = (rmse, row, len(common), coverage)
-        else:
-            second_rmse = min(second_rmse, rmse)
-
-    if best is None:
-        return None, "no_overlap"
-    rmse, row, overlap, coverage = best
-    confidence = max(0.0, 1.0 - rmse / confidence_rmse) * coverage
-    if rmse > max_rmse:
-        return None, "rmse_too_large"
-    if confidence < min_confidence:
-        return None, "low_confidence"
-    margin = second_rmse - rmse if second_rmse != float("inf") else float("inf")
-    if margin < min_margin:
-        return None, "ambiguous"
-    return (
-        FingerprintMatch(
-            library_version=active.version,
-            fp_id=row.fp_id,
-            floor_id=row.floor_id,
-            x=row.x,
-            y=row.y,
-            rmse_db=round(rmse, 3),
-            confidence=round(min(1.0, confidence), 3),
-            overlap=overlap,
-            margin_db=margin,
-        ),
-        None,
-    )
+    return sorted({
+        row.fp_id for row in rows
+        if any(row.floor_id == floor and (row.x - x) ** 2 + (row.y - y) ** 2 <= limit
+               for floor, x, y in points)
+    })

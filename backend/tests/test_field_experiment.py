@@ -71,6 +71,11 @@ def test_approval_queue_idempotency_and_export(client, auth_headers):
         assert len(exported.namelist()) == 8
         info = json.loads(exported.read("manifest.json"))
         assert info["counts"]["FP"] == 1
+        analysis = info["analysisConfig"]
+        assert analysis["metricVersion"] == "1.0"
+        assert (analysis["suspendRadiusM"], analysis["jumpThresholdM"]) == (1.5, 3.0)
+        assert analysis["expectedUpdateIntervalMs"] == {"standby": 8000, "preview": 2500, "navigating": 1000}
+        assert analysis["matchThresholds"]["minOverlap"] == 3
         assert len(exported.read("fingerprint_segments.jsonl").splitlines()) == 1
         assert b"FP-1-C01" in exported.read("ground_truth.csv")
 
@@ -378,7 +383,51 @@ def test_freeze_and_c_fallback_use_b_even_after_active_params_change(client, app
     paired = replay.json()
     assert (paired["task"], paired["configId"]) == ("NV", "field-v1")
     assert paired["missingPointIds"] == [f"CP{i}" for i in range(2, 9)]
-    assert paired["checkpoints"][0]["methods"]["C"]["errorM"] == 0
+    # 挂起库：与 CP1 真值重合的 FP 点被排除，生产库不改动
+    assert (paired["suspendRadiusM"], paired["suspendedFpIds"]) == (1.5, ["FP-TEST"])
+    matched = paired["checkpoints"][0]["methods"]["C"]
+    assert (matched["source"], matched["errorM"]) == ("fingerprint", 5.0)
+    assert (matched["rmseDb"], matched["overlap"], matched["confidence"]) == (4.0, 3, 0.8)
+    assert matched["marginDb"] is None
+
+    monkeypatch.delitem(calibration._LAST_WRITE, "field_replay")
+    baseline = client.post("/api/v1/field/replay", headers=auth_headers,
+                           json={"runId": "nav-run", "suspendRadiusM": 0})
+    assert baseline.status_code == 200, baseline.text
+    assert baseline.json()["suspendedFpIds"] == []
+    assert baseline.json()["checkpoints"][0]["methods"]["C"]["errorM"] == 0
+
+    st_points = [point(f"ST-{index:02}") for index in range(18)]
+    st_plan = plan("ST", st_points)
+    st_published = client.post("/api/v1/field/plans", headers=auth_headers, json=st_plan)
+    assert st_published.status_code == 200, st_published.text
+    weak = [dict(t=START + index * 500, beacon=beacon.beaconId, rssi=-90)
+            for index in range(60) for beacon in beacons]
+    st_record = segment(task="ST", pointId=st_points[0]["pointId"], orientation="N", part=1,
+                        planId=st_plan["planId"], batch=st_published.json()["batch"],
+                        segmentId="A-ST-1", runId="static-run", endedAtEpoch=START + 30_000,
+                        rssi=weak)
+    assert client.post("/api/v1/field/segments", headers=auth_headers, json=st_record).status_code == 200
+    monkeypatch.delitem(calibration._LAST_WRITE, "field_replay")
+    static = client.post("/api/v1/field/replay", headers=auth_headers,
+                         json={"configId": "field-v1", "runId": "static-run"})
+    assert static.status_code == 200, static.text
+    st_body = static.json()
+    assert (st_body["task"], st_body["trial"]) == ("ST", False)
+    assert [(item["pointId"], item["orientation"], item["timeSource"])
+            for item in st_body["checkpoints"]] == [("ST-00", "N", "segment")]
+    static_c = st_body["checkpoints"][0]["methods"]["C"]
+    assert (static_c["source"], static_c["fallbackReason"]) == ("trilateration", "rmse_too_large")
+    assert (static_c["diagnostics"]["best"]["fpId"], static_c["diagnostics"]["excludedCount"]) == ("FP-OTHER", 1)
+    assert st_body["missingPointIds"] == [entry["pointId"] for entry in st_points[1:]]
+
+    monkeypatch.delitem(calibration._LAST_WRITE, "field_replay_batch", raising=False)
+    batch = client.post("/api/v1/field/replay/batch", headers=auth_headers,
+                        json={"configId": "field-v1", "runIds": ["nav-run", "static-run", "missing-run"]})
+    assert batch.status_code == 200, batch.text
+    items = batch.json()["results"]
+    assert [item.get("task") for item in items] == ["NV", "ST", None]
+    assert items[2]["error"]["code"] == "FIELD_RUN_NOT_FOUND"
 
     dy_plan = plan("DY", [point(f"CP{i}") for i in range(1, 9)])
     dy_published = client.post("/api/v1/field/plans", headers=auth_headers, json=dy_plan)
@@ -393,6 +442,19 @@ def test_freeze_and_c_fallback_use_b_even_after_active_params_change(client, app
                          json={"configId": "field-v1", "runId": "trial-run"})
     assert replay.status_code == 200, replay.text
     assert replay.json()["checkpoints"][0]["methods"]["C"]["errorM"] == 0
+
+    replay_path = tmp_path / "replay.json"
+    replay_path.write_text(json.dumps({"results": [paired, st_body]}), encoding="utf-8")
+    metrics = analyze(zip_path, replay_path)
+    assert metrics["accuracy"]["tasks"]["ST"]["C"]["all"]["n"] == 1
+    assert metrics["accuracy"]["tasks"]["ST"]["C"]["hitOnly"]["n"] == 0
+    assert metrics["accuracy"]["tasks"]["NV"]["C"]["hitOnly"]["mean"] == 5.0
+    assert metrics["accuracy"]["C"]["fallbackRate"] == 0.5
+    assert (metrics["usability"]["estimates"], metrics["usability"]["positionedEstimates"]) == (2, 1)
+    assert metrics["usability"]["validLocationRate"] == 0.5
+    assert metrics["usability"]["updateIntervalMs"]["n"] == 1
+    assert metrics["timeliness"]["arrivalDetectionDeltaMs"]["n"] == 1
+    assert metrics["analysisConfig"]["metricVersion"] == "1.0"
 
 
 def test_raw_collection_feeds_existing_fit_and_library(client, app, auth_headers, tmp_path):

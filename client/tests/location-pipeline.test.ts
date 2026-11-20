@@ -89,6 +89,7 @@ describe('LocationPipeline 定位管线', () => {
   let source: StubSource;
   let now: number;
   let estimates: PositionEstimateResponse[];
+  let estimateMeta: { visibleBeaconCount: number; requestMs: number }[];
   let unusable: ApiClientError[];
   let seq: number;
 
@@ -112,6 +113,7 @@ describe('LocationPipeline 定位管线', () => {
     seq = 0;
     source = new StubSource();
     estimates = [];
+    estimateMeta = [];
     unusable = [];
     wxStub.__requestLog.length = 0;
     wxStub.__requestResponder = (options) => {
@@ -140,7 +142,10 @@ describe('LocationPipeline 定位管线', () => {
       map,
       source,
       sequence: { next: () => (seq += 1) },
-      onEstimate: (e) => estimates.push(e),
+      onEstimate: (e, meta) => {
+        estimates.push(e);
+        estimateMeta.push(meta);
+      },
       onUnusable: (e) => unusable.push(e),
       windowMs,
     });
@@ -175,6 +180,10 @@ describe('LocationPipeline 定位管线', () => {
     });
     expect(estimates).toHaveLength(1);
     expect(estimates[0]).toEqual(ESTIMATE);
+    // 时效打点：可见信标数与请求耗时随估计一并上报（供导出 ZIP 计算 RTT）
+    expect(estimateMeta).toHaveLength(1);
+    expect(estimateMeta[0].visibleBeaconCount).toBe(3);
+    expect(estimateMeta[0].requestMs).toBeGreaterThanOrEqual(0);
     expect(unusable).toHaveLength(0);
   });
 

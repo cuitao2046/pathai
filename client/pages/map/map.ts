@@ -2946,13 +2946,14 @@ Page({
    */
   handleEstimate(
     estimate: PositionEstimateResponse,
-    meta?: { visibleBeaconCount: number },
+    meta?: { visibleBeaconCount: number; requestMs?: number },
   ): void {
     if (!this.data.fieldSystemArrived) {
       this.fieldRecorder?.event('estimate', {
         position: estimate.position, source: estimate.positionSource,
         paramsVersion: estimate.paramsVersion, fallbackReason: estimate.fallbackReason,
         observedAt: estimate.observedAt, quality: estimate.quality, confidence: estimate.confidence,
+        visibleBeaconCount: meta?.visibleBeaconCount, requestMs: meta?.requestMs,
       });
     }
     if (meta) {
