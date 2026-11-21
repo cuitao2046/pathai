@@ -3,10 +3,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
+import platform
 import statistics
+import subprocess
 from collections import Counter
+from datetime import datetime, timezone
 from math import hypot
 from pathlib import Path
 from zipfile import ZipFile
@@ -19,6 +23,34 @@ FILES = {
 TURN_ACTIONS = {"turn_left", "turn_right", "u_turn"}
 DEFAULT_JUMP_THRESHOLD_M = 3.0
 METRIC_VERSION = "1.0"
+
+#: 逐条中间数据的列定义；文件按 key 命名（如 segments.csv），便于人工复核。
+DETAIL_FIELDS = {
+    "segments": [
+        "task", "runId", "segmentId", "planId", "planned", "pointId", "orientation", "part",
+        "method", "status", "startedAtEpoch", "durationS", "rssiFrames", "checkpoints",
+        "navigationEvents", "hasTruth", "truthX", "truthY", "truthFloor", "truthNote",
+    ],
+    "runs": [
+        "task", "runId", "segments", "complete", "suspect", "aborted", "plannedSegments",
+        "trialSegments", "methods", "points", "marks", "durationS",
+    ],
+    "exclusions": ["segmentId", "reason"],
+    "accuracy_checkpoints": [
+        "task", "runId", "checkpointIndex", "pointId", "orientation", "t",
+        "truthX", "truthY", "truthFloor", "method", "estimateX", "estimateY", "estimateFloor",
+        "errorM", "floorCorrect", "source", "fallbackReason", "rmseDb", "overlap", "marginDb",
+        "confidence", "diagnostics",
+    ],
+    "nav_estimates": [
+        "runId", "method", "configId", "t", "positioned", "floorId", "x", "y",
+        "requestMs", "visibleBeaconCount", "intervalMs", "jump",
+    ],
+    "timing_events": [
+        "runId", "method", "pointId", "kind", "status", "signalAtEpoch", "referenceAtEpoch",
+        "deltaMs", "relativeM", "announcementId", "instructionId", "distanceM",
+    ],
+}
 
 
 def rows(bundle, name):
@@ -193,9 +225,9 @@ def replay_metrics(replay):
         for checkpoint in document.get("checkpoints", []):
             for method, result in checkpoint.get("methods", {}).items():
                 data = bucket.setdefault(method, {"errors": [], "floor": [], "hits": []})
+                data["floor"].append(result.get("floorCorrect") is True)
                 if result.get("errorM") is not None:
                     data["errors"].append(result["errorM"])
-                    data["floor"].append(result.get("floorCorrect") is True)
                 if method == "C":
                     sources[result.get("source")] += 1
                     if result.get("fallbackReason"):
@@ -223,8 +255,7 @@ def replay_metrics(replay):
     }
 
 
-def navigation_metrics(segments, jump_threshold):
-    """Availability and timing metrics computed from recorded navigation events."""
+def _availability(segments, jump_threshold):
     estimates = 0
     located = 0
     intervals = []
@@ -265,8 +296,18 @@ def navigation_metrics(segments, jump_threshold):
     }
 
 
-def timing_metrics(navigation):
-    """Instruction/arrival timing distributions from the scored navigation runs."""
+def navigation_metrics(segments, jump_threshold):
+    """Availability metrics overall and per method (A/B/C), computed from recorded events."""
+    methods = sorted({segment["method"] for segment in segments})
+    return {
+        **_availability(segments, jump_threshold),
+        "byMethod": {method: _availability(
+            [segment for segment in segments if segment["method"] == method], jump_threshold)
+            for method in methods},
+    }
+
+
+def _timing(navigation):
     speech, haptics, arrivals = [], [], []
     speech_status = Counter()
     playback_status = Counter()
@@ -290,12 +331,181 @@ def timing_metrics(navigation):
     }
 
 
-def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M):
+def timing_metrics(navigation):
+    """Instruction/arrival timing overall and per method (A/B/C)."""
+    methods = sorted({run["method"] for run in navigation})
+    return {
+        **_timing(navigation),
+        "byMethod": {method: _timing(
+            [run for run in navigation if run["method"] == method])
+            for method in methods},
+    }
+
+
+def _value(value):
+    return "" if value is None else value
+
+
+def _segment_detail(row, plan_points):
+    truth = plan_points.get(row["task"], {}).get(row.get("pointId") or "")
+    if truth is not None:
+        note = ""
+    elif not row.get("planId"):
+        note = "试采段，无正式计划"
+    elif row.get("pointId"):
+        note = "计划中缺少该点位"
+    else:
+        note = "该任务不按单点采集"
+    return {
+        "task": row["task"], "runId": row["runId"], "segmentId": row["segmentId"],
+        "planId": row.get("planId") or "", "planned": 1 if row.get("planId") else 0,
+        "pointId": row.get("pointId") or "", "orientation": row.get("orientation") or "",
+        "part": row.get("part", ""), "method": row.get("method", ""), "status": row["status"],
+        "startedAtEpoch": row["startedAtEpoch"],
+        "durationS": round((row["endedAtEpoch"] - row["startedAtEpoch"]) / 1000, 1),
+        "rssiFrames": len(row.get("rssi", [])), "checkpoints": len(row.get("checkpoints", [])),
+        "navigationEvents": len(row.get("navigation", [])),
+        "hasTruth": 1 if truth is not None else 0,
+        "truthX": truth.get("x", "") if truth else "",
+        "truthY": truth.get("y", "") if truth else "",
+        "truthFloor": truth.get("floorId", "") if truth else "",
+        "truthNote": note,
+    }
+
+
+def _run_details(segment_rows):
+    buckets = {}
+    for row in segment_rows:
+        buckets.setdefault((row["task"], row["runId"]), []).append(row)
+    output = []
+    for (task, run_id), items in sorted(buckets.items()):
+        output.append({
+            "task": task, "runId": run_id, "segments": len(items),
+            "complete": sum(1 for item in items if item["status"] == "complete"),
+            "suspect": sum(1 for item in items if item["status"] == "suspect"),
+            "aborted": sum(1 for item in items if item["status"] == "aborted"),
+            "plannedSegments": sum(item["planned"] for item in items),
+            "trialSegments": sum(1 for item in items if not item["planned"]),
+            "methods": "|".join(sorted({item["method"] for item in items if item["method"]})),
+            "points": len({item["pointId"] for item in items if item["pointId"]}),
+            "marks": sum(item["checkpoints"] for item in items),
+            "durationS": round(sum(item["durationS"] for item in items), 1),
+        })
+    return output
+
+
+def _estimate_details(segment, jump_threshold):
+    stream = [event for event in segment.get("navigation", [])
+              if event.get("kind") == "estimate" and isinstance(event.get("t"), (int, float))]
+    output = []
+    previous = None
+    previous_position = None
+    for event in stream:
+        position = event.get("position") or {}
+        interval = event["t"] - previous["t"] if previous is not None else None
+        jump = 0
+        if (position and previous_position
+                and position.get("floorId") == previous_position.get("floorId")
+                and hypot(position.get("x", 0) - previous_position.get("x", 0),
+                          position.get("y", 0) - previous_position.get("y", 0)) > jump_threshold):
+            jump = 1
+        output.append({
+            "runId": segment["runId"], "method": segment.get("method", ""),
+            "configId": segment.get("configId", ""), "t": event["t"],
+            "positioned": 1 if position else 0,
+            "floorId": position.get("floorId", ""),
+            "x": position.get("x", ""), "y": position.get("y", ""),
+            "requestMs": _value(event.get("requestMs")),
+            "visibleBeaconCount": _value(event.get("visibleBeaconCount")),
+            "intervalMs": interval if interval is not None and 0 < interval <= 60_000 else "",
+            "jump": jump,
+        })
+        previous = event
+        if position:
+            previous_position = position
+    return output
+
+
+def _accuracy_details(replay, plan_points):
+    output = []
+    for document in replay_documents(replay):
+        if "error" in document:
+            continue
+        task = document.get("task", "")
+        for index, checkpoint in enumerate(document.get("checkpoints", [])):
+            point_id = checkpoint.get("pointId", "")
+            truth = plan_points.get(task, {}).get(point_id)
+            for method, result in checkpoint.get("methods", {}).items():
+                output.append({
+                    "task": task, "runId": document.get("runId", ""),
+                    "checkpointIndex": index + 1, "pointId": point_id,
+                    "orientation": checkpoint.get("orientation", ""),
+                    "t": checkpoint.get("t", ""),
+                    "truthX": truth.get("x", "") if truth else "",
+                    "truthY": truth.get("y", "") if truth else "",
+                    "truthFloor": truth.get("floorId", "") if truth else "",
+                    "method": method,
+                    "estimateX": _value(result.get("x")), "estimateY": _value(result.get("y")),
+                    "estimateFloor": _value(result.get("floorId")),
+                    "errorM": _value(result.get("errorM")),
+                    "floorCorrect": _value(result.get("floorCorrect")),
+                    "source": result.get("source", ""),
+                    "fallbackReason": result.get("fallbackReason") or "",
+                    "rmseDb": _value(result.get("rmseDb")),
+                    "overlap": _value(result.get("overlap")),
+                    "marginDb": _value(result.get("marginDb")),
+                    "confidence": _value(result.get("confidence")),
+                    "diagnostics": (json.dumps(result["diagnostics"], ensure_ascii=False, sort_keys=True)
+                                    if result.get("diagnostics") else ""),
+                })
+    return output
+
+
+def _timing_details(nav):
+    output = []
+    for run in nav:
+        for point_id, armed in run["turnTiming"].items():
+            relative = run["turns"].get(point_id, {}).get("relativeM", "")
+            for kind in ("speech", "haptic"):
+                item = armed[kind]
+                output.append({
+                    "runId": run["runId"], "method": run["method"], "pointId": point_id,
+                    "kind": kind, "status": item["status"],
+                    "signalAtEpoch": _value(item["signalAtEpoch"]),
+                    "referenceAtEpoch": _value(item["referenceAtEpoch"]),
+                    "deltaMs": _value(item["deltaMs"]), "relativeM": _value(relative),
+                    "announcementId": armed.get("announcementId", ""),
+                    "instructionId": armed.get("instructionId") or "", "distanceM": "",
+                })
+        arrival = run["arrival"]
+        output.append({
+            "runId": run["runId"], "method": run["method"], "pointId": "", "kind": "arrival",
+            "status": arrival["status"],
+            "signalAtEpoch": _value(arrival.get("systemAtEpoch")),
+            "referenceAtEpoch": _value(arrival.get("manualAtEpoch")),
+            "deltaMs": _value(arrival.get("deltaMs")), "relativeM": "",
+            "announcementId": "", "instructionId": "",
+            "distanceM": _value(arrival.get("distanceM")),
+        })
+    return output
+
+
+def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_details=False):
     with ZipFile(path) as bundle:
         if set(bundle.namelist()) != {*FILES.values(), "ground_truth.csv", "observer_records.csv", "manifest.json"}:
             raise ValueError("实验 ZIP 的八类产物不齐")
         info = json.loads(bundle.read("manifest.json"))
         configs = {c["configId"]: c for c in info["frozenConfigurations"]}
+        plan_points = {}
+        for plan in info.get("plans", []):
+            target = plan_points.setdefault(plan["task"], {})
+            for point in plan.get("points", []):
+                target.setdefault(point["pointId"], point)
+        details = {name: [] for name in DETAIL_FIELDS} if with_details else None
+        if details is not None:
+            details["exclusions"] = [{"segmentId": item.get("segmentId", ""),
+                                      "reason": item.get("reason", "")}
+                                     for item in info.get("excluded", [])]
         ids = set()
         nav = []
         nav_segments = []
@@ -309,25 +519,34 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M):
                         raise ValueError(f"{file} 含重复段或任务分类错误")
                     ids.add(row["segmentId"])
                     count += 1
+                    if details is not None:
+                        details["segments"].append(_segment_detail(row, plan_points))
                     if task == "NV" and row["status"] == "complete":
                         nav.append(check_navigation(row, configs[row["configId"]]))
                         nav_segments.append(row)
+                        if details is not None:
+                            details["nav_estimates"].extend(_estimate_details(row, jump_threshold))
                         if row["method"] == "C":
                             c.update(e.get("source") for e in row["navigation"] if e["kind"] == "estimate")
             if count != info["counts"][task]:
                 raise ValueError(f"{file} 与 manifest 计数不一致")
         observed = Counter((r["turnRating"] for r in rows(bundle, "observer_records.csv") if r["turnRating"]))
         truth_rows = sum(1 for _ in rows(bundle, "ground_truth.csv"))
+    if details is not None:
+        details["runs"] = _run_details(details["segments"])
+        details["accuracy_checkpoints"] = _accuracy_details(replay, plan_points)
+        details["timing_events"] = _timing_details(nav)
     attempts = c["fingerprint"] + c["trilateration"]
-    return {"counts": info["counts"], "truthRows": truth_rows, "observerTurnRatings": dict(observed),
-            "C": {"fingerprintHits": c["fingerprint"], "fallbacksToB": c["trilateration"],
-                  "fallbackRate": c["trilateration"] / attempts if attempts else None},
-            "navigation": nav,
-            "accuracy": replay_metrics(replay),
-            "usability": navigation_metrics(nav_segments, jump_threshold),
-            "timeliness": timing_metrics(nav),
-            "analysisConfig": {"metricVersion": METRIC_VERSION, "jumpThresholdM": jump_threshold,
-                               "export": info.get("analysisConfig")}}
+    report = {"counts": info["counts"], "truthRows": truth_rows, "observerTurnRatings": dict(observed),
+              "C": {"fingerprintHits": c["fingerprint"], "fallbacksToB": c["trilateration"],
+                    "fallbackRate": c["trilateration"] / attempts if attempts else None},
+              "navigation": nav,
+              "accuracy": replay_metrics(replay),
+              "usability": navigation_metrics(nav_segments, jump_threshold),
+              "timeliness": timing_metrics(nav),
+              "analysisConfig": {"metricVersion": METRIC_VERSION, "jumpThresholdM": jump_threshold,
+                                 "export": info.get("analysisConfig")}}
+    return (report, details) if with_details else report
 
 
 def metric_rows(report):
@@ -337,6 +556,20 @@ def metric_rows(report):
         rows_out.append({"dimension": dimension, "task": task, "method": method,
                          "view": view, "metric": metric, "value": value})
 
+    def flatten(dimension, method, data):
+        for metric, value in data.items():
+            if metric == "byMethod":
+                continue
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if isinstance(item, dict):
+                        for sub, number in item.items():
+                            add(dimension, "*", method, "all", f"{metric}.{key}.{sub}", number)
+                    else:
+                        add(dimension, "*", method, "all", f"{metric}.{key}", item)
+            else:
+                add(dimension, "*", method, "all", metric, value)
+
     for task, methods in report.get("accuracy", {}).get("tasks", {}).items():
         for method, views in methods.items():
             for view, values in views.items():
@@ -344,22 +577,11 @@ def metric_rows(report):
                     add("accuracy", task, method, view, metric, value)
     for metric in ("fingerprintHits", "fallbacksToB", "fallbackRate"):
         add("accuracy", "*", "C", "replay", metric, report.get("accuracy", {}).get("C", {}).get(metric))
-    for metric, value in report.get("usability", {}).items():
-        if isinstance(value, dict):
-            for key, item in value.items():
-                add("usability", "*", "*", "all", f"{metric}.{key}", item)
-        else:
-            add("usability", "*", "*", "all", metric, value)
-    for metric, value in report.get("timeliness", {}).items():
-        if isinstance(value, dict):
-            for key, item in value.items():
-                if isinstance(item, dict):
-                    for sub, number in item.items():
-                        add("timeliness", "*", "*", "all", f"{metric}.{key}.{sub}", number)
-                else:
-                    add("timeliness", "*", "*", "all", f"{metric}.{key}", item)
-        else:
-            add("timeliness", "*", "*", "all", metric, value)
+    for dimension in ("usability", "timeliness"):
+        section = report.get(dimension, {})
+        flatten(dimension, "*", section)
+        for method, data in section.get("byMethod", {}).items():
+            flatten(dimension, method, data)
     return rows_out
 
 
@@ -371,6 +593,71 @@ def write_csv(report, path):
         writer.writerows(metric_rows(report))
 
 
+def write_details(details, directory):
+    """把逐条中间数据写成 CSV，供人工复核与口径追溯。"""
+    target = Path(directory)
+    target.mkdir(parents=True, exist_ok=True)
+    for name, fields in DETAIL_FIELDS.items():
+        with open(target / f"{name}.csv", "w", newline="", encoding="utf-8-sig") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(details.get(name, []))
+
+
+def _file_info(path):
+    if not path:
+        return None
+    target = Path(path)
+    digest = hashlib.sha256()
+    with open(target, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {"path": str(target), "bytes": target.stat().st_size, "sha256": digest.hexdigest()}
+
+
+def _git_commit():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parent.parent,
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _git_dirty():
+    try:
+        output = subprocess.check_output(
+            ["git", "status", "--porcelain"], cwd=Path(__file__).resolve().parent.parent,
+            text=True, stderr=subprocess.DEVNULL)
+        return bool(output.strip())
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def write_manifest(path, *, archive, replay, jump_threshold, report, details=None,
+                   details_dir=None, json_path=None, csv_path=None):
+    """记录输入/输出哈希、工具版本与参数，便于复核本次运行是否为同一份数据。"""
+    outputs = {"metricsJson": _file_info(json_path), "metricsCsv": _file_info(csv_path)}
+    if details_dir:
+        outputs["details"] = {name: _file_info(Path(details_dir) / f"{name}.csv")
+                              for name in DETAIL_FIELDS}
+    payload = {
+        "schema": "pathai.field-analysis/1.0",
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "tool": {"name": "tools/analyze_field_experiment.py", "metricVersion": METRIC_VERSION,
+                 "scriptSha256": _file_info(__file__)["sha256"],
+                 "gitCommit": _git_commit(), "gitDirty": _git_dirty(),
+                 "python": platform.python_version()},
+        "inputs": {"archive": _file_info(archive), "replay": _file_info(replay)},
+        "parameters": {"jumpThresholdM": jump_threshold,
+                       "export": report.get("analysisConfig", {}).get("export")},
+        "counts": report.get("counts"),
+        "outputs": outputs,
+        "detailRows": {name: len(items) for name, items in details.items()} if details else None,
+    }
+    Path(path).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive")
@@ -378,10 +665,26 @@ def main():
     parser.add_argument("--jump-threshold", type=float, default=DEFAULT_JUMP_THRESHOLD_M,
                         help="位置跳变判定距离（米），默认 3.0")
     parser.add_argument("--csv", help="把指标表另存为 CSV")
+    parser.add_argument("--json", dest="json_path", help="把完整指标另存为 JSON")
+    parser.add_argument("--details-dir", help="逐条中间数据 CSV 的输出目录")
+    parser.add_argument("--manifest", help="运行清单（输入/输出哈希、参数、版本）的输出路径")
     args = parser.parse_args()
-    report = analyze(args.archive, replay=args.replay, jump_threshold=args.jump_threshold)
+    result = analyze(args.archive, replay=args.replay, jump_threshold=args.jump_threshold,
+                     with_details=bool(args.details_dir))
+    if args.details_dir:
+        report, details = result
+        write_details(details, args.details_dir)
+    else:
+        report, details = result, None
     if args.csv:
         write_csv(report, args.csv)
+    if args.json_path:
+        Path(args.json_path).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if args.manifest:
+        write_manifest(args.manifest, archive=args.archive, replay=args.replay,
+                       jump_threshold=args.jump_threshold, report=report, details=details,
+                       details_dir=args.details_dir, json_path=args.json_path, csv_path=args.csv)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

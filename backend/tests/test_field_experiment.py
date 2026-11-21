@@ -13,7 +13,7 @@ from pathai_backend.database import session_scope
 from pathai_backend.models import (
     AnonymousSubject, CalibrationActivePointer, ClientPermission, LocationParamVersion,
 )
-from tools.analyze_field_experiment import analyze, turn_reference_timing
+from tools.analyze_field_experiment import analyze, replay_metrics, turn_reference_timing
 
 SITE = "school-building-01"
 VERSION = "2026-10-25.1"
@@ -452,9 +452,27 @@ def test_freeze_and_c_fallback_use_b_even_after_active_params_change(client, app
     assert metrics["accuracy"]["C"]["fallbackRate"] == 0.5
     assert (metrics["usability"]["estimates"], metrics["usability"]["positionedEstimates"]) == (2, 1)
     assert metrics["usability"]["validLocationRate"] == 0.5
+    assert metrics["usability"]["byMethod"]["C"]["estimates"] == 2
+    assert metrics["timeliness"]["byMethod"]["C"]["arrivalDetectionDeltaMs"]["n"] == 1
     assert metrics["usability"]["updateIntervalMs"]["n"] == 1
     assert metrics["timeliness"]["arrivalDetectionDeltaMs"]["n"] == 1
     assert metrics["analysisConfig"]["metricVersion"] == "1.0"
+    _, details = analyze(zip_path, replay_path, with_details=True)
+    assert len(details["segments"]) == sum(metrics["counts"].values())
+    assert len(details["nav_estimates"]) == 2
+    assert {row["method"] for row in details["accuracy_checkpoints"]} == {"A", "B", "C"}
+    assert any(row["kind"] == "arrival" for row in details["timing_events"])
+
+
+def test_replay_metrics_counts_wrong_floor():
+    """errorM 为空（跨层）时仍须计入楼层正确率分母。"""
+    document = {"task": "ST", "runId": "run", "checkpoints": [{
+        "pointId": "ST-01",
+        "methods": {"A": {"floorId": "2", "floorCorrect": False, "errorM": None}},
+    }]}
+    metrics = replay_metrics([document])
+    assert metrics["tasks"]["ST"]["A"]["all"]["floorCorrectRate"] == 0.0
+    assert metrics["tasks"]["ST"]["A"]["all"]["mean"] is None
 
 
 def test_raw_collection_feeds_existing_fit_and_library(client, app, auth_headers, tmp_path):
