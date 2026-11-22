@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "generatedBy": "pathai-manual-deploy",
-  "generatedAt": "2026-11-22T04:05:24.698Z",
+  "generatedAt": "2026-11-22T04:36:02.831Z",
   "beacons": [
     {
       "beaconId": "BK-01-002",
@@ -741,11 +741,11 @@
       "major": 1,
       "minor": 10146,
       "coordinates": [
-        -49.85,
-        -2.63
+        -49.71,
+        -0.45
       ],
       "floor": 1,
-      "locationDesc": "人工调整 1F（-49.85, -2.63）",
+      "locationDesc": "人工调整 1F（-49.71, -0.45）",
       "mountType": "wall",
       "installHeight": 2.5,
       "txPower": -12,
@@ -774,8 +774,8 @@
       "major": 1,
       "minor": 10157,
       "coordinates": [
-        -58.52,
-        -21.64
+        -59.18,
+        -22.44
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）",
