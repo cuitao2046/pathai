@@ -2,628 +2,298 @@
 // 数据来源：result/ble_deployment.json（坐标唯一来源）
 module.exports = {
   "VENUE_ID": "school-building-01",
-  "MAP_VERSION": "2026-11-07.1",
-  "LEDGER_SHA256": "1331b7cd82c5d06829744a15128877f926a82fdc402dc9414661e49bc7295bbd",
+  "MAP_VERSION": "2026-11-22.1",
+  "LEDGER_SHA256": "f8ad30f23f7e401e2a99ff05d5973c093659257d369981a290c0fca97bc08321",
   "WINDOW_MS": 2000,
   "UUIDS": [
     "B9407F30-F5F8-466E-AFF9-25556B57FE6D"
   ],
   "BEACONS": [
     {
-      "beaconId": "BK-01-001",
+      "beaconId": "BK-01-002",
       "floor": 1,
-      "x": -30.209008,
-      "y": -75.08,
+      "x": -63.09,
+      "y": -14.53,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10101,
-      "locationDesc": "1F 电梯口（II-01#EL）· 门套或呼梯板旁"
+      "minor": 10102,
+      "locationDesc": "1F 交叉口（F1-TI-0105） · 原规划: 1F 交叉口（F1-TI-0007）"
+    },
+    {
+      "beaconId": "BK-01-003",
+      "floor": 1,
+      "x": -72.89,
+      "y": -21.64,
+      "installHeightM": 2.5,
+      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+      "major": 1,
+      "minor": 10103,
+      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0009）"
     },
     {
       "beaconId": "BK-01-004",
       "floor": 1,
-      "x": -18.777,
-      "y": -83.987,
+      "x": -38.643,
+      "y": 3.665,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10104,
-      "locationDesc": "1F 门口（普通门）"
+      "locationDesc": "1F 交叉口（F1-TI-0011）"
     },
     {
       "beaconId": "BK-01-005",
       "floor": 1,
-      "x": -37.131574,
-      "y": -59.51,
+      "x": -41.12,
+      "y": 6.86,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10105,
-      "locationDesc": "1F 交叉口（F1-TI-0040）"
+      "locationDesc": "1F 交叉口（F1-TI-0013） · 原规划: 1F 交叉口（F1-TI-0013）"
     },
     {
       "beaconId": "BK-01-006",
       "floor": 1,
-      "x": -37.95,
-      "y": 5.703566,
+      "x": -38.499,
+      "y": 8.468,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10106,
-      "locationDesc": "1F 交叉口（F1-TI-0016）"
-    },
-    {
-      "beaconId": "BK-01-007",
-      "floor": 1,
-      "x": -16.811,
-      "y": -81.924,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10107,
-      "locationDesc": "1F 交叉口（F1-TI-0049）"
+      "locationDesc": "1F 交叉口（F1-TI-0020）"
     },
     {
       "beaconId": "BK-01-008",
       "floor": 1,
-      "x": -41.251669,
-      "y": -48.57,
+      "x": -51.11,
+      "y": -14.6,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10108,
-      "locationDesc": "人工调整 1F（-41.252, -48.570）"
+      "locationDesc": "人工调整 1F（-51.11, -14.6） · 原规划: 1F 交叉口（F1-TI-0028）（墙面安装）"
     },
     {
       "beaconId": "BK-01-009",
       "floor": 1,
-      "x": -38.499,
-      "y": 9.368,
+      "x": -62.46,
+      "y": -19.61,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10109,
-      "locationDesc": "1F 交叉口（F1-TI-0085）"
+      "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）"
     },
     {
       "beaconId": "BK-01-010",
       "floor": 1,
-      "x": -41.299,
-      "y": 11.547,
+      "x": -64.22,
+      "y": -21.68,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10110,
-      "locationDesc": "1F 交叉口（F1-TI-0075）"
+      "locationDesc": "1F 交叉口（F1-TI-0104） · 原规划: 1F 交叉口（F1-TI-0055）"
     },
     {
       "beaconId": "BK-01-011",
       "floor": 1,
-      "x": -44.436,
-      "y": 5.802,
+      "x": -75.82,
+      "y": -19.53,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10111,
-      "locationDesc": "1F 交叉口（F1-TI-0024）"
+      "locationDesc": "1F 交叉口（F1-TI-0055） · 原规划: 1F 交叉口（F1-TI-0056）"
     },
     {
       "beaconId": "BK-01-012",
       "floor": 1,
-      "x": -42.004,
-      "y": -32.038,
+      "x": -69.24,
+      "y": -21.55,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10112,
-      "locationDesc": "1F 门口（防火门）"
+      "locationDesc": "1F 交叉口（F1-TI-0057） · 原规划: 1F 交叉口（F1-TI-0057）"
     },
     {
       "beaconId": "BK-01-013",
       "floor": 1,
-      "x": -42.004,
-      "y": -20.461,
+      "x": -66.64,
+      "y": -19.51,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10113,
-      "locationDesc": "人工调整 1F（-42.004, -20.461）"
+      "locationDesc": "1F 交叉口（F1-TI-0058） · 原规划: 1F 交叉口（F1-TI-0058）"
     },
     {
       "beaconId": "BK-01-014",
       "floor": 1,
-      "x": -42.10366,
-      "y": -27.63,
+      "x": -58.18,
+      "y": -10.75,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10114,
-      "locationDesc": "1F 交叉口（F1-TI-0093）"
+      "locationDesc": "1F 交叉口（F1-TI-0096） · 原规划: 1F 交叉口（F1-TI-0072）"
     },
     {
       "beaconId": "BK-01-015",
       "floor": 1,
-      "x": -33.754256,
-      "y": -34.44,
+      "x": -81.22,
+      "y": -19.63,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10115,
-      "locationDesc": "1F 交叉口（F1-TI-0044）"
-    },
-    {
-      "beaconId": "BK-01-016",
-      "floor": 1,
-      "x": -33.855756,
-      "y": -55.03,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10116,
-      "locationDesc": "1F 门口（防火门）"
-    },
-    {
-      "beaconId": "BK-01-017",
-      "floor": 1,
-      "x": -29.019,
-      "y": -78.169,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10117,
-      "locationDesc": "1F 交叉口（F1-TI-0051）"
-    },
-    {
-      "beaconId": "BK-01-018",
-      "floor": 1,
-      "x": -24.65,
-      "y": -78.17,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10118,
-      "locationDesc": "1F 门口（防火门）"
+      "locationDesc": "1F 交叉口（F1-TI-0097） · 原规划: 1F 交叉口（F1-TI-0097）"
     },
     {
       "beaconId": "BK-01-019",
       "floor": 1,
-      "x": -24.89,
-      "y": -81.816157,
+      "x": -42.06,
+      "y": -5.4,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10119,
-      "locationDesc": "1F 交叉口（F1-TI-0057）"
-    },
-    {
-      "beaconId": "BK-01-020",
-      "floor": 1,
-      "x": -20.805,
-      "y": -78.169,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10120,
-      "locationDesc": "1F 门口（防火门）"
-    },
-    {
-      "beaconId": "BK-01-021",
-      "floor": 1,
-      "x": -49.824574,
-      "y": -25.45,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10121,
-      "locationDesc": "1F 门口（防火门）"
+      "locationDesc": "人工调整 1F（-42.06, -5.4）"
     },
     {
       "beaconId": "BK-01-022",
       "floor": 1,
-      "x": -32.907,
-      "y": -80.569,
+      "x": -57.01,
+      "y": -19.61,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10122,
-      "locationDesc": "1F 交叉口（F1-TI-0051）"
-    },
-    {
-      "beaconId": "BK-01-023",
-      "floor": 1,
-      "x": -33.605,
-      "y": -60.969,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10123,
-      "locationDesc": "人工调整 1F（-33.605, -60.969）"
+      "locationDesc": "1F 门口（防火门）"
     },
     {
       "beaconId": "BK-01-024",
       "floor": 1,
-      "x": -38.58,
-      "y": 3.478529,
+      "x": -70.54,
+      "y": -19.55,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10124,
-      "locationDesc": "1F 交叉口（F1-TI-0016）"
+      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0057 · 西向）"
     },
     {
-      "beaconId": "BK-01-025",
+      "beaconId": "BK-01-026",
       "floor": 1,
-      "x": -41.299029,
-      "y": 5.802,
+      "x": -42.04,
+      "y": 0.45,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10125,
-      "locationDesc": "1F 交叉口（F1-TI-0018）"
-    },
-    {
-      "beaconId": "BK-01-027",
-      "floor": 1,
-      "x": -41.197529,
-      "y": 15.82,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10127,
-      "locationDesc": "1F 交叉口（F1-TI-0014）"
-    },
-    {
-      "beaconId": "BK-01-028",
-      "floor": 1,
-      "x": -32.907,
-      "y": -73.523,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10128,
-      "locationDesc": "1F 交叉口（F1-TI-0053）"
-    },
-    {
-      "beaconId": "BK-01-030",
-      "floor": 1,
-      "x": -42.006,
-      "y": 2.048,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10130,
+      "minor": 10126,
       "locationDesc": "1F 门口（普通门）"
     },
     {
-      "beaconId": "BK-01-031",
+      "beaconId": "BK-Q-F1-004",
       "floor": 1,
-      "x": -49.824574,
-      "y": -19.04,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10131,
-      "locationDesc": "1F 交叉口（F1-TI-0123）"
-    },
-    {
-      "beaconId": "BK-01-032",
-      "floor": 1,
-      "x": -41.55,
-      "y": -39.687773,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10132,
-      "locationDesc": "人工调整 1F（-41.550, -39.688）"
-    },
-    {
-      "beaconId": "BK-01-033",
-      "floor": 1,
-      "x": -41.251669,
-      "y": -40.18,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10133,
-      "locationDesc": "人工调整 1F（-41.252, -40.180）"
-    },
-    {
-      "beaconId": "BK-01-034",
-      "floor": 1,
-      "x": -37.81,
-      "y": -32.038,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10134,
-      "locationDesc": "1F 门口（防火门）"
-    },
-    {
-      "beaconId": "BK-01-035",
-      "floor": 1,
-      "x": -41.502,
-      "y": -10.558,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10135,
-      "locationDesc": "1F 交叉口（F1-TI-0090）"
-    },
-    {
-      "beaconId": "BK-01-036",
-      "floor": 1,
-      "x": -48.996224,
-      "y": -15.0,
+      "x": -78.58,
+      "y": -21.58,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10136,
-      "locationDesc": "人工调整 1F（-48.996, -15.000）"
+      "locationDesc": "1F 门口（防火门） · 原规划: 1F 门口（防火门）"
     },
     {
-      "beaconId": "BK-01-038",
+      "beaconId": "BK-Q-F1-010",
       "floor": 1,
-      "x": -42.15616,
-      "y": -4.14,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10138,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
-    },
-    {
-      "beaconId": "BK-01-039",
-      "floor": 1,
-      "x": -42.004,
-      "y": -16.509,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10139,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
-    },
-    {
-      "beaconId": "BK-01-040",
-      "floor": 1,
-      "x": -42.008,
-      "y": -23.636,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10140,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
-    },
-    {
-      "beaconId": "BK-01-041",
-      "floor": 1,
-      "x": -33.754256,
-      "y": -39.6,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10141,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
-    },
-    {
-      "beaconId": "BK-01-042",
-      "floor": 1,
-      "x": -33.202265,
-      "y": -44.41,
+      "x": -61.456,
+      "y": -17.185,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10142,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
+      "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
     },
     {
-      "beaconId": "BK-01-043",
+      "beaconId": "BK-Q-F1-011",
       "floor": 1,
-      "x": -33.855756,
-      "y": -48.65,
+      "x": -57.15,
+      "y": -14.5,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10143,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
+      "locationDesc": "人工调整 1F（-57.15, -14.5）"
     },
     {
-      "beaconId": "BK-01-044",
+      "beaconId": "BK-Q-F1-012",
       "floor": 1,
-      "x": -33.754256,
-      "y": -64.84,
+      "x": -41.12,
+      "y": 13.29,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10144,
-      "locationDesc": "1F 路线走廊覆盖点（测试路线1: 1F 音乐教室 -> 组织办公 段）"
+      "locationDesc": "1F 门口（防火门）"
     },
     {
-      "beaconId": "BK-TR-F1-001",
+      "beaconId": "BK-Q-F1-014",
       "floor": 1,
-      "x": -32.065,
-      "y": -65.62562968261719,
+      "x": -49.71,
+      "y": -0.45,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10149,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
+      "minor": 10146,
+      "locationDesc": "人工调整 1F（-49.71, -0.45）"
     },
     {
-      "beaconId": "BK-TR-F1-002",
+      "beaconId": "BK-Q-F1-025",
       "floor": 1,
-      "x": -37.81,
-      "y": -57.125725,
+      "x": -59.18,
+      "y": -22.44,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10150,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
+      "minor": 10157,
+      "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）"
     },
     {
-      "beaconId": "BK-TR-F1-003",
+      "beaconId": "BK-Q-F1-029",
       "floor": 1,
-      "x": -48.996224,
-      "y": -31.8,
+      "x": -42.304,
+      "y": -15.991,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10151,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
+      "minor": 10161,
+      "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
     },
     {
-      "beaconId": "BK-TR-F1-004",
+      "beaconId": "BK-Q-F1-030",
       "floor": 1,
-      "x": -22.06,
-      "y": -83.847557,
+      "x": -49.601,
+      "y": -8.678,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10152,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
+      "minor": 10162,
+      "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
     },
     {
-      "beaconId": "BK-TR-F1-005",
+      "beaconId": "BK-Q-F1-040",
       "floor": 1,
-      "x": -37.131574,
-      "y": -63.33,
+      "x": -47.51,
+      "y": 5.69,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10153,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
-    },
-    {
-      "beaconId": "BK-TR-F1-007",
-      "floor": 1,
-      "x": -49.824574,
-      "y": -36.77,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10155,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
-    },
-    {
-      "beaconId": "BK-TR-F1-008",
-      "floor": 1,
-      "x": -32.808478,
-      "y": -77.64,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10156,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
-    },
-    {
-      "beaconId": "BK-M-1-001",
-      "floor": 1,
-      "x": -33.61,
-      "y": 10.547306,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10001,
-      "locationDesc": "人工部署 1F（-33.610, 10.547）"
-    },
-    {
-      "beaconId": "BK-M-1-002",
-      "floor": 1,
-      "x": -49.824574,
-      "y": -1.3,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10002,
-      "locationDesc": "人工部署 1F（-49.825, -1.300）"
-    },
-    {
-      "beaconId": "BK-M-1-003",
-      "floor": 1,
-      "x": -48.996224,
-      "y": -7.08,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10003,
-      "locationDesc": "人工部署 1F（-48.996, -7.080）"
-    },
-    {
-      "beaconId": "BK-M-1-004",
-      "floor": 1,
-      "x": -37.131574,
-      "y": -69.43,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10004,
-      "locationDesc": "人工部署 1F（-37.132, -69.430）"
-    },
-    {
-      "beaconId": "BK-M-1-005",
-      "floor": 1,
-      "x": -29.14,
-      "y": -83.847557,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10005,
-      "locationDesc": "人工部署 1F（-29.140, -83.848）"
-    },
-    {
-      "beaconId": "BK-02-001",
-      "floor": 2,
-      "x": -30.209008,
-      "y": -75.1,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10145,
-      "locationDesc": "2F 电梯口（II-01#EL）· 门套或呼梯板旁"
-    },
-    {
-      "beaconId": "BK-02-003",
-      "floor": 2,
-      "x": -32.907,
-      "y": -78.169,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10147,
-      "locationDesc": "2F 交叉口（F2-TI-0050）"
-    },
-    {
-      "beaconId": "BK-TR-F2-002",
-      "floor": 2,
-      "x": -32.808478,
-      "y": -73.7,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10159,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
-    },
-    {
-      "beaconId": "BK-TR-F2-003",
-      "floor": 2,
-      "x": -33.998,
-      "y": -80.56882064941406,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 10160,
-      "locationDesc": "测试路径补点(三点定位覆盖, 贴走廊墙安装 2.5m, 非天花板)"
-    },
-    {
-      "beaconId": "BK-M-2-001",
-      "floor": 2,
-      "x": -28.86,
-      "y": -80.467321,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 2,
-      "minor": 20001,
-      "locationDesc": "人工部署 2F（-28.860, -80.467）"
+      "minor": 10172,
+      "locationDesc": "1F 交叉口（F1-TI-0019）"
     }
   ]
 }
