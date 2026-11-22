@@ -156,8 +156,8 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 扫描列表过滤：只显示本项目信标（带 FFF0 配置服务的 E5、台账 UUID、或出厂全 F 的未写参设备），
-    /// 剔除周围其他项目的 iBeacon 与无关蓝牙设备。
+    /// 扫描列表过滤：只显示本项目信标（带 FFF0 配置服务的 E5、台账 UUID、Minew 出厂默认 UUID、
+    /// 或出厂全 F / 全 0 的未写参设备），剔除周围其他项目的 iBeacon 与无关蓝牙设备。
     /// </summary>
     public bool OnlyProjectDevices
     {
@@ -834,9 +834,12 @@ public sealed class MainViewModel : ObservableObject
         return set;
     }
 
+    /// <summary>Minew/Seeed E5 出厂默认 UUID：新采购设备未写参时用它广播，须放行才能首次入库。</summary>
+    private const string FactoryDefaultUuid = "FDA50693-A4E2-4FB1-AFCF-C6EB07647825";
+
     /// <summary>
-    /// 是否属于本项目：带 FFF0 配置服务（本工具能连），或 UUID 命中台账/系统 UUID，
-    /// 或 UUID 为全 F / 全 0（出厂未写参，必须放行才能首次入库）。
+    /// 是否属于本项目：带 FFF0 配置服务（本工具能连；部分出厂固件不在广播里带该服务，因此还需下面的 UUID 兜底），
+    /// 或 UUID 命中台账/系统 UUID，或 UUID 为 Minew 出厂默认值 / 全 F / 全 0（出厂未写参，必须放行才能首次入库）。
     /// </summary>
     private static bool IsProjectDevice(BleDeviceInfo device, HashSet<string> projectUuids)
     {
@@ -846,6 +849,11 @@ public sealed class MainViewModel : ObservableObject
         }
 
         if (device.Uuid.Length == 0 || IsUnprovisionedUuid(device.Uuid))
+        {
+            return true;
+        }
+
+        if (string.Equals(device.Uuid, FactoryDefaultUuid, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

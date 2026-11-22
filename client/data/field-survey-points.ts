@@ -6,6 +6,8 @@ export interface FieldSurveyPoint extends Pick<PresetCalibrationPoint, 'pointId'
   walls: Array<{ id: string; direction: string; distanceM: number }>;
   sharedPointId?: string;
   checkpointOnly?: boolean;
+  /** T9 独立检查点：只进入反向掉头任务清单，不改变 T8 的 12 个检查点。 */
+  uturnCheckpoint?: boolean;
   routeReference?: SurveyRouteReference;
 }
 

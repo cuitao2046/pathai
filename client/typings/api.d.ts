@@ -247,6 +247,28 @@ export interface MapBeaconEntry {
   mountType?: string | null;
   /** 语义标签（如 trilateration_route_base，仅展示）。 */
   semanticTag?: string | null;
+  /**
+   * 服务端离线预计算的安装墙/参考墙（随地图包下发，算法见
+   * backend/scripts/beacon_deployment.py）。旧包无此字段或计算失败时为 null，
+   * 客户端回退本地实时计算。
+   */
+  deployment?: MapBeaconDeployment | null;
+}
+
+/** 部署点位参考墙预计算结果（字段与 client/core/collection/beacon-deployment.ts 一致）。 */
+export interface MapBeaconDeployment {
+  installationWallId: string | null;
+  installationDistanceM: number | null;
+  references: Array<{
+    wallId: string;
+    side: 'left' | 'right';
+    /** 信标点到参考墙的垂直距离（米）。 */
+    distanceM: number;
+    /** 参考墙上的测距点（垂足）。 */
+    hit: { x: number; y: number };
+  }>;
+  /** 预计算口径版本。 */
+  algorithmVersion?: string;
 }
 
 /** 地图包地点目录（字段与 API-03 Place 一致）。 */
@@ -279,6 +301,9 @@ export interface MapRoomFeature {
     label?: string;
     roomId?: string;
     floor?: number;
+    /** 公共空间标记（走廊/大厅/电梯厅等），地图包 v9+ 提供。 */
+    public?: boolean;
+    accessible?: boolean;
   };
 }
 
@@ -540,6 +565,22 @@ export interface FingerprintRollbackRequest {
 // API-06..09 导航会话（schemas/nav.py）
 // ---------------------------------------------------------------------------
 
+/** 危险层状态；非 ok 表示数据不可用，路线未规避危险区域。 */
+export type HazardLayerStatus = 'ok' | 'missing' | 'invalid' | 'version_mismatch' | 'unknown';
+
+/** 与路线相关的危险区域：onRoute=路线命中，avoided=已绕开。 */
+export interface RouteHazard {
+  hazardId: string;
+  level: 'block' | 'avoid' | 'notice';
+  type: string;
+  reason: string;
+  spokenText?: string | null;
+  edgeIds: string[];
+  onRoute: boolean;
+  avoided: boolean;
+  penaltyM?: number | null;
+}
+
 /** 路线及按决策点组织的指令序列；首条指令即 segments[0]。 */
 export interface RouteInfo {
   routeId: string;
@@ -553,6 +594,10 @@ export interface RouteInfo {
   fallbackType: RouteFallbackType;
   safeForBlind: boolean;
   riskNotices: string[];
+  hazards?: RouteHazard[];
+  hazardLayerStatus?: HazardLayerStatus;
+  hazardLayerVersion?: string | null;
+  hazardLayerNotice?: string | null;
 }
 
 export interface OriginPosition {

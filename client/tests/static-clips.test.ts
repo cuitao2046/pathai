@@ -18,6 +18,7 @@ const EXPECTED: Array<[string, LocalVoiceName]> = [
   ['前方路口请左转。', 'ready2left-turn'],
   ['前方路口请右转。', 'ready2right-turn'],
   ['已到达目的地附近，请留意周围环境。', 'nav-arrived-near'],
+  ['已到达目的地。', 'nav-arrived-near'],
   ['导航连接中断，导航已暂停，请停下并留意周围环境。', 'nav-offline'],
   ['导航会话已失效，请重新发起导航。', 'nav-session-invalid'],
   ['地图已更新，请重新发起导航。', 'nav-map-updated'],
@@ -42,7 +43,6 @@ describe('固定导航文案 → 本地离线音频', () => {
     expect(staticClipForText('请沿当前通道直行 5 米。')).toBeNull();
     expect(staticClipForText('请进入电梯，前往 2 楼。')).toBeNull();
     expect(staticClipForText('已到达 2 楼，请退出电梯。')).toBeNull();
-    expect(staticClipForText('已到达目的地。')).toBeNull();
   });
 
   it('映射到的音频文件都随包存在', () => {

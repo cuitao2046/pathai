@@ -18,11 +18,14 @@ from zipfile import ZipFile
 FILES = {
     "CAL": "calibration_segments.jsonl", "FP": "fingerprint_segments.jsonl",
     "ST": "static_test_segments.jsonl", "DY": "dynamic_trajectories.jsonl",
-    "NV": "nav_sessions.jsonl",
+    "NV": "nav_sessions.jsonl", "UT": "uturn_sessions.jsonl",
 }
 TURN_ACTIONS = {"turn_left", "turn_right", "u_turn"}
 DEFAULT_JUMP_THRESHOLD_M = 3.0
-METRIC_VERSION = "1.0"
+METRIC_VERSION = "1.1"
+#: T9 时效口径：|播报 − 检查点打点| ≤ 1s 视为同时；P90 目标 ≤ 1.5s。
+UTURN_SAME_TIME_MS = 1000
+UTURN_P90_TARGET_MS = 1500
 
 #: 逐条中间数据的列定义；文件按 key 命名（如 segments.csv），便于人工复核。
 DETAIL_FIELDS = {
@@ -49,6 +52,10 @@ DETAIL_FIELDS = {
     "timing_events": [
         "runId", "method", "pointId", "kind", "status", "signalAtEpoch", "referenceAtEpoch",
         "deltaMs", "relativeM", "announcementId", "instructionId", "distanceM",
+    ],
+    "uturn_timing": [
+        "runId", "method", "pointId", "checkAtEpoch", "speechAtEpoch", "detectedAtEpoch",
+        "deltaMs", "absDeltaMs", "status", "announcements", "duplicateAnnouncements",
     ],
 }
 
@@ -174,6 +181,78 @@ def check_navigation(run, config):
         arrival["withinFrozenRadius"] = last["floorId"] == terminal["floorId"] and distance <= config["arrivalRadiusM"]
     return {"runId": run["runId"], "method": run["method"], "turns": turn_scores,
             "turnTiming": turn_reference_timing(run, events, instructions), "arrival": arrival}
+
+
+def uturn_timing(run):
+    """T9：从「检查点打点」到「掉头播报开始」的纠偏时效。
+
+    - 检查点：T9 清单只有一个点，取最后一条未撤销的打点；
+    - 播报：``speech_started`` 且 ``source == "nav:uturn"``（客户端离线音频）；
+    - deltaMs = 播报 − 打点；|delta| ≤ 1s 记 same_time，负值 early，正值 late。
+    """
+    marks = [event for event in run.get("checkpoints", []) if not event.get("undo")]
+    check = marks[-1] if marks else None
+    speech = next((event for event in run.get("navigation", [])
+                   if event.get("kind") == "speech_started" and event.get("source") == "nav:uturn"), None)
+    detected = next((event for event in run.get("navigation", [])
+                     if event.get("kind") == "uturn_detected"), None)
+    announcements = sum(1 for event in run.get("navigation", [])
+                        if event.get("kind") == "speech_started" and event.get("source") == "nav:uturn")
+    check_at = check["t"] if check else None
+    speech_at = speech["t"] if speech else None
+    detection_at = detected["t"] if detected else None
+    delta = speech_at - check_at if speech_at is not None and check_at is not None else None
+    if delta is None:
+        status = "reference_missing" if check_at is None else "not_detected"
+    else:
+        status = ("same_time" if abs(delta) <= UTURN_SAME_TIME_MS
+                  else "early" if delta < 0 else "late")
+    return {
+        "runId": run["runId"], "method": run.get("method", ""),
+        "pointId": check["pointId"] if check else "",
+        "checkAtEpoch": check_at, "speechAtEpoch": speech_at, "detectedAtEpoch": detection_at,
+        "deltaMs": delta, "absDeltaMs": abs(delta) if delta is not None else None,
+        "status": status,
+        "detected": speech_at is not None or detection_at is not None,
+        "announcements": announcements,
+        "duplicateAnnouncements": max(0, announcements - 1),
+    }
+
+
+def _uturn_summary(uturns):
+    deltas = [item["deltaMs"] for item in uturns if item["deltaMs"] is not None]
+    abs_deltas = [abs(value) for value in deltas]
+    statuses = Counter(item["status"] for item in uturns)
+    detection_rate = ratio(item["detected"] for item in uturns)
+    same_time_rate = (sum(1 for value in deltas if abs(value) <= UTURN_SAME_TIME_MS) / len(deltas)
+                      if deltas else None)
+    p90 = percentile(abs_deltas, 0.9)
+    return {
+        "runs": len(uturns),
+        "detectedRuns": sum(1 for item in uturns if item["detected"]),
+        "detectionRate": detection_rate,
+        "deltaMs": summarize(deltas),
+        "absDeltaMs": summarize(abs_deltas),
+        "sameTimeRate": same_time_rate,
+        "statusCounts": dict(statuses),
+        "duplicateAnnouncements": sum(item["duplicateAnnouncements"] for item in uturns),
+        "acceptance": {
+            "detectionRateAtLeast95": None if detection_rate is None else detection_rate >= 0.95,
+            "p90Within1500ms": None if p90 is None else p90 <= UTURN_P90_TARGET_MS,
+            "noDuplicateAnnouncements": all(item["duplicateAnnouncements"] == 0 for item in uturns),
+        },
+    }
+
+
+def uturn_metrics(uturns):
+    """T9 时效：总体 + 按方法（B/C）。"""
+    methods = sorted({item["method"] for item in uturns})
+    return {
+        "runs": uturns,
+        "summary": _uturn_summary(uturns),
+        "byMethod": {method: _uturn_summary([item for item in uturns if item["method"] == method])
+                     for method in methods},
+    }
 
 
 def percentile(values, fraction):
@@ -492,8 +571,11 @@ def _timing_details(nav):
 
 def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_details=False):
     with ZipFile(path) as bundle:
-        if set(bundle.namelist()) != {*FILES.values(), "ground_truth.csv", "observer_records.csv", "manifest.json"}:
-            raise ValueError("实验 ZIP 的八类产物不齐")
+        namelist = set(bundle.namelist())
+        required = {*FILES.values(), "ground_truth.csv", "observer_records.csv", "manifest.json"}
+        # 兼容 T9 之前导出的旧归档（没有 uturn_sessions.jsonl）。
+        if required - namelist - {"uturn_sessions.jsonl"} or namelist - required:
+            raise ValueError("实验 ZIP 的产物不齐")
         info = json.loads(bundle.read("manifest.json"))
         configs = {c["configId"]: c for c in info["frozenConfigurations"]}
         plan_points = {}
@@ -509,9 +591,12 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_det
         ids = set()
         nav = []
         nav_segments = []
+        uturn_runs = []
         c = Counter()
         for task, file in FILES.items():
             count = 0
+            if file not in namelist:
+                continue
             with bundle.open(file) as stream:
                 for line in stream:
                     row = json.loads(line)
@@ -528,7 +613,9 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_det
                             details["nav_estimates"].extend(_estimate_details(row, jump_threshold))
                         if row["method"] == "C":
                             c.update(e.get("source") for e in row["navigation"] if e["kind"] == "estimate")
-            if count != info["counts"][task]:
+                    if task == "UT" and row["status"] == "complete":
+                        uturn_runs.append(uturn_timing(row))
+            if count != info["counts"].get(task, 0):
                 raise ValueError(f"{file} 与 manifest 计数不一致")
         observed = Counter((r["turnRating"] for r in rows(bundle, "observer_records.csv") if r["turnRating"]))
         truth_rows = sum(1 for _ in rows(bundle, "ground_truth.csv"))
@@ -536,6 +623,7 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_det
         details["runs"] = _run_details(details["segments"])
         details["accuracy_checkpoints"] = _accuracy_details(replay, plan_points)
         details["timing_events"] = _timing_details(nav)
+        details["uturn_timing"] = uturn_runs
     attempts = c["fingerprint"] + c["trilateration"]
     report = {"counts": info["counts"], "truthRows": truth_rows, "observerTurnRatings": dict(observed),
               "C": {"fingerprintHits": c["fingerprint"], "fallbacksToB": c["trilateration"],
@@ -544,7 +632,10 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_det
               "accuracy": replay_metrics(replay),
               "usability": navigation_metrics(nav_segments, jump_threshold),
               "timeliness": timing_metrics(nav),
+              "uturn": uturn_metrics(uturn_runs),
               "analysisConfig": {"metricVersion": METRIC_VERSION, "jumpThresholdM": jump_threshold,
+                                 "uturnSameTimeMs": UTURN_SAME_TIME_MS,
+                                 "uturnP90TargetMs": UTURN_P90_TARGET_MS,
                                  "export": info.get("analysisConfig")}}
     return (report, details) if with_details else report
 
@@ -582,6 +673,11 @@ def metric_rows(report):
         flatten(dimension, "*", section)
         for method, data in section.get("byMethod", {}).items():
             flatten(dimension, method, data)
+    uturn = report.get("uturn", {})
+    if uturn:
+        flatten("uturn", "*", {"summary": uturn.get("summary", {})})
+        for method, data in uturn.get("byMethod", {}).items():
+            flatten("uturn", method, data)
     return rows_out
 
 

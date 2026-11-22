@@ -1,6 +1,6 @@
 export const FIELD_ORIENTATIONS = ['N', 'E', 'S', 'W'] as const;
 export type FieldOrientation = typeof FIELD_ORIENTATIONS[number];
-export type FieldTask = 'CAL' | 'FP' | 'ST' | 'DY' | 'NV';
+export type FieldTask = 'CAL' | 'FP' | 'ST' | 'DY' | 'NV' | 'UT';
 export type FieldMethod = 'A' | 'B' | 'C';
 export const FINGERPRINT_MIN_SECONDS = 25;
 export const FINGERPRINT_MAX_SECONDS = 30;

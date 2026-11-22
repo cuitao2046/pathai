@@ -26,7 +26,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from beacon_deployment import BeaconDeploymentAnalyzer  # noqa: E402
+
 DEFAULT_GEOJSON = REPO_ROOT / "result" / "school_building_01_map_v9.geojson"
 DEFAULT_BEACONS = REPO_ROOT / "result" / "ble_deployment.json"
 OUT_DIR = BACKEND_DIR / "maps_data" / "school-building-01"
@@ -174,6 +180,31 @@ def convert_beacons(entries: list[dict]) -> list[dict]:
         )
     validate_beacon_configs(beacons)
     return beacons
+
+
+def attach_beacon_deployments(floors: dict[str, dict], beacons: list[dict]) -> None:
+    """为每颗信标写入离线预计算的安装墙/参考墙（失败时置 null，不阻断构建）。
+
+    客户端选中点位时直接展示，避免真机实时计算（1F 27 颗约 20s/颗）。
+    """
+    analyzers: dict[str, BeaconDeploymentAnalyzer] = {}
+    for beacon in beacons:
+        floor_id = beacon["floorId"]
+        geometry = (floors.get(floor_id) or {}).get("geometry") or {}
+        walls = geometry.get("walls") or []
+        rooms = geometry.get("rooms") or []
+        if not walls or not rooms:
+            beacon["deployment"] = None
+            continue
+        analyzer = analyzers.get(floor_id)
+        if analyzer is None:
+            analyzer = BeaconDeploymentAnalyzer(walls, rooms)
+            analyzers[floor_id] = analyzer
+        try:
+            beacon["deployment"] = analyzer.analyze(beacon["x"], beacon["y"])
+        except Exception as err:  # noqa: BLE001
+            print(f"[警告] {beacon['beaconId']} 参考墙预计算失败：{err!r}", file=sys.stderr)
+            beacon["deployment"] = None
 
 
 def prune_unreachable(
@@ -337,6 +368,9 @@ def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tu
     for floor_id, floor in floors.items():
         places.extend(build_places(floor_id, floor["semantic"]["rooms"], floor["topology"]["nodes"]))
 
+    beacons = convert_beacons(beacon_entries)
+    attach_beacon_deployments(floors, beacons)
+
     package = {
         "siteId": SITE_ID,
         "mapVersion": map_version,
@@ -360,7 +394,7 @@ def build_package(geo: dict, beacon_entries: list[dict], map_version: str) -> tu
         "floors": floors,
         "crossFloorEdges": cross_floor,
         "places": places,
-        "beacons": convert_beacons(beacon_entries),
+        "beacons": beacons,
     }
     return package, promoted
 

@@ -106,8 +106,8 @@
     </view>
 
     <!-- 第 4 颗：现场采集工具（设置页开关控制显隐，导航中隐藏）。
-         结构与交互同楼层菜单——触发键右侧横向展开两个连体候选；
-         隐藏时整颗移除，前三颗的间距与圆角不受影响 -->
+         结构与交互同楼层菜单——触发键右侧横向展开采集候选（静态标定 /
+         网格指纹 / 对数等距 / 蓝牙部署）；隐藏时整颗移除，前三颗的间距与圆角不受影响 -->
     <view
       class="collect-menu {{collectMenuOpen ? 'collect-menu--open' : ''}}"
       wx:if="{{collectEntry && !navActive}}"
@@ -139,7 +139,13 @@
           aria-role="button"
           bindtap="onGoCollectLogdist"
           aria-label="打开对数等距测量"
-        ><view class="zoom-face collect-pill collect-opt-last" style="width:{{collectOptWidth}}rpx">对数等距</view></view>
+        ><view class="zoom-face collect-pill" style="width:{{collectOptWidth}}rpx">对数等距</view></view>
+        <view
+          class="zoom-hit"
+          aria-role="button"
+          bindtap="onGoCollectDeployment"
+          aria-label="打开蓝牙部署"
+        ><view class="zoom-face collect-pill collect-opt-last" style="width:{{collectOptWidth}}rpx">蓝牙部署</view></view>
       </view>
     </view>
   </view>
@@ -185,7 +191,7 @@
   <!-- 导航 HUD（REQ-PAGE：导航态融合进地图页；原独立导航页退役） -->
   <view class="nav-hud" wx:if="{{fieldMethod && !navActive && !destination && !loading}}">
     <view class="nav-top">
-      <view class="state">T8 方法 {{fieldMethod}}</view>
+      <view class="state">{{fieldTaskLabel}} 方法 {{fieldMethod}}</view>
       <view class="destination">{{fieldRunFinished ? '本轮已结束' : '请在实验起点准备'}} · {{fieldRunId}}</view>
       <view wx:if="{{fieldStorageIssue}}" class="field-arrival-status" aria-live="polite">{{fieldStorageIssue}}</view>
       <button wx:if="{{fieldSaveRetry}}" bindtap="onRetryFieldSave">重试本地保存</button>

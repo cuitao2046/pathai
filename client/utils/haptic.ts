@@ -26,3 +26,23 @@ export function vibrateDoubleShort(): void {
   vibrateShort();
   setTimeout(() => vibrateShort(), 120);
 }
+
+/**
+ * 到达目的地专属震动：三长振（间隔 350ms）。
+ * 与转弯节拍（短振序列）、录音双短振节奏明显不同，用户可凭触感直接分辨「已到达」。
+ */
+export function vibrateArrival(): void {
+  vibrateLong();
+  setTimeout(() => vibrateLong(), 350);
+  setTimeout(() => vibrateLong(), 700);
+}
+
+/**
+ * 反向掉头专属震动：两长一短（350ms / 700ms 处）。
+ * 与转弯节拍、到达三长振、录音双短振均可凭节奏区分。
+ */
+export function vibrateUturn(): void {
+  vibrateLong();
+  setTimeout(() => vibrateLong(), 350);
+  setTimeout(() => vibrateShort(), 700);
+}

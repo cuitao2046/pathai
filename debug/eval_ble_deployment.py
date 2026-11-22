@@ -34,10 +34,14 @@ PLANS = {
 }
 
 
+FLOORS = ["1", "2"]
+ONLY = None
+
+
 def analyze_plan(geo, target, plan_path):
     plan = json.load(open(plan_path, encoding="utf-8"))
     out = {"plan": plan_path.name, "floors": {}}
-    for fl in ["1", "2"]:
+    for fl in FLOORS:
         model = build_model(geo, plan, fl, target=target)
         rv = model.review()
         # GDOP / 外扩细分
@@ -71,11 +75,23 @@ def analyze_plan(geo, target, plan_path):
 
 
 def main():
+    global FLOORS, ONLY
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--floors", default="1,2", help="评估楼层, 逗号分隔, 如 1")
+    ap.add_argument("--only", default="", help="只评估指定方案键, 如 A_manual_ble_deploy")
+    ap.add_argument("--out", default="result/beacon_deployment_evaluation.json",
+                    help="报告输出路径(相对项目根)")
+    args = ap.parse_args()
+    FLOORS = [f.strip() for f in args.floors.split(",") if f.strip()]
+    ONLY = args.only or None
     geo = json.load(open(GEO, encoding="utf-8"))
     target = json.load(open(TARGET, encoding="utf-8"))
     report = {"target": TARGET.name, "gdopMax": GDOP_MAX, "dOutMax": D_OUT_MAX,
-              "plans": {}}
+              "floors": FLOORS, "plans": {}}
     for key, p in PLANS.items():
+        if ONLY and key != ONLY:
+            continue
         if not p.exists():
             print(f"[skip] {p.name} 不存在")
             continue
@@ -96,7 +112,7 @@ def main():
                   f"墙角违{f['corner_violations']} 柱违{f['obstacle_violations']} "
                   f"NN-CV {f['nn_cv']} 走廊双侧 {f['corridors_both']}/{f['corridors_total']}")
 
-    out_path = ROOT / "result" / "beacon_deployment_evaluation.json"
+    out_path = ROOT / args.out
     json.dump(report, open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
     print(f"\n完整报告: {out_path}")
 

@@ -11,6 +11,9 @@ declare const require: (id: string) => unknown;
 
 export const REAL_MAP = require('../../../backend/maps_data/school-building-01/2026-10-25.1.json') as MapPackageRoot;
 
+/** 公共空间地图包（geometry.rooms 带 public 标记 + 服务端预计算 deployment），部署参考墙校验用。 */
+export const PUBLIC_MAP = require('../../../backend/maps_data/school-building-01/2026-11-21.1.json') as MapPackageRoot;
+
 /** 真实 iBeacon uuid（61 个信标共用，major=楼层号）。 */
 export const REAL_UUID = 'B9407F30-F5F8-466E-AFF9-25556B57FE6D';
 

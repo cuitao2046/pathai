@@ -176,6 +176,22 @@ export class NavSessionController {
     this.opts.speech.enqueue('导航连接中断，导航已暂停，请停下并留意周围环境。', 'safety', null, 'nav:offline');
   }
 
+  /**
+   * 会话已不可用（403 无权访问 / 404 不存在）：服务端永远不会再接受更新或结束请求。
+   * 继续按“离线”重试只会一直停在导航态，所以本地终止并明确告知用户。
+   */
+  private abandonSession(code: string): void {
+    if (this.session === null || this.machine.isTerminal) return;
+    log.warn('导航会话不可用，终止本地导航', {
+      sessionId: this.session.sessionId,
+      code,
+    });
+    this.transition({ type: 'RESUME_FAILED' });
+    this.opts.speech.clearAll('nav:unavailable');
+    this.opts.speech.enqueue('导航会话已失效，请重新发起导航。', 'safety', null, 'nav:unavailable');
+    this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
+  }
+
   private async validateRecovery(lifecycle: number): Promise<boolean> {
     const response = await this.opts.client.request<SessionQueryResponse>({ method: 'GET', path: `/api/v1/nav/sessions/${this.session!.sessionId}` });
     const data = response.data;
@@ -638,7 +654,7 @@ export class NavSessionController {
       query = resp.data;
     } catch (err) {
       if (!this.foreground || lifecycle !== this.lifecycle) return;
-      if (err instanceof ApiClientError && err.code === 'SESSION_NOT_FOUND') {
+      if (err instanceof ApiClientError && (err.code === 'SESSION_NOT_FOUND' || err.code === 'FORBIDDEN')) {
         this.transition({ type: 'RESUME_FAILED' });
         this.opts.speech.enqueue('导航会话已失效，请重新发起导航。', 'safety', null, 'nav:foreground');
         this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
@@ -720,23 +736,32 @@ export class NavSessionController {
         body: { reason },
       });
     } catch (err) {
-      if (!(err instanceof ApiClientError && err.code === 'SESSION_NOT_ACTIVE')) {
+      if (!(err instanceof ApiClientError)) throw err;
+      if (err.code === 'SESSION_NOT_FOUND' || err.code === 'FORBIDDEN') {
+        // 身份切换（如本地 fake 登录续期）或会话被清理后，服务端已不再认可本会话；
+        // 继续抛错会把用户困在导航态，按本地结束处理。
+        log.warn('结束会话时服务端拒绝，按本地结束处理', {
+          sessionId: this.session.sessionId,
+          code: err.code,
+        });
+      } else if (err.code === 'SESSION_NOT_ACTIVE') {
+        if (this.opts.experiment?.()) {
+          if (this.machine.state === 'arrived') return;
+          const { data } = await this.opts.client.request<SessionQueryResponse>({
+            method: 'GET', path: `/api/v1/nav/sessions/${this.session.sessionId}`,
+          });
+          if (this.state === 'arrived') return;
+          if (data?.status === 'arrived') {
+            this.transition({ type: 'QUERY_STATUS', status: data.status });
+            this.opts.onEnded?.({ reason: 'arrived', byArrival: true });
+            return;
+          }
+          if (data?.status !== 'ended') throw err;
+        }
+        // 已终态：视为结束成功
+      } else {
         throw err;
       }
-      if (this.opts.experiment?.()) {
-        if (this.machine.state === 'arrived') return;
-        const { data } = await this.opts.client.request<SessionQueryResponse>({
-          method: 'GET', path: `/api/v1/nav/sessions/${this.session.sessionId}`,
-        });
-        if (this.state === 'arrived') return;
-        if (data?.status === 'arrived') {
-          this.transition({ type: 'QUERY_STATUS', status: data.status });
-          this.opts.onEnded?.({ reason: 'arrived', byArrival: true });
-          return;
-        }
-        if (data?.status !== 'ended') throw err;
-      }
-      // 已终态：视为结束成功
     }
     this.transition({ type: 'END_ACK' });
     this.overviewToken += 1; // 概要窗口作废：迟到的队列回调/超时不得再推进
@@ -830,8 +855,12 @@ export class NavSessionController {
         await this.resyncSequence();
       } else if (err instanceof ApiClientError && err.code === 'SESSION_NOT_ACTIVE') {
         await this.confirmTerminal();
-      }
-      else if (lifecycle === this.lifecycle) this.pauseLocally();
+      } else if (
+        err instanceof ApiClientError &&
+        (err.code === 'FORBIDDEN' || err.code === 'SESSION_NOT_FOUND')
+      ) {
+        this.abandonSession(err.code);
+      } else if (lifecycle === this.lifecycle) this.pauseLocally();
     } finally {
       this.updateInFlight = false;
     }
@@ -866,9 +895,11 @@ export class NavSessionController {
     if (data.event === 'arrived') {
       this.resetElevatorState();
       const near = this.lastConfidence < ARRIVAL_NEAR_CONFIDENCE;
+      // 到达是导航收尾的唯一提示，必须最高优先级：safety 会清空待播指令并打断
+      // 正在播的普通/转向播报，避免被后续残留指令占用语音通道。
       this.opts.speech.enqueue(
         near ? '已到达目的地附近，请留意周围环境。' : '已到达目的地。',
-        'turn',
+        'safety',
         null,
         'nav:arrived',
       );

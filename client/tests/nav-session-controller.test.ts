@@ -1179,7 +1179,9 @@ describe('NavSessionController 会话编排', () => {
 
     expect(h.controller.state).toBe('arrived');
     expect(h.pipeline.calls).toEqual(['startNavigating', 'stop']);
-    expect(h.tts.spoken[h.tts.spoken.length - 1]).toBe('已到达目的地。');
+    // 到达播报走本地离线音频（弱网/在线 TTS 不可用也必须能播）
+    expect(h.clips.played[h.clips.played.length - 1]).toBe('nav-arrived-near');
+    expect(h.tts.spoken).not.toContain('已到达目的地。');
     expect(h.tts.spoken).not.toContain(ARRIVE_INSTR.text); // arrived 分支播固定话术
     expect(h.ended).toEqual([{ reason: 'arrived', byArrival: true }]);
   });
@@ -1279,6 +1281,29 @@ describe('NavSessionController 会话编排', () => {
 
     const second = updateRequests()[1];
     expect((second.data as { sequence: number }).sequence).toBe(6); // serverSeq + 1
+  });
+
+  it('403 FORBIDDEN：会话不可用即本地终止并提示，不降级为离线暂停', async () => {
+    const h = makeHarness();
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      if (options.url.endsWith('/sessions/sess-1/updates')) {
+        replyError(options, 403, 'FORBIDDEN');
+        return;
+      }
+      options.fail({ errMsg: 'request:fail unexpected url' });
+    };
+
+    h.controller.handleEstimate(ESTIMATE_RELIABLE);
+    await flush();
+
+    expect(h.controller.state).toBe('ended');
+    expect(h.pipeline.calls).toContain('stop');
+    expect(h.ended).toEqual([{ reason: 'system_error', byArrival: false }]);
   });
 
   it('409 SESSION_NOT_ACTIVE：查询确认终态后收敛 onEnded', async () => {
@@ -1487,5 +1512,22 @@ describe('NavSessionController 会话编排', () => {
     await expect(h.controller.endSession('user_cancelled')).resolves.toBeUndefined();
     expect(h.controller.state).toBe('ended');
     expect(h.ended).toEqual([{ reason: 'user_cancelled', byArrival: false }]);
+  });
+
+  it('endSession 遇 403 FORBIDDEN：按本地结束处理，用户不被困在导航态', async () => {
+    const h = makeHarness();
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      replyError(options, 403, 'FORBIDDEN');
+    };
+
+    await expect(h.controller.endSession('user_finished')).resolves.toBeUndefined();
+    expect(h.controller.state).toBe('ended');
+    expect(h.pipeline.calls).toContain('stop');
+    expect(h.ended).toEqual([{ reason: 'user_finished', byArrival: false }]);
   });
 });

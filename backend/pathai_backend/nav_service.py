@@ -44,6 +44,10 @@ TURN_ANGLE_DEG = 30.0
 #: 路口转向的提前播报距离（冻结值）。语音在拐点前约 3m 说出转向；
 #: 转弯震动仍由客户端在最后 6m 内先接管，两者不依赖同一阈值。
 TURN_PROMPT_DISTANCE_M = 3.0
+#: 语义房间中属于公共空间的类型：不参与“当前位置是否在室内”的判定。
+_PUBLIC_SPACE_ROOM_TYPES = frozenset(
+    {"corridor", "lobby", "staircase", "stair_lobby", "elevator_lobby"}
+)
 
 
 @dataclass(frozen=True)
@@ -59,9 +63,37 @@ class PackageIndex:
 
     def __init__(self, pkg: MapPackage):
         self.nodes: dict[str, NavPoint] = {}
+        #: 原始节点视图（保留 type/rooms/roomId/promotedFromRoom 等属性），
+        #: 供到达锚点判定等需要节点语义的场景使用。
+        self.node_details: dict[str, object] = {}
         for floor_id, floor in pkg.floors.items():
             for node in floor.topology.nodes:
                 self.nodes[node.id] = NavPoint(node.id, floor_id, node.coordinates[0], node.coordinates[1])
+                self.node_details[node.id] = node
+        #: 房间多边形（room_id → (floor_id, 外环顶点)）：仅收录“室内房间”，
+        #: 走廊/门厅/楼梯等公共空间不参与室内判定。来源 geometry.rooms。
+        self.room_polygons: dict[str, tuple[str, list[tuple[float, float]]]] = {}
+        for floor_id, floor in pkg.floors.items():
+            for feature in getattr(floor.geometry, "rooms", None) or ():
+                room_id = feature.get("id") if isinstance(feature, dict) else getattr(feature, "id", None)
+                geometry = feature.get("geometry") if isinstance(feature, dict) else getattr(feature, "geometry", None)
+                properties = (
+                    feature.get("properties") if isinstance(feature, dict)
+                    else getattr(feature, "properties", None)
+                ) or {}
+                room_type = properties.get("type") if isinstance(properties, dict) else None
+                coordinates = (
+                    geometry.get("coordinates") if isinstance(geometry, dict)
+                    else getattr(geometry, "coordinates", None)
+                )
+                if not room_id or not coordinates or not coordinates[0]:
+                    continue
+                if room_type in _PUBLIC_SPACE_ROOM_TYPES:
+                    continue
+                self.room_polygons[room_id] = (
+                    floor_id,
+                    [(float(p[0]), float(p[1])) for p in coordinates[0]],
+                )
         self.edges: dict[str, dict] = {}
         for floor in pkg.floors.values():
             for e in floor.topology.edges:
@@ -93,7 +125,7 @@ def _angle_diff(b1: float, b2: float) -> float:
 
 
 def snap_to_node(pkg_index: PackageIndex, floor_id: str, x: float, y: float) -> NavPoint:
-    """吸附到同层最近拓扑节点（起点豁免中间节点白名单，任意类型可用）。"""
+    """吸附到同层最近拓扑节点（任意类型，几何兜底用）。"""
     best, best_d = None, float("inf")
     for point in pkg_index.nodes.values():
         if point.floor_id != floor_id:
@@ -104,6 +136,143 @@ def snap_to_node(pkg_index: PackageIndex, floor_id: str, x: float, y: float) -> 
     if best is None:
         raise ApiError(422, "LOCATION_UNRELIABLE", "起点楼层没有可用拓扑节点")
     return best
+
+
+def _forward_candidates(
+    points: list[NavPoint], x: float, y: float, toward: NavPoint | None
+) -> list[NavPoint]:
+    """只保留朝向目的地的候选（与目的地方向夹角 ≤90°）。
+
+    toward 为空或没有任何前向候选时原样返回：方向修正不能导致无节点可用。
+    """
+    if toward is None or not points:
+        return points
+    base = math.atan2(toward.y - y, toward.x - x)
+    forward = [
+        point for point in points
+        if abs(
+            (math.atan2(point.y - y, point.x - x) - base + math.pi)
+            % (2.0 * math.pi) - math.pi
+        ) <= math.pi / 2.0
+    ]
+    return forward or points
+
+
+def _nearest_public_node(
+    pkg_index: PackageIndex, floor_id: str, x: float, y: float,
+    toward: NavPoint | None = None,
+) -> NavPoint | None:
+    """公共空间入网节点：优先取朝目的地一侧的最近走廊/设施节点。
+
+    只按“最近”选会在起点位于两个节点之间时选中背后节点，导致路线先逆行
+    再折返；``toward`` 为目的地坐标，用于过滤背向候选。
+    """
+    candidates = [
+        point for point in pkg_index.nodes.values()
+        if point.floor_id == floor_id and _is_public_space_node(pkg_index, point.node_id)
+    ]
+    candidates = _forward_candidates(candidates, x, y, toward)
+    return _nearest(candidates, x, y) if candidates else None
+
+
+def _point_in_ring(x: float, y: float, ring: list[tuple[float, float]]) -> bool:
+    """射线法：点是否落在多边形外环内。"""
+    inside = False
+    count = len(ring)
+    for i in range(count):
+        x1, y1 = ring[i]
+        x2, y2 = ring[(i + 1) % count]
+        if (y1 > y) != (y2 > y):
+            cross_x = (x2 - x1) * (y - y1) / (y2 - y1) + x1
+            if x < cross_x:
+                inside = not inside
+    return inside
+
+
+def room_at(pkg_index: PackageIndex, floor_id: str, x: float, y: float) -> str | None:
+    """当前位置所在房间（多边形包含判定）；公共空间返回 None。"""
+    for room_id, (room_floor, ring) in pkg_index.room_polygons.items():
+        if room_floor == floor_id and ring and _point_in_ring(x, y, ring):
+            return room_id
+    return None
+
+
+def _node_room_id(pkg_index: PackageIndex, node_id: str) -> str | None:
+    detail = pkg_index.node_details.get(node_id)
+    return getattr(detail, "roomId", None) if detail is not None else None
+
+
+def _is_room_center_node(pkg_index: PackageIndex, node_id: str) -> bool:
+    """室内质心拓扑节点：带 roomId 的房间中心（TR），与走廊 TI/门洞 TD 区分。"""
+    detail = pkg_index.node_details.get(node_id)
+    if detail is None or not getattr(detail, "roomId", None):
+        return False
+    return getattr(detail, "type", None) in ("intersection", "room")
+
+
+def _is_public_space_node(pkg_index: PackageIndex, node_id: str) -> bool:
+    """公共空间拓扑节点：走廊路口/设施/设施入口（不含房间中心与门洞）。"""
+    detail = pkg_index.node_details.get(node_id)
+    if detail is None or getattr(detail, "roomId", None):
+        return False
+    return getattr(detail, "type", None) in ("intersection", "facility", "facility_entrance")
+
+
+def _room_doorways(pkg_index: PackageIndex, room_id: str | None) -> list[NavPoint]:
+    """房间对应的门洞拓扑节点（可能多个）。"""
+    if not room_id:
+        return []
+    result: list[NavPoint] = []
+    for node_id, detail in pkg_index.node_details.items():
+        if getattr(detail, "type", None) != "doorway":
+            continue
+        if room_id not in (getattr(detail, "rooms", None) or ()):
+            continue
+        point = pkg_index.nodes.get(node_id)
+        if point is not None:
+            result.append(point)
+    return result
+
+
+def _nearest(points: list[NavPoint], x: float, y: float) -> NavPoint:
+    return min(points, key=lambda p: math.hypot(p.x - x, p.y - y))
+
+
+def origin_anchor_node(
+    pkg_index: PackageIndex, floor_id: str, x: float, y: float,
+    toward: NavPoint | None = None,
+) -> NavPoint:
+    """起点第一跳的入网节点。
+
+    - 当前位置在某房间多边形内（室内）：取该房间的门洞节点，先引导到门口；
+    - 否则（公共空间/室外）：取最近的公共空间节点（走廊/设施）。
+    - ``toward`` 为目的地坐标：多个门/节点时优先取朝目的地一侧，避免起步折返。
+    """
+    room_id = room_at(pkg_index, floor_id, x, y)
+    if room_id:
+        doors = _forward_candidates(_room_doorways(pkg_index, room_id), x, y, toward)
+        if doors:
+            return _nearest(doors, x, y)
+    public = _nearest_public_node(pkg_index, floor_id, x, y, toward)
+    if public is not None:
+        return public
+    return snap_to_node(pkg_index, floor_id, x, y)
+
+
+def _destination_candidates(
+    pkg_index: PackageIndex, dest_node: NavPoint, origin: NavPoint
+) -> list[NavPoint]:
+    """目的地入网节点候选。
+
+    目的地是室内质心节点时，改为该房间的门洞节点（多个门按离起点由近到远）；
+    否则沿用目的地节点本身。
+    """
+    if not _is_room_center_node(pkg_index, dest_node.node_id):
+        return [dest_node]
+    doors = _room_doorways(pkg_index, _node_room_id(pkg_index, dest_node.node_id))
+    if not doors:
+        return [dest_node]
+    return sorted(doors, key=lambda p: math.hypot(p.x - origin.x, p.y - origin.y))
 
 
 def _instruction(
@@ -129,6 +298,8 @@ def build_route_info(
     hazard_layer: HazardLayer | None = None,
     turn_prompt_distance_m: float = TURN_PROMPT_DISTANCE_M,
     approach: tuple[NavPoint, float] | None = None,
+    blind_mode: bool = False,
+    arrival_node_id: str | None = None,
 ) -> RouteInfo:
     """从引擎输出构建 RouteInfo 与 segments（首条指令=segments[0]）。
 
@@ -254,6 +425,16 @@ def build_route_info(
         fallback = RouteFallbackType.WALL_FALLBACK
         safe_for_blind = False
         risk_notices = ["路线包含贴墙引导段，未经盲道验证，请谨慎通行。"]
+    # 危险层不可用（缺失/损坏/版本不匹配）时不能声称“适盲安全”：
+    # 此时禁行边没有被加载，路线可能穿过危险区域，只返回提示并降级标记。
+    if blind_mode and (hazard_layer is None or hazard_layer.degraded()):
+        safe_for_blind = False
+        reason = (
+            hazard_layer.notice
+            if hazard_layer is not None and hazard_layer.notice
+            else "危险层不可用"
+        )
+        risk_notices.append(f"危险区域数据不可用（{reason}），本路线未规避危险区域，请谨慎通行。")
     return RouteInfo(
         routeId=f"route_{_short_id()}",
         mapVersion=pkg.mapVersion,
@@ -281,6 +462,7 @@ def build_route_info(
         hazardLayerNotice=(
             hazard_layer.notice if hazard_layer is not None and hazard_layer.degraded() else None
         ),
+        arrivalNodeId=arrival_node_id,
     )
 
 
@@ -355,6 +537,32 @@ def _hazard_details(hazards: list[HazardZone]) -> dict:
     }
 
 
+def _arrival_node_id(path: list[str], index: PackageIndex, place) -> str:
+    """到达判定锚点：房间类目的地以“进入房间的那扇门”为准，而不是房间中心节点。
+
+    房间中心节点落在信标覆盖的几何退化区域，室内解算误差可达 10m 以上，按 2m
+    半径判定会导致用户走到门口也永远不触发到达；门洞节点仍在走廊信标覆盖内，
+    定位误差 < 0.5m。规划已优先把房间目的地换成门洞，这里是旧快照/无门时的兜底。
+    """
+    if not path:
+        return ""
+    dest = index.node_details.get(path[-1])
+    if dest is None or not _is_room_center_node(index, path[-1]):
+        return path[-1]
+    room_id = getattr(dest, "roomId", None)
+    for nid in reversed(path[:-1]):
+        node = index.node_details.get(nid)
+        if node is None:
+            break
+        if getattr(node, "type", None) == "doorway" and room_id in (
+            getattr(node, "rooms", None) or ()
+        ):
+            return getattr(node, "id", nid)
+        if getattr(node, "type", None) != "doorway" and getattr(node, "roomId", None) != room_id:
+            break
+    return path[-1]
+
+
 def plan_route(
     raw_data: dict, pkg: MapPackage, index: PackageIndex, origin: NavPoint,
     dest_place_id: str, user_mode: UserMode, hazard_layer: HazardLayer | None = None,
@@ -389,7 +597,22 @@ def plan_route(
         active = hazard_layer.active(now, mode)
 
     graph = RouteGraph(raw_data, hazards=[h.to_rule() for h in active])
-    route = graph.generate_route(origin.node_id, dest_node.node_id, mode=mode)
+    # 目的地为室内质心节点时，终点改为该房间的门洞（多个门时优先可达且离起点近），
+    # 避免把路线引入室内定位退化区域，也让“到门口即到达”与用户预期一致。
+    candidates = _destination_candidates(index, dest_node, origin)
+    route: dict = {}
+    for candidate in candidates:
+        attempt = graph.generate_route(origin.node_id, candidate.node_id, mode=mode)
+        if attempt.get("reachable"):
+            route, dest_node = attempt, candidate
+            break
+        route = attempt
+    if not route.get("path"):
+        # 起点与终点是同一节点：给出零长度路线，避免空 polyline。
+        route = {
+            **route, "path": [dest_node.node_id, dest_node.node_id],
+            "edges": [], "edgeDistances": [0.0], "distance": 0.0, "physicalDistance": 0.0,
+        }
 
     # 基线：不带危险约束的同一模式路线，用于判定「绕开了什么」与「被什么阻断」
     baseline_graph = RouteGraph(raw_data) if active else None
@@ -448,4 +671,6 @@ def plan_route(
     return build_route_info(
         route, pkg, index, path_points, route_hazards, hazard_layer,
         turn_prompt_distance_m=turn_prompt_distance_m, approach=approach,
+        blind_mode=user_mode is UserMode.BLIND,
+        arrival_node_id=_arrival_node_id(route.get("path") or [], index, place),
     ), dest_node

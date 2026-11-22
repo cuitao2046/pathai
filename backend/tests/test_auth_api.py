@@ -225,8 +225,10 @@ class TestFakeWechatClient:
         assert client.code_to_session("fake-user-1") == "user-1"
         code = "023abcDEFghiJklMNOpqrSTUvwxYz12345"
         openid = client.code_to_session(code)
-        assert openid and openid == client.code_to_session(code)
-        assert len({openid, client.code_to_session("another-code")}) == 2
+        # 真实 wx.login code 一次性且每次不同：fake 模式必须映射到同一稳定主体，
+        # 否则 token 续期会换用户、打断进行中的导航会话。
+        assert openid == "local-dev"
+        assert openid == client.code_to_session("another-code")
 
     def test_empty_code_rejected(self):
         from pathai_backend.wechat import FakeWechatAuthClient, WechatAuthError

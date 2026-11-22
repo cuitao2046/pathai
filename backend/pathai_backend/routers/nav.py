@@ -37,8 +37,8 @@ from pathai_backend.nav_service import (
     ORIGIN_MIN_CONFIDENCE,
     PackageIndex,
     NavPoint,
+    origin_anchor_node,
     plan_route,
-    snap_to_node,
     TURN_PROMPT_DISTANCE_M,
 )
 from pathai_backend.routers.map import get_map_repository
@@ -133,6 +133,19 @@ def _resolve_published(
     return published
 
 
+def _resolve_destination(
+    index: PackageIndex, place_id: str
+) -> tuple[PlaceCandidate, NavPoint]:
+    """地点与拓扑节点；与 plan_route 保持同一 404 语义。"""
+    place = index.places.get(place_id)
+    if place is None:
+        raise ApiError(404, "PLACE_NOT_FOUND", f"地点不存在：{place_id}")
+    point = index.nodes.get(place.nodeId)
+    if point is None:
+        raise ApiError(404, "PLACE_NOT_FOUND", f"地点节点不存在：{place.nodeId}")
+    return place, point
+
+
 @router.post("/preview", response_model=PreviewRouteResponse)
 def preview_route(
     body: PreviewRouteRequest,
@@ -157,14 +170,17 @@ def preview_route(
     if body.origin.confidence < ORIGIN_MIN_CONFIDENCE or body.origin.floorId is None:
         raise ApiError(422, "LOCATION_UNRELIABLE", "起点定位不可靠，请先重新定位")
     index = PackageIndex(published.pkg)
-    origin_node = snap_to_node(index, body.origin.floorId, body.origin.x, body.origin.y)
+    place, dest_point = _resolve_destination(index, body.destinationId)
+    origin_node = origin_anchor_node(
+        index, body.origin.floorId, body.origin.x, body.origin.y,
+        toward=dest_point,
+    )
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
         turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
         origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
-    place = index.places[body.destinationId]
     return PreviewRouteResponse(
         mapVersion=published.map_version,
         destination=PlaceCandidate(placeId=place.placeId, name=place.name, floorId=place.floorId),
@@ -224,14 +240,17 @@ def create_session(
     if body.origin.confidence < ORIGIN_MIN_CONFIDENCE or body.origin.floorId is None:
         raise ApiError(422, "LOCATION_UNRELIABLE", "起点定位不可靠，请先重新定位")
     index = PackageIndex(published.pkg)
-    origin_node = snap_to_node(index, body.origin.floorId, body.origin.x, body.origin.y)
+    place, dest_point = _resolve_destination(index, body.destinationId)
+    origin_node = origin_anchor_node(
+        index, body.origin.floorId, body.origin.x, body.origin.y,
+        toward=dest_point,
+    )
     route_info, _dest = plan_route(
         published.data, published.pkg, index, origin_node, body.destinationId, body.userMode,
         hazard_layer=hazard_repo.get(published.site_id, published.map_version),
         turn_prompt_distance_m=settings.nav_turn_prompt_distance_m,
         origin_position=(body.origin.floorId, body.origin.x, body.origin.y),
     )
-    place = index.places[body.destinationId]
     # 导航行动文案由路线模板确定，禁止模型改写。
     # 动作/距离/触发节点与播报时机保持不变。
     # Actionable text stays exactly as produced by deterministic route templates.
@@ -572,8 +591,15 @@ def nav_update(
     index = PackageIndex(published.pkg)
     route = RouteInfo.model_validate_json(session.route_json)
     loc: LocationUpdate = body.location
-    dest_node_id = route.segments[-1].trigger.nodeId
-    dest = index.nodes[dest_node_id]
+    # 到达锚点：房间类目的地取进入房间的门洞（房间中心定位退化，2m 半径内永远到不了），
+    # 旧会话快照没有 arrivalNodeId，回退到终点指令的触发节点。
+    dest_node_id = route.arrivalNodeId or route.segments[-1].trigger.nodeId
+    dest = index.nodes.get(dest_node_id) or index.nodes[route.segments[-1].trigger.nodeId]
+    dest_detail = index.node_details.get(dest.node_id)
+    arrival_radius_m = settings.nav_arrival_radius_m
+    if dest_detail is not None and getattr(dest_detail, "type", None) == "doorway":
+        # 门洞锚点允许略宽半径：用户停在门外（与门中心有几米）也应判定到达。
+        arrival_radius_m = max(arrival_radius_m, 2.5)
 
     trusted = (
         loc.quality in TRUSTED_QUALITIES and loc.floorId is not None
@@ -584,7 +610,7 @@ def nav_update(
     if trusted:
         arrival = (
             loc.floorId == dest.floor_id
-            and hypot(loc.x - dest.x, loc.y - dest.y) <= settings.nav_arrival_radius_m
+            and hypot(loc.x - dest.x, loc.y - dest.y) <= arrival_radius_m
         )
     else:
         arrival = False
@@ -619,7 +645,11 @@ def nav_update(
         if off_route:
             # 重规划：从当前位置同层最近节点出发（保持目的地不变）
             floor_id = loc.floorId
-            origin2 = snap_to_node(index, floor_id, loc.x, loc.y)
+            dest_place = index.places.get(session.destination_place_id)
+            origin2 = origin_anchor_node(
+                index, floor_id, loc.x, loc.y,
+                toward=index.nodes.get(dest_place.nodeId) if dest_place is not None else None,
+            )
             new_route, _ = plan_route(
                 published.data, published.pkg, index, origin2,
                 session.destination_place_id, UserMode(session.user_mode),

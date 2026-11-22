@@ -43,7 +43,7 @@ router = APIRouter(prefix="/api/v1", tags=["field-experiment"],
 
 RecordId = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
 Version = Annotated[str, Field(min_length=1, max_length=80)]
-Task = Literal["CAL", "FP", "ST", "DY", "NV"]
+Task = Literal["CAL", "FP", "ST", "DY", "NV", "UT"]
 Orientation = Literal["N", "E", "S", "W"]
 SITE = "school-building-01"
 FIELD_TIMEZONE = timezone(timedelta(hours=8))
@@ -56,12 +56,13 @@ DEFAULT_SUSPEND_RADIUS_M = 1.5
 #: 汇总口径（写入导出 manifest，便于分析脚本与报告口径一致）。
 ANALYSIS_METRIC_VERSION = "1.0"
 ANALYSIS_JUMP_THRESHOLD_M = 3.0
-PLAN_POINT_COUNTS = {"CAL": 12, "ST": 18, "DY": 8, "NV": 8}
-PLAN_TASK_LABELS = {"CAL": "T3 参数标定", "ST": "T6 静态对比", "DY": "T7 行走打点", "NV": "T8 导航对比"}
+PLAN_POINT_COUNTS = {"CAL": 12, "ST": 18, "DY": 8, "NV": 8, "UT": 1}
+PLAN_TASK_LABELS = {"CAL": "T3 参数标定", "ST": "T6 静态对比", "DY": "T7 行走打点", "NV": "T8 导航对比",
+                    "UT": "T9 反向掉头时效"}
 FILES = {
     "CAL": "calibration_segments.jsonl", "FP": "fingerprint_segments.jsonl",
     "ST": "static_test_segments.jsonl", "DY": "dynamic_trajectories.jsonl",
-    "NV": "nav_sessions.jsonl",
+    "NV": "nav_sessions.jsonl", "UT": "uturn_sessions.jsonl",
 }
 
 
@@ -179,8 +180,10 @@ class Segment(BaseModel):
             minimum = 60 if self.planId is not None and self.task in ("FP", "ST") else 1
             if elapsed < required_duration or len(self.rssi) < minimum:
                 raise ValueError("completed window is shorter than required or has too few samples")
-        if self.task == "NV" and (self.method == "RAW" or not self.configId or not self.planId):
+        if self.task in ("NV", "UT") and (self.method == "RAW" or not self.configId or not self.planId):
             raise ValueError("navigation must use a frozen method and approved plan")
+        if self.task == "UT" and self.method not in ("B", "C"):
+            raise ValueError("uturn experiment only supports methods B and C")
         return self
 
 
@@ -332,7 +335,11 @@ def publish_plan(body: TaskPlan, request: Request, db: Session = Depends(get_db_
         raise ApiError(422, "INVALID_FIELD_PLAN", "任务清单必须绑定已发布地图")
     survey_points = package.pkg.fieldSurveyPoints or []
     ordered_ids = (
-        [point.checkpointId for point in survey_points if point.checkpointId]
+        [point.checkpointId for point in survey_points
+         if point.checkpointId and point.uturnCheckpoint]
+        if body.task == "UT" else
+        [point.checkpointId for point in survey_points
+         if point.checkpointId and not point.uturnCheckpoint]
         if body.task == "NV" and any(point.checkpointOnly for point in survey_points) else []
     )
     expected = len(ordered_ids) if ordered_ids else PLAN_POINT_COUNTS.get(body.task)
@@ -344,7 +351,8 @@ def publish_plan(body: TaskPlan, request: Request, db: Session = Depends(get_db_
         raise ApiError(400, "INVALID_REQUEST", "清单中有重复点位，请检查真值登记",
                        details={"field": "points"})
     if ordered_ids and [point.pointId for point in body.points] != ordered_ids:
-        raise ApiError(400, "INVALID_REQUEST", "请按地图中的 T8 检查点顺序发布清单",
+        raise ApiError(400, "INVALID_REQUEST",
+                       f"请按地图中的 {PLAN_TASK_LABELS[body.task]} 检查点顺序发布清单",
                        details={"field": "points", "expectedPointIds": ordered_ids})
     payload = body.model_dump(mode="json")
     # Keep the original representation for unversioned points so older
@@ -490,7 +498,7 @@ def upload_segment(body: Segment, request: Request, db: Session = Depends(get_db
                     raise ApiError(422, "INVALID_FIELD_PLAN", "检查点顺序与清单不符")
                 index += 1
             previous = mark
-    if body.task == "NV":
+    if body.task in ("NV", "UT"):
         config = frozen_config(db, body.configId, body.mapVersion)
         expected = config["A" if body.method == "A" else "B"]["paramsVersion"]
         if body.paramsVersion != expected:
@@ -766,7 +774,7 @@ def _replay_run(db: Session, request: Request, body: ReplayRequest) -> dict:
     package = request.app.state.map_repository.get(SITE, run["mapVersion"])
     if not package:
         raise ApiError(404, "MAP_NOT_PUBLISHED", "试走的地图已不可用")
-    config_id = run["configId"] if run["task"] == "NV" else body.configId
+    config_id = run["configId"] if run["task"] in ("NV", "UT") else body.configId
     if not config_id:
         raise ApiError(422, "INVALID_FIELD_CONFIG", "重放 T7 试走需要选择冻结配置")
     config = frozen_config(db, config_id, run["mapVersion"])
@@ -872,7 +880,7 @@ def export_experiment(request: Request, include_trial: bool = False,
                     if segment["status"] != "complete":
                         excluded.append({"segmentId": segment["segmentId"], "reason": segment["reason"]})
                     counts[task] += 1
-                    if task == "NV" and segment["method"] == "C" and segment["status"] == "complete":
+                    if task in ("NV", "UT") and segment["method"] == "C" and segment["status"] == "complete":
                         for event in segment["navigation"]:
                             if event.get("kind") == "estimate":
                                 if event.get("source") == "fingerprint":

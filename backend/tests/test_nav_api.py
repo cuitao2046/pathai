@@ -41,8 +41,11 @@ OFFROUTE_NODE = "F1-TR-0001"
 
 #: 非到达/常规更新点 = 起点节点（路线上，距目的地 69.48m > 5m）。
 SAFE_P = _COORDS[ORIGIN_NODE]
-#: 到达点 = 目的地节点（距判定终点 0m ≤ 5m）。
-DEST_P = _COORDS[DEST_NODE]
+#: 目的地房间（F1-RM-0003）的到达门洞：房间目的地规划终点改为门洞节点，
+#: 到达判定也以门洞为锚点（资源教室多个门中离起点最近且可达的是 F1-TD-0014）。
+DEST_DOOR = "F1-TD-0014"
+#: 到达点 = 目的地房间门洞（距判定终点 0m）。
+DEST_P = _COORDS[DEST_DOOR]
 #: 偏航更新点。
 OFFROUTE_P = _COORDS[OFFROUTE_NODE]
 
@@ -378,9 +381,9 @@ class TestPreviewRoute:
 class TestNavUpdate:
     """更新坐标几何约束（真实地图包 2026-10-25.1，局部米制坐标）：
 
-    - 到达判定：距目的地节点 F1-TR-0003 ≤ 2m 即 arrived（冻结值，可在设置页修改）
-      ——到达用例用 DEST_P（0m）；非到达用例须用距终点 >2m 的坐标（SAFE_P 距
-      69.48m，且即路线首顶点，未偏航）；
+    - 到达判定：房间目的地以门洞节点为锚点，距门洞 ≤ 2.5m 即 arrived（冻结值，
+      可在设置页修改）——到达用例用 DEST_P（0m，门洞）；非到达用例须用距锚点
+      >2.5m 的坐标（SAFE_P 距门洞约 100m，且即路线首顶点，未偏航）；
     - 偏航判定：距全部 polyline 顶点 >8m——OFFROUTE_P 固化时距路线 11.12m，
       且吸附节点 F1-TR-0001 盲模式可达目的地，可触发重规划。
     """
@@ -444,7 +447,7 @@ class TestNavUpdate:
         assert replay.json()["processedSequence"] == first.json()["processedSequence"]
 
     def test_arrival_once(self, client, session, auth_headers):
-        # 目的地 F1-RM-0003 节点 F1-TR-0003（DEST_P 距判定终点 0m ≤ 2m）
+        # 目的地 F1-RM-0003 的房间门洞 F1-TD-0014（DEST_P 距判定锚点 0m ≤ 2.5m）
         resp = _update(client, auth_headers, session["sessionId"], 7, *DEST_P)
         assert resp.status_code == 200
         body = resp.json()

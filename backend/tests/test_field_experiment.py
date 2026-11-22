@@ -13,7 +13,7 @@ from pathai_backend.database import session_scope
 from pathai_backend.models import (
     AnonymousSubject, CalibrationActivePointer, ClientPermission, LocationParamVersion,
 )
-from tools.analyze_field_experiment import analyze, replay_metrics, turn_reference_timing
+from tools.analyze_field_experiment import analyze, replay_metrics, turn_reference_timing, uturn_timing
 
 SITE = "school-building-01"
 VERSION = "2026-10-25.1"
@@ -68,7 +68,7 @@ def test_approval_queue_idempotency_and_export(client, auth_headers):
     result = client.get("/api/v1/export/experiment", headers=auth_headers)
     assert result.status_code == 200
     with zipfile.ZipFile(io.BytesIO(result.content)) as exported:
-        assert len(exported.namelist()) == 8
+        assert len(exported.namelist()) == 9
         info = json.loads(exported.read("manifest.json"))
         assert info["counts"]["FP"] == 1
         analysis = info["analysisConfig"]
@@ -456,12 +456,50 @@ def test_freeze_and_c_fallback_use_b_even_after_active_params_change(client, app
     assert metrics["timeliness"]["byMethod"]["C"]["arrivalDetectionDeltaMs"]["n"] == 1
     assert metrics["usability"]["updateIntervalMs"]["n"] == 1
     assert metrics["timeliness"]["arrivalDetectionDeltaMs"]["n"] == 1
-    assert metrics["analysisConfig"]["metricVersion"] == "1.0"
+    assert metrics["analysisConfig"]["metricVersion"] == "1.1"
     _, details = analyze(zip_path, replay_path, with_details=True)
     assert len(details["segments"]) == sum(metrics["counts"].values())
     assert len(details["nav_estimates"]) == 2
     assert {row["method"] for row in details["accuracy_checkpoints"]} == {"A", "B", "C"}
     assert any(row["kind"] == "arrival" for row in details["timing_events"])
+
+
+def test_uturn_timing_uses_checkpoint_and_speech_started():
+    """T9：检查点打点 → 掉头播报开始的差值分级，并统计重复播报。"""
+    run = {
+        "runId": "ut-1", "method": "B",
+        "checkpoints": [{"t": 10_000, "pointId": "UT-01", "undo": False}],
+        "navigation": [
+            {"kind": "uturn_detected", "t": 10_900},
+            {"kind": "speech_started", "t": 10_800, "source": "nav:uturn"},
+            {"kind": "speech_started", "t": 13_000, "source": "nav:uturn"},
+        ],
+    }
+    timing = uturn_timing(run)
+    assert (timing["checkAtEpoch"], timing["speechAtEpoch"], timing["detectedAtEpoch"]) == (10_000, 10_800, 10_900)
+    assert (timing["deltaMs"], timing["status"]) == (800, "same_time")
+    assert (timing["announcements"], timing["duplicateAnnouncements"]) == (2, 1)
+    late = uturn_timing({
+        "runId": "ut-2", "method": "C",
+        "checkpoints": [{"t": 10_000, "pointId": "UT-01", "undo": False}],
+        "navigation": [{"kind": "speech_started", "t": 12_200, "source": "nav:uturn"}],
+    })
+    assert (late["deltaMs"], late["absDeltaMs"], late["status"]) == (2_200, 2_200, "late")
+    missing = uturn_timing({
+        "runId": "ut-3", "method": "B",
+        "checkpoints": [{"t": 10_000, "pointId": "UT-01", "undo": False}], "navigation": [],
+    })
+    assert (missing["status"], missing["detected"]) == ("not_detected", False)
+
+
+def test_uturn_plan_requires_exactly_one_point(client, auth_headers):
+    assert client.post("/api/v1/field/plans", headers=auth_headers,
+                       json=plan("UT", [point("UT-01")])).status_code == 200
+    assert client.post("/api/v1/field/plans", headers=auth_headers,
+                       json=plan("UT", [point("UT-01"), point("UT-02")])).status_code == 400
+    rejected = segment(task="UT", segmentId="ut-a", planId="plan-UT", pointId="UT-01",
+                       orientation=None, configId="field-v1", method="A")
+    assert client.post("/api/v1/field/segments", headers=auth_headers, json=rejected).status_code == 400
 
 
 def test_replay_metrics_counts_wrong_floor():

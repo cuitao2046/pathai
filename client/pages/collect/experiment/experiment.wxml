@@ -20,7 +20,7 @@
         <picker wx:if="{{!trial && planLabels.length}}" mode="selector" range="{{planLabels}}"
           value="{{planIndex}}" bindchange="onPlan"><view class="select">{{planLabels[planIndex]}} ▾</view></picker>
         <view wx:if="{{!trial && !planLabels.length}}" class="muted">该日期暂无生效的正式清单</view>
-        <block wx:if="{{taskIndex === 4}}">
+        <block wx:if="{{taskIndex >= 4}}">
           <picker wx:if="{{configLabels.length}}" mode="selector" range="{{configLabels}}" value="{{configIndex}}" bindchange="onConfig">
             <view class="select">{{configLabels[configIndex]}} ▾</view>
           </picker>

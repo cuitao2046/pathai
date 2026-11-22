@@ -11,6 +11,7 @@ import { drawReferenceWalls } from '../../../core/collection/reference-walls';
 import {
   FieldOutbox, checkpointCount, fieldDay, fieldId, fieldSteps, FIELD_ORIENTATIONS, fingerprintWindow,
   rotatedFieldMethod, type FieldPlan, type FieldSegment, type FieldTask, type SurveyPoint,
+  type FieldMethod,
   type FrozenFieldConfig, type SegmentSummary,
 } from '../../../core/collection/field-experiment';
 import { armFieldNavigation, takeFieldNavigation } from '../../../services/field-navigation';
@@ -25,14 +26,19 @@ const TABS = [
   { id: 1, label: '信标巡检' },
   { id: 3, label: '场记及导出' },
 ];
-const TASKS = ['CAL', 'FP', 'ST', 'DY', 'NV'] as const;
-const TASK_LABELS = ['T3 参数标定', 'T4 指纹建库', 'T6 静态对比', 'T7 路线试走（可选）', 'T8 导航与动态对比'];
-const PLAN_POINT_LIMITS = { CAL: [12, 12], FP: [1, 256], ST: [18, 18], DY: [8, 8], NV: [8, 8] } as const;
+const TASKS = ['CAL', 'FP', 'ST', 'DY', 'NV', 'UT'] as const;
+const TASK_LABELS = ['T3 参数标定', 'T4 指纹建库', 'T6 静态对比', 'T7 路线试走（可选）', 'T8 导航与动态对比', 'T9 反向掉头时效'];
+const PLAN_POINT_LIMITS = { CAL: [12, 12], FP: [1, 256], ST: [18, 18], DY: [8, 8], NV: [8, 8], UT: [1, 1] } as const;
 const ACTIONS = ['installed', 'checked', 'issue', 'removed'] as const;
 const ACTION_LABELS = ['贴装', '复核', '异常', '拆除'];
 const RATINGS = ['on_time', 'early', 'late', 'missed'] as const;
 const RATING_LABELS = ['及时', '提前', '滞后', '漏报'];
 const METHODS = ['A', 'B', 'C'] as const;
+/** T9 只对比 B/C（不做 A 默认参数）；每轮按完成次数交替，保证两组 ≥30 轮。 */
+const UT_METHODS = ['B', 'C'] as const;
+const METHOD_LABELS: Record<FieldMethod, string> = {
+  A: 'A · 默认参数三点定位', B: 'B · 标定参数三点定位', C: 'C · 指纹增强，未命中回退 B',
+};
 const NAV_DAYS = ['2026-12-26', '2026-12-27', '2027-01-09'];
 
 interface Candidate {
@@ -78,7 +84,8 @@ function candidates(task: FieldTask): Candidate[] {
   const purpose = task === 'CAL' ? 'calibration' : task === 'ST' ? 'static_test' : 'checkpoint';
   const shared = appContext.map.fieldSurveyPoints;
   const points = shared.length ? expandFieldSurveyPoints(shared) : FIELD_SURVEY_POINTS;
-  return points.filter((p) => p.purpose === purpose && (task !== 'DY' || !p.checkpointOnly))
+  return points.filter((p) => p.purpose === purpose && (task !== 'DY' || !p.checkpointOnly) &&
+      (task === 'UT' ? !!p.uturnCheckpoint : !p.uturnCheckpoint))
     .map((p) => ({ pointId: p.pointId, floorId: p.floorId, x: p.truth[0], y: p.truth[1],
       sharedPointId: p.sharedPointId,
       references: surveyReferences({ x: p.truth[0], y: p.truth[1] }, p.walls, p.routeReference) }));
@@ -86,7 +93,7 @@ function candidates(task: FieldTask): Candidate[] {
 
 function planPointLimits(task: FieldTask): readonly [number, number] {
   if (task === 'NV' && appContext.map.fieldSurveyPoints.some((p) => p.checkpointOnly)) {
-    const count = appContext.map.fieldSurveyPoints.filter((p) => p.checkpointId).length;
+    const count = appContext.map.fieldSurveyPoints.filter((p) => p.checkpointId && !p.uturnCheckpoint).length;
     return [count, count];
   }
   return PLAN_POINT_LIMITS[task];
@@ -148,7 +155,7 @@ Page({
     calMessage: '',
     surveyDisplay: { base: '', baseDistances: '', offset: '', preview: '', version: '', history: [] as string[], canSave: false },
     configs: [] as FrozenFieldConfig[], configLabels: [] as string[], configIndex: 0,
-    methodLabels: ['A · 默认参数三点定位', 'B · 标定参数三点定位', 'C · 指纹增强，未命中回退 B'],
+    methodLabels: METHODS.map((method) => METHOD_LABELS[method]),
     methodIndex: 0, nextMethod: '',
     replayText: '',
     makeup: [] as string[],
@@ -283,6 +290,8 @@ Page({
   },
 
   task(): FieldTask { return TASKS[this.data.taskIndex]; },
+  /** 当前任务可选方法：T9 只用 B/C，其余任务为 A/B/C。 */
+  methods(): readonly FieldMethod[] { return this.task() === 'UT' ? UT_METHODS : METHODS; },
   matchingPlans(): FieldPlan[] {
     return this.data.plans.filter((p) => p.task === this.task() && p.mapVersion === this.mapVersion);
   },
@@ -402,7 +411,7 @@ Page({
   refreshProgress(advance = false): void {
     const progress = this.records();
     const task = this.task();
-    const isRoute = task === 'DY' || task === 'NV';
+    const isRoute = task === 'DY' || task === 'NV' || task === 'UT';
     const attempts = progress.filter((p) => p.status === 'complete');
     const done = new Set(attempts.map((p) => p.runId)).size;
     const expected = fieldSteps(task).length;
@@ -438,7 +447,13 @@ Page({
     this.pointMap?.requestDraw();
     if (task === 'NV') {
       const nextMethod = rotatedFieldMethod(Math.max(0, NAV_DAYS.indexOf(this.data.day)), done);
-      this.setData({ nextMethod: nextMethod ?? '', methodIndex: nextMethod ? METHODS.indexOf(nextMethod) : 0 });
+      this.setData({ nextMethod: nextMethod ?? '', methodIndex: nextMethod ? METHODS.indexOf(nextMethod) : 0,
+        methodLabels: METHODS.map((method) => METHOD_LABELS[method]) });
+    } else if (task === 'UT') {
+      // T9 独立实验：不按日期轮换，只按已完成轮次交替 B/C。
+      const nextMethod = UT_METHODS[done % UT_METHODS.length];
+      this.setData({ nextMethod, methodIndex: UT_METHODS.indexOf(nextMethod),
+        methodLabels: UT_METHODS.map((method) => METHOD_LABELS[method]) });
     }
   },
 
@@ -614,9 +629,9 @@ Page({
     if (plan && this.data.day !== fieldDay()) {
       this.setData({ issue: '正式采集请选择今天的采集日期' }); return;
     }
-    if (task === 'NV') {
+    if (task === 'NV' || task === 'UT') {
       const config = this.data.configs[this.data.configIndex];
-      const method = METHODS[this.data.methodIndex];
+      const method = this.methods()[this.data.methodIndex];
       const identity = appContext.getIdentity();
       if (!plan || !config || identity?.userId !== this.owner || !this.data.nextMethod || method !== this.data.nextMethod) {
         this.setData({ issue: '请选择正式清单、冻结配置和本轮指定方法' });

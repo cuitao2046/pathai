@@ -20,6 +20,8 @@ const STATIC_CLIPS: Record<string, LocalVoiceName> = {
   前方路口请右转: 'ready2right-turn',
   // 到达
   已到达目的地附近请留意周围环境: 'nav-arrived-near',
+  // 高置信到达复用同一段离线音频：到达播报必须在弱网/在线 TTS 不可用时仍可靠播出
+  已到达目的地: 'nav-arrived-near',
   // 导航异常/状态提示
   导航连接中断导航已暂停请停下并留意周围环境: 'nav-offline',
   导航会话已失效请重新发起导航: 'nav-session-invalid',

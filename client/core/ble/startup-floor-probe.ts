@@ -27,6 +27,8 @@ export interface StartupFloorVote {
 /**
  * 按样本所属楼层投票：帧数最多者胜；并列取平均 RSSI 更强者。
  * 未登记（resolve 返回 null）的样本不参与判层。
+ * 注意：`resolve` 必须返回楼层 ID；BeaconRegistry.resolve 返回的是 beaconId，
+ * 调用方需先映射到所在楼层（否则会把信标编号当楼层显示）。
  */
 export function pickStartupFloor(
   samples: StartupFloorSample[],

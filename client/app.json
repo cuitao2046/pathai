@@ -6,6 +6,7 @@
     "pages/collect/static/static",
     "pages/collect/fingerprint/fingerprint",
     "pages/collect/logdist/logdist",
+    "pages/collect/deployment/deployment",
     "pages/collect/experiment/experiment",
     "pages/calc/calc"
   ],

@@ -1,0 +1,1 @@
+﻿task,runId,checkpointIndex,pointId,orientation,t,truthX,truthY,truthFloor,method,estimateX,estimateY,estimateFloor,errorM,floorCorrect,source,fallbackReason,rmseDb,overlap,marginDb,confidence,diagnostics

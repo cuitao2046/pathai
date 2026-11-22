@@ -75,6 +75,9 @@ class RouteInfo(StrictModel):
     hazardLayerVersion: str | None = None
     #: 降级原因（缺失/损坏/版本不匹配时给运维与值班看，不面向用户播报）
     hazardLayerNotice: str | None = None
+    #: 到达判定锚点节点：房间类目的地取“进入房间的门洞”，避免房间中心定位退化
+    #: 导致永远无法触发到达；非房间目的地与终点节点一致。
+    arrivalNodeId: str | None = None
 
     @model_validator(mode="after")
     def _check_fallback_safety(self) -> "RouteInfo":

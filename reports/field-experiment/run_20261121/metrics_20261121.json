@@ -1,0 +1,98 @@
+{
+  "counts": {
+    "CAL": 13,
+    "FP": 17,
+    "ST": 5,
+    "DY": 2,
+    "NV": 0
+  },
+  "truthRows": 910,
+  "observerTurnRatings": {},
+  "C": {
+    "fingerprintHits": 0,
+    "fallbacksToB": 0,
+    "fallbackRate": null
+  },
+  "navigation": [],
+  "accuracy": {
+    "documents": 0,
+    "errors": [],
+    "tasks": {},
+    "C": {
+      "fingerprintHits": 0,
+      "fallbacksToB": 0,
+      "fallbackRate": null,
+      "fallbackReasons": {}
+    }
+  },
+  "usability": {
+    "validLocationRate": null,
+    "estimates": 0,
+    "positionedEstimates": 0,
+    "jumpCount": 0,
+    "runsWithJump": 0,
+    "jumpThresholdM": 3.0,
+    "updateIntervalMs": {
+      "n": 0,
+      "mean": null,
+      "p90": null,
+      "p95": null,
+      "max": null
+    },
+    "requestRttMs": {
+      "n": 0,
+      "mean": null,
+      "p90": null,
+      "p95": null,
+      "max": null
+    },
+    "byMethod": {}
+  },
+  "timeliness": {
+    "turnSpeechDeltaMs": {
+      "n": 0,
+      "mean": null,
+      "p90": null,
+      "p95": null,
+      "max": null
+    },
+    "turnHapticDeltaMs": {
+      "n": 0,
+      "mean": null,
+      "p90": null,
+      "p95": null,
+      "max": null
+    },
+    "arrivalDetectionDeltaMs": {
+      "n": 0,
+      "mean": null,
+      "p90": null,
+      "p95": null,
+      "max": null
+    },
+    "turnSpeechStatusCounts": {},
+    "turnPlaybackStatusCounts": {},
+    "byMethod": {}
+  },
+  "analysisConfig": {
+    "metricVersion": "1.0",
+    "jumpThresholdM": 3.0,
+    "export": {
+      "metricVersion": "1.0",
+      "suspendRadiusM": 1.5,
+      "jumpThresholdM": 3.0,
+      "expectedUpdateIntervalMs": {
+        "standby": 8000,
+        "preview": 2500,
+        "navigating": 1000
+      },
+      "matchThresholds": {
+        "minOverlap": 3,
+        "maxRmseDb": 8.0,
+        "confidenceRmseDb": 20.0,
+        "minConfidence": 0.55,
+        "minMarginDb": 3.0
+      }
+    }
+  }
+}

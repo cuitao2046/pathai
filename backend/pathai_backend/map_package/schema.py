@@ -185,6 +185,8 @@ class FieldSurveyPoint(_AllowExtraModel):
     calibrationId: str | None = None
     checkpointId: str | None = None
     checkpointOnly: bool = False
+    #: T9 独立检查点：只进入反向掉头任务清单，不影响 T8 的检查点顺序与数量。
+    uturnCheckpoint: bool = False
     routeReference: SurveyRouteReference | None = None
     walls: list[dict] = Field(min_length=1, max_length=2)
 

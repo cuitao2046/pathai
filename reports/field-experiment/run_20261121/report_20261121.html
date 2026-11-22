@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>现场实验数据分析报告 · 2026-11-21</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --muted: #667085;
+    --line: #e4e7ec;
+    --accent: #2563eb;
+    --warn: #b54708;
+    --warn-bg: #fff6ed;
+    --warn-line: #f5c08b;
+    --ok: #067647;
+    --ok-bg: #ecfdf3;
+    --bad: #b42318;
+    --bad-bg: #fef3f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px 64px;
+    background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.65; font-size: 14px;
+  }
+  .page { max-width: 1060px; margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: .2px; }
+  .sub { color: var(--muted); margin-bottom: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    background: #eef2f7; color: #475467; font-size: 12px; border: 1px solid #e4e7ec;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 24px; margin-bottom: 18px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  }
+  h2 { font-size: 17px; margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  h3 { font-size: 14px; margin: 18px 0 8px; }
+  p { margin: 8px 0; }
+  .banner {
+    border: 1px solid var(--warn-line); background: var(--warn-bg); color: #7a2e0e;
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 18px;
+  }
+  .banner strong { color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; background: #fafbfc; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .tag.bad { color: var(--bad); background: var(--bad-bg); }
+  .tag.ok { color: var(--ok); background: var(--ok-bg); }
+  .tag.mid { color: var(--warn); background: var(--warn-bg); }
+  .tag.pend { color: #475467; background: #f2f4f7; }
+  .rules {
+    border-left: 3px solid var(--accent); background: #f5f8ff;
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0 0;
+  }
+  .rules ul { margin: 4px 0 0; }
+  ol, ul { margin: 8px 0 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  code, pre {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace; font-size: 12.5px;
+  }
+  code { background: #f2f4f7; padding: 1px 5px; border-radius: 4px; }
+  pre {
+    background: #101828; color: #e6e9ef; padding: 14px 16px; border-radius: 10px;
+    overflow-x: auto; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .metric {
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fcfcfd;
+  }
+  .metric .k { color: var(--muted); font-size: 12px; }
+  .metric .v { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .metric .v.na { color: var(--bad); font-size: 15px; font-weight: 600; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 26px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>现场实验数据分析报告</h1>
+    <div class="sub">依据《可行性验证执行清单》T1 口径，对本地开发库导出的实验数据包进行离线分析</div>
+    <div class="chips">
+      <span class="chip">生成时间：2026-11-21</span>
+      <span class="chip">数据源：backend/.local/pathai.db</span>
+      <span class="chip">导出包：export_20261121.zip</span>
+      <span class="chip">地图：2026-11-19.2 / 2026-11-20.2 / 2026-11-20.3</span>
+      <span class="chip">指标版本：1.0</span>
+    </div>
+  </header>
+
+  <div class="banner">
+    <strong>结论：分析工具已跑通，但当前数据不足以给出 A/B/C 相对排序。</strong>
+    导出包中 T8 导航会话为 0，T6/T7 采集全部为试采段（无正式计划、无真值），且尚未冻结标定配置；
+    因此准确性、可用性、时效三组指标均为「不可计算」。本报告给出数据清单、A/B/C 对比框架、
+    指标状态与补齐路径，待补齐数据后执行文末命令即可一键重算。
+  </div>
+
+  <section class="card">
+    <h2>一、本次运行概览</h2>
+    <div class="grid">
+      <div class="metric"><div class="k">数据段（CAL/FP/ST/DY/NV）</div><div class="v">13 / 17 / 5 / 2 / 0</div></div>
+      <div class="metric"><div class="k">真值行数（ground_truth）</div><div class="v">910</div></div>
+      <div class="metric"><div class="k">A/B/C 准确性</div><div class="v na">不可计算</div></div>
+      <div class="metric"><div class="k">可用性 / 时效</div><div class="v na">无 T8 数据</div></div>
+    </div>
+    <p class="note">工具输出：metrics_20261121.json（完整结构）、metrics_20261121.csv（指标表）、
+      details/（逐条中间数据）与 manifest_20261121.json（输入/输出哈希与运行参数）。
+      导出 manifest 的 analysisConfig 已记录本次口径：挂起半径 1.5 m、跳变阈值 3.0 m、
+      更新间隔 8 s / 2.5 s / 1 s（待命 / 预览 / 导航）。复核步骤见 docs/实验数据分析复核说明.md。</p>
+  </section>
+
+  <section class="card">
+    <h2>二、数据清单</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>任务</th><th>段数</th><th>完成 / 异常</th><th>正式计划段</th><th>试采段</th>
+          <th>轮次</th><th>覆盖点位</th><th>中位时长</th><th>中位帧数</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>T3 参数标定（CAL）</td><td class="num">13</td><td class="num">11 / 2</td><td class="num">7</td><td class="num">6</td><td class="num">6</td><td class="num">2</td><td class="num">31.5 s</td><td class="num">64</td></tr>
+        <tr><td>指纹采集（FP）</td><td class="num">17</td><td class="num">16 / 1</td><td class="num">9</td><td class="num">8</td><td class="num">6</td><td class="num">2</td><td class="num">10.2 s</td><td class="num">24</td></tr>
+        <tr><td>T6 静态对比（ST）</td><td class="num">5</td><td class="num">4 / 1</td><td class="num">1</td><td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="num">10.0 s</td><td class="num">20</td></tr>
+        <tr><td>T7 行走打点（DY）</td><td class="num">2</td><td class="num">2 / 0</td><td class="num">0</td><td class="num">2</td><td class="num">2</td><td class="num">0</td><td class="num">84.6 s</td><td class="num">146</td></tr>
+        <tr><td>T8 导航对比（NV）</td><td class="num">0</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+      </tbody>
+    </table>
+    <p class="note">另有 4 段被导出标记为排除（原因「其他」）；观察员记录不含转向评分；
+      指纹库当前 active 版本为 fpl-20261111082419574215-e0a92d，与本次导出无关联问题。</p>
+  </section>
+
+  <section class="card">
+    <h2>三、方案与配置说明</h2>
+    <p>A/B/C 三臂共用同一份地图、信标台账和真值清单，区别只在定位机制与参数来源。
+      正式采集前通过「冻结配置」把三臂的参数与版本一次性写入实验配置，后续所有采集段都引用这份快照。</p>
+
+    <h3>3.1 三臂定义</h3>
+    <table>
+      <thead><tr><th>方案</th><th>定位机制</th><th>参数 / 数据来源</th><th>前置依赖</th><th>回退关系</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>A 默认参数</strong></td>
+          <td>三点定位（对数距离路径损耗模型）</td>
+          <td>服务端出厂默认参数，不随现场标定变化</td>
+          <td>地图版本、信标台账</td>
+          <td>无</td>
+        </tr>
+        <tr>
+          <td><strong>B 标定参数</strong></td>
+          <td>三点定位，与 A 使用同一套算法</td>
+          <td>T3 现场标定并在校准控制台应用后，取当前生效的 LocationParamVersion</td>
+          <td>T3 标定并应用</td>
+          <td>无</td>
+        </tr>
+        <tr>
+          <td><strong>C 指纹库</strong></td>
+          <td>指纹向量最近邻匹配（按点位聚合中位数）</td>
+          <td>T4 采集并入库后的指纹库 active 版本</td>
+          <td>T4 采集 / 建库</td>
+          <td>未命中或超阈值时回退 B，并记录 fallbackReason</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>3.2 冻结配置内容</h3>
+    <table>
+      <thead><tr><th>字段</th><th>含义</th><th>取值来源</th></tr></thead>
+      <tbody>
+        <tr><td><code>configId</code> / <code>mapVersion</code> / <code>frozenAt</code></td><td>配置编号、绑定地图版本、冻结时间（毫秒）</td><td>冻结请求与最新地图</td></tr>
+        <tr><td><code>A.rssiAt1m</code> / <code>pathLossN</code> / <code>reliableM</code> / <code>degradedM</code> / <code>paramsVersion</code></td><td>A 臂参数快照：1 m 处 RSSI、路径损耗指数、可靠 / 降级残差阈值、参数版本号</td><td>服务端默认配置</td></tr>
+        <tr><td><code>B.*</code></td><td>B 臂参数快照，字段与 A 相同</td><td>已应用的现场标定参数版本</td></tr>
+        <tr><td><code>C.libraryVersion</code> / <code>fallback</code></td><td>指纹库版本；回退目标固定为 B</td><td>指纹库 active 指针</td></tr>
+        <tr><td><code>C.minOverlap</code> / <code>maxRmse</code> / <code>confidenceRmse</code> / <code>minConfidence</code> / <code>minMargin</code></td><td>指纹命中阈值：最少重叠信标数、最大 RMSE、置信度归一化分母、最低置信度、与次优候选的最小差距</td><td>代码常量 + 服务端配置</td></tr>
+        <tr><td><code>arrivalRadiusM</code> / <code>turnPromptDistanceM</code></td><td>到达判定半径、转弯提前播报距离</td><td>冻结时的运行参数</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.3 参数默认值与阈值</h3>
+    <table>
+      <thead><tr><th>参数</th><th>默认值</th><th>作用</th></tr></thead>
+      <tbody>
+        <tr><td><code>rssiAt1m</code></td><td class="num">-71.0 dBm</td><td>1 m 处参考信号强度（measured power，不是信标广播 txPower）</td></tr>
+        <tr><td><code>pathLossN</code></td><td class="num">2.0</td><td>路径损耗指数，自由空间为 2，遮挡环境通常更高</td></tr>
+        <tr><td><code>reliableM</code> / <code>degradedM</code></td><td class="num">1.5 m / 4.0 m</td><td>残差可信 / 降级门槛，用于定位质量分级</td></tr>
+        <tr><td><code>minOverlap</code> / <code>maxRmse</code></td><td class="num">3 / 8.0 dB</td><td>C 命中的最低重叠信标数与最大 RMSE</td></tr>
+        <tr><td><code>minConfidence</code> / <code>confidenceRmse</code></td><td class="num">0.55 / 20.0 dB</td><td>置信度 =（1 − RMSE / 20）× 覆盖率，低于 0.55 判为低置信</td></tr>
+        <tr><td><code>minMargin</code></td><td class="num">3.0 dB</td><td>最优与次优指纹点的 RMSE 差距，低于该值判为混淆</td></tr>
+      </tbody>
+    </table>
+    <p class="note">A 与 B 算法完全相同，差异只来自参数，因此两者之差即「标定增益」；
+      C 未命中时回退 B，因此 C 与 B 之差即「指纹增益」，需结合「C 仅命中」视图解读。
+      当前导出的实验包尚无冻结配置（config 记录为 0），A/B/C 列的具体参数版本待冻结后生成。</p>
+  </section>
+
+  <section class="card">
+    <h2>四、A/B/C 指标对比</h2>
+    <p>下表固定「指标 × 方案」的对比结构：T6 用同一段原始 RSSI 离线重放 A/B/C（同点位、同朝向、同窗口），
+      T8 用同一路线轮转在线运行。当前数据未就绪，单元格以数据缺口标注；补齐后由分析脚本自动填充。</p>
+
+    <h3>T6 静态对比（18 点 × 4 朝向，段内整段中位数）</h3>
+    <table>
+      <thead>
+        <tr><th>指标</th><th>A 默认参数</th><th>B 标定参数</th><th>C 指纹库</th><th>对比口径</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>平均误差 (m)</td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td>全体视图，C 含回退结果</td></tr>
+        <tr><td>P90 误差 (m)</td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td>全体视图</td></tr>
+        <tr><td>P95 误差 (m)</td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td>全体视图</td></tr>
+        <tr><td>最大误差 (m)</td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td>全体视图</td></tr>
+        <tr><td>楼层正确率</td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td><span class="tag pend">待 T6</span></td><td>估计楼层 = 真值楼层</td></tr>
+        <tr><td>C 仅命中均值 (m)</td><td>—</td><td>—</td><td><span class="tag pend">待 T6</span></td><td>仅 source=fingerprint 的样本</td></tr>
+        <tr><td>C 回退率 / 原因</td><td>—</td><td>—</td><td><span class="tag pend">待 T6</span></td><td>回退到 B 的占比 + fallbackReason 分布</td></tr>
+      </tbody>
+    </table>
+
+    <h3>T8 动态对比（8 点 × A/B/C 三轮，同路线）</h3>
+    <table>
+      <thead>
+        <tr><th>指标</th><th>A 默认参数</th><th>B 标定参数</th><th>C 指纹库</th><th>对比口径</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>平均误差 (m)</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>检查点配对误差</td></tr>
+        <tr><td>有效定位率</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>position 非空 / estimate 总数</td></tr>
+        <tr><td>位置跳变次数</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>同层相邻两次 &gt; 3.0 m</td></tr>
+        <tr><td>更新间隔 P90 (ms)</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>导航档期望 1000 ms</td></tr>
+        <tr><td>请求 RTT P90 (ms)</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>estimate 事件 requestMs</td></tr>
+        <tr><td>指令→播报 Δ (ms)</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>转向参考事件对比</td></tr>
+        <tr><td>到达检测偏差 (ms)</td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td><span class="tag pend">待 T8</span></td><td>系统判定到达 − 人工标记</td></tr>
+        <tr><td>C 回退率 / 原因</td><td>—</td><td>—</td><td><span class="tag pend">待 T8</span></td><td>fallbackReason 分布</td></tr>
+      </tbody>
+    </table>
+
+    <div class="rules">
+      <strong>对比规则（T0.4）</strong>
+      <ul>
+        <li>只做相对排序，不设绝对 PASS/FAIL；差异不显著时标为同档。</li>
+        <li>单指标先排序，再看 Pareto 支配关系；条件性差异按场景单独给出。</li>
+        <li>准确性必须同时给出「全体」与「C 仅命中」两视图，避免回退样本掩盖指纹命中质量。</li>
+        <li>仅在同一地图版本、同一真值清单、同一设备与同一冻结配置下横向比较。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>五、指标状态</h2>
+    <table>
+      <thead><tr><th>维度</th><th>指标</th><th>状态</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr>
+          <td rowspan="2">准确性</td>
+          <td>平均误差 / P90 / P95 / 最大误差、楼层正确率（A/B/C）</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>T6/T7 段均无 planId（试采），重放时无真值坐标；且无冻结配置可供 A/B 参数与 C 库版本对齐。</td>
+        </tr>
+        <tr>
+          <td>C 回退率与 fallbackReason 分布</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>在线 C 估计计数为 0（无 T8 会话）。</td>
+        </tr>
+        <tr>
+          <td rowspan="3">可用性</td>
+          <td>有效定位率</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>无 T8 导航事件，estimate 样本为 0。</td>
+        </tr>
+        <tr>
+          <td>位置跳变次数（&gt; 3.0 m）</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>同上。</td>
+        </tr>
+        <tr>
+          <td>C 回退率</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>同上。</td>
+        </tr>
+        <tr>
+          <td rowspan="2">时效</td>
+          <td>更新间隔、请求 RTT</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>无 T8 会话；requestMs 打点需使用本次更新后的客户端采集。</td>
+        </tr>
+        <tr>
+          <td>指令→播报、到达延迟</td>
+          <td><span class="tag bad">不可计算</span></td>
+          <td>无转向参考事件与到达记录。</td>
+        </tr>
+        <tr>
+          <td>数据完整性</td>
+          <td>导出八类产物、manifest 计数、真值行</td>
+          <td><span class="tag ok">通过</span></td>
+          <td>ZIP 校验通过；manifest counts 与实际行数一致；真值 910 行。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>六、补齐路径</h2>
+    <ol>
+      <li><strong>完成 T3 标定并冻结配置</strong>：当前 CAL 只覆盖 2 个点位，需按正式计划完成 12 点 × 3 窗口并通过校准控制台应用参数；随后冻结配置。冻结后的 A（默认参数）/ B（标定参数）/ C（指纹库）才具备可比性。</li>
+      <li><strong>按正式计划重采 T6</strong>：18 个点位 × 4 朝向，每段 ≥ 30 s。当前 5 段中 4 段为试采、1 段异常，且 10 s 窗口低于正式要求。</li>
+      <li><strong>补齐 T8 导航对比</strong>：至少 8 个点位，每点位分别以 A / B / C 三轮导航，采集后才能计算有效定位率、跳变、更新间隔、RTT、指令→播报与到达延迟。</li>
+      <li><strong>更新客户端后再采 T8</strong>：确保 estimate 事件写入 visibleBeaconCount 与 requestMs，否则 RTT 指标仍为空。</li>
+      <li><strong>重新导出并一键重算</strong>：按文末命令执行导出 → 批量重放 → 分析；报告会自动填充准确性与时效表格。</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>七、复现命令</h2>
+<pre><code># 1) 导出实验包（已存档，可替换为新的现场导出 ZIP）
+#    GET /api/v1/export/experiment?include_trial=true
+
+# 2) 批量重放（需服务启动、账号令牌；T6/T7 必须指定冻结配置）
+python tools/replay_all_field_runs.py reports/field-experiment/run_20261121/input/export_20261121.zip `
+  --base-url http://&lt;后端地址&gt; --token &lt;账号令牌&gt; `
+  --config-id &lt;冻结配置&gt; --out reports/field-experiment/run_20261121/replay_20261121.json
+
+# 3) 生成指标、逐条中间数据与运行清单
+python -m tools.analyze_field_experiment reports/field-experiment/run_20261121/input/export_20261121.zip `
+  --replay reports/field-experiment/run_20261121/replay_20261121.json `
+  --json reports/field-experiment/run_20261121/metrics_20261121.json `
+  --csv reports/field-experiment/run_20261121/metrics_20261121.csv `
+  --details-dir reports/field-experiment/run_20261121/details `
+  --manifest reports/field-experiment/run_20261121/manifest_20261121.json</code></pre>
+    <p class="note">无冻结配置时，步骤 2 会返回 INVALID_FIELD_CONFIG；步骤 3 仍可运行，但准确性区为空。</p>
+  </section>
+
+  <section class="card">
+    <h2>八、口径附录</h2>
+    <table>
+      <thead><tr><th>项目</th><th>取值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>指标版本</td><td class="num">1.0</td><td>manifest.analysisConfig.metricVersion</td></tr>
+        <tr><td>挂起库半径</td><td class="num">1.5 m</td><td>重放时排除距 T6/T8 真值点过近的指纹点，避免精度虚高</td></tr>
+        <tr><td>位置跳变阈值</td><td class="num">3.0 m</td><td>同楼层相邻两次定位距离超过该值计为一次跳变</td></tr>
+        <tr><td>期望更新间隔</td><td class="num">8000 / 2500 / 1000 ms</td><td>待命 / 路线预览 / 导航</td></tr>
+        <tr><td>C 命中阈值</td><td class="num">重叠 ≥ 3、RMSE ≤ 8 dB、置信度 ≥ 0.55、与次优差距 ≥ 3 dB</td><td>不满足时回退到 B，并记录 fallbackReason</td></tr>
+        <tr><td>准确性视图</td><td class="num">全体 / 仅命中</td><td>全体含回退结果；仅命中只统计 C 指纹命中</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    本报告由 tools/analyze_field_experiment.py 生成的数据自动汇总，未包含任何人工估算值。<br>
+    数据快照：reports/field-experiment/run_20261121/input/export_20261121.zip<br>
+    复核说明：docs/实验数据分析复核说明.md
+  </footer>
+</div>
+</body>
+</html>

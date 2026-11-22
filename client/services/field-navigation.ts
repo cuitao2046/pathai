@@ -89,8 +89,8 @@ export class FieldNavigationRecorder {
     const { plan, config, selection } = this.run;
     const now = Date.now();
     const segment: FieldSegment = {
-      segmentId: `${plan.batch}-NV-${selection.method}-${fieldId()}`, runId: selection.runId,
-      task: 'NV', batch: plan.batch, planId: plan.planId, part: 1, startedAtEpoch: now,
+      segmentId: `${plan.batch}-${plan.task}-${selection.method}-${fieldId()}`, runId: selection.runId,
+      task: plan.task, batch: plan.batch, planId: plan.planId, part: 1, startedAtEpoch: now,
       endedAtEpoch: now, mapVersion: plan.mapVersion,
       paramsVersion: config[selection.method === 'A' ? 'A' : 'B'].paramsVersion,
       deviceId: this.store.deviceId, status: 'aborted', method: selection.method,

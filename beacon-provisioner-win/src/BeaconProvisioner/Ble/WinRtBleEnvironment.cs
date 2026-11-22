@@ -29,30 +29,52 @@ public sealed class WinRtBleEnvironment : IBleEnvironment
 
     private readonly Dictionary<string, ulong> _addresses = new();
     private readonly Dictionary<string, BleDeviceInfo> _devices = new();
+    private readonly object _deviceLock = new();
+    private readonly Dictionary<string, long> _lastSeen = new();
     private BluetoothLEAdvertisementWatcher? _watcher;
+    private System.Threading.Timer? _staleTimer;
     private long _lastRaiseTicks;
+
+    /// <summary>超过该时长未再收到任何广播（含 Scan Response）即从列表移除，信标关机后不再残留。</summary>
+    private const int StaleTimeoutMs = 5000;
 
     public bool IsMock => false;
 
-    public IReadOnlyList<BleDeviceInfo> Devices =>
-        _devices.Values.OrderByDescending(d => d.Rssi).ToList();
+    public IReadOnlyList<BleDeviceInfo> Devices
+    {
+        get
+        {
+            lock (_deviceLock)
+            {
+                return _devices.Values.OrderByDescending(d => d.Rssi).ToList();
+            }
+        }
+    }
 
     public event EventHandler? DevicesChanged;
 
     public void StartScan()
     {
         StopScan();
-        _devices.Clear();
+        lock (_deviceLock)
+        {
+            _devices.Clear();
+            _lastSeen.Clear();
+        }
+
         _watcher = new BluetoothLEAdvertisementWatcher
         {
             ScanningMode = BluetoothLEScanningMode.Active,
         };
         _watcher.Received += OnAdvertisementReceived;
         _watcher.Start();
+        _staleTimer = new System.Threading.Timer(_ => PurgeStaleDevices(), null, 1000, 1000);
     }
 
     public void StopScan()
     {
+        _staleTimer?.Dispose();
+        _staleTimer = null;
         if (_watcher is null)
         {
             return;
@@ -99,7 +121,11 @@ public sealed class WinRtBleEnvironment : IBleEnvironment
         {
             try
             {
-                return await ConnectOnceAsync(device);
+                var session = await ConnectOnceAsync(device);
+                // 部分出厂/新批次固件在 GATT 建链后会重启广播或协商连接参数，
+                // 立即读写会被系统取消（OperationCanceledException）；稍等再交给上层。
+                await Task.Delay(300).ConfigureAwait(false);
+                return session;
             }
             catch (Exception ex)
             {
@@ -170,64 +196,98 @@ public sealed class WinRtBleEnvironment : IBleEnvironment
         var mac = FormatMac(args.BluetoothAddress);
         var localName = advertisement.LocalName ?? "";
         var advertisesConfigService = advertisement.ServiceUuids.Contains(ServiceUuid);
-        _devices.TryGetValue(mac, out var existing);
-
         var data = ExtractIBeacon(advertisement);
-        if (data is null)
-        {
-            // 非 iBeacon 包。E5 的设备名不在 iBeacon 帧里，而由 Scan Response 单独广播，
-            // 这条分支就是补名称的唯一入口，不能直接丢弃。
-            if (existing is not null)
-            {
-                if (localName.Length > 0)
-                {
-                    existing.Name = localName;
-                }
+        var changed = false;
 
-                if (advertisesConfigService)
+        lock (_deviceLock)
+        {
+            _devices.TryGetValue(mac, out var existing);
+            if (data is null)
+            {
+                // 非 iBeacon 包。E5 的设备名不在 iBeacon 帧里，而由 Scan Response 单独广播，
+                // 这条分支就是补名称的唯一入口，不能直接丢弃。
+                if (existing is not null)
                 {
-                    existing.IsE5 = true;
+                    if (localName.Length > 0)
+                    {
+                        existing.Name = localName;
+                    }
+
+                    if (advertisesConfigService)
+                    {
+                        existing.IsE5 = true;
+                    }
+
+                    changed = true;
+                }
+                else if (advertisesConfigService)
+                {
+                    // 先收到 Scan Response 的情况：只有广播配置服务的才是本工具能连的设备。
+                    _addresses[mac] = args.BluetoothAddress;
+                    _devices[mac] = new BleDeviceInfo
+                    {
+                        Mac = mac,
+                        Name = localName,
+                        Uuid = "",
+                        Rssi = args.RawSignalStrengthInDBm,
+                        IsE5 = true,
+                        Connectable = true,
+                    };
+                    changed = true;
                 }
             }
-            else if (advertisesConfigService)
+            else
             {
-                // 先收到 Scan Response 的情况：只有广播配置服务的才是本工具能连的设备。
                 _addresses[mac] = args.BluetoothAddress;
                 _devices[mac] = new BleDeviceInfo
                 {
                     Mac = mac,
-                    Name = localName,
-                    Uuid = "",
+                    // 名称只在拿到时覆盖：Scan Response 与 iBeacon 帧交替到达，
+                    // 用空值覆盖会把已经读到的名字抹掉。
+                    Name = localName.Length > 0 ? localName : existing?.Name ?? "",
+                    Uuid = BeaconCodec.UuidFromBytes(data.AsSpan(2, 16)),
+                    Major = (data[18] << 8) | data[19],
+                    Minor = (data[20] << 8) | data[21],
                     Rssi = args.RawSignalStrengthInDBm,
-                    IsE5 = true,
+                    IsE5 = advertisesConfigService || existing?.IsE5 == true,
                     Connectable = true,
                 };
-            }
-            else
-            {
-                return; // 与本工具无关的蓝牙设备（耳机/手环等），不进列表
+                changed = true;
             }
 
-            RaiseDevicesChanged();
-            return;
+            if (changed)
+            {
+                _lastSeen[mac] = Environment.TickCount64;
+            }
         }
 
-        _addresses[mac] = args.BluetoothAddress;
-        _devices[mac] = new BleDeviceInfo
+        if (changed)
         {
-            Mac = mac,
-            // 名称只在拿到时覆盖：Scan Response 与 iBeacon 帧交替到达，
-            // 用空值覆盖会把已经读到的名字抹掉。
-            Name = localName.Length > 0 ? localName : existing?.Name ?? "",
-            Uuid = BeaconCodec.UuidFromBytes(data.AsSpan(2, 16)),
-            Major = (data[18] << 8) | data[19],
-            Minor = (data[20] << 8) | data[21],
-            Rssi = args.RawSignalStrengthInDBm,
-            IsE5 = advertisesConfigService || existing?.IsE5 == true,
-            Connectable = true,
-        };
+            RaiseDevicesChanged();
+        }
+    }
 
-        RaiseDevicesChanged();
+    /// <summary>移除超时未再收到广播的设备；信标关机或移出范围后，列表不再残留陈旧条目。</summary>
+    private void PurgeStaleDevices()
+    {
+        var cutoff = Environment.TickCount64 - StaleTimeoutMs;
+        var removed = false;
+        lock (_deviceLock)
+        {
+            var stale = _lastSeen.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList();
+            foreach (var mac in stale)
+            {
+                _lastSeen.Remove(mac);
+                removed |= _devices.Remove(mac);
+            }
+        }
+
+        if (removed)
+        {
+            // 绕过节流：设备全部消失时不会再有广播事件，漏掉这次通知列表就会一直残留。
+            _lastRaiseTicks = Environment.TickCount64;
+            DevicesChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private static byte[]? ExtractIBeacon(BluetoothLEAdvertisement advertisement)
@@ -418,6 +478,18 @@ public sealed class WinRtBleEnvironment : IBleEnvironment
                 return Fail(ex.HResult == unchecked((int)0x8065000D)
                     ? $"写入 {step} 失败：设备拒绝该特征的值长度（ATT 0x0D），请检查固件特征定义"
                     : $"写入 {step} 失败：GATT 错误 0x{ex.HResult:X8}");
+            }
+            catch (OperationCanceledException ex)
+            {
+                // WinRT 在设备断开/重启或 GATT 会话被系统回收时，会把挂起的写操作直接置为取消；
+                // 必须按「会话失效」处理，交给上层重连后整组重写。
+                BleLog($"{Device.Mac} 写入 {step} 被系统取消：{ex.Message}");
+                return new BleWriteResult
+                {
+                    Success = false,
+                    NeedsReconnect = true,
+                    Message = $"写入 {step} 时连接被中断（设备可能已重启/断开），请重新扫描并连接后再写入",
+                };
             }
             catch (Exception ex)
             {

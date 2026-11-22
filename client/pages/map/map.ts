@@ -66,7 +66,8 @@ import {
   resolveTurnNode,
   turnDistanceM,
 } from '../../core/nav/turn-haptics';
-import { vibrateDoubleShort, vibrateLong, vibrateShort } from '../../utils/haptic';
+import { UturnDetector } from '../../core/nav/uturn-detection';
+import { vibrateArrival, vibrateDoubleShort, vibrateLong, vibrateShort, vibrateUturn } from '../../utils/haptic';
 import { startPerfTrace, type PerfTrace } from '../../utils/perf-trace';
 import {
   HoldToTalkGesture,
@@ -123,7 +124,10 @@ const NAV_TEXT: Record<NavState, string> = {
   ended: '导航结束',
 };
 
-const DOUBLE_TAP_WINDOW_MS = 500;
+/** 结束导航的「再按一次」确认窗口：太短（如 500ms）时按 1 秒一次会永远只听到提示。 */
+const END_CONFIRM_WINDOW_MS = 2000;
+/** 同一句结束提示的最短重播间隔，避免连点把音频队列堆满。 */
+const END_HINT_MIN_INTERVAL_MS = 1000;
 
 /** 进入逐步引导前的短过渡（本地音频，离线可播）：场景一/场景二共用，位于概要与首条指令之间。 */
 const NAV_START_TRANSITION_CLIP = 'nav-start';
@@ -264,11 +268,13 @@ Page({
     // 现场采集工具（设置页开关控制入口可见性，即时生效；导航中隐藏）
     collectEntry: false,
     collectMenuOpen: false,
-    /** 采集候选（静态标定 / 网格指纹，4 字文案）统一宽度（rpx），与 toolBtnWidth 同一套估算 */
+    /** 采集候选（静态标定 / 网格指纹 / 对数等距 / 蓝牙部署，4 字文案）统一宽度（rpx），与 toolBtnWidth 同一套估算 */
     collectOptWidth: toolBtnWidthRpx(['静态标定']),
     // 导航态（REQ-PAGE：导航融合进地图页，原独立导航页退役）
     navActive: false,
     fieldMethod: '',
+    /** 实验任务短标签（T7/T8/T9），HUD 与返回入口共用。 */
+    fieldTaskLabel: '',
     fieldRunId: '',
     fieldCheckpoint: '',
     fieldUndo: false,
@@ -326,6 +332,10 @@ Page({
    * 语音负责距拐点约 4m 的提前播报，震动在最后 6m 内先接管逼近节拍，两者分工。
    */
   turnHaptics: null as TurnHaptics | null,
+  /** T9 反向掉头检测器（仅 UT 任务启用，见 plan.task === 'UT'）。 */
+  uturnDetector: null as UturnDetector | null,
+  /** 单次导航只播报一次「掉头」，避免重复播报。 */
+  uturnAnnounced: false,
   /** 当前导航指令（每次 update 刷新，转弯震动按它取拐点）。 */
   currentInstruction: null as NavigationInstruction | null,
   fieldRecorder: null as FieldNavigationRecorder | null,
@@ -370,6 +380,8 @@ Page({
   /** 场景二：等待用户说出目的地的超时计时器。 */
   awaitDestinationTimer: null as ReturnType<typeof setTimeout> | null,
   lastTapAt: 0,
+  /** 最近一次播报「再按一次结束导航」的时间，用于去重。 */
+  lastEndHintAt: 0,
   /** 工具条按钮按下时间：bindtouchstart 先于 bindtap，测「手指按下→界面响应」的真实间隔。 */
   toolTouchAt: 0,
   /** 全屏按住说话的交互追踪（touchstart 起点，录音态渲染回调收尾）。 */
@@ -488,6 +500,7 @@ Page({
         });
         this.setData({
           fieldMethod: fieldRun.selection.method, fieldRunId: fieldRun.selection.runId,
+          fieldTaskLabel: fieldRun.plan.task === 'UT' ? 'T9' : fieldRun.plan.task === 'DY' ? 'T7' : 'T8',
           fieldSessionReady: false, fieldActualArrived: false, fieldSystemArrived: false, fieldSaving: false,
         });
         this.requestDraw();
@@ -626,19 +639,31 @@ Page({
       log.info('启动楼层探测：已进入预览/导航，楼层交给定位跟随');
       return;
     }
-    const winner = pickStartupFloor(this.startupFloorSamples, (uuid, major, minor) =>
-      appContext.map.beaconRegistry.resolve(uuid, major, minor),
-    );
+    // beaconRegistry.resolve 返回的是 beaconId（如 BK-01-004），这里必须再映射回楼层，
+    // 否则会把信标编号当成楼层写进 currentFloorText（设置页返回后楼层按钮显示异常）。
+    const winner = pickStartupFloor(this.startupFloorSamples, (uuid, major, minor) => {
+      const beaconId = appContext.map.beaconRegistry.resolve(uuid, major, minor);
+      if (beaconId === null) {
+        return null;
+      }
+      return appContext.map.beacons.find((beacon) => beacon.beaconId === beaconId)?.floorId ?? null;
+    });
     if (winner === null) {
       log.info('启动楼层探测：样本未命中台账，显示首层');
+      return;
+    }
+    const targetFloor = this.floorList.find((floor) => floor.floorId === winner.floorId);
+    if (targetFloor === undefined) {
+      // 楼层不在当前地图包内：保持首层，不把非法值写进 currentFloorText。
+      log.warn('启动楼层探测：楼层不在当前地图包内', winner.floorId);
       return;
     }
     log.info(
       '启动楼层探测：按信标楼层显示',
       `${winner.floorId}（${winner.count} 帧，均 ${winner.avgRssi.toFixed(1)}dBm）`,
     );
-    this.startupFloorId = winner.floorId;
-    this.applyStartupFloor(winner.floorId);
+    this.startupFloorId = targetFloor.floorId;
+    this.applyStartupFloor(targetFloor.floorId);
   },
 
   /** 把地图切到启动探测出的楼层；视口未建好时只记录，首绘按该层创建。 */
@@ -1702,6 +1727,15 @@ Page({
     });
   },
 
+  onGoCollectDeployment(): void {
+    log.info('进入蓝牙部署点位');
+    this.setData({ collectMenuOpen: false });
+    wx.navigateTo({
+      url: '/pages/collect/deployment/deployment',
+      fail: (err) => log.warn('navigateTo collect/deployment 失败', JSON.stringify(err)),
+    });
+  },
+
   // ------------------------------------------------------------------
   // 按住说话 → 意图（REQ-PAGE 下端居中按钮 / 居中浮层）
   // ------------------------------------------------------------------
@@ -2623,9 +2657,12 @@ Page({
     if (controller === null || this.navStarting) {
       return;
     }
-    if (this.fieldRecorder && appContext.map.places.find((p) => p.placeId === destination.placeId)?.nodeId !== 'F1-TR-0003') {
-      this.finishPreview('实验目的地固定为资源教室。返回地图后请从实验入口开始。');
-      return;
+    if (this.fieldRecorder) {
+      const expectedNode = this.fieldRecorder.run.plan.task === 'UT' ? 'F1-TR-0016' : 'F1-TR-0003';
+      if (appContext.map.places.find((p) => p.placeId === destination.placeId)?.nodeId !== expectedNode) {
+        this.finishPreview('实验目的地已固定，返回地图后请从实验入口开始。');
+        return;
+      }
     }
     // 预览起点是预览早期冻结的观测：10 秒复用窗口只看「预览还剩多少价值」，
     // 不看观测年龄；服务端只接受 15 s 内的观测，确认后必须重新取一次。
@@ -2693,12 +2730,13 @@ Page({
     this.enterNavZoom(); // 视野从全路线收窄到局部（REQ-NAV 展示层）
 
     try {
-      await controller.createSession(destination, freshOrigin, 'blind', {
+      const created = await controller.createSession(destination, freshOrigin, 'blind', {
         overviewPlayed: true,
         // 场景一（确认后启动）与场景二（概要后自动启动）共用：首条指令前先播过渡
         transitionClip: NAV_START_TRANSITION_CLIP,
       });
       this.setData({ stateText: NAV_TEXT.active });
+      this.warnHazardLayerDegraded(created.route);
     } catch (err) {
       this.finishFieldNavigation('aborted', '导航会话创建失败');
       const message = err instanceof ApiClientError ? describeError(err) : '无法开始导航，请重试';
@@ -2708,6 +2746,20 @@ Page({
       this.setData({ reply: message });
       this.speech?.enqueue(message, 'turn', null, 'map:create-failed');
     }
+  },
+
+  /**
+   * 危险层不可用（缺失/损坏/版本不匹配）时明确提示：此时后端没有加载禁行边，
+   * 路线可能穿过危险区域，不能按“安全路线”静默导航。
+   */
+  warnHazardLayerDegraded(route: RouteInfo): void {
+    const status = route.hazardLayerStatus;
+    if (!status || status === 'ok') return;
+    const notice = route.hazardLayerNotice || '危险区域数据不可用';
+    log.warn('危险层降级，路线未规避危险区域', { status, notice });
+    const text = `注意：危险区域数据不可用，本路线未规避危险区域。${notice}`;
+    this.setData({ reply: text });
+    this.speech?.enqueue(text, 'safety', null, 'nav:hazard-degraded');
   },
 
   /**
@@ -2828,6 +2880,9 @@ Page({
       experiment: () => this.fieldRecorder?.run.selection,
       onSessionCreated: (created) => {
         if (!this.fieldRecorder) return;
+        // 新会话：重置 T9 掉头检测（同一会话内触发后不再重复播报）。
+        this.uturnDetector?.reset();
+        this.uturnAnnounced = false;
         this.fieldRecorder.event('session', {
           sessionId: created.sessionId, route: created.route, turnHapticsEnabled: this.data.a11yMode === 'a11y',
         });
@@ -2856,11 +2911,16 @@ Page({
           vibrateLong(); // 震动模式：脱离路线需要引起注意
           // 位置不可信：箭头隐藏（不显示可能错误的方向）
           this.setData({ arrowVisible: false, arrowAlert: false });
+        } else if (state === 'arrived') {
+          // 到达专属三长振：与转弯节拍、录音双短振区分；语音之外的第二通道通知
+          vibrateArrival();
         } else if (state === 'active') {
           this.syncArrowLifecycle();
         }
       },
       onRoute: (route, overviewText) => {
+        // 换路线（首次/重规划）：反向基准按新路线重算；已播报标记不在重规划时清零。
+        this.uturnDetector?.reset();
         this.fieldRecorder?.event('route', { route });
         // 新流程：概要在 API-10 预览阶段已播完（overviewAnnounced=true），此处不重播；
         // 无预览的历史/异常路径才在此入队概要，形成「概要 → 首条指令」顺序。
@@ -2988,6 +3048,7 @@ Page({
       this.updateArrow(); // 可信位置更新 → 重算当前折线段方向
       this.syncTurnHaptics(); // 1s 一拍：刷新到当前转弯的剩余沿线距离（两次上报之间由节拍器外推）
       this.updateRemainingDistance(); // HUD 剩余距离随定位动态更新
+      this.updateUturnDetection(); // T9：反向掉头 5m 时效检测
     } else {
       // 本拍没有可信坐标：停表并清掉剩余距离（避免展示过期数值）
       this.stopTurnHaptics();
@@ -3106,6 +3167,40 @@ Page({
     }
   },
 
+  /**
+   * T9 反向掉头时效检测（仅 plan.task === 'UT' 启用）。
+   *
+   * 触发后只播报「掉头」（离线音频），不重规划；同时给「两长一短」专属震动，
+   * 并把 speech_started（source=nav:uturn）自动写入实验事件流，
+   * 供分析脚本以「检查点打点 → 播报开始」计算纠偏时效。
+   */
+  updateUturnDetection(): void {
+    if (this.fieldRecorder?.run.plan.task !== 'UT' || this.uturnAnnounced) {
+      return;
+    }
+    if (this.navPhase !== 'navigating' || this.sessionEnded) {
+      return;
+    }
+    const route = this.routeForDisplay;
+    const pos = this.navPosition;
+    if (route === null || pos === null) {
+      return;
+    }
+    if (this.uturnDetector === null) {
+      this.uturnDetector = new UturnDetector();
+    }
+    const trigger = this.uturnDetector.update(pos, route.polyline);
+    if (trigger === null) {
+      return;
+    }
+    this.uturnAnnounced = true;
+    this.fieldRecorder.event('uturn_detected', { ...trigger });
+    vibrateUturn();
+    this.speech?.enqueueClip('u-turn', 'safety', 'nav:uturn');
+    this.setData({ instruction: '掉头' });
+    log.info('检测到反向掉头', trigger);
+  },
+
   /** 双击结束导航（防误触，自原导航页平移）。 */
   onEndTap(): void {
     const controller = this.controller;
@@ -3113,7 +3208,7 @@ Page({
       return;
     }
     const now = Date.now();
-    if (now - this.lastTapAt <= DOUBLE_TAP_WINDOW_MS) {
+    if (now - this.lastTapAt <= END_CONFIRM_WINDOW_MS) {
       this.lastTapAt = 0;
       this.setData({ stateText: '正在结束导航…' });
       controller.endSession('user_finished').catch((err) => {
@@ -3125,12 +3220,15 @@ Page({
     this.lastTapAt = now;
     const hint = '再按一次结束导航';
     this.setData({ stateText: hint });
-    this.speech?.enqueue(hint, 'normal', null, 'map:end-hint');
+    if (now - this.lastEndHintAt >= END_HINT_MIN_INTERVAL_MS) {
+      this.lastEndHintAt = now;
+      this.speech?.enqueue(hint, 'normal', null, 'map:end-hint');
+    }
     setTimeout(() => {
       if (this.lastTapAt !== 0 && !this.sessionEnded) {
         this.setData({ stateText: NAV_TEXT[this.data.state as NavState] });
       }
-    }, DOUBLE_TAP_WINDOW_MS);
+    }, END_CONFIRM_WINDOW_MS);
   },
 
   /**
@@ -3204,7 +3302,11 @@ Page({
 
   onBeginFieldNavigation(): void {
     if (!this.fieldRecorder || this.data.fieldSaveRetry || !this.data.mapReady || this.navPhase !== 'idle') return;
-    const place = appContext.map.places.find((row) => row.nodeId === 'F1-TR-0003');
+    // T9 反向掉头实验固定去广安106（F1-RM-0016）；其余实验任务固定资源教室。
+    const uturn = this.fieldRecorder.run.plan.task === 'UT';
+    const place = uturn
+      ? appContext.map.places.find((row) => row.placeId === 'F1-RM-0016')
+      : appContext.map.places.find((row) => row.nodeId === 'F1-TR-0003');
     if (!place || appContext.map.mapVersion !== this.fieldRecorder.run.plan.mapVersion) {
       wx.showToast({ title: '实验路线或冻结地图不可用', icon: 'none' });
       return;
@@ -3214,10 +3316,11 @@ Page({
 
   onReturnFieldExperiment(): void {
     if (this.data.fieldSaveRetry) return;
+    const task = this.fieldRecorder?.run.plan.task ?? 'NV';
     this.fieldRecorder = null;
     this.onDismissIntent();
-    this.setData({ fieldMethod: '', fieldRunFinished: false });
-    wx.navigateTo({ url: `/pages/collect/experiment/experiment?task=NV&runId=${this.data.fieldRunId}` });
+    this.setData({ fieldMethod: '', fieldTaskLabel: '', fieldRunFinished: false });
+    wx.navigateTo({ url: `/pages/collect/experiment/experiment?task=${task}&runId=${this.data.fieldRunId}` });
   },
 
   updateFieldCheckpoint(): void {
