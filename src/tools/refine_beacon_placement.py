@@ -43,7 +43,7 @@ refine_beacon_placement.py — 三点定位信标方案的「放置质量后处�
   python src/tools/refine_beacon_placement.py --review-only                       # 只评审不修改
 """
 from __future__ import annotations
-import argparse, heapq, json, math, random
+import argparse, heapq, itertools, json, math, random
 from pathlib import Path
 from collections import defaultdict
 
@@ -157,6 +157,25 @@ def tri_out_dist(p, a, b, c):
 def is_degenerate(p, b1, b2, b3):
     """新退化判据: GDOP > GDOP_MAX 或 外扩距离 > D_OUT_MAX"""
     return gdop2d(p, b1, b2, b3) > GDOP_MAX or tri_out_dist(p, b1, b2, b3) > D_OUT_MAX
+
+
+def pick_optimal_trio(target, candidates):
+    """在可见候选信标中选几何最优的 3 枚（用于覆盖评估与交互图三角形）。
+
+    以归一化最差指标 score = max(GDOP/GDOP_MAX, outDist/D_OUT_MAX) 最小为准；
+    并列时依次比较边外距离、GDOP、组内距离和、候选索引，保证结果确定。
+    candidates: [(x, y), ...]，至少 3 个；返回 (索引三元组, gdop, out_dist)。
+    """
+    best = None
+    for idx in itertools.combinations(range(len(candidates)), 3):
+        trio = [candidates[i] for i in idx]
+        g = gdop2d(target, *trio)
+        d = tri_out_dist(target, *trio)
+        sd = sum(math.hypot(b[0] - target[0], b[1] - target[1]) for b in trio)
+        key = (max(g / GDOP_MAX, d / D_OUT_MAX), d, g, sd, idx)
+        if best is None or key < best[0]:
+            best = (key, idx, g, d)
+    return list(best[1]), best[2], best[3]
 
 
 def nearest_wall(model, pt, maxd=2.0):

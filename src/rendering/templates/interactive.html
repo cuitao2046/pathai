@@ -103,6 +103,8 @@ text { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; pointer-events
 .layer_beacon:hover circle { stroke: #FFC107; stroke-width: 1.4; }
 .layer_beacon.beacon-hit circle { stroke: #FFC107; stroke-width: 3; }
 .layer_beacon.beacon-hit text { fill: #E65100 !important; }
+/* 选中覆盖点的信标三角形：纯展示，不拦截点击（否则会挡住下层覆盖点） */
+.cov-triangle { pointer-events: none; }
 /* 补装信标（未安装·仅仿真）：默认隐藏，勾选「补装5枚信标」后叠加显示；
    仅影响显示，不改 data-info / 坐标 / 导出数据 */
 .layer_sim_beacon { display: none; }
@@ -629,6 +631,8 @@ function srLocate(el) {
     <div class="lg-item"><div class="lg-sw" style="background:#FBC02D;border-radius:50%;width:11px;height:11px"></div>2 信标</div>
     <div class="lg-item"><div class="lg-sw" style="background:#FB8C00;border-radius:50%;width:11px;height:11px"></div>1 信标</div>
     <div class="lg-item"><div class="lg-sw" style="background:#E53935;border-radius:50%;width:11px;height:11px"></div>0（无覆盖）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#E91E63;border-radius:50%;width:11px;height:11px"></div>边外点（≥3 信标但落三角形外 &gt;1.5m）</div>
+    <div class="lg-item"><div class="lg-sw" style="background:#7E57C2;border-radius:50%;width:11px;height:11px"></div>GDOP 偏大（&gt;3）</div>
   </div>
   <div class="lg-sec"><div class="lg-title">危险层（运营危险 / hazards_data）</div>
     <div class="lg-item"><div class="lg-sw" style="background:transparent;border:none;border-top:4px solid #dc2626;height:0;margin-top:7px"></div>block 禁行（实线）</div>
