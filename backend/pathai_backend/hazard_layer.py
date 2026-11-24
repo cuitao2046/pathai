@@ -264,3 +264,23 @@ class HazardRepository:
                 ),
             )
         return layer
+
+
+def log_version_mismatches(
+    repo: HazardRepository, latest_by_site: dict[str, str]
+) -> list[str]:
+    """启动审计：危险层版本落后于当前地图时打 ERROR，避免整层被静默忽略。"""
+    mismatched: list[str] = []
+    for site_id, layer in repo.layers.items():
+        latest = latest_by_site.get(site_id)
+        if latest is None or not layer.map_version or layer.map_version == latest:
+            continue
+        logger.error(
+            "危险层版本与当前地图不一致：%s 危险层=%s 地图=%s"
+            "（将被版本校验忽略，请复核 edgeIds 后重新导出）",
+            site_id,
+            layer.map_version,
+            latest,
+        )
+        mismatched.append(site_id)
+    return mismatched

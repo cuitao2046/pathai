@@ -390,6 +390,9 @@ def publish_draft(request: Request, site_id: str) -> dict:
     except Exception:  # noqa: BLE001 - 草稿清理失败不影响已完成的发布结果
         pass
     publish.sync_hazard_editor_data(site_id, settings.map_data_dir)
+    hazard_sync = publish.sync_hazard_layer_version(
+        site_id, settings.map_data_dir, settings.hazard_data_dir, result.map_version
+    )
     service.record_audit(
         "publish",
         True,
@@ -405,6 +408,7 @@ def publish_draft(request: Request, site_id: str) -> dict:
         "baseVersion": base_version,
         "mapVersion": result.map_version,
         "publishedAt": result.published_at,
+        "hazardSync": hazard_sync,
     }
 
 
@@ -443,6 +447,9 @@ def rollback_version(request: Request, site_id: str, version: str) -> dict:
             "版本文件已写入但服务刷新失败，请重新读取版本状态确认结果",
         )
     publish.sync_hazard_editor_data(site_id, settings.map_data_dir)
+    hazard_sync = publish.sync_hazard_layer_version(
+        site_id, settings.map_data_dir, settings.hazard_data_dir, result.map_version
+    )
     service.record_audit(
         "rollback",
         True,
@@ -458,4 +465,5 @@ def rollback_version(request: Request, site_id: str, version: str) -> dict:
         "rolledBackFrom": version,
         "mapVersion": result.map_version,
         "publishedAt": result.published_at,
+        "hazardSync": hazard_sync,
     }
