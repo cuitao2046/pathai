@@ -3,6 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{Binding AppTitle}" Height="760" Width="1180" Icon="Assets/app.ico"
         FontFamily="Microsoft YaHei UI" FontSize="13">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </Window.Resources>
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -53,7 +56,13 @@
                     </DockPanel>
                     <Border Grid.Column="1" Margin="10,0,0,0" Padding="12" Background="#FAFAFA" CornerRadius="4">
                         <DockPanel>
-                            <TextBlock DockPanel.Dock="Top" Text="台账详情（只读）" Foreground="#555" Margin="0,0,0,6" />
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,6">
+                                <TextBlock Text="台账详情（只读）" Foreground="#555" VerticalAlignment="Center" />
+                                <Button Content="解绑该 ID" Command="{Binding UnbindLedgerCommand}"
+                                        HorizontalAlignment="Right" Padding="12,4"
+                                        Visibility="{Binding IsLedgerBeaconBound,
+                                            Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <TextBlock Text="{Binding LedgerDetails}" TextWrapping="Wrap" LineHeight="22" />
                             </ScrollViewer>
@@ -134,9 +143,9 @@
 
                                 <StackPanel Grid.Row="1" Margin="0,0,0,8">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <TextBlock Text="未写入 beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                        <ComboBox Width="180" ItemsSource="{Binding UnboundIds}"
-                                                  SelectedItem="{Binding SelectedUnboundId}" />
+                                        <TextBlock Text="beaconId" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox Width="220" ItemsSource="{Binding BeaconIdOptions}"
+                                                  SelectedItem="{Binding SelectedBeaconId}" />
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal">
                                         <Button Content="1 写入（含保存）" Command="{Binding WriteCommand}" Padding="12,4" />

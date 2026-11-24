@@ -50,7 +50,9 @@ public sealed class MainViewModel : ObservableObject
     private double? _activeTxPower;
     private int? _activeInterval;
     private string _activeSource = "intake";
-    private string? _selectedUnboundId;
+    private string? _selectedBeaconId;
+    // 服务端部署台账里的有效记录：这些 beaconId 已绑定设备，需先解绑才能再次写入。
+    private readonly HashSet<string> _boundBeaconIds = new(StringComparer.OrdinalIgnoreCase);
     private BleDeviceInfo? _selectedDevice;
     private IBleSession? _session;
     private bool _verified;
@@ -72,7 +74,9 @@ public sealed class MainViewModel : ObservableObject
         ConnectCommand = new RelayCommand(ConnectAsync, () => !IsBusy && !IsConnected && SelectedDevice is not null);
         DisconnectCommand = new RelayCommand(DisconnectAsync, () => !IsBusy && IsConnected);
         WriteCommand = new RelayCommand(WriteAsync,
-            () => !IsBusy && IsConnected && SelectedBeacon is not null && SelectedUnboundId is not null);
+            () => !IsBusy && IsConnected && SelectedBeacon is not null && SelectedBeaconId is not null
+                  && !IsSelectedBeaconBound);
+        UnbindLedgerCommand = new RelayCommand(UnbindLedgerAsync, () => IsLoggedIn && !IsBusy && IsLedgerBeaconBound);
         WriteEditCommand = new RelayCommand(WriteEditAsync,
             () => !IsBusy && IsConnected && CanWriteEdit());
         VerifyCommand = new RelayCommand(VerifyAsync,
@@ -83,7 +87,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public ObservableCollection<BeaconConfigItem> Beacons { get; } = new();
-    public ObservableCollection<string> UnboundIds { get; } = new();
+    public ObservableCollection<string> BeaconIdOptions { get; } = new();
     public ObservableCollection<DeploymentRecord> Records { get; } = new();
     public ObservableCollection<BleDeviceInfo> VisibleDevices { get; } = new();
     public ObservableCollection<PendingUpload> PendingUploads { get; } = new();
@@ -96,6 +100,7 @@ public sealed class MainViewModel : ObservableObject
     public RelayCommand ConnectCommand { get; }
     public RelayCommand DisconnectCommand { get; }
     public RelayCommand WriteCommand { get; }
+    public RelayCommand UnbindLedgerCommand { get; }
     public RelayCommand WriteEditCommand { get; }
     public RelayCommand VerifyCommand { get; }
     public RelayCommand UploadCommand { get; }
@@ -354,13 +359,24 @@ public sealed class MainViewModel : ObservableObject
             if (Set(ref _selectedLedgerBeacon, value))
             {
                 Raise(nameof(LedgerDetails));
+                Raise(nameof(IsLedgerBeaconBound));
+                RefreshCommands();
             }
         }
     }
 
     public string LedgerDetails => SelectedLedgerBeacon is null
         ? "请在左侧选择一条信标记录"
-        : BeaconDetailFormatter.Format(SelectedLedgerBeacon);
+        : BeaconDetailFormatter.Format(SelectedLedgerBeacon, FindActiveRecord(SelectedLedgerBeacon.BeaconId));
+
+    /// <summary>台账页当前选中的 beaconId 是否已绑定设备（有有效部署记录），决定解绑按钮可用性。</summary>
+    public bool IsLedgerBeaconBound =>
+        SelectedLedgerBeacon is not null && _boundBeaconIds.Contains(SelectedLedgerBeacon.BeaconId);
+
+    /// <summary>该 beaconId 当前的有效部署记录（即绑定的设备）；未绑定返回 null。</summary>
+    private DeploymentRecord? FindActiveRecord(string beaconId) =>
+        Records.FirstOrDefault(r =>
+            r.Active && string.Equals(r.BeaconId, beaconId, StringComparison.OrdinalIgnoreCase));
 
     public PendingUpload? SelectedPendingUpload
     {
@@ -472,15 +488,71 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public string? SelectedUnboundId
+    public string? SelectedBeaconId
     {
-        get => _selectedUnboundId;
+        get => _selectedBeaconId;
         set
         {
-            if (Set(ref _selectedUnboundId, value))
+            if (Set(ref _selectedBeaconId, value))
             {
                 SelectedBeacon = Beacons.FirstOrDefault(b => b.BeaconId == value);
+                Raise(nameof(IsSelectedBeaconBound));
+                RefreshCommands();
             }
+        }
+    }
+
+    /// <summary>选中的 beaconId 是否已有有效部署记录（服务端台账）；有则只能先解绑。</summary>
+    public bool IsSelectedBeaconBound =>
+        _selectedBeaconId is not null && _boundBeaconIds.Contains(_selectedBeaconId);
+
+    private async Task UnbindLedgerAsync()
+    {
+        var beaconId = SelectedLedgerBeacon?.BeaconId;
+        if (string.IsNullOrEmpty(beaconId))
+        {
+            return;
+        }
+
+        var mac = FindActiveRecord(beaconId)?.DeviceMac;
+        var deviceText = string.IsNullOrWhiteSpace(mac) ? "" : $"（绑定设备 {mac}）";
+        var confirm = System.Windows.MessageBox.Show(
+            $"确定解绑 {beaconId}{deviceText}？\n\n将从服务端删除该 beaconId 的部署记录，解绑后此 ID 可重新绑定其他设备。",
+            "确认解绑",
+            System.Windows.MessageBoxButton.OKCancel,
+            System.Windows.MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.Cancel);
+        if (confirm != System.Windows.MessageBoxResult.OK)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            await _api.DeleteDeploymentRecordAsync(beaconId);
+            StatusText = $"{beaconId} 已解绑，可重新绑定其他设备";
+            try
+            {
+                await LoadRecordsAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusText += $"（刷新台账失败：{ex.Message}）";
+            }
+        }
+        catch (LedgerApiException ex)
+        {
+            StatusText = $"解绑失败：{ex.Message}（{ex.Code}）";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"解绑失败：{ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            RefreshCommands();
         }
     }
 
@@ -514,6 +586,7 @@ public sealed class MainViewModel : ObservableObject
         ConnectCommand.RaiseCanExecuteChanged();
         DisconnectCommand.RaiseCanExecuteChanged();
         WriteCommand.RaiseCanExecuteChanged();
+        UnbindLedgerCommand.RaiseCanExecuteChanged();
         WriteEditCommand.RaiseCanExecuteChanged();
         VerifyCommand.RaiseCanExecuteChanged();
         UploadCommand.RaiseCanExecuteChanged();
@@ -655,40 +728,44 @@ public sealed class MainViewModel : ObservableObject
         var response = await _api.GetRecordsAsync();
         var summary = response.Summary;
         Records.Clear();
-        UnboundIds.Clear();
+        _boundBeaconIds.Clear();
         foreach (var record in response.Items)
         {
             Records.Add(record);
+            if (record.Active)
+            {
+                _boundBeaconIds.Add(record.BeaconId);
+            }
         }
 
-        // 可写 id 池改为按本机写入记录计算（台账全集 − 当前被占用的 id），
-        // 不再直接用后端的 Missing：后端记录不随本机「改绑」释放，会把旧 id 永久占住。
-        RefreshWrittenIdPool();
+        // 部署记录决定台账是否已绑定设备：记录刷新后同步刷新当前选中项的台账详情与解绑入口。
+        Raise(nameof(LedgerDetails));
+        Raise(nameof(IsLedgerBeaconBound));
+
+        // 下拉展示全部台账 beaconId；是否已绑定由服务端有效部署记录决定。
+        RefreshBeaconIdOptions();
+        Raise(nameof(IsSelectedBeaconBound));
+        RefreshCommands();
 
         RecordSummary =
             $"计划 {summary.Total} · 已入库 {summary.Recorded} · 已校验 {summary.Verified} · 未入库 {summary.Missing.Count} · {PendingText}";
         Raise(nameof(PendingText));
     }
 
-    /// <summary>
-    /// 可写 beaconId 池 = 台账全集 − 当前仍被占用的 id。
-    /// 占用关系取「每台设备（MAC）最近一次写入的 beaconId」：同一 MAC 改写成新 id 后，
-    /// 旧 id 不再被任何 MAC 指向，自动回到池子里；写入历史（时间/参数/上传标记）不删除。
-    /// </summary>
-    private void RefreshWrittenIdPool()
+    /// <summary>可写 beaconId 池 = 台账全集（含已绑定项，选中后可按需解绑）。</summary>
+    private void RefreshBeaconIdOptions()
     {
-        var occupied = new HashSet<string>(_writeHistory.GetBoundBeaconIds(), StringComparer.OrdinalIgnoreCase);
-        var keep = SelectedUnboundId;
-        UnboundIds.Clear();
+        var keep = SelectedBeaconId;
+        BeaconIdOptions.Clear();
         foreach (var beacon in Beacons)
         {
-            if (beacon.BeaconId.Length > 0 && !occupied.Contains(beacon.BeaconId))
+            if (beacon.BeaconId.Length > 0)
             {
-                UnboundIds.Add(beacon.BeaconId);
+                BeaconIdOptions.Add(beacon.BeaconId);
             }
         }
 
-        SelectedUnboundId = keep is not null && UnboundIds.Contains(keep) ? keep : null;
+        SelectedBeaconId = keep is not null && BeaconIdOptions.Contains(keep) ? keep : null;
     }
 
     private Task LocateAsync()
@@ -710,14 +787,11 @@ public sealed class MainViewModel : ObservableObject
         }
 
         SelectedBeacon = match;
-        if (UnboundIds.Contains(match.BeaconId))
-        {
-            SelectedUnboundId = match.BeaconId;
-        }
+        SelectedBeaconId = match.BeaconId;
 
-        StatusText = UnboundIds.Contains(match.BeaconId)
-            ? $"{match.BeaconId} 未写入，已选中"
-            : $"{match.BeaconId} 已被某台设备写入占用，可写列表里不可选";
+        StatusText = IsSelectedBeaconBound
+            ? $"{match.BeaconId} 已绑定设备，如需重新绑定请到「台账」页选中该 ID 后解绑"
+            : $"{match.BeaconId} 未绑定，可写入";
         return Task.CompletedTask;
     }
 
@@ -992,10 +1066,11 @@ public sealed class MainViewModel : ObservableObject
         _activeTxPower = record.TxPowerDbm ?? target.TxPower;
         _activeInterval = record.IntervalMs ?? target.BroadcastInterval;
         _activeSource = record.Source;
-        if (UnboundIds.Contains(target.BeaconId))
+        if (BeaconIdOptions.Contains(target.BeaconId))
         {
-            _selectedUnboundId = target.BeaconId;
-            Raise(nameof(SelectedUnboundId));
+            _selectedBeaconId = target.BeaconId;
+            Raise(nameof(SelectedBeaconId));
+            Raise(nameof(IsSelectedBeaconBound));
         }
 
         SelectedBeacon = target;
@@ -1084,7 +1159,7 @@ public sealed class MainViewModel : ObservableObject
         if (_session is null || target is null || target.Uuid is null || target.Major is null ||
             target.Minor is null || target.TxPower is null || target.BroadcastInterval is null)
         {
-            StatusText = "请先连接设备并选择未写入 beaconId";
+            StatusText = "请先连接设备并选择未绑定的 beaconId";
             return;
         }
 
@@ -1230,8 +1305,6 @@ public sealed class MainViewModel : ObservableObject
             }
 
             _writeHistory.MarkWritten(deviceMac, DateTime.Now, target.BeaconId, source, txPowerDbm, intervalMs);
-            // 改绑后旧 id 立即回到可写池；历史记录保留（本次写入已覆盖为该 MAC 的当前绑定）。
-            RefreshWrittenIdPool();
             // 列表名称来自广播帧，写入后广播可能还停留在旧名字；先用写入值就地刷新。
             RememberWrittenDeviceName(deviceMac, target.DeviceName);
 
@@ -1425,7 +1498,7 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             SyncPendingUploads();
-            SelectedUnboundId = null;
+            SelectedBeaconId = null;
             ResetProgress();
             await LoadRecordsAsync();
             IsBusy = false;

@@ -44,6 +44,9 @@ public sealed class DeploymentRecord
     public string? Operator { get; init; }
     public string? ConfiguredAt { get; init; }
     public string UpdatedAt { get; init; } = "";
+
+    /// <summary>是否为有效记录；同一 MAC 改绑后旧记录会置为失效（active=false）。</summary>
+    public bool Active { get; init; } = true;
 }
 
 public sealed class ProvisioningSummary
