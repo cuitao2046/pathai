@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -169,3 +170,123 @@ def sync_hazard_editor_data(site_id: str, map_data_dir: Path) -> None:
             logger.info("危险区编辑器数据已同步：%s", site_id)
     except Exception:  # noqa: BLE001 - 派生数据失败不得回滚已完成的发布
         logger.warning("危险区编辑器数据重建失败：%s", site_id, exc_info=True)
+
+
+def _geometry_fingerprint(package: dict) -> str:
+    """楼层拓扑/几何 + 跨层边的稳定指纹，用于判断危险层 edgeIds 是否仍有效。"""
+    floors = package.get("floors") or {}
+    signature = {
+        "floors": {
+            floor_id: {
+                "topology": floor.get("topology"),
+                "geometry": floor.get("geometry"),
+            }
+            for floor_id, floor in floors.items()
+        },
+        "crossFloorEdges": package.get("crossFloorEdges") or [],
+    }
+    encoded = json.dumps(signature, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def sync_hazard_layer_version(
+    site_id: str,
+    map_data_dir: Path,
+    hazard_data_dir: Path,
+    map_version: str,
+) -> dict:
+    """发布/回滚后把危险层 mapVersion 同步到新地图版本。
+
+    危险层带 mapVersion，导航服务遇到不一致会整层忽略。仅当能证明新旧地图包
+    楼层拓扑/几何完全一致时自动改写元数据；否则保持原样并以 ERROR 告警，提示
+    复核 edgeIds 后重新导出，避免危险层被版本校验静默丢弃。
+    """
+    hazard_file = Path(hazard_data_dir) / f"{site_id}.json"
+    if not hazard_file.is_file():
+        return {"status": "missing", "mapVersion": map_version}
+    try:
+        payload = json.loads(hazard_file.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.error("危险层文件无法解析，未能同步版本：%s", hazard_file, exc_info=True)
+        return {"status": "invalid", "mapVersion": map_version}
+
+    previous_version = payload.get("mapVersion")
+    if previous_version == map_version:
+        return {"status": "up_to_date", "mapVersion": map_version}
+
+    site_dir = Path(map_data_dir) / site_id
+    new_package_path = site_dir / f"{map_version}.json"
+    old_package_path = (
+        site_dir / f"{previous_version}.json" if isinstance(previous_version, str) else None
+    )
+    if not new_package_path.is_file() or old_package_path is None or not old_package_path.is_file():
+        logger.error(
+            "危险层版本未同步：%s 标记 %s，新地图 %s；缺少可比对的地图包，请人工复核后重新导出",
+            site_id,
+            previous_version,
+            map_version,
+        )
+        return {
+            "status": "skipped_unknown_base",
+            "fromVersion": previous_version,
+            "mapVersion": map_version,
+        }
+
+    try:
+        new_fingerprint = _geometry_fingerprint(
+            json.loads(new_package_path.read_text(encoding="utf-8"))
+        )
+        old_fingerprint = _geometry_fingerprint(
+            json.loads(old_package_path.read_text(encoding="utf-8"))
+        )
+    except Exception:  # noqa: BLE001
+        logger.error("危险层版本同步失败：地图包无法解析 %s", site_id, exc_info=True)
+        return {"status": "failed", "mapVersion": map_version}
+
+    if new_fingerprint != old_fingerprint:
+        logger.error(
+            "危险层未随地图升级：%s %s → %s 楼层拓扑/几何有变化，"
+            "请复核 edgeIds 后重新导出危险层（当前危险层将被版本校验忽略）",
+            site_id,
+            previous_version,
+            map_version,
+        )
+        return {
+            "status": "topology_changed",
+            "fromVersion": previous_version,
+            "mapVersion": map_version,
+        }
+
+    payload["mapVersion"] = map_version
+    notes = payload.get("notes")
+    if isinstance(notes, str) and previous_version:
+        payload["notes"] = notes.replace(previous_version, map_version)
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".hazard-", suffix=".part", dir=hazard_file.parent
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, hazard_file)
+        except OSError:
+            tmp_path.unlink(missing_ok=True)
+            raise
+    except Exception:  # noqa: BLE001 - 同步失败不得回滚已完成的发布
+        logger.error("危险层版本同步写入失败：%s", site_id, exc_info=True)
+        return {"status": "failed", "mapVersion": map_version}
+
+    logger.info(
+        "危险层版本已同步：%s %s → %s（楼层拓扑一致）",
+        site_id,
+        previous_version,
+        map_version,
+    )
+    return {
+        "status": "updated",
+        "fromVersion": previous_version,
+        "mapVersion": map_version,
+    }
