@@ -1,4 +1,4 @@
-const fs=require('node:fs'), floor=require('../../backend/maps_data/school-building-01/2026-11-19.2.json').floors['1'];
+const fs=require('node:fs'), floor=require('../../backend/maps_data/school-building-01/2026-11-22.1.json').floors['1'];
 const nodes=new Map(floor.topology.nodes.map(n=>[n.id,n.coordinates]));
 const walls=floor.geometry.walls.flatMap(w=>w.geometry.coordinates.slice(1).map(([bx,by],i)=>{
  const [ax,ay]=w.geometry.coordinates[i],dx=bx-ax,dy=by-ay,l=Math.hypot(dx,dy);

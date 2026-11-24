@@ -40,6 +40,9 @@ except ImportError:
 # 正式运行方式：`pathai-render`（pip install -e . 后）或 `python -m src.rendering.render_interactive`。
 # 不再在模块导入时修改 sys.path（审查 B3：移除包内导入副作用）。
 from src.geometry.contour import _area, building_outline
+
+# 覆盖点几何质量口径与放置评估同源（GDOP/边外阈值 + 几何最优三角形选取）
+from src.tools.refine_beacon_placement import D_OUT_MAX, GDOP_MAX, pick_optimal_trio
 # C4：路由规则辅助量由 build_geojson 一次性写入顶层 routeExtras，渲染端直接读取；
 # 旧 GeoJSON 缺少该字段时回退到共享计算（需 shapely，独立运行环境同样具备）。
 try:
@@ -1039,6 +1042,8 @@ COV_OFFSET = 0.25         # m，信标向采样点偏移(天线在墙内侧)
 COV_D_MAX = 11.0          # m，超出即使 0 墙也不可见
 # 可见信标数 -> 颜色（>=3 绿可定位；越少越红）
 COV_COLORS = {0: "#E53935", 1: "#FB8C00", 2: "#FBC02D", 3: "#43A047"}
+# 三点覆盖几何退化专用色（优先于按可见数着色）：边外点粉色、GDOP 差紫色、两者兼有深玫红
+COV_DEGEN_COLORS = {"outdist": "#E91E63", "gdop": "#7E57C2", "both": "#C2185B"}
 
 
 def build_coverage_index(geo_json):
@@ -2197,6 +2202,7 @@ def main():
             if fp_fd and cov_fk is not None:
                 n_cov = 0
                 bc_id = [(b.get("beaconId", ""), (b["coordinates"][0], b["coordinates"][1])) for b in bc_fk]
+                bc_pos = {bid: xy for bid, xy in bc_id if bid}
                 for p in fp_fd.get("points", []):
                     cx, cy = p["coordinates"][0], p["coordinates"][1]
                     sx, sy = tosvg(cx, cy)
@@ -2206,11 +2212,34 @@ def main():
                         for bid in vis_ids:
                             if bid:
                                 beacon_contrib[f"{mode}:{bid}"].append([round(cx, 2), round(cy, 2)])
-                    col = COV_COLORS.get(min(vis, 3), "#43A047")
+                    # 几何最优 3 枚（与覆盖评估同口径）：在全部可见信标中择优
+                    vis_pts = [(bid, bc_pos[bid][0], bc_pos[bid][1]) for bid in vis_ids if bid in bc_pos]
+                    near3 = vis_pts
+                    gdop = out_m = None
+                    status = "insufficient"
+                    if len(vis_pts) >= 3:
+                        idx, gdop, out_m = pick_optimal_trio(
+                            (cx, cy), [(b[1], b[2]) for b in vis_pts])
+                        near3 = [vis_pts[i] for i in idx]
+                        if gdop > GDOP_MAX and out_m > D_OUT_MAX:
+                            status = "both"
+                        elif gdop > GDOP_MAX:
+                            status = "gdop"
+                        elif out_m > D_OUT_MAX:
+                            status = "outdist"
+                        else:
+                            status = "ok"
+                    col = COV_DEGEN_COLORS.get(status) or COV_COLORS.get(min(vis, 3), "#43A047")
                     ok = vis >= 3
                     fp_id = p.get("id", "")
                     cov_id = _cov_id(fp_id)
                     tip = f"三点定位覆盖\\n可见信标 {vis} 个 · {'可定位' if ok else '覆盖不足'}"
+                    if status in ("gdop", "outdist", "both"):
+                        tip += "\\n几何退化：" + {
+                            "gdop": f"GDOP {gdop:.2f} > {GDOP_MAX:g}",
+                            "outdist": f"边外 {out_m:.2f} m > {D_OUT_MAX:g} m",
+                            "both": f"GDOP {gdop:.2f} 且边外 {out_m:.2f} m",
+                        }[status]
                     det = {"title": f"覆盖点 {cov_id}", "rows": [
                         ("覆盖点 ID", cov_id),
                         ("源指纹点", fp_id or "—"),
@@ -2219,9 +2248,25 @@ def main():
                         ("三点定位", "可" if ok else "不足（需≥3）"),
                         ("覆盖信标", "、".join(vis_ids) if vis_ids else "—"),
                     ]}
+                    if status in ("gdop", "outdist", "both"):
+                        det["rows"] += [
+                            ("GDOP", f"{gdop:.2f}（阈值 {GDOP_MAX:g}）"),
+                            ("边外距离", f"{out_m:.2f} m（阈值 {D_OUT_MAX:g} m）"),
+                            ("几何状态", {"gdop": "退化：GDOP 偏大",
+                                          "outdist": "退化：落三角形外",
+                                          "both": "退化：GDOP 且边外"}[status]),
+                        ]
                     attr = info_attr({"tip": tip, "detail": det, "kind": "coverage",
                                       "id": cov_id, "sourceFingerprintId": fp_id,
-                                      "covBeacons": vis_ids})
+                                      "covBeacons": vis_ids,
+                                      "covGeom": {
+                                          "floor": fk,
+                                          "p": [round(cx, 2), round(cy, 2)],
+                                          "tri": [[b[0], round(b[1], 2), round(b[2], 2)] for b in near3],
+                                          "gdop": round(gdop, 2) if gdop is not None else None,
+                                          "outDist": round(out_m, 2) if out_m is not None else None,
+                                          "status": status,
+                                      }})
                     parts.append(
                         f'<g class="layer_coverage" style="display:none" data-mode="{mode}" {attr}>'
                         f'<circle cx="{sx}" cy="{sy}" r="3.2" fill="{col}" '

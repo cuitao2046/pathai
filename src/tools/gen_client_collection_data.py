@@ -28,7 +28,7 @@ from collections import defaultdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-03.1.json"
+MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-22.1.json"
 ROUTES_GRID = PROJECT_ROOT / "result" / "fingerprint_grid_routes.json"
 FULL_GRID = PROJECT_ROOT / "result" / "fingerprint_grid.json"
 SIM_BEACONS = PROJECT_ROOT / "result" / "simulated_beacons.json"
@@ -314,25 +314,26 @@ def select_points(pkg: dict) -> list[dict]:
                 "nearId": p["id"],
             })
 
-    # F2 4 点：交叉口2 / 门洞1 / 电梯前室1
+    # F2 4 点：交叉口2 / 门洞1 / 电梯前室1（测试路线取消 2F 时跳过）
     fl = "2"
-    pts2 = route[fl]
-    deg2 = walk_degree(pkg, fl)
-    nodes2 = nodes_by_floor(pkg)[fl]
-    inter2 = sorted(
-        [{"x": float(n["coordinates"][0]), "y": float(n["coordinates"][1]), "id": n["id"]}
-         for n in nodes2 if n["type"] == "intersection"],
-        key=lambda a: -deg2.get(a["id"], 0),
-    )
-    doors2 = [{"x": float(n["coordinates"][0]), "y": float(n["coordinates"][1]), "id": n["id"]}
-              for n in nodes2 if n["type"] == "doorway"]
-    quota2 = [("intersection", 1, 2), ("doorway", 1, 1), ("intersection", 2, 1)]
-    for scene, batch, count in quota2:
-        anchors = inter2 if scene == "intersection" else doors2
-        picked = pick_spread(pts2, anchors, used, count, min_sep_m=8.0)
-        for p in picked:
-            used.add(p["id"])
-            selected.append({"floorId": fl, "truth": p["xy"], "scene": scene, "batch": batch, "nearId": p["id"]})
+    pts2 = route.get(fl, [])
+    if pts2:
+        deg2 = walk_degree(pkg, fl)
+        nodes2 = nodes_by_floor(pkg)[fl]
+        inter2 = sorted(
+            [{"x": float(n["coordinates"][0]), "y": float(n["coordinates"][1]), "id": n["id"]}
+             for n in nodes2 if n["type"] == "intersection"],
+            key=lambda a: -deg2.get(a["id"], 0),
+        )
+        doors2 = [{"x": float(n["coordinates"][0]), "y": float(n["coordinates"][1]), "id": n["id"]}
+                  for n in nodes2 if n["type"] == "doorway"]
+        quota2 = [("intersection", 1, 2), ("doorway", 1, 1), ("intersection", 2, 1)]
+        for scene, batch, count in quota2:
+            anchors = inter2 if scene == "intersection" else doors2
+            picked = pick_spread(pts2, anchors, used, count, min_sep_m=8.0)
+            for p in picked:
+                used.add(p["id"])
+                selected.append({"floorId": fl, "truth": p["xy"], "scene": scene, "batch": batch, "nearId": p["id"]})
 
     # 编号：楼层内连续编号（与批次无关，保证 pointId 唯一）
     counters: dict[str, int] = defaultdict(int)
@@ -533,7 +534,8 @@ def write_collector_js(version: str) -> int:
 def main() -> int:
     pkg = load_json(MAP_PACKAGE)
     points = select_points(pkg)
-    assert len(points) == 20, f"预置标定点应为 20，实际 {len(points)}"
+    # 路线含 2F 时 20 点（F1 16 + F2 4）；仅 1F 路线时 16 点
+    assert len(points) in (16, 20), f"预置标定点应为 16/20，实际 {len(points)}"
     scenes = defaultdict(int)
     for p in points:
         scenes[(p["floorId"], p["scene"])] += 1
@@ -553,7 +555,7 @@ def main() -> int:
     js_count = write_collector_js(grid_version)
 
     b1 = sum(1 for p in points if p["batch"] == 1)
-    print(f"已生成 client/data/calibration_points.ts：20 点（批次1={b1} 批次2={20 - b1}）")
+    print(f"已生成 client/data/calibration_points.ts：{len(points)} 点（批次1={b1} 批次2={len(points) - b1}）")
     for (fl, scene), n in sorted(scenes.items()):
         print(f"  F{fl} {scene}: {n}")
     print(f"已生成 client/data/fingerprint_grid.ts：{len(grid)} 点（v{grid_version}）")

@@ -102,6 +102,7 @@ function clearHighlight() {
   if (ring) ring.innerHTML = '';
   clearBeaconContrib();
   clearCoverageBeacons();
+  clearCoverageTriangle();
 }
 function resetDetail() { currentDetail = null; document.getElementById('detail').innerHTML = DETAIL_PLACEHOLDER; }
 // 按节点 id 找到对应的拓扑节点组并加高亮 class
@@ -349,6 +350,55 @@ function showCoverageBeacons(t, d){
     });
   });
 }
+// ---- 选中覆盖点：绘制「可见最近 3 枚信标」三角形（几何退化用警示色）----
+function clearCoverageTriangle(){
+  document.querySelectorAll('.cov-triangle').forEach(function(el){
+    if (el.parentNode) el.parentNode.removeChild(el);
+  });
+}
+function showCoverageTriangle(t, d){
+  clearCoverageTriangle();
+  var cg = d.covGeom;
+  if (!cg || !cg.tri || cg.tri.length < 3) return;
+  var fi = GEOX.floorKeys.indexOf(String(cg.floor != null ? cg.floor : t.getAttribute('data-floor')));
+  if (fi < 0) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var degenerate = cg.status && cg.status !== 'ok';
+  var color = cg.status === 'gdop' ? '#7E57C2'
+            : cg.status === 'both' ? '#C2185B'
+            : degenerate ? '#E91E63' : '#2E7D32';
+  var pts = cg.tri.map(function(b){
+    return {
+      id: b[0],
+      x: GEOX.marginX + (b[1] - GEOX.ox) * GEOX.scale,
+      y: fi * GEOX.perFloor + GEOX.titleH + GEOX.marginY + (GEOX.oy - b[2]) * GEOX.scale,
+    };
+  });
+  var g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'cov-triangle');
+  var poly = document.createElementNS(NS, 'polygon');
+  poly.setAttribute('points', pts.map(function(p){ return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' '));
+  poly.setAttribute('fill', degenerate ? 'rgba(233,30,99,0.10)' : 'rgba(46,125,50,0.10)');
+  poly.setAttribute('stroke', color);
+  poly.setAttribute('stroke-width', '1.4');
+  poly.setAttribute('stroke-dasharray', '6 4');
+  poly.setAttribute('vector-effect', 'non-scaling-stroke');
+  g.appendChild(poly);
+  pts.forEach(function(p){
+    var ring = document.createElementNS(NS, 'circle');
+    ring.setAttribute('cx', p.x); ring.setAttribute('cy', p.y); ring.setAttribute('r', 6.5);
+    ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', color);
+    ring.setAttribute('stroke-width', '2');
+    ring.setAttribute('vector-effect', 'non-scaling-stroke');
+    g.appendChild(ring);
+    var txt = document.createElementNS(NS, 'text');
+    txt.setAttribute('x', p.x + 8); txt.setAttribute('y', p.y - 7);
+    txt.setAttribute('font-size', '10'); txt.setAttribute('font-weight', '700');
+    txt.setAttribute('fill', color); txt.textContent = p.id;
+    g.appendChild(txt);
+  });
+  svg.appendChild(g);
+}
 wrapper.addEventListener('click', function(e) {
   if (window.annoMode) return;   // 标注模式下拖拽框选，不触发要素选中
   var t = e.target.closest('[data-info]');
@@ -389,7 +439,7 @@ wrapper.addEventListener('click', function(e) {
     // 信标 → 高亮其关键贡献点（绿色轮廓圈，见 showBeaconContrib）
     if (d.kind === 'beacon') showBeaconContrib(t);
     // 三点覆盖点 → 高亮覆盖它的信标（黄色描边，见 showCoverageBeacons）
-    if (d.kind === 'coverage') showCoverageBeacons(t, d);
+    if (d.kind === 'coverage') { showCoverageBeacons(t, d); showCoverageTriangle(t, d); }
     // 拓扑节点 → 联动拓扑图层展示，并高亮相连边 + 直接可达节点
     if (d.kind === 'node' && d.id) {
       ensureLayer('topo_node', true);
@@ -430,10 +480,12 @@ function setMode(m) {
   if (bg) bg.classList.toggle('active', m === 'global');
   if (br) br.classList.toggle('active', m === 'route');
   clearBeaconContrib();
+  clearCoverageTriangle();
 }
 // 显示状态严格跟随勾选框：勾选=显示，取消=隐藏（避免「勾选反而隐藏」的倒挂）
 function toggleLayer(name, checked) {
   document.querySelectorAll('.layer_' + name).forEach(function(el){ el.style.display = checked ? '' : 'none'; });
+  if (name === 'coverage' && !checked) clearCoverageTriangle();
 }
 function setAll(v) {
   allLayers.forEach(function(n){
@@ -521,6 +573,7 @@ function buildFloorJump(total, perFloor) {
   }
 }
 function jumpFloor(idx, total, perFloor, btn) {
+  clearCoverageTriangle();
   document.querySelectorAll('.floor-btn').forEach(function(b){ b.classList.remove('active'); });
   if (btn) btn.classList.add('active');
   var targetY = -(idx * perFloor) + 8;

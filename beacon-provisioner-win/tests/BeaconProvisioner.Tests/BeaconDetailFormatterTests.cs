@@ -49,5 +49,44 @@ public class BeaconDetailFormatterTests
         Assert.Contains("语义标签：—", text);
         Assert.Contains("UUID：—", text);
         Assert.Contains("坐标：—", text);
+        Assert.Contains("未绑定", text);
+    }
+
+    [Fact]
+    public void Format_appends_bound_device_info()
+    {
+        var beacon = new BeaconConfigItem
+        {
+            BeaconId = "BK-01-001",
+            DeviceName = "F1-101",
+            FloorId = "1",
+        };
+        var record = new DeploymentRecord
+        {
+            BeaconId = "BK-01-001",
+            DeviceMac = "C0:FF:EE:00:00:01",
+            DeviceName = "F1-101",
+            Source = "intake",
+            Operator = "admin",
+            ConfiguredAt = "2026-11-20 10:00:00",
+            UpdatedAt = "2026-11-20 10:05:00",
+            Written = new WrittenValues
+            {
+                Uuid = "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
+                Major = 1,
+                Minor = 10101,
+                Name = "F1-101",
+                TxPower = -12,
+                Interval = 300,
+            },
+            Verify = new VerifyResult { Passed = true, Mode = "full-readback" },
+        };
+
+        var text = BeaconDetailFormatter.Format(beacon, record);
+
+        Assert.Contains("绑定设备：", text);
+        Assert.Contains("C0:FF:EE:00:00:01", text);
+        Assert.Contains("intake（入库）", text);
+        Assert.Contains("校验：通过", text);
     }
 }

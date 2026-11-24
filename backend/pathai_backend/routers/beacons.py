@@ -375,6 +375,45 @@ def put_deployment_record(
     return view
 
 
+@router.delete("/{site_id}/deployment-records/{beacon_id}", status_code=204)
+def delete_deployment_record(site_id: str, beacon_id: str, request: Request) -> Response:
+    """解绑：删除该 beaconId 的部署记录，释放 ID 供其他设备重新绑定。
+
+    只清理 `(siteId, beaconId)` 这一条记录（含已失效的历史行），
+    不影响其它信标记录与 provisioning round 汇总。
+    """
+    context = deps.require_admin_ready(request)
+    _resolve(_repo(request), site_id, "latest")
+    with session_scope() as session:
+        record = (
+            session.query(BeaconDeploymentRecord)
+            .filter(
+                BeaconDeploymentRecord.site_id == site_id,
+                BeaconDeploymentRecord.beacon_id == beacon_id,
+            )
+            .one_or_none()
+        )
+        if record is None:
+            raise ApiError(404, "BEACON_RECORD_NOT_FOUND", f"没有部署记录：{beacon_id}")
+        device_mac = record.device_mac
+        was_active = record.superseded_at_epoch is None
+        session.delete(record)
+        session.commit()
+
+    service.record_audit(
+        "beacon_record_unbind",
+        True,
+        {
+            "siteId": site_id,
+            "beaconId": beacon_id,
+            "deviceMac": device_mac,
+            "operator": context.account.username,
+            "wasActive": was_active,
+        },
+    )
+    return Response(status_code=204)
+
+
 @router.get("/{site_id}/deployment-records", response_model=DeploymentRecordsResponse)
 def list_deployment_records(
     site_id: str,

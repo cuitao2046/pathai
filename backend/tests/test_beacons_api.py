@@ -357,6 +357,47 @@ class TestDeploymentRecords:
         assert listing["summary"]["duplicates"] == []
         assert len(listing["items"]) == 1
 
+    def test_delete_record_unbinds_beacon_id(self, client, admin):
+        item = next(i for i in _beacons(client) if i["beaconId"] == BEACON_ID)
+        assert _put(client, admin, BEACON_ID, _body(item)).status_code == 200
+
+        # 解绑需要 CSRF
+        url = f"/api/v1/sites/{SITE}/deployment-records/{BEACON_ID}"
+        assert client.delete(url).status_code == 403
+
+        resp = client.delete(url, headers={CSRF_HEADER: admin})
+        assert resp.status_code == 204, resp.text
+
+        listing = client.get(f"/api/v1/sites/{SITE}/deployment-records?version={VERSION}").json()
+        assert all(entry["beaconId"] != BEACON_ID for entry in listing["items"])
+        assert listing["summary"]["recorded"] == 0
+        assert BEACON_ID in listing["summary"]["missing"]
+
+        # 释放后可由另一台设备重新绑定
+        rebound = _put(client, admin, BEACON_ID, _body(item, deviceMac="AA:BB:CC:00:00:09"))
+        assert rebound.status_code == 200, rebound.text
+        assert rebound.json()["active"] is True
+
+        # 解绑可审计
+        with session_scope() as session:
+            events = [
+                e
+                for e in session.query(AdminAuditEvent).all()
+                if e.event_type == "beacon_record_unbind"
+            ]
+        assert len(events) == 1
+        details = json.loads(events[0].details_json)
+        assert details["beaconId"] == BEACON_ID
+        assert details["wasActive"] is True
+
+    def test_delete_missing_record_returns_404(self, client, admin):
+        resp = client.delete(
+            f"/api/v1/sites/{SITE}/deployment-records/{BEACON_ID}",
+            headers={CSRF_HEADER: admin},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["error"]["code"] == "BEACON_RECORD_NOT_FOUND"
+
     def test_commit_incomplete_then_complete(self, client, admin):
         items = _beacons(client)
         resp = client.post(

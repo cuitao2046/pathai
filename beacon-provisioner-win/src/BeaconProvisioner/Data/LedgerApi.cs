@@ -128,6 +128,24 @@ public sealed class LedgerApi : IDisposable
         }
     }
 
+    /// <summary>解绑：删除服务端该 beaconId 的部署记录，使 ID 可被其他设备重新绑定。</summary>
+    public async Task DeleteDeploymentRecordAsync(string beaconId)
+    {
+        var url = $"{BaseUrl.TrimEnd('/')}/api/v1/sites/{SiteId}/deployment-records/{Uri.EscapeDataString(beaconId)}";
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        if (!string.IsNullOrEmpty(CsrfToken))
+        {
+            request.Headers.Add("X-Admin-CSRF", CsrfToken);
+        }
+
+        using var response = await _client.SendAsync(request).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            throw ParseError(response.StatusCode, body);
+        }
+    }
+
     public async Task<CommitResponse> CommitAsync(string? operatorName = null, string version = "latest")
     {
         var url = $"{BaseUrl.TrimEnd('/')}/api/v1/sites/{SiteId}/deployment-records/commit";

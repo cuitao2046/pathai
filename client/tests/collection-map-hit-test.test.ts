@@ -46,10 +46,12 @@ describe('pickPointOnScreen（真实标定点）', () => {
   test('放大后同一世界偏移超出屏幕命中半径 → 不再命中（选点范围按 scale 收窄）', () => {
     const vp = makeViewport();
     const target = CAL_F1.find((p) => p.pointId === 'CAL-F1-01')!;
+    // 只保留目标点：本用例验证命中半径随缩放收窄，避免邻近标定点（1m 间距）干扰
+    const only = [target];
     // 距目标 4 m（fit 视图约 14 px，落在 24 px 命中半径内）
     const tapWorld = { x: target.truth[0] + 4, y: target.truth[1] };
     const fitScreen = vp.toScreen(tapWorld.x, tapWorld.y);
-    const fitHit = pickPointOnScreen(CAL_F1, calXY, vp, tapAt(fitScreen), STATIC_HIT_RADIUS_PX);
+    const fitHit = pickPointOnScreen(only, calXY, vp, tapAt(fitScreen), STATIC_HIT_RADIUS_PX);
     expect(fitHit?.point.pointId).toBe('CAL-F1-01');
     expect(fitHit!.distPx).toBeCloseTo(4 * vp.fitScale, 6);
     expect(fitHit!.distPx).toBeLessThanOrEqual(STATIC_HIT_RADIUS_PX);
@@ -58,7 +60,7 @@ describe('pickPointOnScreen（真实标定点）', () => {
     const anchor = vp.toScreen(target.truth[0], target.truth[1]);
     vp.zoomAt(anchor.sx, anchor.sy, 8);
     const zoomScreen = vp.toScreen(tapWorld.x, tapWorld.y);
-    expect(pickPointOnScreen(CAL_F1, calXY, vp, tapAt(zoomScreen), STATIC_HIT_RADIUS_PX)).toBeNull();
+    expect(pickPointOnScreen(only, calXY, vp, tapAt(zoomScreen), STATIC_HIT_RADIUS_PX)).toBeNull();
 
     // 命中半径对应的世界范围按放大倍数收窄
     expect(STATIC_HIT_RADIUS_PX / vp.scale).toBeCloseTo(STATIC_HIT_RADIUS_PX / vp.fitScale / 8, 9);
@@ -83,11 +85,13 @@ describe('pickPointOnScreen（真实标定点）', () => {
   test('命中半径边界：半径内命中、半径外不命中', () => {
     const vp = makeViewport();
     const target = CAL_F1.find((p) => p.pointId === 'CAL-F1-15')!;
+    // 只保留目标点：避免邻近标定点（2m 内）抢占 -x 方向偏移点
+    const only = [target];
     const inside = (STATIC_HIT_RADIUS_PX - 0.1) / vp.scale;
     const outside = (STATIC_HIT_RADIUS_PX + 0.1) / vp.scale;
     // 向 -x 偏移，避开邻近点位
     const hit = pickPointOnScreen(
-      CAL_F1,
+      only,
       calXY,
       vp,
       tapAt(vp.toScreen(target.truth[0] - inside, target.truth[1])),
@@ -96,7 +100,7 @@ describe('pickPointOnScreen（真实标定点）', () => {
     expect(hit?.point.pointId).toBe('CAL-F1-15');
     expect(
       pickPointOnScreen(
-        CAL_F1,
+        only,
         calXY,
         vp,
         tapAt(vp.toScreen(target.truth[0] - outside, target.truth[1])),
