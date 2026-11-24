@@ -2,8 +2,8 @@
 // 数据来源：result/ble_deployment.json（坐标唯一来源）
 module.exports = {
   "VENUE_ID": "school-building-01",
-  "MAP_VERSION": "2026-11-22.1",
-  "LEDGER_SHA256": "f8ad30f23f7e401e2a99ff05d5973c093659257d369981a290c0fca97bc08321",
+  "MAP_VERSION": "2026-11-24.1",
+  "LEDGER_SHA256": "ad3eb9fbe5027ea18f531c4919d44eb15e97dd3c22fac515878c9397788e7b4e",
   "WINDOW_MS": 2000,
   "UUIDS": [
     "B9407F30-F5F8-466E-AFF9-25556B57FE6D"
@@ -12,24 +12,13 @@ module.exports = {
     {
       "beaconId": "BK-01-002",
       "floor": 1,
-      "x": -63.09,
-      "y": -14.53,
+      "x": -61.65,
+      "y": -14.83,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10102,
       "locationDesc": "1F 交叉口（F1-TI-0105） · 原规划: 1F 交叉口（F1-TI-0007）"
-    },
-    {
-      "beaconId": "BK-01-003",
-      "floor": 1,
-      "x": -72.89,
-      "y": -21.64,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10103,
-      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0009）"
     },
     {
       "beaconId": "BK-01-004",
@@ -76,21 +65,10 @@ module.exports = {
       "locationDesc": "人工调整 1F（-51.11, -14.6） · 原规划: 1F 交叉口（F1-TI-0028）（墙面安装）"
     },
     {
-      "beaconId": "BK-01-009",
-      "floor": 1,
-      "x": -62.46,
-      "y": -19.61,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10109,
-      "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）"
-    },
-    {
       "beaconId": "BK-01-010",
       "floor": 1,
-      "x": -64.22,
-      "y": -21.68,
+      "x": -63.44,
+      "y": -21.67,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
@@ -100,7 +78,7 @@ module.exports = {
     {
       "beaconId": "BK-01-011",
       "floor": 1,
-      "x": -75.82,
+      "x": -75.35,
       "y": -19.53,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
@@ -111,13 +89,13 @@ module.exports = {
     {
       "beaconId": "BK-01-012",
       "floor": 1,
-      "x": -69.24,
-      "y": -21.55,
+      "x": -70.66,
+      "y": -21.73,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10112,
-      "locationDesc": "1F 交叉口（F1-TI-0057） · 原规划: 1F 交叉口（F1-TI-0057）"
+      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0057）"
     },
     {
       "beaconId": "BK-01-013",
@@ -133,8 +111,8 @@ module.exports = {
     {
       "beaconId": "BK-01-014",
       "floor": 1,
-      "x": -58.18,
-      "y": -10.75,
+      "x": -58.81,
+      "y": -10.71,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
@@ -175,17 +153,6 @@ module.exports = {
       "locationDesc": "1F 门口（防火门）"
     },
     {
-      "beaconId": "BK-01-024",
-      "floor": 1,
-      "x": -70.54,
-      "y": -19.55,
-      "installHeightM": 2.5,
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10124,
-      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0057 · 西向）"
-    },
-    {
       "beaconId": "BK-01-026",
       "floor": 1,
       "x": -42.04,
@@ -199,8 +166,8 @@ module.exports = {
     {
       "beaconId": "BK-Q-F1-004",
       "floor": 1,
-      "x": -78.58,
-      "y": -21.58,
+      "x": -78.75,
+      "y": -21.71,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
@@ -210,13 +177,13 @@ module.exports = {
     {
       "beaconId": "BK-Q-F1-010",
       "floor": 1,
-      "x": -61.456,
-      "y": -17.185,
+      "x": -59.19,
+      "y": -18.4,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10142,
-      "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
+      "locationDesc": "1F 门口（防火门） · 原规划: 1F 门口（防火门）"
     },
     {
       "beaconId": "BK-Q-F1-011",
@@ -254,8 +221,8 @@ module.exports = {
     {
       "beaconId": "BK-Q-F1-025",
       "floor": 1,
-      "x": -59.18,
-      "y": -22.44,
+      "x": -61.69,
+      "y": -23.14,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
@@ -263,36 +230,36 @@ module.exports = {
       "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）"
     },
     {
-      "beaconId": "BK-Q-F1-029",
+      "beaconId": "BK-01-003",
       "floor": 1,
       "x": -42.304,
       "y": -15.991,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10161,
+      "minor": 10103,
       "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
     },
     {
-      "beaconId": "BK-Q-F1-030",
+      "beaconId": "BK-01-009",
       "floor": 1,
       "x": -49.601,
       "y": -8.678,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10162,
+      "minor": 10109,
       "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)"
     },
     {
-      "beaconId": "BK-Q-F1-040",
+      "beaconId": "BK-01-024",
       "floor": 1,
       "x": -47.51,
       "y": 5.69,
       "installHeightM": 2.5,
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
-      "minor": 10172,
+      "minor": 10124,
       "locationDesc": "1F 交叉口（F1-TI-0019）"
     }
   ]
