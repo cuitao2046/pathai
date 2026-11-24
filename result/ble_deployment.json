@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
   "generatedBy": "pathai-manual-deploy",
-  "generatedAt": "2026-11-22T04:36:02.831Z",
+  "generatedAt": "2026-11-23T15:02:55.514Z",
   "beacons": [
     {
       "beaconId": "BK-01-002",
@@ -9,8 +9,8 @@
       "major": 1,
       "minor": 10102,
       "coordinates": [
-        -63.09,
-        -14.53
+        -61.65,
+        -14.83
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（F1-TI-0105） · 原规划: 1F 交叉口（F1-TI-0007）",
@@ -27,7 +27,8 @@
       "installDate": "",
       "subType": "base",
       "adjacentRooms": [
-        "F1-CR-0044"
+        "F1-CR-0044",
+        "F1-ELL-06"
       ],
       "originalSourceNodeId": "F1-TI-0007",
       "originalSourceNodeType": "intersection",
@@ -35,43 +36,6 @@
       "originalPlannedCoordinates": [
         -63.297,
         -14.44
-      ]
-    },
-    {
-      "beaconId": "BK-01-003",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10103,
-      "coordinates": [
-        -72.89,
-        -21.64
-      ],
-      "floor": 1,
-      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0009）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_base",
-      "sourceNodeId": "F1-TI-0009",
-      "sourceNodeType": "intersection",
-      "riskLevel": 0.5,
-      "installDate": "",
-      "subType": "base",
-      "originalSourceNodeId": "F1-TI-0009",
-      "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（F1-TI-0009）",
-      "originalPlannedCoordinates": [
-        -73.991,
-        -21.786
-      ],
-      "adjacentRooms": [
-        "F1-CR-0043",
-        "F1-RM-0008",
-        "F1-RM-0003",
-        "F1-RM-0067"
       ]
     },
     {
@@ -206,50 +170,13 @@
       ]
     },
     {
-      "beaconId": "BK-01-009",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10109,
-      "coordinates": [
-        -62.46,
-        -19.61
-      ],
-      "floor": 1,
-      "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_base",
-      "sourceNodeId": "F1-TI-0054",
-      "sourceNodeType": "intersection",
-      "riskLevel": 0.5,
-      "installDate": "",
-      "subType": "base",
-      "adjacentRooms": [
-        "F1-CR-0043",
-        "F1-LB-0045",
-        "F1-RM-0009",
-        "F1-STL-02"
-      ],
-      "originalSourceNodeId": "F1-TI-0054",
-      "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（F1-TI-0054）",
-      "originalPlannedCoordinates": [
-        -63.297,
-        -19.693
-      ]
-    },
-    {
       "beaconId": "BK-01-010",
       "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
       "major": 1,
       "minor": 10110,
       "coordinates": [
-        -64.22,
-        -21.68
+        -63.44,
+        -21.67
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（F1-TI-0104） · 原规划: 1F 交叉口（F1-TI-0055）",
@@ -273,9 +200,11 @@
         -22.386
       ],
       "adjacentRooms": [
+        "F1-LB-0045",
+        "F1-RM-0009",
         "F1-CR-0043",
-        "F1-RM-0003",
-        "F1-RM-0008"
+        "F1-STL-02",
+        "F1-ELL-06"
       ]
     },
     {
@@ -284,7 +213,7 @@
       "major": 1,
       "minor": 10111,
       "coordinates": [
-        -75.82,
+        -75.35,
         -19.53
       ],
       "floor": 1,
@@ -311,7 +240,7 @@
       "adjacentRooms": [
         "F1-CR-0043",
         "F1-RM-0067",
-        "F1-RM-0003"
+        "F1-STL-11"
       ]
     },
     {
@@ -320,11 +249,11 @@
       "major": 1,
       "minor": 10112,
       "coordinates": [
-        -69.24,
-        -21.55
+        -70.66,
+        -21.73
       ],
       "floor": 1,
-      "locationDesc": "1F 交叉口（F1-TI-0057） · 原规划: 1F 交叉口（F1-TI-0057）",
+      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0057）",
       "mountType": "wall",
       "installHeight": 2.5,
       "txPower": -12,
@@ -332,15 +261,14 @@
       "batteryModel": "CR2477",
       "expectedLifespan": 5,
       "semanticTag": "trilateration_route_base",
-      "sourceNodeId": "F1-TI-0057",
+      "sourceNodeId": "F1-TI-0009",
       "sourceNodeType": "intersection",
       "riskLevel": 0.5,
       "installDate": "",
       "subType": "base",
       "adjacentRooms": [
         "F1-CR-0043",
-        "F1-RM-0008",
-        "F1-RM-0009"
+        "F1-RM-0008"
       ],
       "originalSourceNodeId": "F1-TI-0057",
       "originalSourceNodeType": "intersection",
@@ -391,8 +319,8 @@
       "major": 1,
       "minor": 10114,
       "coordinates": [
-        -58.18,
-        -10.75
+        -58.81,
+        -10.71
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（F1-TI-0096） · 原规划: 1F 交叉口（F1-TI-0072）",
@@ -452,7 +380,8 @@
       ],
       "adjacentRooms": [
         "F1-CR-0043",
-        "F1-RM-0067"
+        "F1-RM-0067",
+        "F1-RM-0003"
       ]
     },
     {
@@ -487,8 +416,8 @@
         -10.52
       ],
       "adjacentRooms": [
-        "F1-CR-0048",
-        "F1-AC-0046"
+        "F1-AC-0046",
+        "F1-RM-0018"
       ]
     },
     {
@@ -526,44 +455,9 @@
         "F1-STL-02",
         "F1-RM-0069",
         "F1-LB-0045",
+        "F1-ELL-06",
         "F1-RM-0013",
         "F1-CR-0048"
-      ]
-    },
-    {
-      "beaconId": "BK-01-024",
-      "uuid": "B9407F30-F5F8-466E-AFF9-25556B57FE6D",
-      "major": 1,
-      "minor": 10124,
-      "coordinates": [
-        -70.54,
-        -19.55
-      ],
-      "floor": 1,
-      "locationDesc": "1F 交叉口（F1-TI-0009） · 原规划: 1F 交叉口（F1-TI-0057 · 西向）",
-      "mountType": "wall",
-      "installHeight": 2.5,
-      "txPower": -12,
-      "broadcastInterval": 300,
-      "batteryModel": "CR2477",
-      "expectedLifespan": 5,
-      "semanticTag": "trilateration_route_base",
-      "sourceNodeId": "F1-TI-0009",
-      "sourceNodeType": "intersection",
-      "riskLevel": 0.5,
-      "installDate": "",
-      "subType": "dir",
-      "direction": "西",
-      "originalSourceNodeId": "F1-TI-0057",
-      "originalSourceNodeType": "intersection",
-      "originalLocationDesc": "1F 交叉口（F1-TI-0057 · 西向）",
-      "originalPlannedCoordinates": [
-        -69.74,
-        -19.19
-      ],
-      "adjacentRooms": [
-        "F1-CR-0043",
-        "F1-RM-0008"
       ]
     },
     {
@@ -609,8 +503,8 @@
       "major": 1,
       "minor": 10136,
       "coordinates": [
-        -78.58,
-        -21.58
+        -78.75,
+        -21.71
       ],
       "floor": 1,
       "locationDesc": "1F 门口（防火门） · 原规划: 1F 门口（防火门）",
@@ -645,11 +539,11 @@
       "major": 1,
       "minor": 10142,
       "coordinates": [
-        -61.456,
-        -17.185
+        -59.19,
+        -18.4
       ],
       "floor": 1,
-      "locationDesc": "放置质量补点(走廊双侧/均匀/三角破共线, 贴墙 2.5m, 非天花板)",
+      "locationDesc": "1F 门口（防火门） · 原规划: 1F 门口（防火门）",
       "mountType": "wall",
       "installHeight": 2.5,
       "txPower": -12,
@@ -657,18 +551,26 @@
       "batteryModel": "CR2477",
       "expectedLifespan": 5,
       "semanticTag": "placement_quality_fill",
-      "sourceNodeId": null,
-      "sourceNodeType": "placement_quality",
+      "sourceNodeId": "F1-TD-0087",
+      "sourceNodeType": "doorway",
       "riskLevel": "low",
       "installDate": "",
       "subType": "quality_fill",
       "adjacentRooms": [
+        "F1-ELL-06",
         "F1-CR-0044",
         "F1-LB-0045",
         "F1-STL-02",
         "F1-RM-0069",
         "F1-CR-0043"
-      ]
+      ],
+      "originalPlannedCoordinates": [
+        -61.456,
+        -17.185
+      ],
+      "originalSourceNodeId": "F1-TD-0086",
+      "originalSourceNodeType": "doorway",
+      "originalLocationDesc": "1F 门口（防火门）"
     },
     {
       "beaconId": "BK-Q-F1-011",
@@ -696,7 +598,8 @@
       "adjacentRooms": [
         "F1-CR-0044",
         "F1-RM-0069",
-        "F1-CR-0048"
+        "F1-CR-0048",
+        "F1-ELL-06"
       ],
       "originalPlannedCoordinates": [
         -57.516,
@@ -728,7 +631,8 @@
       "subType": "quality_fill",
       "adjacentRooms": [
         "F1-CR-0050",
-        "F1-RM-0016"
+        "F1-RM-0016",
+        "F1-ELL-05"
       ],
       "originalPlannedCoordinates": [
         -40.999,
@@ -774,8 +678,8 @@
       "major": 1,
       "minor": 10157,
       "coordinates": [
-        -59.18,
-        -22.44
+        -61.69,
+        -23.14
       ],
       "floor": 1,
       "locationDesc": "1F 交叉口（F1-TI-0054） · 原规划: 1F 交叉口（F1-TI-0054）",
@@ -797,9 +701,9 @@
       ],
       "adjacentRooms": [
         "F1-LB-0045",
-        "F1-STL-02",
         "F1-RM-0013",
-        "F1-RM-0069"
+        "F1-STL-02",
+        "F1-RM-0009"
       ],
       "originalSourceNodeId": "F1-TI-0054",
       "originalSourceNodeType": "intersection",
@@ -887,11 +791,11 @@
       "installDate": "",
       "subType": "quality_fill",
       "adjacentRooms": [
-        "F1-CR-0051",
-        "F1-AC-0046",
-        "F1-AC-0047",
-        "F1-RM-0068",
         "F1-STL-03",
+        "F1-RM-0068",
+        "F1-AC-0047",
+        "F1-AC-0046",
+        "F1-CR-0051",
         "F1-RM-0017"
       ],
       "originalPlannedCoordinates": [
@@ -901,16 +805,16 @@
     }
   ],
   "summary": {
-    "total": 26,
+    "total": 23,
     "byFloor": {
-      "1": 26
+      "1": 23
     },
     "bySemantic": {
-      "trilateration_route_base": 17,
+      "trilateration_route_base": 14,
       "placement_quality_fill": 9
     },
     "byMount": {
-      "wall": 26
+      "wall": 23
     }
   }
 }
