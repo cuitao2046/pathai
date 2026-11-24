@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from itertools import combinations
 
 from pathai_backend.map_package.schema import BeaconEntry, MapPackage
 from pathai_backend.schemas.common import LocationQuality
@@ -50,6 +51,9 @@ _GN_MAX_STEP_M = 20.0
 _MIN_DETERMINANT = 1e-6
 #: 最少同层可用信标数（三点定位）；不足时不回退 2D，直接判 lost（spec 0.3.1）。
 MIN_BEACONS_FOR_TRILATERATION = 3
+#: 几何最优三枚的评估阈值（与覆盖评估/交互图同源：GDOP ≤ 3、边外 ≤ 1.5 m）。
+TRI_GDOP_MAX = 3.0
+TRI_OUT_DIST_MAX_M = 1.5
 
 
 @dataclass(frozen=True)
@@ -226,6 +230,82 @@ def _residual_rms(
     return math.sqrt(sum(r * r for r in residuals) / len(residuals))
 
 
+def _gdop_2d(target: tuple[float, float], trio: list[tuple[float, float]]) -> float:
+    """平面 GDOP：σ_位置/σ_测距 的放大倍数；三信标共线时返回 inf。"""
+    rows: list[tuple[float, float]] = []
+    for bx, by in trio:
+        dx, dy = bx - target[0], by - target[1]
+        dist = math.hypot(dx, dy)
+        if dist < 1e-9:
+            return math.inf
+        rows.append((dx / dist, dy / dist))
+    a = sum(u * u for u, _ in rows)
+    b = sum(u * v for u, v in rows)
+    c = sum(v * v for _, v in rows)
+    det = a * c - b * b
+    if det <= 1e-12:
+        return math.inf
+    return math.sqrt((a + c) / det)
+
+
+def _point_segment_distance(
+    p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]
+) -> float:
+    vx, vy = b[0] - a[0], b[1] - a[1]
+    length_sq = vx * vx + vy * vy
+    if length_sq < 1e-12:
+        return math.hypot(p[0] - a[0], p[1] - a[1])
+    t = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / length_sq
+    t = max(0.0, min(1.0, t))
+    return math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy))
+
+
+def _out_triangle_distance(
+    target: tuple[float, float], trio: list[tuple[float, float]]
+) -> float:
+    """目标到三信标三角形的最近边距离；落在三角形内时为 0。"""
+    a, b, c = trio
+
+    def cross(
+        p: tuple[float, float], q: tuple[float, float], r: tuple[float, float]
+    ) -> float:
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    d1, d2, d3 = cross(a, b, target), cross(b, c, target), cross(c, a, target)
+    has_neg = d1 < -1e-9 or d2 < -1e-9 or d3 < -1e-9
+    has_pos = d1 > 1e-9 or d2 > 1e-9 or d3 > 1e-9
+    if not (has_neg and has_pos):
+        return 0.0
+    return min(
+        _point_segment_distance(target, a, b),
+        _point_segment_distance(target, b, c),
+        _point_segment_distance(target, c, a),
+    )
+
+
+def _pick_optimal_trio(
+    target: tuple[float, float], anchors: list[tuple[float, float, float]]
+) -> list[int] | None:
+    """在可用信标中挑几何最优三枚：max(GDOP/3, 边外/1.5) 最小。
+
+    并列时依次比较边外距离、GDOP、组内距离和、索引，保证结果确定。
+    """
+    best: tuple[tuple[float, float, float, float, tuple[int, ...]], tuple[int, ...]] | None = None
+    for idx in combinations(range(len(anchors)), 3):
+        trio = [(anchors[i][0], anchors[i][1]) for i in idx]
+        gdop = _gdop_2d(target, trio)
+        if not math.isfinite(gdop):
+            continue
+        out_dist = _out_triangle_distance(target, trio)
+        sum_dist = sum(
+            math.hypot(p[0] - target[0], p[1] - target[1]) for p in trio
+        )
+        key = (max(gdop / TRI_GDOP_MAX, out_dist / TRI_OUT_DIST_MAX_M), out_dist, gdop, sum_dist, idx)
+        if best is None or key < best[0]:
+            best = (key, idx)
+    return None if best is None else list(best[1])
+
+
 def estimate_location(
     pkg: MapPackage,
     observations: list[BeaconInput],
@@ -269,7 +349,27 @@ def estimate_location(
             ignored_beacon_ids=tuple(ignored),
         )
 
-    point = _solve_least_squares(anchors, ranges)
+    # 几何最优三枚：先用全部同层信标求初值，再以初值为目标点选出几何最优三枚，
+    # 最终位置由这三枚解算（与覆盖评估/交互图同一评分：max(GDOP/3, 边外/1.5)）。
+    # 全量初值失败时以信标质心为选择目标；三枚解算失败则回退全量结果。
+    full = _solve_least_squares(anchors, ranges)
+    target_xy = (
+        (full[0], full[1])
+        if full is not None
+        else (
+            sum(a[0] for a in anchors) / len(anchors),
+            sum(a[1] for a in anchors) / len(anchors),
+        )
+    )
+    point = None
+    trio = _pick_optimal_trio(target_xy, anchors)
+    if trio is not None:
+        point = _solve_least_squares(
+            [anchors[i] for i in trio], [ranges[i] for i in trio]
+        )
+    if point is None:
+        point = full
+
     if point is None:
         return LocationEstimate(
             x=None,
