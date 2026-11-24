@@ -88,3 +88,8 @@ debug/commit_msg.txt
 debug/pkg_*.json
 debug/*.pre-skel-*.geojson
 debug/_*_out.txt
+# 运行时诊断产物（本地生成，不入库）
+debug/cad-lobby-preview.geojson
+debug/hazard-startup.txt
+debug/intent-log-*.txt
+debug/live-check-result.json
