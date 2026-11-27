@@ -66,9 +66,9 @@ class TestExportSanity:
     def test_counts_cover_all_named_rooms(self, dictionary_data, published):
         instances = sum(len(p["instances"]) for p in dictionary_data["pois"])
         assert instances == len(published.pkg.places) == 55
-        assert len(dictionary_data["non_navigable_rooms"]) == 81
+        assert len(dictionary_data["non_navigable_rooms"]) == 83
         rooms = sum(len(f.semantic.rooms) for f in published.pkg.floors.values())
-        assert instances + len(dictionary_data["non_navigable_rooms"]) == rooms == 136
+        assert instances + len(dictionary_data["non_navigable_rooms"]) == rooms == 138
 
     def test_every_instance_points_into_map(self, dictionary_data, published):
         node_ids = {
@@ -113,7 +113,7 @@ class TestRuntimeContract:
     def test_dictionary_round_trip(self, dictionary_data, published):
         dictionary = PoiDictionary(dictionary_data)
         dictionary.ensure_version(published.map_version)
-        assert len(dictionary.pois) == 34
+        assert len(dictionary.pois) == 35
         male = dictionary.get("男卫生间")
         assert male is not None and len(male.instances) == 6
         assert {i.floor_id for i in male.instances} == {"1", "2"}
