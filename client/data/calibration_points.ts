@@ -32,6 +32,6 @@ export const PRESET_CALIBRATION_POINTS: PresetCalibrationPoint[] =
   { pointId: 'CAL-F1-12', floorId: '1', truth: [-60.794, -22.546], scene: 'facility', batch: 2, nearGridId: 'FP-1-R278' },
   { pointId: 'CAL-F1-13', floorId: '1', truth: [-43.794, -12.546], scene: 'facility', batch: 2, nearGridId: 'FP-1-R152' },
   { pointId: 'CAL-F1-14', floorId: '1', truth: [-42.794, -14.546], scene: 'intersection', batch: 2, nearGridId: 'FP-1-R194' },
-  { pointId: 'CAL-F1-15', floorId: '1', truth: [-41.794, -13.546], scene: 'weak_signal', batch: 2, nearGridId: 'FP-1-R176' },
-  { pointId: 'CAL-F1-16', floorId: '1', truth: [-83.794, -20.546], scene: 'window_end', batch: 2, nearGridId: 'FP-1-R222' },
+  { pointId: 'CAL-F1-15', floorId: '1', truth: [-82.794, -18.546], scene: 'weak_signal', batch: 2, nearGridId: 'FP-1-R205' },
+  { pointId: 'CAL-F1-16', floorId: '1', truth: [-40.794, 13.454], scene: 'window_end', batch: 2, nearGridId: 'FP-1-R001' },
 ];

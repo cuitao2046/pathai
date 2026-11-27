@@ -28,7 +28,7 @@ from collections import defaultdict
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-22.1.json"
+MAP_PACKAGE = PROJECT_ROOT / "backend" / "maps_data" / "school-building-01" / "2026-11-25.1.json"
 ROUTES_GRID = PROJECT_ROOT / "result" / "fingerprint_grid_routes.json"
 FULL_GRID = PROJECT_ROOT / "result" / "fingerprint_grid.json"
 SIM_BEACONS = PROJECT_ROOT / "result" / "simulated_beacons.json"
