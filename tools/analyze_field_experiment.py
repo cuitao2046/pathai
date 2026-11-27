@@ -22,7 +22,7 @@ FILES = {
 }
 TURN_ACTIONS = {"turn_left", "turn_right", "u_turn"}
 DEFAULT_JUMP_THRESHOLD_M = 3.0
-METRIC_VERSION = "1.1"
+ANALYSIS_METRIC_VERSION = "1.1"
 #: T9 时效口径：|播报 − 检查点打点| ≤ 1s 视为同时；P90 目标 ≤ 1.5s。
 UTURN_SAME_TIME_MS = 1000
 UTURN_P90_TARGET_MS = 1500
@@ -633,7 +633,7 @@ def analyze(path, replay=None, jump_threshold=DEFAULT_JUMP_THRESHOLD_M, with_det
               "usability": navigation_metrics(nav_segments, jump_threshold),
               "timeliness": timing_metrics(nav),
               "uturn": uturn_metrics(uturn_runs),
-              "analysisConfig": {"metricVersion": METRIC_VERSION, "jumpThresholdM": jump_threshold,
+              "analysisConfig": {"analysisMetricVersion": ANALYSIS_METRIC_VERSION, "jumpThresholdM": jump_threshold,
                                  "uturnSameTimeMs": UTURN_SAME_TIME_MS,
                                  "uturnP90TargetMs": UTURN_P90_TARGET_MS,
                                  "export": info.get("analysisConfig")}}
@@ -740,7 +740,7 @@ def write_manifest(path, *, archive, replay, jump_threshold, report, details=Non
     payload = {
         "schema": "pathai.field-analysis/1.0",
         "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "tool": {"name": "tools/analyze_field_experiment.py", "metricVersion": METRIC_VERSION,
+        "tool": {"name": "tools/analyze_field_experiment.py", "analysisMetricVersion": ANALYSIS_METRIC_VERSION,
                  "scriptSha256": _file_info(__file__)["sha256"],
                  "gitCommit": _git_commit(), "gitDirty": _git_dirty(),
                  "python": platform.python_version()},

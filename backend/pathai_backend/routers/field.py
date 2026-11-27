@@ -53,8 +53,8 @@ FINGERPRINT_MIN_DURATION_MS = 25_000
 FINGERPRINT_LEGACY_DURATION_MS = 30_000
 #: 重放时的「挂起库」半径：距 ST/T8 测试点过近的 FP 点会被排除，避免精度虚高。
 DEFAULT_SUSPEND_RADIUS_M = 1.5
-#: 汇总口径（写入导出 manifest，便于分析脚本与报告口径一致）。
-ANALYSIS_METRIC_VERSION = "1.0"
+#: 导出端分析配置版本（写入导出 manifest，与分析工具版本相互独立）。
+EXPORT_METRIC_VERSION = "1.0"
 ANALYSIS_JUMP_THRESHOLD_M = 3.0
 PLAN_POINT_COUNTS = {"CAL": 12, "ST": 18, "DY": 8, "NV": 8, "UT": 1}
 PLAN_TASK_LABELS = {"CAL": "T3 参数标定", "ST": "T6 静态对比", "DY": "T7 行走打点", "NV": "T8 导航对比",
@@ -907,7 +907,7 @@ def export_experiment(request: Request, include_trial: bool = False,
             "counts": counts, "excluded": excluded, "mapAndParamVersions": sorted(versions),
             "cEstimateCounts": c_estimates,
             "analysisConfig": {
-                "metricVersion": ANALYSIS_METRIC_VERSION,
+                "exportMetricVersion": EXPORT_METRIC_VERSION,
                 "suspendRadiusM": DEFAULT_SUSPEND_RADIUS_M,
                 "jumpThresholdM": ANALYSIS_JUMP_THRESHOLD_M,
                 "expectedUpdateIntervalMs": {"standby": 8000, "preview": 2500, "navigating": 1000},
