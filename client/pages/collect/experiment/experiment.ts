@@ -6,6 +6,7 @@ import type { BeaconSample } from '../../../core/ble/scan-window';
 import { cachedRuntimeParams, clearRuntimeParams } from '../../../core/config/runtime-config';
 import { clearOverlayCache } from '../../../core/collection/grid-overlay';
 import { CollectMapView } from '../../../core/collection/collect-map-view';
+import { FP_POINT_COLORS } from '../../../core/collection/fingerprint-visibility';
 import { pickPointOnScreen } from '../../../core/collection/hit-test';
 import { drawReferenceWalls } from '../../../core/collection/reference-walls';
 import {
@@ -45,6 +46,8 @@ interface Candidate {
   pointId: string; floorId: string; x: number; y: number;
   references?: SurveyReference[];
   sharedPointId?: string;
+  /** 仅 T4 指纹网格点携带：网格数据预估口径（当前部署下 RSSI≥-85dBm 且 ≥3 信标可见）。 */
+  collectable?: boolean;
   measurementWalls?: MeasurementWall[];
 }
 interface MeasurementWall {
@@ -78,7 +81,7 @@ function publishedMeasurementWalls(point: SurveyPoint): MeasurementWall[] {
 function candidates(task: FieldTask): Candidate[] {
   if (task === 'FP') {
     return [...FIELD_FINGERPRINT_GRID].sort((a, b) => Number(b.isBase2m) - Number(a.isBase2m))
-      .map((p) => ({ pointId: p.fpId, floorId: p.floorId, x: p.x, y: p.y,
+      .map((p) => ({ pointId: p.fpId, floorId: p.floorId, x: p.x, y: p.y, collectable: p.collectable,
         references: surveyReferences(p, p.references) }));
   }
   const purpose = task === 'CAL' ? 'calibration' : task === 'ST' ? 'static_test' : 'checkpoint';
@@ -144,6 +147,8 @@ Page({
     directionProgress: '', directionCompleted: 0,
     selectedPointId: '', selectedWalls: [] as MeasurementWall[], selectedPointComplete: false,
     mapFloor: '', mapFloors: [] as { floorId: string; displayName: string }[],
+    surveyMapOpen: false, surveyMapFloor: '', surveyMapFloors: [] as { floorId: string; displayName: string }[],
+    surveyListOpen: false, surveyListScrollInto: '', surveyUncollectable: false,
     headingTarget: '', headingCurrent: '', headingStatus: '', headingManual: false,
     undo: false, runsToday: 0, lastRun: '', summary: '', needsRetry: false,
     beacons: [] as { id: string; name: string; rssi: number | null; seen: boolean; last: string }[],
@@ -191,6 +196,7 @@ Page({
   remoteProgress: [] as SegmentSummary[],
   readings: null as Map<string, { rssi: number; t: number }> | null,
   pointMap: null as CollectMapView | null,
+  surveyMap: null as CollectMapView | null,
   completedMapPoints: null as Set<string> | null,
   pageScrollTop: 0,
   calTimer: null as ReturnType<typeof setTimeout> | null,
@@ -214,6 +220,8 @@ Page({
     this.disposed = true;
     this.pointMap?.destroy();
     this.pointMap = null;
+    this.surveyMap?.destroy();
+    this.surveyMap = null;
     if (this.calTimer !== null) clearTimeout(this.calTimer);
     this.onHide();
   },
@@ -346,6 +354,72 @@ Page({
     this.closePointMenu();
     this.pointMap?.setFloor(String(event.currentTarget.dataset.floor));
   },
+  onOpenSurveyMap(): void {
+    if (this.data.busy || !this.data.pointLabels.length) return;
+    this.setData({ surveyMapOpen: true }, () => this.syncSurveyMap());
+  },
+  onCloseSurveyMap(): void {
+    this.surveyMap?.destroy();
+    this.surveyMap = null;
+    this.setData({ surveyMapOpen: false, surveyMapFloor: '', surveyMapFloors: [] });
+  },
+  syncSurveyMap(): void {
+    if (this.disposed || !this.data.surveyMapOpen || !this.data.allowed) return;
+    const map = new CollectMapView(this, {
+      canvasId: 'surveyPointMap',
+      deps: { floors: appContext.map.floors, places: appContext.map.places, beacons: appContext.map.beacons },
+      callbacks: {
+        onReady: () => {
+          this.setData({ surveyMapFloors: map.floorList, surveyMapFloor: map.floorId });
+          const initial = this.data.points[this.data.pointIndex]?.floorId;
+          if (initial) map.setFloor(initial);
+        },
+        onTap: (_world, screen) => this.onSurveyMapTap(screen),
+        onLongPress: () => {},
+        onFloorChanged: (floorId) => this.setData({ surveyMapFloor: floorId }),
+        drawOverlay: (ctx, vp) => this.drawSurveyPointMap(ctx, vp),
+      },
+    });
+    this.surveyMap = map;
+    map.init();
+  },
+  onSurveyMapTap(screen: { x: number; y: number }): void {
+    const vp = this.surveyMap?.vp;
+    if (!vp) return;
+    const hit = pickPointOnScreen(this.data.points.filter((point) => point.floorId === vp.floorId),
+      (point) => point, vp, screen, 20);
+    if (!hit) return;
+    const pointIndex = this.data.points.indexOf(hit.point);
+    if (pointIndex < 0) return;
+    this.setData({ pointIndex }, () => this.fillSurvey());
+    this.onCloseSurveyMap();
+  },
+  onSurveyMapTouchStart(event: WechatMiniprogram.TouchEvent): void { this.surveyMap?.onTouchStart(event); },
+  onSurveyMapTouchMove(event: WechatMiniprogram.TouchEvent): void { this.surveyMap?.onTouchMove(event); },
+  onSurveyMapTouchEnd(event: WechatMiniprogram.TouchEvent): void { this.surveyMap?.onTouchEnd(event); },
+  onSurveyMapTouchCancel(event: WechatMiniprogram.TouchEvent): void { this.surveyMap?.onTouchCancel(event); },
+  onSurveyMapZoomIn(): void { this.surveyMap?.zoomIn(); },
+  onSurveyMapZoomOut(): void { this.surveyMap?.zoomOut(); },
+  onSurveyMapFit(): void { this.surveyMap?.fit(); },
+  onSurveyMapFloor(event: WechatMiniprogram.TouchEvent): void {
+    this.surveyMap?.setFloor(String(event.currentTarget.dataset.floor));
+  },
+  onOpenSurveyList(): void {
+    if (this.data.busy || !this.data.pointLabels.length) return;
+    // 先渲染列表再定位到当前选中项（scroll-into-view 需节点已存在）
+    this.setData({ surveyListOpen: true, surveyListScrollInto: '' }, () => {
+      this.setData({ surveyListScrollInto: `survey-point-${this.data.pointIndex}` });
+    });
+  },
+  onCloseSurveyList(): void {
+    this.setData({ surveyListOpen: false, surveyListScrollInto: '' });
+  },
+  onSurveyListPick(event: WechatMiniprogram.TouchEvent): void {
+    const pointIndex = Number(event.currentTarget.dataset.index);
+    if (!this.data.points[pointIndex]) return;
+    this.setData({ pointIndex }, () => this.fillSurvey());
+    this.onCloseSurveyList();
+  },
   onPointMapTap(screen: { x: number; y: number }): void {
     const vp = this.pointMap?.vp;
     if (!vp || this.data.busy || this.data.phase !== 'idle') return;
@@ -381,6 +455,33 @@ Page({
       ctx.beginPath();
       ctx.arc(sx, sy, active ? 8 : 5, 0, 2 * Math.PI);
       ctx.fillStyle = active ? '#2563eb' : this.completedMapPoints?.has(point.pointId) ? '#15803d' : '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = active ? '#ffffff' : '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (active || this.task() !== 'FP') {
+        ctx.strokeStyle = '#ffffff';
+        ctx.strokeText(point.pointId, sx, sy - 11);
+        ctx.fillStyle = '#172554';
+        ctx.fillText(point.pointId, sx, sy - 11);
+      }
+    }
+    ctx.restore();
+  },
+  drawSurveyPointMap(ctx: WechatMiniprogram.CanvasRenderingContext.CanvasRenderingContext2D,
+    vp: NonNullable<CollectMapView['vp']>): void {
+    const points = this.data.points.filter((point) => point.floorId === vp.floorId);
+    const selected = this.data.points[this.data.pointIndex];
+    ctx.save();
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    for (const point of points) {
+      const { sx, sy } = vp.toScreen(point.x, point.y);
+      const active = point === selected;
+      ctx.beginPath();
+      ctx.arc(sx, sy, active ? 8 : 5, 0, 2 * Math.PI);
+      ctx.fillStyle = active ? '#2563eb' :
+        point.collectable === false ? FP_POINT_COLORS.unavailable : '#ffffff';
       ctx.fill();
       ctx.strokeStyle = active ? '#ffffff' : '#2563eb';
       ctx.lineWidth = 2;
@@ -541,11 +642,6 @@ Page({
   onTrial(e: WechatMiniprogram.SwitchChange): void {
     this.setData({ trial: e.detail.value }, () => this.refreshPlan());
   },
-  onPoint(e: WechatMiniprogram.PickerChange): void {
-    const pointIndex = Number(e.detail.value);
-    this.setData({ pointIndex }, () => this.fillSurvey());
-  },
-
   startScan(): Promise<void> {
     if (this.source) return Promise.resolve();
     const source = createBeaconSource(appContext.dataSource, appContext.map);
@@ -793,7 +889,8 @@ Page({
       const elapsed = Math.floor((now - segment.startedAtEpoch) / 1000);
       const duration = this.steps[this.stepIndex].duration;
       const formalFingerprint = segment.task === 'FP' && !!segment.planId;
-      const fingerprint = formalFingerprint && now >= this.deadline ? fingerprintWindow(segment, this.deadline, now) : null;
+      // 达标即停：正式 FP 段每个 tick 判定一次，≥12 s 达标立即结束，无需等到 25 s。
+      const fingerprint = formalFingerprint ? fingerprintWindow(segment, this.deadline, now) : null;
       if (fingerprint) this.deadline = fingerprint.deadline;
       if (duration > 0 && now >= this.deadline) {
         const minimum = segment.planId && segment.task === 'ST' ? 60 : 1;
@@ -1020,7 +1117,8 @@ Page({
   openSurvey(): void {
     this.surveyPoints = candidates(this.task());
     this.setData({ points: this.surveyPoints, pointLabels: this.surveyPoints.map((p) => p.pointId),
-      pointIndex: 0 }, () => this.fillSurvey());
+      pointIndex: 0, surveyUncollectable: this.surveyPoints.some((p) => p.collectable === false) },
+      () => this.fillSurvey());
     this.refreshSurveyPublication();
   },
   fillSurvey(): void {

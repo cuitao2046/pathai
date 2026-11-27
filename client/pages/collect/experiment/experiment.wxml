@@ -133,7 +133,11 @@
     <block wx:if="{{tab === 2}}">
       <view class="panel">
         <picker mode="selector" range="{{taskLabels}}" value="{{taskIndex}}" bindchange="onTask"><view class="select">{{taskLabels[taskIndex]}} ▾</view></picker>
-        <picker mode="selector" range="{{pointLabels}}" value="{{pointIndex}}" bindchange="onPoint"><view class="select">{{pointLabels[pointIndex]}} ▾</view></picker>
+        <view class="row survey-point-row">
+          <view class="select survey-point-select" bindtap="onOpenSurveyList" aria-role="button"
+            aria-label="打开点位清单">{{pointLabels.length ? pointLabels[pointIndex] + ' ▾' : '暂无候选点'}}</view>
+          <button class="secondary survey-map-open" disabled="{{!pointLabels.length}}" bindtap="onOpenSurveyMap">地图选点</button>
+        </view>
         <view class="muted">候选坐标 {{points[pointIndex].x}}, {{points[pointIndex].y}} · 已登记 {{drafts}} 点</view>
         <view class="muted">{{surveyDisplay.base}}</view>
         <view wx:if="{{surveyDisplay.baseDistances}}" class="muted">{{surveyDisplay.baseDistances}}</view>
@@ -209,4 +213,46 @@
     </block>
   </block>
   <view wx:else class="panel"><view>{{issue}}</view><button bindtap="load">重试</button></view>
+
+  <view wx:if="{{surveyMapOpen}}" class="survey-map-modal">
+    <view class="row survey-map-header">
+      <text class="survey-map-title">地图选点</text>
+      <button class="secondary survey-map-close" bindtap="onCloseSurveyMap">关闭</button>
+    </view>
+    <view class="point-map-wrap survey-map-body">
+      <canvas type="2d" id="surveyPointMap" class="point-map survey-map-canvas"
+        catchtouchstart="onSurveyMapTouchStart" catchtouchmove="onSurveyMapTouchMove"
+        catchtouchend="onSurveyMapTouchEnd" catchtouchcancel="onSurveyMapTouchCancel" aria-label="真值登记点位地图" />
+      <view class="map-tools map-tools--left point-map-tools" aria-label="地图缩放控制">
+        <view class="zoom-hit" aria-role="button" bindtap="onSurveyMapZoomIn" aria-label="放大地图"><view class="zoom-face">＋</view></view>
+        <view class="zoom-hit" aria-role="button" bindtap="onSurveyMapZoomOut" aria-label="缩小地图"><view class="zoom-face">－</view></view>
+        <view class="zoom-hit" aria-role="button" bindtap="onSurveyMapFit" aria-label="回到全图"><view class="zoom-face">全图</view></view>
+      </view>
+    </view>
+    <view wx:if="{{surveyMapFloors.length > 1}}" class="point-map-floors">
+      <button wx:for="{{surveyMapFloors}}" wx:key="floorId" data-floor="{{item.floorId}}" bindtap="onSurveyMapFloor"
+        class="{{surveyMapFloor === item.floorId ? 'primary' : 'secondary'}}">{{item.displayName}}</button>
+    </view>
+    <view class="muted survey-map-hint">点选候选点后自动返回并展示该点参考信息{{surveyUncollectable ? ' · 灰色点位为预估不可采集' : ''}}</view>
+  </view>
+
+  <view wx:if="{{surveyListOpen}}" class="survey-map-modal survey-list-modal">
+    <view class="row survey-map-header">
+      <text class="survey-map-title">点位清单</text>
+      <button class="secondary survey-map-close" bindtap="onCloseSurveyList">关闭</button>
+    </view>
+    <view wx:if="{{surveyUncollectable}}" class="row survey-list-legend">
+      <view class="legend-item"><view class="legend-dot"></view><text class="muted">可采集</text></view>
+      <view class="legend-item"><view class="legend-dot legend-dot-bad"></view><text class="muted">预估不可采集</text></view>
+    </view>
+    <scroll-view class="survey-list-scroll" scroll-y scroll-into-view="{{surveyListScrollInto}}" scroll-with-animation>
+      <view wx:for="{{points}}" wx:key="pointId" id="survey-point-{{index}}"
+        class="survey-list-item {{index === pointIndex ? 'survey-list-item-active' : ''}}"
+        data-index="{{index}}" bindtap="onSurveyListPick" aria-role="button"
+        aria-label="{{item.pointId}}{{item.collectable === false ? '，预估不可采集，仍可选择' : ''}}">
+        <text class="survey-list-id {{item.collectable === false ? 'survey-list-id-bad' : ''}}">{{item.pointId}}</text>
+        <text wx:if="{{item.collectable === false}}" class="survey-list-flag">预估不可采集</text>
+      </view>
+    </scroll-view>
+  </view>
 </view>

@@ -61,3 +61,49 @@ textarea { height: 140rpx; }
 .point-menu-actions { margin-top: 14rpx; }
 .point-menu-actions button { flex: 1; margin: 0; }
 .point-menu-space { height: 300rpx; }
+.survey-point-row { margin: 10rpx 0; }
+.survey-point-select { flex: 1; min-width: 0; margin: 0; }
+.survey-map-open { flex-shrink: 0; margin: 0; }
+.survey-map-modal {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 20rpx 24rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: #f5f7fa;
+}
+.survey-map-header { padding-bottom: 16rpx; }
+.survey-map-title { color: #172554; font-size: 31rpx; font-weight: 700; }
+.survey-map-close { margin: 0; }
+.survey-map-body { flex: 1; min-height: 0; }
+.survey-map-canvas { height: 100%; }
+.survey-map-hint { text-align: center; padding-top: 12rpx; }
+.survey-list-scroll { flex: 1; min-height: 0; background: #fff; border-radius: 12rpx; }
+.survey-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12rpx;
+  padding: 18rpx 22rpx;
+  border-bottom: 1rpx solid #e2e8f0;
+}
+.survey-list-item-active { background: #e8effc; }
+.survey-list-id { color: #172554; font-weight: 600; font-variant-numeric: tabular-nums; }
+.survey-list-id-bad { color: #64748b; }
+.survey-list-flag { color: #64748b; font-size: 24rpx; }
+.survey-list-legend { justify-content: flex-start; gap: 24rpx; padding: 0 4rpx 12rpx; }
+.legend-item { display: flex; align-items: center; gap: 8rpx; }
+.legend-dot {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2rpx solid #2563eb;
+  background: #fff;
+}
+.legend-dot-bad { background: #94a3b8; }
