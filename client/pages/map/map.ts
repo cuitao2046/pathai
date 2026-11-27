@@ -7,12 +7,14 @@ import { getScreenReaderVoice } from '../../core/a11y/voice-mode';
  * 页面编排、canvas 绘制与手势采集；地图数据经 MapService 单例（本地文件缓存
  * 秒开，未缓存时前台下载，失败走 loadError + 重试）。
  */
-import { appContext, BEACON_UUIDS_KEY } from '../../services/app-context';
+import { appContext, BEACON_DIRECTORY_KEY, BEACON_UUIDS_KEY } from '../../services/app-context';
 import { FieldNavigationRecorder, takeFieldNavigation } from '../../services/field-navigation';
 import { getJson, setJson } from '../../utils/kv';
 import {
+  createTripletResolver,
   pickStartupFloor,
   probeStartupFloorSamples,
+  type CachedBeaconTriplet,
   type StartupFloorSample,
 } from '../../core/ble/startup-floor-probe';
 import { ensureServiceEndpoint, lastEndpointFailure, currentServiceBaseUrl } from '../../services/service-endpoint';
@@ -32,6 +34,12 @@ import {
   type RoomFillGroup,
 } from '../../core/map/floor-geometry';
 import { FloorMapViewport } from '../../core/map/floor-map-viewport';
+import {
+  pruneScannedBeacons,
+  radarBlips,
+  type ScannedBeaconState,
+} from '../../core/map/radar-blips';
+import type { BeaconSample } from '../../core/ble/scan-window';
 import {
   ASR_EMPTY_TEXT,
   type PttState,
@@ -103,6 +111,9 @@ import type {
 } from '../../typings/api';
 
 const log = createLogger('map');
+
+/** 雷达波纹重绘间隔（约 12fps）：波纹是装饰性动画，不必跟满 60fps 重绘整张地图。 */
+const RADAR_FRAME_MS = 80;
 
 /** PTT 状态文案（自原语音首页平移，REQ-PAGE 单页化）。 */
 const PTT_TEXT: Record<PttState, string> = {
@@ -421,6 +432,10 @@ Page({
   dpr: 1,
   dirty: false,
   rafPending: false,
+  /** 当前扫到的信标（beaconId → 最近 RSSI/时刻），驱动雷达波纹；onLoad 中创建。 */
+  scannedBeacons: null as Map<string, ScannedBeaconState> | null,
+  /** 雷达动画定时器：有扫描样本时按 RADAR_FRAME_MS 循环，无样本即停。 */
+  radarTimer: null as ReturnType<typeof setTimeout> | null,
   /**
    * 复杂对象一律在 onLoad 中创建：Page 定义期的自定义属性会被开发者工具深拷贝，
    * 既打印 `Free data with key ... seems not a simple value` 告警，也会丢掉类原型方法。
@@ -450,6 +465,7 @@ Page({
 
   onLoad(): void {
     this.gesture = { mode: null, lastX: 0, lastY: 0, baseDist: 0, lastMidX: 0, lastMidY: 0 };
+    this.scannedBeacons = new Map();
     this.holdGesture = new HoldToTalkGesture(HOLD_TO_TALK_DEFAULTS);
     this.headingSmoother = new HeadingSmoother();
     // 语音初始化是启动门禁的一部分：必须等 bootstrap 解析出服务端地址后再建，
@@ -466,6 +482,8 @@ Page({
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
       // 查周边时上报当前朝向，服务端据此计算"左前方/右前方"等时钟方位
       headingDeg: () => this.headingDeg,
+      // 查询期间的扫描帧同样点亮雷达波纹：待命态主管线未启动，样本只走这里
+      onRawSample: (sample) => this.trackScannedBeacon(sample),
     });
     // 启动播报序列由地图事件驱动（下载开始/就绪/过旧），必须在 bootstrap 之前订阅
     this.mapUnsubscribe = appContext.map.subscribe((event) => this.onMapEvent(event));
@@ -484,6 +502,7 @@ Page({
     this.clearHoldTimers();
     this.holdGesture!.reset();
     this.stopHeading(); // 传感器不进后台（省电 + 避免系统限流）
+    this.stopRadarAnimation(); // 雷达波纹是前台视觉，后台停帧
     this.stopTurnHaptics(); // 转弯逼近节拍不进后台，定时器一并清理
     this.controller?.handleBackground(); // 导航中：停采集，恢复交给 onShow
     if (this.navPhase === 'previewing' || this.navPhase === 'awaiting-confirm') {
@@ -518,6 +537,13 @@ Page({
     } else if (this.fieldRecorder && this.data.fieldSystemArrived && this.pipeline && !this.pipeline.isRunning) {
       void this.pipeline.start('navigating').catch((error) => log.warn('实验到达后恢复采集失败', error));
     }
+    // 回前台恢复雷达动画：先剔除后台期间过期的样本，仍有有效样本才继续
+    if (this.scannedBeacons !== null) {
+      pruneScannedBeacons(this.scannedBeacons, Date.now());
+      if (this.scannedBeacons.size > 0) {
+        this.scheduleRadarTick();
+      }
+    }
   },
 
   onUnload(): void {
@@ -535,6 +561,8 @@ Page({
     this.clearHoldTimers();
     this.stopHeading();
     this.stopTurnHaptics();
+    this.stopRadarAnimation();
+    this.scannedBeacons = null;
     this.navPhase = 'idle';
     this.previewToken += 1;
     this.clearPreviewTimers();
@@ -593,6 +621,25 @@ Page({
     return stored.filter((uuid) => typeof uuid === 'string' && uuid.length > 0);
   },
 
+  /** 上次缓存的三元组目录：探测期即可判定广播命中/未命中。 */
+  cachedBeaconDirectory(): CachedBeaconTriplet[] {
+    const stored = getJson<CachedBeaconTriplet[]>(BEACON_DIRECTORY_KEY);
+    if (!Array.isArray(stored)) {
+      return [];
+    }
+    return stored.filter(
+      (item) =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof item.uuid === 'string' &&
+        item.uuid.length > 0 &&
+        typeof item.major === 'number' &&
+        typeof item.minor === 'number' &&
+        typeof item.beaconId === 'string' &&
+        typeof item.floorId === 'string',
+    );
+  },
+
   /**
    * 启动时与地图加载并行扫描蓝牙：只收集原始样本，楼层留到地图就绪后解析。
    * 2 秒内无样本（或无缓存 UUID / 蓝牙不可用）→ 保持首层显示。
@@ -610,11 +657,14 @@ Page({
       return;
     }
     const run = ++this.startupFloorProbeRun;
+    const directory = this.cachedBeaconDirectory();
+    const resolver = directory.length > 0 ? createTripletResolver(directory) : undefined;
     log.info(
       '启动楼层探测：与地图加载并行扫描',
       `${uuids.length} 个 UUID / ${STARTUP_FLOOR_PROBE_MS}ms`,
+      resolver !== undefined ? `缓存目录 ${directory.length} 枚` : '无缓存目录，仅采集原始样本',
     );
-    void probeStartupFloorSamples(uuids, STARTUP_FLOOR_PROBE_MS).then((samples) => {
+    void probeStartupFloorSamples(uuids, STARTUP_FLOOR_PROBE_MS, resolver).then((samples) => {
       if (run !== this.startupFloorProbeRun) {
         return; // 已完成新探测 / 页面已卸载 / 导航接管
       }
@@ -728,10 +778,28 @@ Page({
       this.roomFills = fills;
       this.placeLabels = labels;
       this.floorList = floors;
-      // 缓存信标 UUID：下次启动可在地图加载完成前就开扫，判定所在楼层
+      // 缓存信标 UUID + 三元组目录：下次启动可在地图加载完成前就开扫，并准确判定命中
       const scanUuids = appContext.map.beaconRegistry.scanUuids;
       if (scanUuids.length > 0) {
         setJson(BEACON_UUIDS_KEY, scanUuids);
+      }
+      const directory: CachedBeaconTriplet[] = appContext.map.beacons
+        .filter(
+          (beacon) =>
+            typeof beacon.uuid === 'string' &&
+            beacon.uuid.length > 0 &&
+            typeof beacon.major === 'number' &&
+            typeof beacon.minor === 'number',
+        )
+        .map((beacon) => ({
+          uuid: beacon.uuid as string,
+          major: beacon.major as number,
+          minor: beacon.minor as number,
+          beaconId: beacon.beaconId,
+          floorId: beacon.floorId,
+        }));
+      if (directory.length > 0) {
+        setJson(BEACON_DIRECTORY_KEY, directory);
       }
       const cur = floors.find((f) => f.floorId === this.data.currentFloor);
       this.setData({
@@ -908,6 +976,9 @@ Page({
       ctx.fill();
     }
 
+    // 当前定位扫描到的信标：雷达脉冲波纹（压在信标点之上、标注之下）
+    this.drawRadarBlips(ctx, vp);
+
     // 空间语义标注（教室/办公室等）：固定屏幕字号、白描边压在墙线上、
     // 贪心防重叠（超出视口的跳过；缩得过小时自然只显示互不相交的子集）
     const labels = this.placeLabels[vp.floorId];
@@ -1083,6 +1154,103 @@ Page({
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#ffffff';
       ctx.stroke();
+    }
+  },
+
+  // ------------------------------------------------------------------
+  // 扫描信标雷达波纹
+  // ------------------------------------------------------------------
+
+  /** 定位管线原始样本 → 雷达状态（按 beaconId 合并，保留最近 RSSI）。 */
+  trackScannedBeacon(sample: BeaconSample): void {
+    // mock 数据源不展示雷达波纹：只有 live 实扫才有“当前扫描到”的含义
+    if (appContext.dataSource !== 'live') {
+      return;
+    }
+    const beaconId = appContext.map.beaconRegistry.resolve(
+      sample.uuid,
+      sample.major,
+      sample.minor,
+    );
+    // null 只在 onUnload 之后出现：迟到的样本不再驱动动画
+    if (beaconId === null || this.scannedBeacons === null) {
+      return;
+    }
+    this.scannedBeacons.set(beaconId, { rssi: sample.rssi, atMs: Date.now() });
+    this.scheduleRadarTick();
+  },
+
+  /** 雷达动画节拍：有样本时循环请求重绘，样本全部过期后自动停止。 */
+  scheduleRadarTick(): void {
+    if (this.radarTimer !== null) {
+      return;
+    }
+    this.radarTimer = setTimeout(() => {
+      this.radarTimer = null;
+      const scanned = this.scannedBeacons;
+      if (scanned === null) {
+        return;
+      }
+      pruneScannedBeacons(scanned, Date.now());
+      if (scanned.size === 0) {
+        return;
+      }
+      this.requestDraw();
+      this.scheduleRadarTick();
+    }, RADAR_FRAME_MS);
+  },
+
+  stopRadarAnimation(): void {
+    if (this.radarTimer !== null) {
+      clearTimeout(this.radarTimer);
+      this.radarTimer = null;
+    }
+  },
+
+  /** 画扫描信标的扩散波纹：两圈错相，按信号强度配色，随样本老化衰减。 */
+  drawRadarBlips(ctx: Canvas2d, vp: FloorMapViewport): void {
+    // mock 模式不显示雷达波纹（与采集入口同一口径：仅 live 实扫）
+    if (appContext.dataSource !== 'live') {
+      return;
+    }
+    const scanned = this.scannedBeacons;
+    if (scanned === null || scanned.size === 0) {
+      return;
+    }
+    const blips = radarBlips(scanned, Date.now());
+    if (blips.length === 0) {
+      return;
+    }
+    const { w, h } = this.canvasSize;
+    for (const blip of blips) {
+      const beacon = appContext.map.beacons.find(
+        (item) => item.beaconId === blip.beaconId,
+      );
+      if (beacon === undefined || beacon.floorId !== vp.floorId) {
+        continue;
+      }
+      const { sx, sy } = vp.toScreen(beacon.x, beacon.y);
+      if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) {
+        continue;
+      }
+      const color =
+        blip.strength >= 0.66 ? '#059669' : blip.strength >= 0.33 ? '#f59e0b' : '#94a3b8';
+      const core = 3 + blip.strength * 2;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      for (let ring = 0; ring < 2; ring += 1) {
+        const phase = (blip.phase + ring * 0.5) % 1;
+        ctx.globalAlpha = (1 - phase) * blip.fade * 0.85;
+        ctx.beginPath();
+        ctx.arc(sx, sy, core + 4 + phase * 22, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = blip.fade;
+      ctx.beginPath();
+      ctx.arc(sx, sy, core + 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
   },
 
@@ -2826,7 +2994,10 @@ Page({
       // 指纹库开关（默认关闭）：每拍读取，关闭时请求体与旧版完全一致
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
       experiment: () => this.fieldRecorder?.run.selection ?? null,
-      onRawSample: (sample) => this.fieldRecorder?.addSample(sample),
+      onRawSample: (sample) => {
+        this.fieldRecorder?.addSample(sample);
+        this.trackScannedBeacon(sample);
+      },
       onEstimate: (estimate, meta) => this.handleEstimate(estimate, meta),
       onUnusable: (err) => {
         this.fieldRecorder?.event('unavailable', { code: err.code });
