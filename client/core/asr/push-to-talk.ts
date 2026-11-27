@@ -18,14 +18,27 @@ export type PttState = 'idle' | 'recording' | 'recognizing' | 'error';
  */
 export const ASR_EMPTY_TEXT = '没听清，请再说一遍';
 export const ASR_PERMISSION_TEXT = '需要麦克风权限，请在设置中开启';
+export const ASR_MIC_BUSY_TEXT = '麦克风被占用，请稍后再试';
+export const ASR_MIC_OPEN_FAILED_TEXT = '麦克风打开失败，请重试';
 export const ASR_RECORD_FAILED_TEXT = '录音没有成功，请重试';
 export const ASR_RECOGNIZE_FAILED_TEXT = '语音识别失败，请重试';
 
+/** iOS 音频通道被占用（TTS 刚播完/上一轮录音未释放）。 */
+const MIC_BUSY_PATTERN = /busy|occup|占用/i;
+/** 麦克风没起来（开麦超时、系统拒绝启动）。 */
+const MIC_OPEN_FAILED_PATTERN = /启动超时|打开失败|start\s*fail|system\s*error/i;
 /** 微信/系统录音权限被拒的典型 errMsg（auth deny / authorize fail / 录音权限）。 */
 const MIC_DENIED_PATTERN = /auth\s*den|authoriz|permission|mic|麦克风|录音权限/i;
 
 /** 把引擎原始错误收敛为用户可听懂的文案；原文只用于日志。 */
 export function describeAsrError(raw: string, fallback: string): string {
+  // 顺序有讲究：busy/打开失败的消息里含「麦克风」，必须先于权限判断
+  if (raw.length > 0 && MIC_BUSY_PATTERN.test(raw)) {
+    return ASR_MIC_BUSY_TEXT;
+  }
+  if (raw.length > 0 && MIC_OPEN_FAILED_PATTERN.test(raw)) {
+    return ASR_MIC_OPEN_FAILED_TEXT;
+  }
   if (raw.length > 0 && MIC_DENIED_PATTERN.test(raw)) {
     return ASR_PERMISSION_TEXT;
   }

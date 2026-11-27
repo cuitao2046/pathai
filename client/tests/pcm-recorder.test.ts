@@ -6,6 +6,7 @@ import { PcmRecorder, MAX_RECORD_MS, type RecorderManagerLike, type PcmFrameHand
 
 class FakeRecorderManager implements RecorderManagerLike {
   startOption: Record<string, unknown> | null = null;
+  startCount = 0;
   stopCount = 0;
   /** stop() 是否同步派发 onStop（false 模拟微信异步/错误先行）。 */
   autoStopEvent = true;
@@ -15,6 +16,7 @@ class FakeRecorderManager implements RecorderManagerLike {
 
   start(option: Record<string, unknown>): void {
     this.startOption = option;
+    this.startCount += 1;
   }
 
   stop(): void {
@@ -60,6 +62,10 @@ describe('PcmRecorder', () => {
     fake = new FakeRecorderManager();
     recorder = new PcmRecorder(fake);
     received = [];
+  });
+
+  afterEach(() => {
+    recorder.cancel(); // 清掉开麦超时/重试计时器，避免句柄泄漏
   });
 
   test('start 参数：PCM 16kHz 单声道 1KB 帧 30s 语音识别音源', () => {
@@ -159,5 +165,58 @@ describe('PcmRecorder', () => {
   test('未启动直接 stop 立即 resolve', async () => {
     await expect(recorder.stop()).resolves.toBeUndefined();
     expect(fake.stopCount).toBe(0);
+  });
+
+  test('无 onStart 时首帧即视为就绪，onReady 只触发一次', () => {
+    const ready = jest.fn();
+    recorder.start({ onFrame: () => undefined, onReady: ready });
+    fake.emitFrame([1]);
+    fake.emitFrame([2]);
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('录音错误立即回调 onFailure，不等松手后的 stop', () => {
+    const failed = jest.fn();
+    recorder.start({ onFrame: () => undefined, onFailure: failed });
+    fake.fireError('operateRecorder:fail auth deny');
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect((failed.mock.calls[0][0] as Error).message).toContain('auth deny');
+    expect(recorder.isRecording).toBe(false);
+  });
+
+  test('权限类错误不重试；占用类错误先重试一次', () => {
+    jest.useFakeTimers();
+    const failed = jest.fn();
+    recorder.start({ onFrame: () => undefined, onFailure: failed });
+    fake.fireError('operateRecorder:fail system error');
+    expect(failed).not.toHaveBeenCalled(); // 进入重试窗口，不急着报错
+    expect(recorder.isRecording).toBe(true);
+    jest.advanceTimersByTime(250);
+    expect(fake.startCount).toBe(2); // 重新 start 一次
+    fake.emitFrame([1]); // 重试成功
+    expect(recorder.isRecording).toBe(true);
+    jest.useRealTimers();
+  });
+
+  test('重试等待窗口内微信派发的 onStop 不结束会话', () => {
+    jest.useFakeTimers();
+    recorder.start({ onFrame: () => undefined });
+    fake.fireError('operateRecorder:fail system error');
+    fake.stop(); // 失败后微信可能紧跟一条 onStop
+    expect(recorder.isRecording).toBe(true);
+    jest.advanceTimersByTime(250);
+    expect(fake.startCount).toBe(2);
+    jest.useRealTimers();
+  });
+
+  test('开麦超时：既无 onStart 也无帧 → onFailure 并复位', () => {
+    jest.useFakeTimers();
+    const failed = jest.fn();
+    recorder.start({ onFrame: () => undefined, onFailure: failed });
+    jest.advanceTimersByTime(2500);
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect((failed.mock.calls[0][0] as Error).message).toContain('启动超时');
+    expect(recorder.isRecording).toBe(false);
+    jest.useRealTimers();
   });
 });

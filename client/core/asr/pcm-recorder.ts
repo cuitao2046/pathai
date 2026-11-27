@@ -15,8 +15,13 @@ const log = createLogger('asr-pcm');
 
 export interface PcmFrameHandlers {
   onFrame(samples: Float32Array): void;
-  /** 麦克风真正开始工作（manager.onStart）；页面据此提示「可以开口了」。 */
+  /** 麦克风真正开始工作（manager.onStart 或首帧到达）；页面据此提示「可以开口了」。 */
   onReady?: () => void;
+  /**
+   * 录音启动/运行失败：与 onError 同步回调，供上层立刻中断会话并提示。
+   * 只靠 stop() 补抛会让用户在按住期间一直停在「正在打开麦克风…」。
+   */
+  onFailure?: (err: Error) => void;
 }
 
 /** 录音器依赖的微信 manager 最小面（便于单测注入）。 */
@@ -33,6 +38,37 @@ export interface RecorderManagerLike {
 
 /** 单次录音上限（毫秒）。 */
 export const MAX_RECORD_MS = 30000;
+
+/**
+ * 开麦超时（毫秒）：超过此时长既没有 onStart 也没有任何音频帧，判定麦克风没打开。
+ * iOS 上音频会话被 TTS/上一轮录音占用时，start() 可能既不回调也不报错，
+ * 没有这个兜底页面会永远停在「正在打开麦克风…」。
+ */
+const MIC_START_TIMEOUT_MS = 2500;
+
+/** 开麦超时的错误消息（describeAsrError 据此给出「麦克风打开失败」）。 */
+const MIC_START_TIMEOUT_MESSAGE = '麦克风启动超时';
+
+/**
+ * 启动失败后的重试等待（毫秒）。
+ * iOS 音频会话是进程级独占：TTS 刚播完/上一轮录音刚停时，start() 会直接失败。
+ * 等一小段时间再试一次，通常就能拿到麦克风。
+ */
+const MIC_RETRY_DELAY_MS = 250;
+
+/** 可恢复的启动失败（音频通道被占用/系统繁忙）：重试一次有意义。 */
+const MIC_RETRYABLE_PATTERN = /busy|occup|system\s*error/i;
+
+/** 录音启动参数（首启与重试共用）。 */
+const START_OPTION: Record<string, unknown> = {
+  format: 'PCM',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  frameSize: 1, // 1KB = 512 采样 ≈ 32ms/帧
+  duration: MAX_RECORD_MS,
+  // Android 语音识别输入源（iOS 忽略该字段）
+  audioSource: 'voice_recognition',
+};
 
 /** 微信对未启动录音机操作的 errMsg（时序竞态产物，语义等同"已停止"，非故障）。 */
 const RECORDER_NOT_START_PATTERN = /recorder not start/i;
@@ -60,6 +96,14 @@ export class PcmRecorder implements RecorderLike {
   /** 本次 start 的时刻与首帧时刻（定位「开口过早/麦克风起得慢」用）。 */
   private startedAt = 0;
   private firstFrameLogged = false;
+  /** 是否已通知过「麦克风就绪」：onStart 或首帧，先到者生效。 */
+  private readyFired = false;
+  /** 开麦超时计时器。 */
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 启动失败后的重试计时器；非 null 表示正处于重试等待窗口。 */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 本轮是否已重试过（只重试一次，避免反复失败时无限循环）。 */
+  private retried = false;
 
   constructor(private readonly manager: RecorderManagerLike = wx.getRecorderManager()) {}
 
@@ -77,6 +121,10 @@ export class PcmRecorder implements RecorderLike {
     this.handlers = handlers;
     this.startedAt = Date.now();
     this.firstFrameLogged = false;
+    this.readyFired = false;
+    this.retried = false;
+    this.clearStartTimer();
+    this.clearRetryTimer();
     this.stopped = new Promise<void>((resolve, reject) => {
       this.settle = { resolve, reject };
     });
@@ -88,9 +136,13 @@ export class PcmRecorder implements RecorderLike {
       }
     });
     this.manager.onStop(() => {
-      if (gen === this.generation) {
-        this.finish(null);
+      if (gen !== this.generation) {
+        return;
       }
+      if (this.retryTimer !== null) {
+        return; // 重试窗口内微信的停止事件属于上一次失败，不代表本轮收尾
+      }
+      this.finish(null);
     });
     this.manager.onError((err) => {
       if (gen !== this.generation) {
@@ -103,6 +155,21 @@ export class PcmRecorder implements RecorderLike {
         this.finish(null);
         return;
       }
+      // 启动阶段（尚未就绪）遇到通道占用/系统繁忙时先重试一次：iOS 上音频会话
+      // 未及时交还（TTS 刚播完、上一轮录音刚停）是最常见成因，等通道释放后即可开麦。
+      // 运行中错误不重试——那会掩盖中途中断。
+      if (!this.retried && !this.readyFired && MIC_RETRYABLE_PATTERN.test(raw)) {
+        this.retried = true;
+        log.warn('录音启动失败，稍后重试一次', raw);
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null;
+          if (gen !== this.generation || !this.recording) {
+            return;
+          }
+          this.manager.start(START_OPTION);
+        }, MIC_RETRY_DELAY_MS);
+        return;
+      }
       this.finish(new Error(raw.length > 0 ? raw : '录音失败'));
     });
     // 「麦克风已就绪」的唯一可信信号：onStart 之后才会真正产生音频帧
@@ -113,15 +180,20 @@ export class PcmRecorder implements RecorderLike {
     });
     this.recording = true;
     log.info('请求开始录音');
-    this.manager.start({
-      format: 'PCM',
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      frameSize: 1, // 1KB = 512 采样 ≈ 32ms/帧
-      duration: MAX_RECORD_MS,
-      // Android 语音识别输入源（iOS 忽略该字段）
-      audioSource: 'voice_recognition',
-    });
+    this.startTimer = setTimeout(() => {
+      if (gen !== this.generation || !this.recording || this.readyFired) {
+        return;
+      }
+      log.warn('麦克风启动超时，判定开麦失败');
+      this.finish(new Error(MIC_START_TIMEOUT_MESSAGE));
+      // finish 已把 recording 置 false，cancel() 不会再停：这里自行释放录音机
+      try {
+        this.manager.stop();
+      } catch {
+        // 录音机本就未启动时 stop 可能抛错，忽略即可
+      }
+    }, MIC_START_TIMEOUT_MS);
+    this.manager.start(START_OPTION);
   }
 
   /** 停止录音并等待 onStop（最后一帧已推完）；未在录音时立即 resolve。 */
@@ -140,6 +212,9 @@ export class PcmRecorder implements RecorderLike {
   /** 取消：停止录音并丢弃其后帧回调。 */
   cancel(): void {
     this.cancelled = true;
+    this.clearStartTimer();
+    this.clearRetryTimer();
+    this.readyFired = false;
     if (!this.recording) {
       return;
     }
@@ -156,17 +231,41 @@ export class PcmRecorder implements RecorderLike {
     }
   }
 
-  /** 麦克风真正打开：通知上层「可以开口了」，并记录首次开麦耗时。 */
+  /**
+   * 麦克风真正打开：通知上层「可以开口了」，并记录首次开麦耗时。
+   * 以 onStart 与首帧先到者为准——部分 iOS 版本 onStart 不回调，但音频帧照常产生，
+   * 只认 onStart 会让界面永远停在「正在打开麦克风…」。
+   */
   private handleStart(): void {
+    if (this.readyFired) {
+      return;
+    }
+    this.readyFired = true;
+    this.clearStartTimer();
     const cost = Date.now() - this.startedAt;
     log.info(`麦克风已就绪 ${cost}ms`);
     this.handlers?.onReady?.();
+  }
+
+  private clearStartTimer(): void {
+    if (this.startTimer !== null) {
+      clearTimeout(this.startTimer);
+      this.startTimer = null;
+    }
+  }
+
+  private clearRetryTimer(): void {
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
 
   private handleFrame(buffer: ArrayBuffer | undefined): void {
     if (this.cancelled || this.handlers === null || buffer === undefined || buffer.byteLength < 2) {
       return;
     }
+    this.handleStart(); // 首帧是麦克风已在工作的最强证据
     if (!this.firstFrameLogged) {
       this.firstFrameLogged = true;
       log.info(`首帧到达 ${Date.now() - this.startedAt}ms`);
@@ -181,9 +280,15 @@ export class PcmRecorder implements RecorderLike {
 
   private finish(err: Error | null): void {
     this.recording = false;
+    this.clearStartTimer();
+    this.clearRetryTimer();
+    this.readyFired = false;
+    const handlers = this.handlers;
     this.handlers = null;
     if (err !== null) {
       this.lastError = err; // 保留错误供 stop() 补抛（引擎正在等待收尾的场景）
+      // 立即上报：否则按住期间界面一直停在「正在打开麦克风…」，松手才看到失败
+      handlers?.onFailure?.(err);
     }
     const settle = this.settle;
     this.settle = null;

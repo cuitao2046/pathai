@@ -278,6 +278,9 @@ export class XfyunAsrEngine implements AsrEngine {
             session.handlers.onReady?.();
           }
         },
+        // 麦克风没打开时立即收尾：等到松手才在 recorder.stop() 暴露，
+        // 用户会一直停在「正在打开麦克风…」且只听到含糊的「语音识别失败」
+        onFailure: (err) => this.failSession(session, err),
       });
       const cred = await this.credential();
       if (this.pending !== session) {
