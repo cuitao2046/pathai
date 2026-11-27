@@ -1,8 +1,8 @@
 {
   "building_name": "初中学部1#教学楼",
   "site_id": "school-building-01",
-  "map_version": "2026-11-19.2",
-  "exported_at": "2026-11-19T07:08:52+00:00",
+  "map_version": "2026-11-25.1",
+  "exported_at": "2026-11-27T10:12:44+00:00",
   "pois": [
     {
       "standard_name": "书法教室",
@@ -285,6 +285,21 @@
       ]
     },
     {
+      "standard_name": "广安106",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0016",
+          "node_id": "F1-TR-0016",
+          "zone_hint": "一楼北侧走廊东端"
+        }
+      ]
+    },
+    {
       "standard_name": "广播室",
       "category": "equipment",
       "is_public_utility": false,
@@ -299,6 +314,21 @@
           "place_id": "F1-RM-0040",
           "node_id": "F1-TR-0040",
           "zone_hint": "一楼东南角"
+        }
+      ]
+    },
+    {
+      "standard_name": "德胜104",
+      "category": "classroom",
+      "is_public_utility": false,
+      "aliases": [],
+      "instances": [
+        {
+          "floor": "1F",
+          "floor_id": "1",
+          "place_id": "F1-RM-0003",
+          "node_id": "F1-TR-0003",
+          "zone_hint": "一楼西侧"
         }
       ]
     },
@@ -658,24 +688,6 @@
       ]
     },
     {
-      "standard_name": "资源教室",
-      "category": "classroom",
-      "is_public_utility": false,
-      "aliases": [
-        "资源中心",
-        "资源室"
-      ],
-      "instances": [
-        {
-          "floor": "1F",
-          "floor_id": "1",
-          "place_id": "F1-RM-0003",
-          "node_id": "F1-TR-0003",
-          "zone_hint": "一楼西侧"
-        }
-      ]
-    },
-    {
       "standard_name": "配电室",
       "category": "equipment",
       "is_public_utility": false,
@@ -709,13 +721,6 @@
           "place_id": "F1-RM-0015",
           "node_id": "F1-TR-0015",
           "zone_hint": "一楼北侧走廊西端"
-        },
-        {
-          "floor": "1F",
-          "floor_id": "1",
-          "place_id": "F1-RM-0016",
-          "node_id": "F1-TR-0016",
-          "zone_hint": "一楼北侧走廊东端"
         },
         {
           "floor": "1F",

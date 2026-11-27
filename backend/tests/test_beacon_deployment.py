@@ -53,21 +53,21 @@ def test_known_beacons_match_client_baseline():
 
     plan = _analyze(package, "BK-01-006")
     assert plan["installationWallId"] == "F1-W-1268"
-    assert plan["installationDistanceM"] < 0.01
+    assert plan["installationDistanceM"] < 0.2
     assert [(r["wallId"], r["side"]) for r in plan["references"]] == [
         ("F1-W-0221", "left"),
         ("F1-W-0476", "right"),
     ]
-    assert abs(plan["references"][0]["distanceM"] - 5.065) < 0.01
-    assert abs(plan["references"][1]["distanceM"] - 18.479) < 0.01
+    assert abs(plan["references"][0]["distanceM"] - 6.017) < 0.01
+    assert abs(plan["references"][1]["distanceM"] - 17.527) < 0.01
 
     plan = _analyze(package, "BK-Q-F1-012")
     assert plan["installationWallId"] == "F1-W-0908"
-    assert abs(plan["installationDistanceM"] - 0.3) < 0.001
+    assert abs(plan["installationDistanceM"] - 0.179) < 0.001
     assert [(r["wallId"], r["side"]) for r in plan["references"]] == [
         ("F1-W-0476", "right"),
     ]
-    assert abs(plan["references"][0]["distanceM"] - 11.72) < 0.01
+    assert abs(plan["references"][0]["distanceM"] - 13.657) < 0.01
 
 
 def test_published_package_precomputes_every_beacon():

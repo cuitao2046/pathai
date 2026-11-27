@@ -72,7 +72,7 @@ def test_approval_queue_idempotency_and_export(client, auth_headers):
         info = json.loads(exported.read("manifest.json"))
         assert info["counts"]["FP"] == 1
         analysis = info["analysisConfig"]
-        assert analysis["metricVersion"] == "1.0"
+        assert analysis["exportMetricVersion"] == "1.0"
         assert (analysis["suspendRadiusM"], analysis["jumpThresholdM"]) == (1.5, 3.0)
         assert analysis["expectedUpdateIntervalMs"] == {"standby": 8000, "preview": 2500, "navigating": 1000}
         assert analysis["matchThresholds"]["minOverlap"] == 3
@@ -456,7 +456,8 @@ def test_freeze_and_c_fallback_use_b_even_after_active_params_change(client, app
     assert metrics["timeliness"]["byMethod"]["C"]["arrivalDetectionDeltaMs"]["n"] == 1
     assert metrics["usability"]["updateIntervalMs"]["n"] == 1
     assert metrics["timeliness"]["arrivalDetectionDeltaMs"]["n"] == 1
-    assert metrics["analysisConfig"]["metricVersion"] == "1.1"
+    assert metrics["analysisConfig"]["analysisMetricVersion"] == "1.1"
+    assert metrics["analysisConfig"]["export"]["exportMetricVersion"] == "1.0"
     _, details = analyze(zip_path, replay_path, with_details=True)
     assert len(details["segments"]) == sum(metrics["counts"].values())
     assert len(details["nav_estimates"]) == 2

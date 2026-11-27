@@ -14,6 +14,7 @@
  * 内部防并发：上一次查询未结束时再次 query 直接返回 null（调用方忽略）。
  */
 import type { BeaconSourceLike } from '../core/ble/beacon-source';
+import type { BeaconSample } from '../core/ble/scan-window';
 import { getScanProfile } from '../core/ble/scan-profile';
 import type { ApiClient } from '../core/http/api-client';
 import {
@@ -118,6 +119,8 @@ export interface LocationQueryDeps {
   useFingerprintDb?: () => boolean;
   /** 当前朝向（度）；查周边时上报给服务端计算时钟方位。 */
   headingDeg?: () => number | null;
+  /** 原始扫描样本回调（逐帧）：供页面驱动雷达波纹等实时视觉。 */
+  onRawSample?: (sample: BeaconSample) => void;
 }
 
 /** 质量策略播报文本（FE-01；estimate 仅会是 reliable/degraded）。 */
@@ -283,6 +286,7 @@ export class LocationQueryService {
       sequence: new SequenceCounter(),
       windowMs: this.deps.windowMs ?? getScanProfile().windowMs,
       useFingerprintDb: this.deps.useFingerprintDb,
+      onRawSample: this.deps.onRawSample,
       // 查周边：同一次定位请求内让服务端附上周边清单，避免串两次请求
       includeSurroundings: kind === 'surroundings' ? () => true : undefined,
       headingDeg: () => (headingAvailable ? (heading as number) : null),

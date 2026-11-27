@@ -2,8 +2,12 @@ export const FIELD_ORIENTATIONS = ['N', 'E', 'S', 'W'] as const;
 export type FieldOrientation = typeof FIELD_ORIENTATIONS[number];
 export type FieldTask = 'CAL' | 'FP' | 'ST' | 'DY' | 'NV' | 'UT';
 export type FieldMethod = 'A' | 'B' | 'C';
-export const FINGERPRINT_MIN_SECONDS = 25;
+/** T4 每朝向基准窗口：到点仍未达标则延长到 FINGERPRINT_MAX_SECONDS。 */
+export const FINGERPRINT_BASE_SECONDS = 25;
+/** T4 上限：延长窗口到点仍不达标即标「疑似异常」。 */
 export const FINGERPRINT_MAX_SECONDS = 30;
+/** 达标即停最早校验点：≥12 秒（≥6 个 2 秒扫描窗口）起逐 tick 校验，达标立即结束该朝向段。 */
+export const FINGERPRINT_EARLY_STOP_SECONDS = 12;
 
 export interface SurveyPoint {
   pointId: string;
@@ -107,13 +111,21 @@ export function fieldDay(timestamp = Date.now()): string {
 export function fieldSteps(task: FieldTask, trial = false): { part: number; orientation?: FieldOrientation; duration: number }[] {
   if (task === 'CAL') return [{ part: 1, duration: trial ? 10 : 120 }];
   if (task === 'FP' || task === 'ST') {
-    const duration = trial ? 10 : task === 'FP' ? FINGERPRINT_MIN_SECONDS : 30;
+    const duration = trial ? 10 : task === 'FP' ? FINGERPRINT_BASE_SECONDS : 30;
     return FIELD_ORIENTATIONS.map((orientation, index) => ({ part: index + 1, orientation, duration }));
   }
   return [{ part: 1, duration: 0 }];
 }
 
-export function fingerprintWindow(segment: Pick<FieldSegment, 'startedAtEpoch' | 'rssi'>, deadline: number, now: number) {
+/**
+ * T4 朝向段窗口判定。每个 tick（250 ms）对正式 FP 段调用一次：
+ * - 基准窗口内（≥12 s 起）：达标（60 条 RSSI + 3 枚有效信标）立即返回当前时刻作为结束点；
+ * - 基准窗口（25 s）到点仍未达标：延长到 30 s 继续采；
+ * - 30 s 到点仍不达标：返回原因，由调用方标「疑似异常」。
+ * 无需任何动作时返回 null（继续采集、不改 deadline）。
+ */
+export function fingerprintWindow(segment: Pick<FieldSegment, 'startedAtEpoch' | 'rssi'>, deadline: number, now: number):
+  { deadline: number; reason: string } | null {
   const countFailure = (end: number): string => {
     const frames = segment.rssi.filter((frame) => frame.t <= end);
     if (frames.length < 60) return 'RSSI 样本不足 60 条';
@@ -121,9 +133,14 @@ export function fingerprintWindow(segment: Pick<FieldSegment, 'startedAtEpoch' |
       .map((frame) => frame.beacon));
     return beacons.size < 3 ? '有效信标不足 3 枚' : '';
   };
-  const reason = countFailure(deadline);
+  const earlyStopAt = segment.startedAtEpoch + FINGERPRINT_EARLY_STOP_SECONDS * 1000;
   const maximum = segment.startedAtEpoch + FINGERPRINT_MAX_SECONDS * 1000;
-  if (!reason || deadline >= maximum) return { deadline, reason };
+  if (now < deadline) {
+    return now >= earlyStopAt && !countFailure(now) ? { deadline: now, reason: '' } : null;
+  }
+  const reason = countFailure(deadline);
+  if (!reason) return { deadline, reason: '' };
+  if (deadline >= maximum) return { deadline: maximum, reason };
   return { deadline: maximum, reason: now >= maximum ? countFailure(maximum) : reason };
 }
 

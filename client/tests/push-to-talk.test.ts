@@ -133,6 +133,24 @@ describe('PushToTalk 按住说话状态机', () => {
     expect(errors[0]).not.toContain('auth deny');
   });
 
+  it('麦克风被占用 → 播报占用提示而非识别失败', async () => {
+    const { ptt, asr, errors } = make();
+    ptt.begin();
+    (asr as MockAsrEngine).emitError(new Error('operateRecorder:fail the recorder is busy'));
+    await tick();
+    expect(ptt.currentState).toBe('error');
+    expect(errors).toEqual(['麦克风被占用，请稍后再试']);
+  });
+
+  it('开麦超时 → 播报麦克风打开失败，不含原始错误', async () => {
+    const { ptt, asr, errors } = make();
+    ptt.begin();
+    (asr as MockAsrEngine).emitError(new Error('麦克风启动超时'));
+    await tick();
+    expect(ptt.currentState).toBe('error');
+    expect(errors).toEqual(['麦克风打开失败，请重试']);
+  });
+
   it('error 状态可重新 begin 并正常完成', async () => {
     const { ptt, asr, finals } = make();
     ptt.begin();

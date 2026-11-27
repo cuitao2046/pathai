@@ -157,26 +157,48 @@ test('calibration and grid durations are distinct and undo keeps the checkpoint 
   ])).toBe(1);
 });
 
-test('fingerprint windows finish at 25 seconds only with enough samples and valid beacons', () => {
+test('fingerprint windows stop as soon as criteria are met from 12 seconds, else extend to 30', () => {
   const startedAtEpoch = 1000;
+  const earlyStopAt = startedAtEpoch + 12000;
   const firstDeadline = startedAtEpoch + 25000;
   const maximum = startedAtEpoch + 30000;
   const rssi = Array.from({ length: 60 }, (_, i) => ({
     t: startedAtEpoch + i * 400, beacon: `b-${i % 3}`, rssi: -65,
   }));
+  // 60 条达标样本在第 24.6 s 齐备：12 s 起逐 tick 校验，达标即停在 24.6 s（旧逻辑固定采满 25 s）。
+  expect(fingerprintWindow({ startedAtEpoch, rssi }, firstDeadline, earlyStopAt)).toBeNull();
+  expect(fingerprintWindow({ startedAtEpoch, rssi }, firstDeadline, earlyStopAt + 100)).toBeNull();
+  const readyAt = startedAtEpoch + 24600;
+  expect(fingerprintWindow({ startedAtEpoch, rssi }, firstDeadline, readyAt)).toEqual({
+    deadline: readyAt, reason: '',
+  });
+  // 基准窗口到点达标：25 s 正常结束。
   expect(fingerprintWindow({ startedAtEpoch, rssi }, firstDeadline, firstDeadline)).toEqual({
     deadline: firstDeadline, reason: '',
   });
   const withLateReading = { startedAtEpoch, rssi: [
     ...rssi.slice(0, 59), { ...rssi[59], t: firstDeadline + 1 },
   ] };
+  // 25 s 差一条：延长到 30 s 继续采，期间达标仍即停。
   expect(fingerprintWindow(withLateReading, firstDeadline, firstDeadline)).toEqual({
     deadline: maximum, reason: 'RSSI 样本不足 60 条',
   });
+  expect(fingerprintWindow(withLateReading, maximum, firstDeadline + 2000)).toEqual({
+    deadline: firstDeadline + 2000, reason: '',
+  });
   expect(fingerprintWindow(withLateReading, maximum, maximum)).toEqual({ deadline: maximum, reason: '' });
   expect(fingerprintWindow(withLateReading, firstDeadline, maximum + 100)).toEqual({ deadline: maximum, reason: '' });
+  // 30 s 仍不达标：疑似异常。
   const weak = { startedAtEpoch, rssi: rssi.map((f) => f.beacon === 'b-2' ? { ...f, rssi: -110 } : f) };
   expect(fingerprintWindow(weak, maximum, maximum)).toEqual({ deadline: maximum, reason: '有效信标不足 3 枚' });
+  // 12 s 前即使样本齐备也不提前结束（不足 6 个 2 s 扫描窗口）。
+  const dense = Array.from({ length: 60 }, (_, i) => ({
+    t: startedAtEpoch + i * 100, beacon: `b-${i % 3}`, rssi: -65,
+  }));
+  expect(fingerprintWindow({ startedAtEpoch, rssi: dense }, firstDeadline, startedAtEpoch + 8000)).toBeNull();
+  expect(fingerprintWindow({ startedAtEpoch, rssi: dense }, firstDeadline, earlyStopAt)).toEqual({
+    deadline: earlyStopAt, reason: '',
+  });
 });
 
 test('nine official navigation runs are balanced and rotate by day', () => {
