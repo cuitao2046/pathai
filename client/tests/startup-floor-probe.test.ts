@@ -2,7 +2,12 @@
  * 启动楼层判层单测：无样本保持首层、多数楼层胜出、并列按 RSSI 决胜。
  * 扫描本身依赖 wx BLE，不在单测覆盖；这里只测纯投票逻辑。
  */
-import { pickStartupFloor, type StartupFloorSample } from '../core/ble/startup-floor-probe';
+import {
+  createTripletResolver,
+  pickStartupFloor,
+  type CachedBeaconTriplet,
+  type StartupFloorSample,
+} from '../core/ble/startup-floor-probe';
 
 const UUID = 'B9407F30-F5F8-466E-AFF9-25556B57FE6D';
 
@@ -37,5 +42,30 @@ describe('pickStartupFloor', () => {
       resolve,
     );
     expect(winner).toEqual({ floorId: '2', count: 1, avgRssi: -55 });
+  });
+});
+
+describe('createTripletResolver', () => {
+  const directory: CachedBeaconTriplet[] = [
+    { uuid: UUID, major: 1, minor: 10103, beaconId: 'BK-01-003', floorId: '1' },
+    { uuid: UUID, major: 1, minor: 10109, beaconId: 'BK-01-009', floorId: '1' },
+  ];
+
+  it('按三元组命中，与 UUID 大小写、首尾空格无关', () => {
+    const resolveByDirectory = createTripletResolver(directory);
+    expect(resolveByDirectory(UUID, 1, 10103)).toBe('BK-01-003');
+    expect(resolveByDirectory(` ${UUID.toLowerCase()} `, 1, 10109)).toBe('BK-01-009');
+  });
+
+  it('目录内无此三元组或 major/minor 不一致 → null', () => {
+    const resolveByDirectory = createTripletResolver(directory);
+    expect(resolveByDirectory(UUID, 1, 10161)).toBeNull();
+    expect(resolveByDirectory(UUID, 2, 10103)).toBeNull();
+    expect(resolveByDirectory('00000000-0000-0000-0000-000000000000', 1, 10103)).toBeNull();
+  });
+
+  it('空目录 → 全部未命中', () => {
+    const resolveByDirectory = createTripletResolver([]);
+    expect(resolveByDirectory(UUID, 1, 10103)).toBeNull();
   });
 });

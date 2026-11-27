@@ -50,6 +50,12 @@ export const MOCK_ASR_TEXT_KEY = 'cfg:mockAsrText';
  */
 export const BEACON_UUIDS_KEY = 'cfg:beaconUuids';
 
+/**
+ * 启动探测用的信标三元组目录（uuid/major/minor → beaconId/floorId）。
+ * 与 UUID 清单一起缓存：地图加载前即可把广播判定为命中/未命中，日志不再误报。
+ */
+export const BEACON_DIRECTORY_KEY = 'cfg:beaconDirectory';
+
 /** 标定模式开关（设置页写入，重启生效；只记录不改算法）。 */
 export const CALIBRATION_MODE_KEY = 'cfg:calibrationMode';
 

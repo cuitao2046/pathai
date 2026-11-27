@@ -27,7 +27,7 @@ const log = createLogger('ble');
 type SampleHandler = (sample: BeaconSample) => void;
 type StatusListener = (status: BleScanStatus) => void;
 /** 三元组 → 台账 beaconId；未命中返回 null。由工厂注入，扫描器不依赖地图模块。 */
-type BeaconResolver = (uuid: string, major: number, minor: number) => string | null;
+export type BeaconResolver = (uuid: string, major: number, minor: number) => string | null;
 
 /** 启动后多久没有 iBeacon 就做一次诊断提示（一次性计时，不是轮询）。 */
 const NO_SIGNAL_HINT_MS = 8000;
@@ -468,7 +468,8 @@ export class LiveBeaconScanner implements BeaconSourceLike {
       if (isNewTriplet && this.seenTriplets.size <= MAX_BEACON_LOGS) {
         if (beaconId !== null) {
           log.info('iBeacon 广播命中台账', key, `beaconId=${beaconId}`, `RSSI=${beacon.rssi}`);
-        } else {
+        } else if (this.resolveBeacon !== undefined) {
+          // 没有注入解析器时（如首次启动无缓存目录）不判定命中，避免误报“未命中台账”
           log.warn(
             'iBeacon 广播未命中台账',
             key,

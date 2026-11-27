@@ -6,7 +6,7 @@
  * UUID 清单落到 kv，下一次启动即可在地图下载/解密的同时开始扫描。
  * 首次启动没有缓存、蓝牙未授权或扫描失败时返回空数组，调用方按首层显示。
  */
-import { LiveBeaconScanner } from './beacon-scanner';
+import { LiveBeaconScanner, type BeaconResolver } from './beacon-scanner';
 import type { BeaconSample } from './scan-window';
 
 export interface StartupFloorSample {
@@ -14,6 +14,30 @@ export interface StartupFloorSample {
   major: number;
   minor: number;
   rssi: number;
+}
+
+/** 缓存到 kv 的信标三元组目录条目（地图未加载时也能判定命中）。 */
+export interface CachedBeaconTriplet {
+  uuid: string;
+  major: number;
+  minor: number;
+  beaconId: string;
+  floorId: string;
+}
+
+/** 用缓存目录构造解析器：uuid 大小写不敏感，未登记返回 null。 */
+export function createTripletResolver(
+  entries: readonly CachedBeaconTriplet[],
+): BeaconResolver {
+  const byTriplet = new Map<string, string>();
+  for (const entry of entries) {
+    byTriplet.set(
+      `${entry.uuid.trim().toLowerCase()}|${entry.major}|${entry.minor}`,
+      entry.beaconId,
+    );
+  }
+  return (uuid, major, minor) =>
+    byTriplet.get(`${uuid.trim().toLowerCase()}|${major}|${minor}`) ?? null;
 }
 
 export interface StartupFloorVote {
@@ -62,11 +86,12 @@ export function pickStartupFloor(
 export async function probeStartupFloorSamples(
   uuids: string[],
   durationMs: number,
+  resolveBeacon?: BeaconResolver,
 ): Promise<StartupFloorSample[]> {
   if (uuids.length === 0) {
     return [];
   }
-  const scanner = new LiveBeaconScanner(uuids);
+  const scanner = new LiveBeaconScanner(uuids, resolveBeacon);
   const samples: StartupFloorSample[] = [];
   try {
     await scanner.start((sample: BeaconSample) => {
