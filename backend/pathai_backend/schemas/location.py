@@ -55,6 +55,8 @@ class LocationEstimateRequest(StrictModel):
     #: 是否启用指纹库优先匹配（设置页开关，默认关闭＝仅蓝牙三点定位）。
     #: 缺省字段时请求体与旧版完全一致，服务端行为不变。
     useFingerprintDb: bool = False
+    #: 日常定位的 BLE 解算选择。指纹命中优先，冻结实验由实验配置决定。
+    bleAlgorithm: Literal["legacy", "robust_rssi"] = "legacy"
     experimentConfigId: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
     experimentMethod: Literal["A", "B", "C"] | None = None
     #: 查周边动作：同一次定位响应内附上 8m 内周边要素清单。

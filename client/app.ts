@@ -7,6 +7,8 @@
  */
 import { assertReleaseSafety } from './config/env';
 import { invalidateServiceEndpoint } from './services/service-endpoint';
+import { getString } from './utils/kv';
+import { setLogLevel } from './utils/logger';
 
 App({
   onError(message: string) {
@@ -20,6 +22,7 @@ App({
 
   onLaunch() {
     assertReleaseSafety();
+    setLogLevel(getString('debug-logs') === '1' ? 'debug' : 'info');
     if (typeof wx.onNetworkStatusChange === 'function') {
       wx.onNetworkStatusChange(() => invalidateServiceEndpoint());
     }

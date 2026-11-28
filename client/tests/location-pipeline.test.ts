@@ -227,6 +227,34 @@ describe('LocationPipeline 定位管线', () => {
     expect(estimateRequests()).toHaveLength(3);
   });
 
+  it('下一拍读取算法开关，冻结实验优先于本机设置', async () => {
+    let enabled = false;
+    let frozen = false;
+    const pipeline = new LocationPipeline({
+      client: createHttpStack('http://localhost:8000').client,
+      map,
+      source,
+      sequence: { next: () => (seq += 1) },
+      onEstimate: () => undefined,
+      onUnusable: () => undefined,
+      windowMs: 60_000,
+      useRobustRssi: () => enabled,
+      experiment: () => frozen ? { configId: 'config-1', method: 'B' } : null,
+    });
+    await pipeline.start();
+    await flush();
+    source.emitAll(now);
+    await advance(8000);
+    expect(estimateRequests()[0].data).not.toHaveProperty('bleAlgorithm');
+    enabled = true;
+    await advance(8000);
+    expect(estimateRequests()[1].data).toHaveProperty('bleAlgorithm', 'robust_rssi');
+    frozen = true;
+    await advance(8000);
+    expect(estimateRequests()[2].data).toHaveProperty('experimentMethod', 'B');
+    expect(estimateRequests()[2].data).not.toHaveProperty('bleAlgorithm');
+  });
+
   it('可解析信标不足 3 个：跳过本拍且不消费序号', async () => {
     const pipeline = makePipeline();
     await pipeline.start();

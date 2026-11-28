@@ -58,7 +58,7 @@ def _now() -> str:
 
 
 def _estimate(client, headers, beacons, sequence=1, floor_hint=None, imu=None,
-              map_version=SAMPLE, include_surroundings=None) -> dict:
+              map_version=SAMPLE, include_surroundings=None, ble_algorithm=None) -> dict:
     body: dict = {
         "siteId": "school-building-01",
         "mapVersion": map_version,
@@ -72,6 +72,8 @@ def _estimate(client, headers, beacons, sequence=1, floor_hint=None, imu=None,
     }
     if include_surroundings is not None:
         body["includeSurroundings"] = include_surroundings
+    if ble_algorithm is not None:
+        body["bleAlgorithm"] = ble_algorithm
     resp = client.post(URL, json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -223,12 +225,77 @@ class TestTrilateration:
         assert body["ignoredBeaconIds"] == ["GHOST-9"]
         assert body["quality"] in ("reliable", "degraded")
 
-    def test_floor_hint_mismatch_beacons_ignored_lost(self, client, auth_headers, rich_maps):
+    def test_robust_rssi_is_opt_in_and_estimates_consistent_ranges(self, client, auth_headers, rich_maps):
+        obs = _obs_at_expect_p()
+        robust = _estimate(client, auth_headers, obs, ble_algorithm="robust_rssi")
+        assert robust["algorithmVersion"] == "location-rssi-robust-0.1"
+        assert robust["quality"] == "reliable"
+        assert robust["ignoredBeaconIds"] == []
+        position = robust["position"]
+        assert math.dist(EXPECT_P, (position["x"], position["y"])) < 1.5
+        legacy = _estimate(client, auth_headers, obs, sequence=2)
+        assert legacy["algorithmVersion"] == "location-0.3"
+
+    def test_robust_rssi_rejects_inconsistent_observations(self, client, auth_headers, rich_maps):
+        obs = [(beacon[0], -53) for beacon in (BK_A, BK_B, BK_C)]
+        result = _estimate(client, auth_headers, obs, ble_algorithm="robust_rssi")
+        assert result["algorithmVersion"] == "location-rssi-robust-0.1"
+        assert result["quality"] in ("lost", "unreliable")
+        assert result["position"] is None
+
+    def test_robust_rssi_can_reject_one_unusually_strong_beacon(self):
+        from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
+        from pathai_backend.map_package.schema import MapPackage
+
+        pkg = MapPackage.model_validate_json((MAPS_DATA_DIR / f"{SAMPLE}.json").read_bytes())
+        phone = (*EXPECT_P, PHONE_HEIGHT_M)
+        params = LocationParams(rssi_at_1m=-66, path_loss_n=2.37)
+        anchors = sorted(
+            (b for b in pkg.beacons if b.floorId == "1" and b.installHeightM is not None),
+            key=lambda b: math.dist(phone, (b.x, b.y, b.installHeightM)),
+        )[:6]
+        outlier = anchors[4].beaconId
+        observations = []
+        for anchor in anchors:
+            distance = math.dist(phone, (anchor.x, anchor.y, anchor.installHeightM))
+            rssi = round(params.rssi_at_1m - 10 * params.path_loss_n * math.log10(distance))
+            observations.append(
+                BeaconInput(anchor.beaconId, rssi + (12 if anchor.beaconId == outlier else 0))
+            )
+
+        result = estimate_location(pkg, observations, "1", params, robust_rssi=True)
+        assert result.quality.value in ("reliable", "degraded")
+        assert result.ignored_beacon_ids == (outlier,)
+        assert result.x is not None and result.y is not None
+        assert math.dist(EXPECT_P, (result.x, result.y)) < 1.5
+
+    def test_robust_rssi_rejects_collinear_anchors(self):
+        from pathai_backend.location_solver import BeaconInput, estimate_location
+        from pathai_backend.map_package.schema import MapPackage
+
+        pkg = MapPackage.model_validate_json((MAPS_DATA_DIR / f"{SAMPLE}.json").read_bytes())
+        anchors = [
+            b.model_copy(update={"y": -70.0})
+            for b in pkg.beacons if b.beaconId in {BK_A[0], BK_B[0], BK_C[0]}
+        ]
+        pkg = pkg.model_copy(update={"beacons": anchors})
+        observations = [
+            BeaconInput(b.beaconId, _rssi_for(EXPECT_P, (b.beaconId, b.x, b.y))) for b in anchors
+        ]
+        result = estimate_location(pkg, observations, "1", robust_rssi=True)
+        assert result.quality.value in ("lost", "unreliable")
+        assert result.x is None and result.y is None
+
+    def test_floor_hint_mismatch_beacons_ignored_lost(self, client, auth_headers, rich_maps, caplog):
         obs = [("BK-02-001", -50), ("BK-02-002", -50), ("BK-02-003", -50)]
         body = _estimate(client, auth_headers, obs, floor_hint="1")
         assert body["quality"] == "lost"
         assert body["position"] is None
         assert body["ignoredBeaconIds"] == ["BK-02-001", "BK-02-002", "BK-02-003"]
+        assert f"estimate_id={body['estimateId']}" in caplog.text
+        assert "reason=insufficient_same_floor_beacons" in caplog.text
+        assert "submitted=3 used=0" in caplog.text
+        assert "'other_floor': 3" in caplog.text
 
     def test_auto_floor_by_majority_and_rssi(self, client, auth_headers, rich_maps):
         # 两层各 3 条观测数量并列；一层平均 RSSI 更强（二层取弱信号）→ 选一层

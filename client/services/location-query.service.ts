@@ -117,6 +117,7 @@ export interface LocationQueryDeps {
   windowMs?: number;
   /** 指纹库开关（默认关闭）；关闭时请求体与旧版完全一致。 */
   useFingerprintDb?: () => boolean;
+  useRobustRssi?: () => boolean;
   /** 当前朝向（度）；查周边时上报给服务端计算时钟方位。 */
   headingDeg?: () => number | null;
   /** 原始扫描样本回调（逐帧）：供页面驱动雷达波纹等实时视觉。 */
@@ -286,6 +287,7 @@ export class LocationQueryService {
       sequence: new SequenceCounter(),
       windowMs: this.deps.windowMs ?? getScanProfile().windowMs,
       useFingerprintDb: this.deps.useFingerprintDb,
+      useRobustRssi: this.deps.useRobustRssi,
       onRawSample: this.deps.onRawSample,
       // 查周边：同一次定位请求内让服务端附上周边清单，避免串两次请求
       includeSurroundings: kind === 'surroundings' ? () => true : undefined,

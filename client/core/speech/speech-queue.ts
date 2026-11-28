@@ -23,6 +23,11 @@ const log = createLogger('speech');
 
 export type SpeechPriority = 'normal' | 'turn' | 'safety';
 
+export interface NavSpeechContext {
+  sessionId: string;
+  sequence: number;
+}
+
 /**
  * 队列安静的原因：自然播完（finished）/ 被抢占或清空（interrupted）/
  * 引擎无响应被看门狗放手（stalled，播报内容未完成，但队列已恢复）。
@@ -40,6 +45,7 @@ interface QueueItem {
   expiresAtMs: number | null;
   /** 入队来源标记（排查"谁打断了概要"用）。 */
   source: string;
+  navContext?: NavSpeechContext;
 }
 
 export interface SpeechQueueOptions {
@@ -130,12 +136,13 @@ export class SpeechQueue {
     priority: SpeechPriority = 'normal',
     expiresAtMs: number | null = null,
     source = 'unknown',
+    navContext?: NavSpeechContext,
   ): void {
     this.lastText = text; // 先记重播源：降级文本也算一次播报
     // 固定文案优先本地离线音频：即使 TTS 引擎失效也仍可播报。
     const clip = staticClipForText(text);
     if (clip !== null) {
-      this.enqueueClip(clip, priority, source);
+      this.enqueueClip(clip, priority, source, navContext);
       return;
     }
     log.info('[enqueue]', source, priority, `len=${text.length}`, text, {
@@ -148,7 +155,7 @@ export class SpeechQueue {
       this.fallbackText?.(text);
       return;
     }
-    this.push({ kind: 'text', text, priority, expiresAtMs, source });
+    this.push({ kind: 'text', text, priority, expiresAtMs, source, navContext });
   }
 
   /**
@@ -176,14 +183,19 @@ export class SpeechQueue {
    * 与 text 项共用一个队列与同一套优先级/抢占规则，因此与概要和首条指令
    * 严格串行、不会重叠；本地文件不经云端合成，TTS 引擎不可用时仍可播。
    */
-  enqueueClip(clip: string, priority: SpeechPriority = 'normal', source = 'unknown'): void {
+  enqueueClip(
+    clip: string,
+    priority: SpeechPriority = 'normal',
+    source = 'unknown',
+    navContext?: NavSpeechContext,
+  ): void {
     const label = `[clip]${clip}`;
     // 不更新 lastText：固定提示音不作为「再说一遍」的重播源
     log.info('[enqueue-clip]', source, priority, clip, {
       playing: this.current?.text ?? null,
       pending: this.items.length,
     });
-    this.push({ kind: 'clip', text: label, clip, priority, expiresAtMs: null, source });
+    this.push({ kind: 'clip', text: label, clip, priority, expiresAtMs: null, source, navContext });
   }
 
   private push(item: QueueItem): void {
@@ -296,9 +308,10 @@ export class SpeechQueue {
     log.info('[play]', next.source, next.priority, next.text);
     this.onPlayback?.('requested', next);
     let started = false;
-    const onPlay = this.onPlayback ? () => {
+    const onPlay = (this.onPlayback || next.navContext) ? () => {
       if (started || this.current !== next) return;
       started = true;
+      if (next.navContext) log.info('nav_playback_started', { ...next.navContext, source: next.source });
       this.onPlayback?.('started', next);
     } : undefined;
     this.stallTimer = setTimeout(

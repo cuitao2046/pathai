@@ -84,10 +84,11 @@ export const HEADING_OFFSET_KEY = 'cfg:headingOffsetDeg';
 export const SIM_BEACON_PREVIEW_KEY = 'cfg:simBeaconPreview';
 
 /**
- * 启用指纹库提升导航定位精度（默认关闭；关闭＝仅蓝牙三点定位）。
+ * 优先匹配指纹库（默认关闭；未命中时使用当前选定的 BLE 解算）。
  * 读取方：地图页导航管线与「我在哪儿」定位查询。
  */
 export const FINGERPRINT_DB_KEY = 'cfg:fingerprintDb';
+const ROBUST_RSSI_KEY = 'cfg:robustRssi';
 
 export type A11yMode = 'a11y' | 'normal';
 
@@ -305,9 +306,17 @@ class AppContext {
     setJson(FINGERPRINT_DB_KEY, on);
   }
 
-  /** 定位链路读取：指纹库开关（默认关闭＝仅蓝牙三点定位）。 */
+  /** 定位链路读取指纹库开关（默认关闭）。 */
   getFingerprintDbSetting(): boolean {
     return getJson<boolean>(FINGERPRINT_DB_KEY) === true;
+  }
+
+  setRobustRssiSetting(on: boolean): void {
+    setJson(ROBUST_RSSI_KEY, on);
+  }
+
+  getRobustRssiSetting(): boolean {
+    return getJson<boolean>(ROBUST_RSSI_KEY) === true;
   }
 
   /** 设置页：写入无障碍模式（即时生效；默认「视障模式」）。 */

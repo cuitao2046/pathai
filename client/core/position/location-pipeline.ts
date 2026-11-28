@@ -14,17 +14,20 @@ import { ApiClientError } from '../http/errors';
 import type { BeaconRegistry } from '../ble/beacon-registry';
 import type { BeaconSourceLike } from '../ble/beacon-source';
 import {
+  MIN_RESOLVED_BEACONS,
   ScanWindowAggregator,
   type BeaconSample,
   type ResolvedObservation,
 } from '../ble/scan-window';
 import { nowMs } from '../../utils/clock';
+import { createLogger } from '../../utils/logger';
 import type {
   LocationEstimateRequest,
   PositionEstimateResponse,
 } from '../../typings/api';
 
 export type PipelineMode = 'standby' | 'preview' | 'navigating';
+const log = createLogger('location');
 
 const STANDBY_INTERVAL_MS = 8000;
 /**
@@ -62,6 +65,7 @@ export interface LocationPipelineOptions {
    * useFingerprintDb=true；关闭时请求体与旧版逐字节一致。
    */
   useFingerprintDb?: () => boolean;
+  useRobustRssi?: () => boolean;
   experiment?: () => { configId: string; method: 'A' | 'B' | 'C' } | null;
   onRawSample?: (sample: BeaconSample) => void;
   /**
@@ -188,11 +192,14 @@ export class LocationPipeline {
 
   private async collectAndReport(generation: number, retryOnStale = true): Promise<void> {
     if (!this.isCurrent(generation)) return;
-    const snapshot = this.aggregator.snapshot(
+    const snapshot = this.aggregator.resolvedObservations(
       this.opts.map.beaconRegistry,
       nowMs(),
     );
-    if (snapshot === null) {
+    if (snapshot.length < MIN_RESOLVED_BEACONS) {
+      log.debug('scan_window_skipped', {
+        mode: this.mode, matchedBeaconCount: snapshot.length, submittedBeaconCount: 0, beacons: snapshot,
+      });
       // 待命：等样本积累，不视为错误；导航中：持续无解即信号丢失，交给上层上报
       if (this.mode === 'navigating') {
         this.opts.onUnusable(
@@ -200,6 +207,11 @@ export class LocationPipeline {
             code: 'LOCATION_UNRELIABLE',
             message: '窗口内可解析信标不足',
             retryable: true,
+            details: {
+              reason: 'insufficient_scan_beacons',
+              matchedBeaconCount: snapshot.length,
+              submittedBeaconCount: 0,
+            },
           }),
         );
       }
@@ -218,8 +230,9 @@ export class LocationPipeline {
     if (experiment) {
       body.experimentConfigId = experiment.configId;
       body.experimentMethod = experiment.method;
-    } else if (this.opts.useFingerprintDb?.() === true) {
-      body.useFingerprintDb = true;
+    } else {
+      if (this.opts.useFingerprintDb?.() === true) body.useFingerprintDb = true;
+      if (this.opts.useRobustRssi?.() === true) body.bleAlgorithm = 'robust_rssi';
     }
     if (this.opts.includeSurroundings?.() === true) {
       body.includeSurroundings = true;
@@ -229,6 +242,7 @@ export class LocationPipeline {
       body.imu = { samples: [], headingDeg: ((heading % 360) + 360) % 360 };
     }
     let estimate: PositionEstimateResponse;
+    let requestId: string | null = null;
     const requestStartedAt = nowMs();
     try {
       const resp = await this.opts.client.request<PositionEstimateResponse>({
@@ -237,6 +251,7 @@ export class LocationPipeline {
         body,
         timeoutMs: NAV_UPDATE_TIMEOUT_MS,
       });
+      requestId = resp.requestId;
       const data = resp.data;
       if (data === null || typeof data.quality !== 'string') {
         throw new ApiClientError({
@@ -253,6 +268,14 @@ export class LocationPipeline {
         err instanceof ApiClientError
           ? err
           : new ApiClientError({ code: 'HTTP_ERROR', message: '定位请求失败' });
+      log.warn('estimate_request_failed', {
+        mode: this.mode, requestId: failure.requestId, sequence: body.sequence,
+        mapVersion: body.mapVersion, submittedBeaconCount: body.beacons.length,
+        code: failure.code, statusCode: failure.statusCode, reason: failure.details.reason,
+      });
+      log.debug('estimate_request_failed_sample', {
+        sequence: body.sequence, requestId: failure.requestId, beacons: snapshot,
+      });
       // 序号水位被推进（其他客户端/历史脏数据）：追平服务端已处理水位后立刻重试一拍。
       // 不重试就得等下一个拍点（待命 8s / 预览 2.5s），用户会看到「定位不可用」。
       const lastSequence = failure.details.lastSequence;
@@ -270,11 +293,26 @@ export class LocationPipeline {
       return;
     }
     if (!this.isCurrent(generation)) return;
+    const diagnostics = {
+      mode: this.mode, requestId, estimateId: estimate.estimateId, sequence: body.sequence,
+      mapVersion: body.mapVersion, paramsVersion: estimate.paramsVersion,
+      algorithmVersion: estimate.algorithmVersion, quality: estimate.quality,
+      observationAgeS: estimate.observationAgeS,
+      matchedBeaconCount: snapshot.length, submittedBeaconCount: body.beacons.length,
+      requestMs: Math.max(0, nowMs() - requestStartedAt),
+    };
+    if (estimate.quality === 'unreliable' || estimate.quality === 'lost') {
+      log.info('estimate_unusable', diagnostics);
+    }
+    log.debug('estimate_sample', {
+      ...diagnostics, floorHint: body.floorHint, beacons: snapshot,
+      ignoredBeaconIds: estimate.ignoredBeaconIds, fallbackReason: estimate.fallbackReason,
+    });
     this.lastFloorId = estimate.position?.floorId ?? this.lastFloorId;
     // 质量交给上层：导航只用 trusted 坐标推进，unreliable/lost 仅上报 quality
     this.opts.onEstimate(estimate, {
       visibleBeaconCount: body.beacons.length,
-      requestMs: Math.max(0, nowMs() - requestStartedAt),
+      requestMs: diagnostics.requestMs,
     });
   }
 }

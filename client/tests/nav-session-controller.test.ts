@@ -1076,6 +1076,62 @@ describe('NavSessionController 会话编排', () => {
     expect(h.clips.played.filter((c) => c === 'nav-relocalizing')).toHaveLength(1);
   });
 
+  it('状态来回跳：relocalizing 安全音频在冷却窗口内只播一次', async () => {
+    const h = makeHarness();
+    await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);
+    let updates = 0;
+    wxStub.__requestResponder = (options) => {
+      if (options.url.endsWith('/api/v1/auth/wechat')) {
+        options.success({ statusCode: 200, header: {}, data: AUTH_RESPONSE });
+        return;
+      }
+      updates += 1;
+      // 奇数拍 recovering、偶数拍 active：模拟质量在阈值附近反复抖动
+      if (updates % 2 === 1) {
+        options.success({
+          statusCode: 200,
+          header: {},
+          data: updateResponse({
+            processedSequence: updates,
+            status: 'recovering',
+            event: 'relocalizing',
+            instruction: { ...RELOC_INSTR, instructionId: `ins-re-${updates}`, instructionSequence: updates },
+          }),
+        });
+        return;
+      }
+      options.success({
+        statusCode: 200,
+        header: {},
+        data: updateResponse({ processedSequence: updates, status: 'active', event: 'instruction' }),
+      });
+    };
+
+    let now = 1_000_000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      h.controller.handleEstimate(ESTIMATE_RELIABLE);
+      await flush();
+      h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, estimateId: 'loc-2' });
+      await flush();
+      h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, estimateId: 'loc-3' });
+      await flush();
+      // recovering → active → recovering：第二次进入不再出声
+      expect(h.states).toEqual(['active', 'recovering', 'active', 'recovering']);
+      expect(h.clips.played.filter((c) => c === 'nav-relocalizing')).toHaveLength(1);
+
+      now += 31_000;
+      h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, estimateId: 'loc-4' });
+      await flush();
+      h.controller.handleEstimate({ ...ESTIMATE_RELIABLE, estimateId: 'loc-5' });
+      await flush();
+      // 冷却窗口过期后允许再提示一次
+      expect(h.clips.played.filter((c) => c === 'nav-relocalizing')).toHaveLength(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('recovering → active：状态机重启采集（startPipeline 副作用）', async () => {
     const h = makeHarness();
     await h.controller.createSession({ placeId: 'p1', name: '图书馆', floorId: '1' }, ORIGIN);

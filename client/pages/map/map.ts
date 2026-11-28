@@ -480,6 +480,7 @@ Page({
       floorName: (floorId) => (floorId ? appContext.map.floors[floorId]?.displayName : undefined),
       // 指纹库开关（默认关闭）：每次查询时读取，设置页改动即时生效
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
+      useRobustRssi: () => appContext.getRobustRssiSetting(),
       // 查周边时上报当前朝向，服务端据此计算"左前方/右前方"等时钟方位
       headingDeg: () => this.headingDeg,
       // 查询期间的扫描帧同样点亮雷达波纹：待命态主管线未启动，样本只走这里
@@ -2993,6 +2994,7 @@ Page({
       windowMs: getScanProfile().windowMs,
       // 指纹库开关（默认关闭）：每拍读取，关闭时请求体与旧版完全一致
       useFingerprintDb: () => appContext.getFingerprintDbSetting(),
+      useRobustRssi: () => appContext.getRobustRssiSetting(),
       experiment: () => this.fieldRecorder?.run.selection ?? null,
       onRawSample: (sample) => {
         this.fieldRecorder?.addSample(sample);
@@ -3008,11 +3010,15 @@ Page({
           this.controller.sessionId !== null &&
           !this.sessionEnded
         ) {
-          this.controller.reportUnavailable();
+          this.controller.reportUnavailable(err);
         }
         if (!this.locationWarned) {
           this.locationWarned = true;
-          log.warn('定位不可用，已进入恢复流程', err.code);
+          log.warn('定位不可用，已进入恢复流程', {
+            code: err.code, requestId: err.requestId, reason: err.details.reason,
+            matchedBeaconCount: err.details.matchedBeaconCount,
+            submittedBeaconCount: err.details.submittedBeaconCount,
+          });
         }
       },
     });
@@ -3182,7 +3188,8 @@ Page({
     if (!this.data.fieldSystemArrived) {
       this.fieldRecorder?.event('estimate', {
         position: estimate.position, source: estimate.positionSource,
-        paramsVersion: estimate.paramsVersion, fallbackReason: estimate.fallbackReason,
+        paramsVersion: estimate.paramsVersion, algorithmVersion: estimate.algorithmVersion,
+        fallbackReason: estimate.fallbackReason,
         observedAt: estimate.observedAt, quality: estimate.quality, confidence: estimate.confidence,
         visibleBeaconCount: meta?.visibleBeaconCount, requestMs: meta?.requestMs,
       });

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
 from dataclasses import replace
@@ -73,6 +74,7 @@ from pathai_backend.schemas.nav import (
 from math import hypot
 
 router = APIRouter(prefix="/api/v1/nav", tags=["nav"])
+logger = logging.getLogger(__name__)
 
 
 def _now_epoch() -> int:
@@ -389,6 +391,9 @@ def _nearest_on_route(
 #: 决策点判定为“已通过”的沿线余量。转弯指令必须保持到用户真正越过路口，
 #: 否则客户端会在路口前停止转向震动，甚至漏掉转向播报。
 DECISION_POINT_PASSED_MARGIN_M = 1.0
+#: recovering 恢复引导所需的连续可信更新次数：质量在阈值附近抖动时，
+#: 单拍可信就恢复会造成「恢复→再暂停」反复切换（表现为安全音频连播）。
+RECOVER_RESUME_HITS = 2
 
 
 def _route_progress(
@@ -565,6 +570,7 @@ def _advance_current_index(
 def nav_update(
     session_id: str,
     body: NavUpdateRequest,
+    request: Request,
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
@@ -601,13 +607,32 @@ def nav_update(
         # 门洞锚点允许略宽半径：用户停在门外（与门中心有几米）也应判定到达。
         arrival_radius_m = max(arrival_radius_m, 2.5)
 
-    trusted = (
-        loc.quality in TRUSTED_QUALITIES and loc.floorId is not None
-        and is_fresh_for_guidance(loc.observedAt)
+    previous_status = session.status
+    evaluated_at = datetime.now(timezone.utc)
+    pause_reason = None
+    if loc.quality not in TRUSTED_QUALITIES:
+        pause_reason = "untrusted_quality"
+    elif loc.floorId is None:
+        pause_reason = "missing_floor"
+    elif not is_fresh_for_guidance(loc.observedAt, evaluated_at):
+        pause_reason = "observation_not_fresh"
+    elif loc.observedAt.timestamp() < session.updated_at_epoch - 5:
         # A recently delivered older batch must not roll guidance back across requests.
-        and loc.observedAt.timestamp() >= session.updated_at_epoch - 5
-    )
-    if trusted:
+        pause_reason = "observation_precedes_session_update"
+    # recovering 恢复需要连续可信：单拍可信就恢复会与暂停反复交替
+    if pause_reason is None:
+        session.trusted_streak = (session.trusted_streak or 0) + 1
+        effective = (
+            session.trusted_streak >= RECOVER_RESUME_HITS
+            or session.status != SessionStatus.RECOVERING.value
+        )
+        if not effective:
+            pause_reason = "awaiting_consecutive_trusted_updates"
+    else:
+        session.trusted_streak = 0
+        effective = False
+
+    if effective:
         arrival = (
             loc.floorId == dest.floor_id
             and hypot(loc.x - dest.x, loc.y - dest.y) <= arrival_radius_m
@@ -615,7 +640,7 @@ def nav_update(
     else:
         arrival = False
 
-    if not trusted:
+    if not effective:
         session.status = SessionStatus.RECOVERING.value
         instruction = _relocalize_instruction(body.sequence)
         response = NavUpdateResponse(
@@ -689,7 +714,18 @@ def nav_update(
     session.last_sequence = body.sequence
     session.last_response_json = response.model_dump_json()
     session.updated_at_epoch = _now_epoch()
+    trusted_streak = session.trusted_streak
     db.commit()
+    state_changed = previous_status != response.status
+    waiting_for_confirmation = pause_reason == "awaiting_consecutive_trusted_updates"
+    log_update = logger.info if state_changed or waiting_for_confirmation else logger.debug
+    observed_age_s = observation_age_s(loc.observedAt, evaluated_at)
+    log_update(
+        "nav_update request_id=%s session_id=%s sequence=%s previous_status=%s status=%s event=%s "
+        "reason=%s quality=%s floor=%s observation_age_s=%s trusted_streak=%s",
+        request.state.request_id, session_id, body.sequence, previous_status, response.status, response.event,
+        pause_reason, loc.quality, loc.floorId, observed_age_s, trusted_streak,
+    )
     return response
 
 

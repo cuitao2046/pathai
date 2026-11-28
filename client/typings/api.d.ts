@@ -412,6 +412,7 @@ export interface LocationEstimateRequest {
   imu?: ImuPayload | null;
   /** 启用指纹库优先匹配；未开启时请求体与旧版完全一致（字段不发送）。 */
   useFingerprintDb?: boolean;
+  bleAlgorithm?: 'legacy' | 'robust_rssi';
   /** 同一次响应内返回周边要素清单（查周边动作）；默认不发送，旧行为不变。 */
   includeSurroundings?: boolean;
 }

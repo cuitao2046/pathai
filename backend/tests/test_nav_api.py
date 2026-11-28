@@ -428,11 +428,20 @@ class TestNavUpdate:
         assert "导航已暂停" in body["instruction"]["text"]
         assert "原地稍候" in body["instruction"]["text"]
 
-    def test_recovering_then_trusted_returns_active(self, client, session, auth_headers):
+    def test_recovering_then_trusted_returns_active(self, client, session, auth_headers, caplog):
         _update(client, auth_headers, session["sessionId"], 1, None, None, quality="lost")
-        resp = _update(client, auth_headers, session["sessionId"], 2, *SAFE_P)
+        # 恢复需连续两拍可信：第一拍仍保持 recovering，避免质量抖动反复切换
+        first = _update(client, auth_headers, session["sessionId"], 2, *SAFE_P)
+        assert first.json()["status"] == "recovering"
+        resp = _update(client, auth_headers, session["sessionId"], 3, *SAFE_P)
         assert resp.json()["status"] == "active"
         assert resp.json()["event"] == "instruction"
+        assert "reason=untrusted_quality" in caplog.text
+        waiting = next(r.getMessage() for r in caplog.records
+                       if "reason=awaiting_consecutive_trusted_updates" in r.getMessage())
+        assert f"request_id={first.headers['X-Request-Id']}" in waiting
+        assert f"session_id={session['sessionId']} sequence=2" in waiting
+        assert "trusted_streak=1" in waiting
 
     def test_stale_sequence_409(self, client, session, auth_headers):
         _update(client, auth_headers, session["sessionId"], 5, *SAFE_P)

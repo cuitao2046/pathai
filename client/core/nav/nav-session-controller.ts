@@ -44,6 +44,15 @@ import type {
 
 const log = createLogger('nav');
 
+interface LocationDiagnostics {
+  estimateId?: string;
+  requestId?: string | null;
+  code?: string;
+  reason?: unknown;
+  matchedBeaconCount?: unknown;
+  submittedBeaconCount?: unknown;
+}
+
 /** 到达置信度低于该值播「已到达附近」。 */
 const ARRIVAL_NEAR_CONFIDENCE = 0.75;
 /** 概要窗口最长等待：引擎/队列异常时不再等，直接进入引导（宁可少播一句概要）。 */
@@ -52,6 +61,12 @@ const OVERVIEW_MAX_WAIT_MS = 30_000;
 const ELEVATOR_PAUSE_RADIUS_M = 3.0;
 /** 目标楼层连续可信估计次数：避免电梯内跨层信号抖动导致误恢复。 */
 const ELEVATOR_RESUME_HITS = 2;
+/**
+ * 同一句 relocalizing 安全提示的最小重播间隔。
+ * 定位质量在可信/不可信之间来回跳时，服务端每拍都会下发 relocalizing，
+ * 不做间隔就会把同一段音频连播多次，用户感知为"一直提示信号不稳定"。
+ */
+const RELOCALIZE_REPEAT_MS = 30_000;
 
 /**
  * 建会话专用超时（其余接口仍走默认 10s 快失败）。
@@ -105,13 +120,15 @@ export class NavSessionController {
   private currentRoute: RouteInfo | null = null;
   private sessionSeq = 0;
   private updateInFlight = false;
-  private pendingLocation: LocationUpdate | null = null;
+  private pendingLocation: { location: LocationUpdate; diagnostics: LocationDiagnostics } | null = null;
   private lastConfidence = 0;
   /** 幂等创建暂存：失败重试复用（key + 冻结 body）。 */
   private pendingIdempotencyKey: string | null = null;
   private frozenCreateBody: CreateSessionRequest | null = null;
   /** 最近一次 relocalizing 安全提示：recovering 态回前台时重播用。 */
   private lastRelocalizeText: string | null = null;
+  /** 最近一次真正播放 relocalizing 的时间戳：同一句安全提示的最小重播间隔。 */
+  private lastRelocalizePlayedAt = 0;
   /**
    * 概要播报窗口：为 true 时冻结定位上报。
    * 仅延迟 startNavigating 不够——standby 拍仍会经 handleEstimate 上报，
@@ -160,20 +177,25 @@ export class NavSessionController {
     if (!this.foreground || this.locallyPaused || this.elevatorPaused || this.machine.isTerminal) return;
     this.silenceTimer = setTimeout(() => {
       this.silenceTimer = null;
-      this.pauseLocally();
+      this.pauseLocally('response_silence');
     }, this.opts.responseSilenceMs ?? 10_000);
   }
 
-  private pauseLocally(): void {
+  private pauseLocally(reason: string): void {
     if (this.locallyPaused || this.elevatorPaused || !this.foreground || this.machine.isTerminal) return;
     this.locallyPaused = true;
     this.pausedAt = Date.now();
     this.clearSilenceTimer();
     this.tracker.reset();
     this.opts.speech.clearAll('nav:offline');
+    const sessionId = this.session?.sessionId;
+    const context = sessionId === undefined ? undefined : { sessionId, sequence: this.sessionSeq };
+    log.warn('nav_local_pause', { ...context, reason });
     this.transition({ type: 'UPDATE_RESULT', status: 'recovering', event: 'relocalizing' });
     this.opts.onInstruction?.(null);
-    this.opts.speech.enqueue('导航连接中断，导航已暂停，请停下并留意周围环境。', 'safety', null, 'nav:offline');
+    this.opts.speech.enqueue(
+      '导航连接中断，导航已暂停，请停下并留意周围环境。', 'safety', null, 'nav:offline', context,
+    );
   }
 
   /**
@@ -592,7 +614,7 @@ export class NavSessionController {
     }
 
     // 服务端规则：unreliable/lost 只带 quality（服务端转 recovering），坐标不报
-    void this.sendUpdate(location);
+    void this.sendUpdate(location, { estimateId: estimate.estimateId });
   }
 
   /**
@@ -600,7 +622,7 @@ export class NavSessionController {
    * 按服务端规则只报 quality=unreliable，让会话进入 recovering 并播安全提示，
    * 不伪造坐标。
    */
-  reportUnavailable(): void {
+  reportUnavailable(error?: ApiClientError): void {
     if (
       this.session === null ||
       this.machine.isTerminal ||
@@ -618,6 +640,12 @@ export class NavSessionController {
       confidence: 0,
       quality: 'unreliable',
       observedAt: new Date().toISOString(),
+    }, {
+      requestId: error?.requestId,
+      code: error?.code,
+      reason: error?.details.reason,
+      matchedBeaconCount: error?.details.matchedBeaconCount,
+      submittedBeaconCount: error?.details.submittedBeaconCount,
     });
   }
 
@@ -660,7 +688,7 @@ export class NavSessionController {
         this.opts.onEnded?.({ reason: 'system_error', byArrival: false });
         return;
       }
-      this.pauseLocally();
+      this.pauseLocally('foreground_query_failed');
       if (!this.overviewPending) {
         await this.opts.pipeline.startNavigating();
       }
@@ -720,8 +748,21 @@ export class NavSessionController {
         this.opts.speech.enqueue(replay, 'normal', null, 'nav:foreground-replay');
       }
     } else if (this.machine.state === 'recovering' && this.lastRelocalizeText !== null) {
-      this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:foreground-relocalize');
+      // 回前台由用户主动触发，不受冷却限制：停在外面很久再回来必须能听到当前状态
+      const context = { sessionId: query.sessionId, sequence: this.sessionSeq };
+      log.info('nav_relocalize_foreground_replay', context);
+      this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:foreground-relocalize', context);
     }
+  }
+
+  /** 领取一次 relocalizing 播报额度：冷却窗口内返回 false（不出声）。 */
+  private claimRelocalizeSlot(): boolean {
+    const now = Date.now();
+    if (now - this.lastRelocalizePlayedAt < RELOCALIZE_REPEAT_MS) {
+      return false;
+    }
+    this.lastRelocalizePlayedAt = now;
+    return true;
   }
 
   /** 结束会话（API-09）；客户端只发送用户/系统原因，从不发送 arrived。 */
@@ -798,7 +839,7 @@ export class NavSessionController {
     }
   }
 
-  private async sendUpdate(location: LocationUpdate): Promise<void> {
+  private async sendUpdate(location: LocationUpdate, diagnostics: LocationDiagnostics): Promise<void> {
     if (this.session === null || this.machine.isTerminal || !this.foreground) {
       return;
     }
@@ -813,12 +854,14 @@ export class NavSessionController {
       return;
     }
     if (this.updateInFlight) {
-      this.pendingLocation = location; // 只保留最新
+      this.pendingLocation = { location, diagnostics }; // 只保留最新
       return;
     }
     this.updateInFlight = true;
     const lifecycle = this.lifecycle;
     const recoveryAttempt = this.locallyPaused;
+    const sessionId = this.session.sessionId;
+    let sentSequence: number | null = null;
     try {
       if (this.locallyPaused) {
         const observed = Date.parse(location.observedAt);
@@ -827,6 +870,7 @@ export class NavSessionController {
       }
       if (!this.foreground || lifecycle !== this.lifecycle) return;
       const sequence = this.sessionSeq + 1;
+      sentSequence = sequence;
       const body: NavUpdateRequest = { sequence, location };
       const resp = await this.opts.client.request<NavUpdateResponse>({
         method: 'POST',
@@ -836,10 +880,21 @@ export class NavSessionController {
       });
       if (!this.foreground || lifecycle !== this.lifecycle || this.machine.isTerminal) return;
       if (!resp.data || !['active', 'recovering', 'arrived', 'ended'].includes(resp.data.status)) {
-        this.pauseLocally();
+        log.warn('nav_update_invalid_response', { sessionId, sequence, requestId: resp.requestId });
+        this.pauseLocally('invalid_update_response');
         return;
       }
       this.sessionSeq = sequence;
+      const details = {
+        sessionId, sequence, requestId: resp.requestId, location: diagnostics,
+        quality: location.quality, floorId: location.floorId, observedAt: location.observedAt,
+        previousState: this.machine.state, status: resp.data.status, event: resp.data.event,
+      };
+      if (this.machine.state !== resp.data.status) {
+        log.info('nav_update_state_change', details);
+      } else {
+        log.debug('nav_update_result', details);
+      }
       const trusted = location.quality === 'reliable' || location.quality === 'degraded';
       if (this.locallyPaused && (!recoveryAttempt || Date.now() - Date.parse(location.observedAt) > 10_000)) return;
       if (this.locallyPaused && (!trusted || resp.data?.status !== 'active')) {
@@ -851,6 +906,11 @@ export class NavSessionController {
       this.armSilenceTimer();
     } catch (err) {
       if (!this.foreground || lifecycle !== this.lifecycle) return;
+      log.warn('nav_update_failed', {
+        sessionId, sequence: sentSequence, location: diagnostics,
+        requestId: err instanceof ApiClientError ? err.requestId : null,
+        code: err instanceof ApiClientError ? err.code : 'unknown',
+      });
       if (err instanceof ApiClientError && err.code === 'STALE_NAV_UPDATE') {
         await this.resyncSequence();
       } else if (err instanceof ApiClientError && err.code === 'SESSION_NOT_ACTIVE') {
@@ -860,14 +920,14 @@ export class NavSessionController {
         (err.code === 'FORBIDDEN' || err.code === 'SESSION_NOT_FOUND')
       ) {
         this.abandonSession(err.code);
-      } else if (lifecycle === this.lifecycle) this.pauseLocally();
+      } else if (lifecycle === this.lifecycle) this.pauseLocally('update_request_failed');
     } finally {
       this.updateInFlight = false;
     }
     const pending = this.pendingLocation;
     this.pendingLocation = null;
     if (pending !== null && this.session !== null && !this.machine.isTerminal) {
-      await this.sendUpdate(pending);
+      await this.sendUpdate(pending.location, pending.diagnostics);
     }
   }
 
@@ -909,14 +969,19 @@ export class NavSessionController {
     if (data.event === 'relocalizing') {
       // 仅在刚进入 recovering 时播报一次，避免持续重播
       if (prevState !== 'recovering' && this.machine.state === 'recovering') {
+        const context = { sessionId: data.sessionId, sequence: data.processedSequence };
         const text = data.instruction?.text ?? '正在重新定位，请原地稍候。';
         this.lastRelocalizeText = text;
         this.opts.onInstruction?.(data.instruction);
         // 定位不足/信号不稳定是固定安全文案，走本地离线音频，避免弱网时 TTS 失败。
+        if (!this.claimRelocalizeSlot()) {
+          log.info('nav_relocalize_suppressed', { ...context, reason: 'cooldown' });
+          return; // 冷却窗口内：状态和文案已更新，但不重复出声
+        }
         if (data.instruction?.action === 'relocalize') {
-          this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:relocalizing');
+          this.opts.speech.enqueueClip('nav-relocalizing', 'safety', 'nav:relocalizing', context);
         } else {
-          this.opts.speech.enqueue(text, 'safety', null, 'nav:relocalizing');
+          this.opts.speech.enqueue(text, 'safety', null, 'nav:relocalizing', context);
         }
       }
       return;

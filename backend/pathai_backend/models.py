@@ -106,6 +106,10 @@ class NavSession(Base):
     current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 连续可信更新的拍数：recovering 恢复引导前需达到 RECOVER_RESUME_HITS
+    trusted_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
     location_algorithm_version: Mapped[str] = mapped_column(String(32), nullable=False)
     #: 会话创建时固化的定位参数版本（docs/28 §5.4）
     location_params_version: Mapped[str] = mapped_column(

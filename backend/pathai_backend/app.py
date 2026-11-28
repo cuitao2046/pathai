@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import platform
 import secrets
 import socket
@@ -70,6 +71,9 @@ def _configure_logging() -> None:
             handler._pathai_handler = True  # type: ignore[attr-defined]
             target.addHandler(handler)
         target.setLevel(logging.INFO)
+    diagnostics_level = logging.DEBUG if os.getenv("PATHAI_NAV_DEBUG") == "1" else logging.NOTSET
+    for route_logger in (location_router.logger, nav_router.logger):
+        route_logger.setLevel(diagnostics_level)
 
 # 客户端发现与能力查询的稳定身份口径（/healthz 与 /api/v1/device/info 共用）
 API_VERSION = "v1"

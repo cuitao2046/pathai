@@ -8,6 +8,32 @@ import type { TtsEngine } from '../core/speech/tts-engine';
 import { resetNowSource, setNowSource } from '../utils/clock';
 import { wxStub } from './setup-wx';
 
+it('logs navigation playback only when the player reports that audio started', async () => {
+  const info = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+  let startPlayback: (() => void) | undefined;
+  const queue = new SpeechQueue({
+    engine: new ControlledTts(),
+    onUnavailable: jest.fn(),
+    playClip: (_clip, onPlay) => {
+      startPlayback = onPlay;
+      return Promise.resolve();
+    },
+  });
+  const context = { sessionId: 'nav-example', sequence: 3 };
+  const expectedLog = ['[speech]', 'nav_playback_started', { ...context, source: 'nav:relocalizing' }];
+  try {
+    queue.enqueueClip('nav-relocalizing', 'safety', 'nav:relocalizing', context);
+    expect(info).not.toHaveBeenCalledWith(...expectedLog);
+    startPlayback?.();
+    startPlayback?.();
+    expect(info.mock.calls.filter((call) => call[1] === 'nav_playback_started')).toHaveLength(1);
+    expect(info).toHaveBeenCalledWith(...expectedLog);
+    await tick();
+  } finally {
+    info.mockRestore();
+  }
+});
+
 interface PendingSpeak {
   text: string;
   resolve: () => void;

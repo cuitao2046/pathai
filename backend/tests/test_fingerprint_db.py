@@ -188,7 +188,8 @@ def _beacon_obs() -> list[tuple[str, int]]:
     return [(BEACON_1[0], RSSI_TRILAT[0]), (BEACON_2[0], RSSI_TRILAT[1]), (BEACON_3[0], RSSI_TRILAT[2])]
 
 
-def _estimate(client, headers, beacons, sequence: int, *, use_fp: bool | None = None) -> dict:
+def _estimate(client, headers, beacons, sequence: int, *, use_fp: bool | None = None,
+              ble_algorithm: str | None = None) -> dict:
     body: dict = {
         "siteId": "school-building-01",
         "mapVersion": "latest",
@@ -201,6 +202,8 @@ def _estimate(client, headers, beacons, sequence: int, *, use_fp: bool | None = 
     }
     if use_fp is not None:
         body["useFingerprintDb"] = use_fp
+    if ble_algorithm is not None:
+        body["bleAlgorithm"] = ble_algorithm
     resp = client.post(ESTIMATE_URL, json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()
@@ -411,7 +414,7 @@ class TestMatchAndFallback:
     def test_estimate_uses_fingerprint_when_enabled(self, fp_client, fp_headers):
         version = self._seed_library(fp_client)
         beacons = _beacon_obs()
-        body = _estimate(fp_client, fp_headers, beacons, sequence=1, use_fp=True)
+        body = _estimate(fp_client, fp_headers, beacons, sequence=1, use_fp=True, ble_algorithm="robust_rssi")
         assert body["positionSource"] == "fingerprint"
         assert body["algorithmVersion"] == "fingerprint-0.1"
         assert body["fallbackReason"] is None
@@ -430,6 +433,9 @@ class TestMatchAndFallback:
         assert on["position"] == off["position"]
         assert on["quality"] == off["quality"]
         assert on["confidence"] == off["confidence"]
+        robust = _estimate(fp_client, fp_headers, beacons, sequence=3, use_fp=True, ble_algorithm="robust_rssi")
+        assert robust["fallbackReason"] == "no_active_library"
+        assert robust["algorithmVersion"] == "location-rssi-robust-0.1"
 
     def test_estimate_falls_back_when_match_is_ambiguous(self, fp_client, fp_headers):
         # 两点观测向量完全相同 → 无法区分（margin=0），必须回退三点定位

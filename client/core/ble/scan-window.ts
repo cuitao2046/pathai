@@ -79,6 +79,12 @@ export class ScanWindowAggregator {
    * 未登记三元组丢弃（不虚构）；可解析信标不足 3 个返回 null。
    */
   snapshot(registry: BeaconRegistry, nowMsValue: number): ResolvedObservation[] | null {
+    const observations = this.resolvedObservations(registry, nowMsValue);
+    return observations.length >= MIN_RESOLVED_BEACONS ? observations : null;
+  }
+
+  /** 保留数量不足的匹配结果，供定位管线诊断。 */
+  resolvedObservations(registry: BeaconRegistry, nowMsValue: number): ResolvedObservation[] {
     const observations: ResolvedObservation[] = [];
     for (const [key, list] of this.byTriplet) {
       const kept = list.filter((e) => e.atMs > nowMsValue - this.windowMs);
@@ -104,6 +110,6 @@ export class ScanWindowAggregator {
         n: kept.length,
       });
     }
-    return observations.length >= MIN_RESOLVED_BEACONS ? observations : null;
+    return observations;
   }
 }

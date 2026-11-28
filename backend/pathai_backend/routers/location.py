@@ -13,14 +13,19 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from pathai_backend import auth, fingerprint_library
 from pathai_backend.config import Settings
 from pathai_backend.errors import ApiError
-from pathai_backend.location_solver import BeaconInput, LocationParams, estimate_location
+from pathai_backend.location_solver import (
+    ROBUST_RSSI_VERSION,
+    BeaconInput,
+    LocationParams,
+    estimate_location,
+)
 from pathai_backend.map_repository import MapRepository
 from pathai_backend.models import LocationSequence
 from pathai_backend.observation_time import (
@@ -117,16 +122,24 @@ def _advance_sequence(
 @router.post("/estimate", response_model=PositionEstimateResponse)
 def estimate(
     body: LocationEstimateRequest,
+    request: Request,
     user: auth.AuthenticatedUser = Depends(auth.get_current_user),
     db: Session = Depends(auth.get_db_session),
     repo: MapRepository = Depends(get_map_repository),
     settings: Settings = Depends(auth.get_settings),
 ) -> PositionEstimateResponse:
     now = datetime.now(timezone.utc)
+    request_id = request.state.request_id
     # 只拦截明显非法的时钟数据；收藏是否够新由客户端判断，服务端回带观测龄作提示。
-    if not is_sane(body.collectedAt, now) or any(not is_sane(beacon.observedAt, now) for beacon in body.beacons):
-        raise ApiError(422, 'LOCATION_UNRELIABLE', '定位观测时间戳不可用，请校准设备时间后重新采集', details={'reason': 'observation_time_invalid'})
+    invalid_beacon_times = sum(not is_sane(beacon.observedAt, now) for beacon in body.beacons)
     collected_age_s = observation_age_s(body.collectedAt, now)
+    if not is_sane(body.collectedAt, now) or invalid_beacon_times:
+        logger.warning(
+            "location_rejected request_id=%s sequence=%s map_version=%s reason=observation_time_invalid "
+            "observation_age_s=%s invalid_beacon_times=%s submitted=%s",
+            request_id, body.sequence, body.mapVersion, collected_age_s, invalid_beacon_times, len(body.beacons),
+        )
+        raise ApiError(422, 'LOCATION_UNRELIABLE', '定位观测时间戳不可用，请校准设备时间后重新采集', details={'reason': 'observation_time_invalid'})
     if not repo.is_known_site(body.siteId):
         raise ApiError(404, "SITE_NOT_FOUND", f"场所不存在：{body.siteId}")
     latest = repo.latest(body.siteId)
@@ -161,6 +174,7 @@ def estimate(
     # 指纹库优先：命中阈值（重叠/RMSE/置信度/与次优差距）由服务层判定；
     # 未启用开关时完全不触达指纹库，行为与旧版一致。
     fp_match: fingerprint_library.FingerprintMatch | None = None
+    estimate = None
     fallback_reason: str | None = None
     if body.experimentMethod == "C" or (config is None and body.useFingerprintDb):
         try:
@@ -177,6 +191,8 @@ def estimate(
             logger.exception("指纹库查询失败，降级为三点定位")
             fp_match, fallback_reason = None, "library_unavailable"
 
+    # 冻结实验保持配置指定的算法，日常定位可通过客户端设置切换 BLE 解算。
+    robust_rssi = config is None and body.bleAlgorithm == "robust_rssi"
     if fp_match is not None:
         position = GeoPosition(x=fp_match.x, y=fp_match.y, floorId=fp_match.floor_id)
         confidence = fp_match.confidence
@@ -187,12 +203,15 @@ def estimate(
         )
         ignored_beacon_ids: list[str] = []
         algorithm_version = "fingerprint-0.1"
+        floor_id = fp_match.floor_id
+        used_beacon_count = fp_match.overlap
     else:
         estimate = estimate_location(
             pkg=published.pkg,
             observations=[BeaconInput(beacon_id=b.beaconId, rssi=b.rssi) for b in body.beacons],
             floor_hint=body.floorHint,
             params=params,
+            robust_rssi=robust_rssi,
         )
         position = (
             GeoPosition(x=estimate.x, y=estimate.y, floorId=estimate.floor_id)
@@ -202,7 +221,9 @@ def estimate(
         confidence = estimate.confidence
         quality = estimate.quality
         ignored_beacon_ids = list(estimate.ignored_beacon_ids)
-        algorithm_version = "location-0.3"  # 0.3.3：(x,y,z) 三维联合解算 + z 先验
+        algorithm_version = ROBUST_RSSI_VERSION if robust_rssi else "location-0.3"
+        floor_id = estimate.floor_id
+        used_beacon_count = estimate.used_beacon_count
 
     area = (
         _nearest_area(published.pkg, position.x, position.y, position.floorId)
@@ -225,8 +246,25 @@ def estimate(
             logger.exception("查周边构建失败，返回空清单")
             surroundings = []
 
+    estimate_id = f"loc_{uuid.uuid4().hex}"
+    failure_reason = estimate.failure_reason if estimate is not None else None
+    residual_m = estimate.residual_m if estimate is not None else None
+    residual_db = estimate.residual_db if estimate is not None else None
+    log_result = logger.info if failure_reason else logger.debug
+    log_result(
+        "location_estimate request_id=%s estimate_id=%s sequence=%s map_version=%s params_version=%s "
+        "algorithm=%s quality=%s reason=%s floor_hint=%s floor=%s observation_age_s=%s "
+        "submitted=%s used=%s excluded_counts=%s residual_m=%s residual_db=%s degraded_limit_m=%s fingerprint_fallback=%s",
+        request_id, estimate_id, body.sequence, published.map_version, params.params_version,
+        algorithm_version, quality, failure_reason, body.floorHint, floor_id,
+        collected_age_s, len(body.beacons), used_beacon_count,
+        estimate.excluded_counts if estimate is not None else None,
+        round(residual_m, 3) if residual_m is not None else None,
+        round(residual_db, 3) if residual_db is not None else None,
+        None if robust_rssi or fp_match is not None else params.residual_degraded_m, fallback_reason,
+    )
     return PositionEstimateResponse(
-        estimateId=f"loc_{uuid.uuid4().hex}",
+        estimateId=estimate_id,
         sequence=body.sequence,
         mapVersion=published.map_version,
         position=position,

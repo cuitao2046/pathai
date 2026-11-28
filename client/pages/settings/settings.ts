@@ -104,6 +104,7 @@ Page({
     simBeaconPreviewSetting: false,
     /** 启用指纹库提升导航定位精度（默认关闭＝仅蓝牙三点定位），即时生效。 */
     fingerprintDbSetting: false,
+    robustRssiSetting: false,
     /** 无障碍模式：'a11y' 视障模式（默认）/ 'normal' 普通模式，即时生效。 */
     a11yMode: 'a11y' as 'a11y' | 'normal',
     /** 全屏按住说话开关（仅视障模式生效，默认开）。 */
@@ -165,6 +166,7 @@ Page({
         fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
         simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
         fingerprintDbSetting: appContext.getFingerprintDbSetting(),
+        robustRssiSetting: appContext.getRobustRssiSetting(),
         a11yMode: appContext.getA11yMode(),
         screenReaderVoice: getScreenReaderVoice(),
         fullScreenPttSetting: appContext.getFullScreenPttSetting(),
@@ -242,6 +244,7 @@ Page({
       fieldCollectionSetting: appContext.getFieldCollectionToolSetting(),
       simBeaconPreviewSetting: appContext.getSimBeaconPreviewSetting(),
       fingerprintDbSetting: appContext.getFingerprintDbSetting(),
+      robustRssiSetting: appContext.getRobustRssiSetting(),
       a11yMode: appContext.getA11yMode(),
         screenReaderVoice: getScreenReaderVoice(),
       fullScreenPttSetting: appContext.getFullScreenPttSetting(),
@@ -494,16 +497,22 @@ Page({
     });
   },
 
-  /** 指纹库开关：开启后定位优先用指纹库匹配，未命中自动回退三点定位；即时生效。 */
+  /** 指纹库开关：优先匹配指纹，未命中时使用已选择的 BLE 解算。 */
   onChangeFingerprintDb(event: WechatMiniprogram.SwitchChange) {
     const on = event.detail.value;
     appContext.setFingerprintDbSetting(on);
     this.setData({ fingerprintDbSetting: on });
     wx.showToast({
-      title: on ? '已启用指纹库定位' : '已回到蓝牙三点定位',
+      title: on ? '已启用指纹库定位' : '已关闭指纹库定位',
       icon: 'none',
       duration: 2000,
     });
+  },
+
+  onChangeRobustRssi(event: WechatMiniprogram.SwitchChange) {
+    const on = event.detail.value;
+    appContext.setRobustRssiSetting(on);
+    this.setData({ robustRssiSetting: on });
   },
 
   /** 无障碍模式：视障模式（大箭头 + 全屏按住说话）/ 普通模式，即时生效。 */

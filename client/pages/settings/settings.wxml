@@ -143,7 +143,12 @@
       <text class="label">启用指纹库提升导航定位精度</text>
       <switch checked="{{fingerprintDbSetting}}" bindchange="onChangeFingerprintDb" aria-label="启用指纹库提升导航定位精度" />
     </view>
-    <view class="hint">开启后定位优先用指纹库匹配（需先在采集页完成入库），匹配命中时返回指纹点坐标；<text style="color:#1f2937">指纹库不可用、无对应网格点记录、匹配置信度低或多点难区分时自动回退到现有蓝牙三点定位</text>。默认关闭：关闭时仅用蓝牙三点定位，行为与现在完全一致。<text style="color:#1f2937">切换即时生效</text>（含进行中的导航）。</view>
+    <view class="hint">开启后优先匹配已入库的实测指纹。指纹未命中时使用下方选择的蓝牙定位算法。</view>
+    <view class="row">
+      <text class="label">稳健 RSSI 解算（试验）</text>
+      <switch checked="{{robustRssiSetting}}" bindchange="onChangeRobustRssi" aria-label="启用稳健 RSSI 解算试验模式" />
+    </view>
+    <view class="hint">关闭时使用现有蓝牙三点定位。切换从下一次定位请求生效。</view>
   </view>
 
   <view class="section">

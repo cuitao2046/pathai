@@ -39,9 +39,22 @@ PHONE_HEIGHT_M = 1.2
 #: （MAP/高斯-牛顿正规方程追加一行 (0,0,1) 观测，spec 0.3.3 决策 15）。
 #: 0.5 m 由蒙特卡洛探针确定（σ_prior 0.05–1.0 m 区间内误差平台，取中段）。
 Z_PRIOR_SIGMA_M = 0.5
-#: 单次测距标准差（米）：仅用于确定 z 先验与测距观测的相对权重，
-#: 不参与 quality 判定（quality 仍按解算后残差 RMS 映射）。
-RANGE_SIGMA_M = 2.0
+#: 测距相对标准差：对数模型下 σ_d ≈ RANGE_SIGMA_REL × d（现场 ±3 dB 抖动对应
+#: 约 34%）。最小二乘按 1/σ_d² 加权，远场观测不再与近场等权。
+RANGE_SIGMA_REL = 0.35
+#: 加权时的最小距离（米）：避免 1 m 内观测权重发散。
+_MIN_WEIGHT_DISTANCE_M = 1.0
+#: 观测门控上限（米）：超过该斜距的观测不参与解算与残差。远场单次误差 ≥35%，
+#: 且穿墙/多径不可控；按现值 A=-66 / n=2.37 约对应 RSSI ≤ -90.5 dBm。
+MAX_RANGE_M = 12.0
+# 实验版门槛，使用 dB 域留出走测验证后再调整。
+ROBUST_RSSI_VERSION = "location-rssi-robust-0.1"
+_RSSI_HUBER_DELTA_DB = 2.5
+_RSSI_INLIER_LIMIT_DB = 4.0
+_RSSI_RELIABLE_RMS_DB = 3.0
+_RSSI_MAX_GDOP = 6.0
+_RSSI_RANGE_FLOOR_M = 0.1
+_RSSI_MAX_SEED_EXCLUSIONS = 3
 #: 高斯-牛顿迭代上限与收敛判据（步长，米）。
 _GN_MAX_ITERATIONS = 20
 _GN_STEP_TOLERANCE_M = 1e-4
@@ -76,6 +89,10 @@ class BeaconInput:
     rssi: int
 
 
+_Point3 = tuple[float, float, float]
+_Candidate = tuple[BeaconInput, _Point3, float]
+
+
 @dataclass(frozen=True)
 class LocationEstimate:
     x: float | None
@@ -84,6 +101,11 @@ class LocationEstimate:
     quality: LocationQuality
     confidence: float
     ignored_beacon_ids: tuple[str, ...]
+    used_beacon_count: int
+    excluded_counts: dict[str, int]
+    residual_m: float | None = None
+    failure_reason: str | None = None
+    residual_db: float | None = None
 
 
 def rssi_to_distance(rssi: int, params: LocationParams = DEFAULT_LOCATION_PARAMS) -> float:
@@ -170,13 +192,17 @@ def _solve_least_squares(
     py = sum(a[1] for a in anchors) / n
     pz = PHONE_HEIGHT_M
 
-    w_range = 1.0 / (RANGE_SIGMA_M * RANGE_SIGMA_M)
-    w_prior = 1.0 / (Z_PRIOR_SIGMA_M * Z_PRIOR_SIGMA_M)
+    w_prior_base = 1.0 / (Z_PRIOR_SIGMA_M * Z_PRIOR_SIGMA_M)
+    # 按相对测距误差加权：σ_d ∝ d ⇒ w ∝ 1/d²（12 m 观测权重约为 2 m 的 1/36）。
+    # 以最近观测为基准归一化，避免绝对权重量级影响正规方程/退化判据的数值稳定性。
+    d_ref = max(min(ranges), _MIN_WEIGHT_DISTANCE_M)
+    weights = [(d_ref / max(d, _MIN_WEIGHT_DISTANCE_M)) ** 2 for d in ranges]
+    w_prior = w_prior_base * d_ref * d_ref
 
     for _ in range(_GN_MAX_ITERATIONS):
         normal = [[0.0, 0.0, 0.0] for _ in range(3)]
         grad = [0.0, 0.0, 0.0]
-        for (bx, by, bz), d in zip(anchors, ranges):
+        for (bx, by, bz), d, w_range in zip(anchors, ranges, weights):
             vx, vy, vz = px - bx, py - by, pz - bz
             dist = math.sqrt(vx * vx + vy * vy + vz * vz)
             if dist < 1e-6:
@@ -306,11 +332,156 @@ def _pick_optimal_trio(
     return None if best is None else list(best[1])
 
 
+def _fit_rssi(
+    candidates: list[_Candidate],
+    params: LocationParams,
+) -> _Point3 | None:
+    """以截断 Huber 损失拟合全量观测，并用回溯步长保持损失下降。"""
+    anchors = [anchor for _, anchor, _ in candidates]
+    ranges = [distance for _, _, distance in candidates]
+    weights = [1.0 / (1.0 + (distance / MAX_RANGE_M) ** 2) for distance in ranges]
+    slope = 10.0 * params.path_loss_n / math.log(10.0)
+    height_weight = 1.0 / Z_PRIOR_SIGMA_M**2
+
+    def evaluate(p: _Point3, *, linearize: bool = False) -> tuple[float, list[list[float]], list[float]]:
+        normal = [[0.0] * 3 for _ in range(3)]
+        grad = [0.0] * 3
+        height_error = p[2] - PHONE_HEIGHT_M
+        loss = 0.5 * height_weight * height_error**2
+        for (obs, anchor, _), weight in zip(candidates, weights):
+            delta = tuple(value - a for value, a in zip(p, anchor))
+            squared_range = sum(d * d for d in delta)
+            # 平滑限制极短距离的模型梯度，避免靠近信标时数值发散。
+            squared_range += _RSSI_RANGE_FLOOR_M**2
+            residual = params.rssi_at_1m - 0.5 * slope * math.log(squared_range) - obs.rssi
+            abs_residual = abs(residual)
+            clipped = min(abs_residual, _RSSI_HUBER_DELTA_DB)
+            bounded = min(abs_residual, _RSSI_INLIER_LIMIT_DB)
+            loss += weight * clipped * (bounded - 0.5 * clipped)
+            if linearize and abs_residual <= _RSSI_INLIER_LIMIT_DB:
+                robust_weight = weight if abs_residual <= _RSSI_HUBER_DELTA_DB else weight * clipped / abs_residual
+                jacobian = [-slope * d / squared_range for d in delta]
+                for i in range(3):
+                    grad[i] += robust_weight * jacobian[i] * residual
+                    for j in range(3):
+                        normal[i][j] += robust_weight * jacobian[i] * jacobian[j]
+        normal[2][2] += height_weight
+        grad[2] += height_weight * height_error
+        return loss, normal, grad
+
+    seeds: list[_Point3] = [(
+        sum(a[0] for a in anchors) / len(anchors),
+        sum(a[1] for a in anchors) / len(anchors),
+        PHONE_HEIGHT_M,
+    )]
+    full = _solve_least_squares(anchors, ranges)
+    if full is not None:
+        seeds.append(full)
+    # 异常强的单枚信标可能把全量测距初值拉偏。只在有冗余观测时尝试少量备选初值，
+    # 每个初值仍按全量 RSSI 评分，最终拟合也使用同一组候选。
+    if len(candidates) > MIN_BEACONS_FOR_TRILATERATION:
+        strongest = sorted(range(len(candidates)), key=lambda i: (ranges[i], candidates[i][0].beacon_id))
+        for i in strongest[:_RSSI_MAX_SEED_EXCLUSIONS]:
+            seed = _solve_least_squares(anchors[:i] + anchors[i + 1:], ranges[:i] + ranges[i + 1:])
+            if seed is not None:
+                seeds.append(seed)
+    point = min(seeds, key=lambda seed: evaluate(seed)[0])
+
+    for _ in range(_GN_MAX_ITERATIONS):
+        loss, normal, grad = evaluate(point, linearize=True)
+        step = _solve3(normal, [-v for v in grad])
+        if step is None:
+            return None
+        step_norm = math.hypot(*step)
+        if step_norm <= _GN_STEP_TOLERANCE_M:
+            return point
+        scale = min(1.0, _GN_MAX_STEP_M / step_norm)
+        for _ in range(12):
+            trial = (
+                point[0] + scale * step[0],
+                point[1] + scale * step[1],
+                point[2] + scale * step[2],
+            )
+            if evaluate(trial)[0] < loss:
+                point = trial
+                break
+            scale /= 2
+        else:
+            return None
+    return None
+
+
+def _estimate_robust_rssi(
+    candidates: list[_Candidate],
+    floor_id: str,
+    ignored: list[str],
+    excluded_counts: dict[str, int],
+    params: LocationParams,
+) -> LocationEstimate:
+    point = _fit_rssi(candidates, params)
+    if point is None:
+        return LocationEstimate(
+            None, None, floor_id, LocationQuality.LOST, 0.0, tuple(sorted(ignored)),
+            len(candidates), excluded_counts, failure_reason="solver_failed",
+        )
+
+    inliers: list[tuple[float, float]] = []
+    squared_errors: list[float] = []
+    for obs, anchor, _ in candidates:
+        distance = math.hypot(math.dist(point, anchor), _RSSI_RANGE_FLOOR_M)
+        predicted = params.rssi_at_1m - 10.0 * params.path_loss_n * math.log10(distance)
+        residual = predicted - obs.rssi
+        if abs(residual) <= _RSSI_INLIER_LIMIT_DB:
+            inliers.append((anchor[0], anchor[1]))
+            squared_errors.append(residual**2)
+        else:
+            ignored.append(obs.beacon_id)
+    excluded_counts["rssi_outlier"] = len(candidates) - len(inliers)
+    rms_db = math.sqrt(sum(squared_errors) / len(inliers)) if inliers else None
+
+    reason = None
+    gdop = math.inf
+    if len(inliers) < MIN_BEACONS_FOR_TRILATERATION or len(inliers) * 2 <= len(candidates):
+        reason = "insufficient_rssi_inliers"
+    else:
+        # 共线锚点可能出现镜像解，即使该点的局部 GDOP 有限。
+        mean_x = sum(a[0] for a in inliers) / len(inliers)
+        mean_y = sum(a[1] for a in inliers) / len(inliers)
+        spread_x = sum((x - mean_x)**2 for x, _ in inliers)
+        spread_y = sum((y - mean_y)**2 for _, y in inliers)
+        covariance = sum((x - mean_x) * (y - mean_y) for x, y in inliers)
+        gdop = _gdop_2d(point[:2], [a for a in inliers if math.dist(point[:2], a) > 1e-6])
+        if spread_x * spread_y - covariance**2 <= 1e-6 or gdop > _RSSI_MAX_GDOP:
+            reason = "weak_rssi_geometry"
+
+    quality = LocationQuality.UNRELIABLE
+    confidence = 0.0
+    if reason is None and rms_db is not None:
+        quality = LocationQuality.DEGRADED
+        if rms_db <= _RSSI_RELIABLE_RMS_DB and gdop <= TRI_GDOP_MAX:
+            quality = LocationQuality.RELIABLE
+        confidence = round((1.0 - rms_db / (2 * _RSSI_INLIER_LIMIT_DB)) * len(inliers) / len(candidates), 3)
+    return LocationEstimate(
+        x=round(point[0], 3) if reason is None else None,
+        y=round(point[1], 3) if reason is None else None,
+        floor_id=floor_id,
+        quality=quality,
+        confidence=confidence,
+        ignored_beacon_ids=tuple(sorted(ignored)),
+        used_beacon_count=len(inliers),
+        excluded_counts=excluded_counts,
+        failure_reason=reason,
+        residual_db=rms_db,
+    )
+
+
 def estimate_location(
     pkg: MapPackage,
     observations: list[BeaconInput],
     floor_hint: str | None,
     params: LocationParams = DEFAULT_LOCATION_PARAMS,
+    *,
+    robust_rssi: bool = False,
 ) -> LocationEstimate:
     catalog = {b.beaconId: b for b in pkg.beacons}
     deduped = _dedupe_strongest(observations)
@@ -320,20 +491,47 @@ def estimate_location(
     ignored: list[str] = sorted(
         obs.beacon_id for obs in deduped if obs.beacon_id not in catalog
     )
+    excluded_counts = {
+        "duplicate": len(observations) - len(deduped),
+        "unknown": len(ignored),
+        "other_floor": 0,
+        "missing_height": 0,
+        "out_of_range": 0,
+    }
     anchors: list[tuple[float, float, float]] = []
     ranges: list[float] = []
+    candidates: list[_Candidate] = []
     for obs, beacon in known:
         if beacon.floorId != target_floor:
+            excluded_counts["other_floor"] += 1
             ignored.append(obs.beacon_id)
             continue
         if beacon.installHeightM is None:
+            excluded_counts["missing_height"] += 1
             # 缺安装高度属部署数据错误：不参与解算，也不得按无高度模型静默替代
             # （spec 0.3.1 统一安装高度数据规则，fail-safe）。
             ignored.append(obs.beacon_id)
             continue
-        anchors.append((beacon.x, beacon.y, beacon.installHeightM))
         # txPower 是设备广播档位，不参与测距；参考值统一取配置的 RSSI@1m（docs/28 §1）
-        ranges.append(rssi_to_distance(obs.rssi, params))
+        candidates.append(
+            (obs, (beacon.x, beacon.y, beacon.installHeightM), rssi_to_distance(obs.rssi, params))
+        )
+
+    if robust_rssi and target_floor is not None and len(candidates) >= MIN_BEACONS_FOR_TRILATERATION:
+        return _estimate_robust_rssi(candidates, target_floor, ignored, excluded_counts, params)
+
+    # 观测门控：优先只用 12 m 内的近场观测（远场误差 ≥35% 且易穿墙）；
+    # 近场不足 3 枚时退回全量，由 1/d² 加权抑制远场影响（稀疏区仍可给解）。
+    near = [c for c in candidates if c[2] <= MAX_RANGE_M]
+    chosen = near if len(near) >= MIN_BEACONS_FOR_TRILATERATION else candidates
+    chosen_ids = {c[0].beacon_id for c in chosen}
+    for obs, anchor, distance in candidates:
+        if obs.beacon_id not in chosen_ids:
+            excluded_counts["out_of_range"] += 1
+            ignored.append(obs.beacon_id)
+            continue
+        anchors.append(anchor)
+        ranges.append(distance)
     ignored.sort()
 
     if (
@@ -347,6 +545,9 @@ def estimate_location(
             quality=LocationQuality.LOST,
             confidence=0.0,
             ignored_beacon_ids=tuple(ignored),
+            used_beacon_count=len(anchors),
+            excluded_counts=excluded_counts,
+            failure_reason="floor_unavailable" if target_floor is None else "insufficient_same_floor_beacons",
         )
 
     # 几何最优三枚：先用全部同层信标求初值，再以初值为目标点选出几何最优三枚，
@@ -378,6 +579,9 @@ def estimate_location(
             quality=LocationQuality.LOST,
             confidence=0.0,
             ignored_beacon_ids=tuple(ignored),
+            used_beacon_count=len(anchors),
+            excluded_counts=excluded_counts,
+            failure_reason="solver_failed",
         )
 
     rms = _residual_rms(point, anchors, ranges)
@@ -394,6 +598,10 @@ def estimate_location(
             quality=LocationQuality.UNRELIABLE,
             confidence=confidence,
             ignored_beacon_ids=tuple(ignored),
+            used_beacon_count=len(anchors),
+            excluded_counts=excluded_counts,
+            residual_m=rms,
+            failure_reason="residual_exceeded",
         )
     return LocationEstimate(
         x=round(point[0], 3),
@@ -402,4 +610,7 @@ def estimate_location(
         quality=quality,
         confidence=confidence,
         ignored_beacon_ids=tuple(ignored),
+        used_beacon_count=len(anchors),
+        excluded_counts=excluded_counts,
+        residual_m=rms,
     )

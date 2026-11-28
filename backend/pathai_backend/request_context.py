@@ -30,8 +30,8 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         duration_ms = (time.perf_counter() - start) * 1000
         if request.url.path not in _ACCESS_LOG_SKIP_PATHS:
             logger.info(
-                "%s %s -> %s %.1fms",
-                request.method, request.url.path, response.status_code, duration_ms,
+                "%s %s -> %s %.1fms request_id=%s",
+                request.method, request.url.path, response.status_code, duration_ms, request.state.request_id,
                 extra={
                     "request_id": request.state.request_id,
                     "method": request.method,
